@@ -1,0 +1,272 @@
+=  DataMapper示例：固定宽度输入格式
+:keywords: datamapper
+
+[NOTE]
+====
+DataMapper将继续在Mule ESB 3.x的所有当前版本和未来版本中得到完全支持，但是它将在Mule 4.0中被移除，转而使用*Transform Message*组件（基于 link:/mule-user-guide/v/3.8/dataweave[DataWeave]代码）。我们建议如果您希望利用DataWeave的新功能，或者如果您启动新项目，请立即升级。
+
+Studio中现在包含 link:/mule-user-guide/v/3.8/dataweave-migrator[迁移工具]，可帮助将DataMapper地图转换为DataWeave。右键单击DataMapper，选择*Migrate to DataWeave*，然后按照说明进行操作。
+
+image:dw_migrator_script.png[dw migrator]
+
+如果在调色板中没有看到DataMapper，可以转到*Preferences*  - > *Anypoint Studio*  - > *Palette Profiles*并勾选复选框*Show deprecated Mule Components and Attributes*来启用它。
+====
+
+Anypoint DataMapper可以将数据组织到固定宽度列中，允许使用每列的宽度值进行数据提取。以固定宽度格式读取数据，DataMapper可根据用户提供的字段长度值分隔适当的字段（请参见下面的示例）。
+
+本文档举例说明了将固定宽度数据格式的值映射到JSON的两个简单示例。
+
+* 在字段中有未使用的字符的地方，DataMapper应用填充。
+
+* 或者，输入格式可能在第一行包含一个标题。
+
+[source, code, linenums]
+----
+lastName~~~~~~firstName~~~~~~customerID~
+Doe~~~~~~~~~~~John~~~~~~~~~~~41164794149
+Doe~~~~~~~~~~~Jane~~~~~~~~~~~79251226021
+----
+
+== 假设
+
+本文档假定读者熟悉DataMapper Transformer。
+
+== 固定宽度为JSON示例流程
+
+下图显示了一个非常简单的Mule流程，其中包含一个DataMapper变换器。第一个构建块 link:/mule-user-guide/v/3.7/file-connector[文件连接器]读取固定宽度的输入文件。然后，DataMapper将数据转换为JSON格式，并将结果输出到第二个文件中。
+
+image:flow-1.png[流1]
+
+要测试映射，您可以在Studio中构建此流程，然后运行该应用程序并检查输出文件中的结果。或者，您可以构建此流程，然后使用DataMapper的 link:/anypoint-studio/v/5/previewing-datamapper-results-on-sample-data[预习]功能在不运行应用程序的情况下查看映射。
+
+. 配置用于流中文件入站和出站连接器的值，如下所示：
++
+[%header%autowidth.spread]
+|===
+2 + ^ |入站连接器
+|路径 | `/tmp/`
+|文件名正则表达式过滤器 | `fwtest`
+|===
++
+[%header%autowidth.spread]
+|===
+2 + ^ |出站连接器
+|路径 | `/tmp`
+|文件名正则表达式过滤器 | `fwout.json`
+|===
+
+. 创建一个**Fixed-Width Input File**：创建一个新的文本文件（.txt），然后粘贴下面显示的内容。请确保在文件的最后一行后面包含空行，因为DataMapper使用行尾字符（回车符）作为输入字段分隔符。
++
+[source, code, linenums]
+----
+LastName  FirstName Phone      CountryEmployeeNo
+Jane      Doe       54112223333ARG001
+John      Doe       54112223333ARG002
+----
+
+. 将文件保存到本地驱动器上方便的位置。要查看DataMapper执行转换，您最终会将该文件复制到`/tmp/fwtest`。
+
+. 创建DataMapper用作将数据转换为JSON的模板的JSON示例文件。创建该文件并将其粘贴到以下内容中：
+
+[source, code, linenums]
+----
+[{
+  "FirstName": "",
+  "LastName": "",
+  "Phone": "",
+  "Country": "",
+  "EmployeeNo": ""
+}]
+----
+
+=== 配置DataMapper输入
+
+. 单击画布上的DataMapper构建块以显示DataMapper属性编辑器。
++
+image:DM_editor.png[DM_editor]
+
+. 在*Input*部分中，点击修改图标
+*Type*输入字段旁边的 image:edit_icon.png[edit_icon]，然后从*Type*下拉菜单中选择*Fixed Width*。属性编辑器*Input*窗格显示固定宽度格式的输入选项，如下所示。
++
+image:3.fixedw_options.png[3.fixedw_options]
+
+. 默认选项*From Example*允许您使用输入文件来确定输入字段属性（字段名称和宽度）。 *User Defined*选项允许您手动定义输入字段。在本例中，我们将使用上述输入文件，以便DataMapper自动配置字段。
+
+. 使用*Fixed width*字段旁边的省略号按钮（...）选择本地驱动器上的固定宽度输入文件（或者，您可以在{ {2}}输入字段）。
+
+. 选择输入文件后，点击*Edit Fields*。 DataMapper显示*Define the Fixed Width*面板。下图说明了DataMapper如何读取输入文件。 DataMapper已经正确猜测了所有字段的宽度以及前三个字段的名称。最后两个字段具有正确的宽度值，但我们必须编辑名称。
++
+image:fixed_width_input.png[fixed_width_input]
+
+. 要编辑字段，请点击您想要编辑的字段属性（名称，类型或宽度），然后调整内容并点击*OK*。对于此示例，将最后两个字段的名称更改为相应的值：`Country`和`EmployeeNo`。
++
+image:props5.png[props5]
+
+[TIP]
+====
+DataMapper接受多种输入字段类型，包括字符串，日期，布尔等。要定义字段的类型，请单击该字段的类型并从下拉菜单中选择所需的类型。
+
+image:propstip.png[propstip]
+====
+
+=== 配置DataMapper输出
+
+. 在*Input and Output Type*窗口的*Output*部分，使用*Type*旁边的下拉菜单选择`JSON`。
+
+. 使用*Fixed width example*字段旁边的省略号按钮（...）来选择本地驱动器上的JSON输出文件。
++
+[TIP]
+====
+如果您希望DataMapper自动生成输出JSON，请在*New Data Mapping Flow*窗口的*Output*部分中单击*Generatedefault*。
+====
+
+. 点击DataMapper属性编辑器底部的*Create mapping*。 DataMapper显示图形映射编辑器，如下所示。
++
+image:4.DM_mapedit.png[4.DM_mapedit]
+
+如您所见，DataMapper已自动映射输入和输出字段，因为字段名称在输入和输出中一致。
+
+=== 测试映射
+
+要测试映射，请使用以下过程之一。
+
+[tabs]
+------
+[tab,title="Run Application"]
+....
+Test by running the example flow:
+
+. Right-click the project name in the Package Explorer, then select  *Run as* > *Mule Application*.
+
+. Copy your fixed-width input file to the directory and filename you specified for the File inbound connector (in this example, `/tmp/fwtest`).
+
+. Check for the example output file according to the configuration of the outbound file connector (in this example, `/tmp/fwout.json`.
+....
+[tab,title="See Preview"]
+....
+DataMapper's link:/anypoint-studio/v/5/previewing-datamapper-results-on-sample-data[Preview] feature allows you to see the result of your mapping without actually running the flow. Test by using DataMapper's Preview feature:
+
+. In the DataMapper view, click the *Preview* tab.
+
+. In the *Preview* tab, click *Run*.
+
+The code below demonstrates the resulting JSON output.
+
+[source, code, linenums]
+----
+[{
+  "FirstName" : "Doe",
+  "LastName" : "Jane",
+  "Phone" : "54112223333",
+  "Country" : "ARG",
+  "EmployeeNo" : "001"
+}, {
+  "FirstName" : "Doe",
+  "LastName" : "John",
+  "Phone" : "54112223333",
+  "Country" : "ARG",
+  "EmployeeNo" : "002"
+}]
+----
+....
+------
+
+== 使用固定宽度列定义来提取其他字段
+
+在这个附加示例中，我们将员工的电话号码（最初由11位数字组成）分成三个单独的字段：
+
+*  `CountryCode`
+
+*  `AreaCode`
+
+*  `Phone`
+
+要在您为前面的示例配置的DataMapper Building Block中执行此操作，您需要：
+
+. 编辑`Phone`输入字段，使其宽度等于7。
+
+. 创建两个附加输入字段`CountryCode`和`AreaCode`。
+
+. 按照适当的顺序放置输入字段。
+
+. 修改输出字段以与新的输入字段一致。
+
+要完成上述高级步骤，请按照下面的说明进行操作。
+
+=== 修改输入字段
+
+. 在图形映射编辑器的*Input*窗格中，双击`Phone`字段以通过*Edit attribute*窗口编辑其属性，如下所示。
++
+image:5.Field.attr.png[5.Field.attr]
+
+. 如您所见，该字段的宽度为11个字符。将宽度更改为7，然后单击*OK*。最终的输入字段属性应对应于下表。
++
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |宽度
+| {姓氏{1}}串 | 10
+| {姓{1}}串 | 10
+| {PHONENO {1}}串 | 7
+| {国家{1}}串 | 3
+| {employeeno的{1}}串 | 3
+|===
+
+. 我们现在将创建其他字段。在*Input*窗格中，右键单击顶层元素（在本例中为`fwtest`），然后选择*Add Field*。
++
+image:6.add_field.png[6.add_field]
+
+. 使用此过程添加以下字段：
++
+[%autowidth.spread]
+|===
+| *Name*  | *Type*  | *Width*
+| {COUNTRYCODE {1}}串 | 2
+| {AREACODE {1}}串 | 2
+|===
+
+. 添加的新字段显示在“输入”窗格的底部，就好像它们是输入文件中的最后一个字段一样。您需要在`FirstName`输入字段后将它们移动到适当的位置。为此，请右键单击所需字段，然后选择*Move Field Up*。
++
+image:7.moveup.png[7.moveup]
+
+. 确保输入字段按以下顺序显示：`LastName`，`FirstName`，`CountryCode`，`AreaCode`，`Phone`，{{ }，`EmployeeNo`。
+
+此时，我们已完成修改新映射的输入字段。
+
+=== 修改输出字段
+
+现在我们将修改输出字段以包含新的输入字段。 DataMapper为此提供了一个方便的快捷方式：*Recreate Metadata From Input*函数。
+
+. 在*Output*面板中，点击*Infer Metadata*图标 image:infer_metadata.png[infer_metadata]，然后选择**Re-Create Metadata From Input**。
++
+image:8.recreate_md.png[8.recreate_md]
+
+DataMapper将自动重新创建输出元数据并显示新的映射，如下所示。
+
+image:9.new_mapping.png[9.new_mapping]
+
+正如你所看到的，新的输入字段已被映射到它们相应的输出字段。
+
+=== 测试映射
+
+与前面的示例一样，通过运行应用程序并生成输出文件或使用DataMapper的预览功能来测试映射。下面的代码演示了生成的JSON输出。 DataMapper已将原始`Phone`字段拆分为字段`CountryCode`，`AreaCode`和`Phone`。 DataMapper根据输入属性中提供的长度和字段顺序执行字段拆分，并将它们映射到输出属性中指定的JSON格式。
+
+[source, code, linenums]
+----
+[ {
+  "LastName" : "Jane",
+  "FirstName" : "Doe",
+  "CountryCode" : "54",
+  "AreaCode" : "11",
+  "Phone" : "2223333",
+  "Country" : "ARG",
+  "EmployeeNo" : "001"
+}, {
+  "LastName" : "John",
+  "FirstName" : "Doe",
+  "CountryCode" : "54",
+  "AreaCode" : "11",
+  "Phone" : "2223333",
+  "Country" : "ARG",
+  "EmployeeNo" : "002"
+} ]
+----

@@ -1,0 +1,174 @@
+= 使用电子邮件连接器列出电子邮件
+
+电子邮件连接器可以列出来自流程任何部分的电子邮件。 （请注意，此功能与Mule 3传输方式有所不同，它只能通过入站端点轮询检索电子邮件。）
+
+POP3和IMAP配置都包含`list`操作。本节涵盖并解释它们的不同之处。虽然下面的示例可能使用`list-pop3`或`list-imap`，但它们都适用于两种配置_unless声明否则_。
+
+== 配置连接器
+
+列出存储在服务器中的电子邮件有两种配置：
+
+*  POP3配置
+*  IMAP配置。
+
+两者都共享建立连接所需的一组基本参数：服务器`host`和`port`，以及`username`和`password`与受保护的邮件服务器连接。请注意，`username`和`password`是可选的，因为某些服务器没有使用用户名和密码进行保护。
+
+以下是POP3和IMAP配置的示例：
+
+.POP3配置
+[source, xml, linenums]
+----
+<email:pop3-config name="pop3-config">
+    <email:pop3-connection host="pop.gmail.com" port="995" user="pablo.musumeci@mulesoft.com" password="#netherlands!"/>
+</email:pop3-config>
+----
+
+.IMAP配置
+[source, xml, linenums]
+----
+<email:imap-config name="imap-config">
+    <email:imap-connection host="imap.gmail.com" port="912" user="pablo.musumeci@mulesoft.com" password="#netherlands!"/>
+</email:imap-config>
+----
+
+这些示例看起来相似。有关差异，请参阅中的“配置”部分
+link:email-documentation[Email Connector技术参考]。
+
+=== 安全连接
+
+IMAP和POP3配置提供了一种安全连接类型，可用于协议的安全版本（POP3S和IMAPS）。这种类型允许您配置启用SSL / TLS加密的TLS上下文。
+
+这是一个IMAPS示例：
+
+。使用TLS进行IMAP配置
+[source, xml, linenums]
+----
+<email:imap-config name="tls">
+    <email:imaps-connection host="${port}" port="${port}">
+        <tls:context enabledProtocols="TLSv1.2,SSLv3">
+            <tls:key-store path="aKeystore" password="password"/>
+            <tls:trust-store path="aTruststore.jks" password="changeit"/>
+        </tls:context>
+    </email:imaps-connection>
+</email:imap-config>
+----
+
+请注意，TLS上下文也可用于POP3S连接，与IMAPS一样。
+
+== 列出电子邮件
+
+列表操作将返回驻留在参数化邮箱文件夹中的已配置邮箱服务器中的所有电子邮件。
+
+以下是在邮箱中列出电子邮件的基本语法：
+
+。对于POP3
+[source, xml, linenums]
+----
+<email:list-pop3 config-ref="pop3-config" mailboxFolder="INBOX"/>
+----
+
+。对于IMAP
+[source, xml, linenums]
+----
+<email:list-imap config-ref="imap-config" mailboxFolder="INBOX"/>
+----
+
+上述示例返回驻留在INBOX文件夹中的已配置邮箱服务器中的所有电子邮件。
+
+请注意，`config-ref`属性指向配置示例中声明的配置。
+
+== 从电子邮件中获取数据
+
+传入电子邮件包含有效负载中的电子邮件内容，其中包括电子邮件正文和任何附件。以下示例遍历所有检索到的电子邮件：
+
+[source, xml, linenums]
+----
+<flow name="retrieveWithAttachments">
+    ...
+    <email:list-imap config-ref="imap-config"/>
+    <foreach>
+        <set-variable variableName="email-content" value="payload.body" />
+        <set-variable variableName="json-attachment" value="payload.attachments.json" />
+    </foreach>
+</flow>
+----
+
+处理有效内容中的单个电子邮件时，您可以使用`payload.body`访问
+邮件内容。上面的示例将主体设置为名为`email-content`的变量。
+
+要访问电子邮件附件，您可以使用`payload.attachments.{nameOfTheAttachment}`。上面的示例将一个名为`json`的附件设置为一个新变量`json-attachment`中检索到的电子邮件。
+
+== 属性
+
+在列出电子邮件时，您可能不仅对电子邮件内容感兴趣，而且对其元数据（例如主题，地址，地址，收到日期等）感兴趣。这些属性因您使用的配置类型而异。例如，IMAP协议提供了有关检索到的电子邮件的更多元数据，如`recent`，`seen`，`deleted`和`answered`标志。
+
+电子邮件连接器使用Mule消息属性来访问此信息，而消息有效负载始终包含电子邮件的内容。
+
+有关电子邮件属性结构的详细信息，请参阅 link:email-documentation[电子邮件模块文档参考]。
+
+== 匹配
+
+列出电子邮件时，您可以使用`<email:pop3-matcher>`和`<email:imap-matcher>`元素过滤符合特定条件的电子邮件。这些元素定义了可用于处理电子邮件的标准。
+
+下面是一个IMAP匹配器的示例，该匹配器拒绝包含与`[0-9]`正则表达式不匹配并且之前未见过的主题的邮件：
+
+[source, xml, linenums]
+----
+<email:list-imap config-ref="config">
+    <email:imap-matcher subjectRegex="[0-9]" seen="EXCLUDE"/>
+</email:list-imap>
+----
+
+所有匹配器属性都是可选的，如果它们没有提供，它们将被忽略。它们在AND运算符下也相互关联，这意味着所有条件都必须是真实的。
+
+上面的例子声明了一个内部的，不可重用的匹配器，它是专用于特定组件的。但是，匹配器可以声明为可重用元素（作为命名的顶级元素），如以下`pop3-matcher`所示：
+
+[source, xml, linenums]
+----
+<email:pop3-matcher name="pop3Matcher"
+                    subjectRegex="Email Subject"
+                    fromRegex="@mulesoft"/>
+
+<flow name="listEmails">
+  ...
+  <file:list pop3-matcher="pop3Matcher" />
+  ...
+</flow>
+----
+
+===  IMAP匹配器与POP3匹配器
+
+IMAP协议提供有关允许更多电子邮件的元数据
+比POP3更精确的过滤器。
+
+POP3匹配器包含这些参数：
+
+[source, xml, linenums]
+----
+<email:pop3-matcher
+  receivedSince="2015-06-03T13:21:58+00:00"
+  receivedUntil="2015-07-03T13:21:58+00:00"
+  sentSince="2015-05-03T13:21:58+00:00"
+  sentUntil="2015-06-03T13:21:58+00:00"
+  subjectRegex="BETA:"
+  fromRegex="@mulesoft"/>
+----
+
+IMAP匹配器看起来像这样：
+
+[source, xml, linenums]
+----
+<email:imap-matcher
+  receivedSince="2015-06-03T13:21:58+00:00"
+  receivedUntil="2015-07-03T13:21:58+00:00"
+  sentSince="2015-05-03T13:21:58+00:00"
+  sentUntil="2015-06-03T13:21:58+00:00"
+  subjectRegex="BETA:"
+  fromRegex="@mulesoft"
+  recent="EXCLUDE|INCLUDE|REQUIRE"
+  seen="EXCLUDE|INCLUDE|REQUIRE"
+  deleted="EXCLUDE|INCLUDE|REQUIRE"
+  answered="EXCLUDE|INCLUDE|REQUIRE"/>
+----
+
+请注意，IMAP匹配器包含`recent`，`seen`，`deleted`和`answered`参数。

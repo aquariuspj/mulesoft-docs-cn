@@ -1,0 +1,61 @@
+= 处理JMS中的事务
+:keywords: jms, connector, transactions, transactional
+：TOC：
+：TOC标题：
+
+
+JMS中的事务连接允许您执行一系列仅在事务被提交时实际执行的操作。这有两个主要场景：
+
+* 将消息发布为事务的一部分：执行`publish`时，一旦事务为*commited*，消息就会有效发送到目标。如果由于某种原因事务失败并发生*rollback*，那么邮件将永远不会被发送。
+
+将消息作为事务的一部分使用：如果消费消息（使用`listener`或`consume`），消息将被确认*only after the transacion is commited*，相反，如果交易是*rolledback*，则会返回到目的地以进行重新交付。
+
+
+JMS连接器支持使用Mule的`transactionalAction`配置以OOTB的交易方式执行其操作。
+
+为了作为交易的一部分执行操作，我们有以下两种选择。
+
+== 使用事务会话处理新消息
+
+如果您希望JMS侦听器在分派邮件时使用事务会话，则应将`transactionalAction`设置为'ALWAYS_BEGIN'：
+
+[source, xml, linenums]
+----
+<jms:listener config-ref="JMS_Config" destination="${originQueue}" transactionalAction="ALWAYS_BEGIN"/>
+----
+
+使用这种配置，每个新消息将在传播到所有流程组件的事务中处理，并在流程执行成功完成后进行提交。如果流程执行完成且出现错误，则事务将回滚。
+
+默认情况下，侦听器创建的流*will not join the transaction*中的*other components*。为了使用侦听器的事务执行其他操作，您必须使用'ALWAYS_JOIN'或'JOIN_IF_POSSIBLE'来声明它们。
+
+== 将操作作为交易的一部分执行
+
+要执行像`publish`或`consume`这样的操作作为事务的一部分，我们必须将`transactionalAction`设置为'ALWAYS_JOIN'或'JOIN_IF_POSSIBLE'：
+
+该操作可以加入由侦听器发起的事务：
+[source, xml, linenums]
+----
+
+<flow name="joiningToListenerTransaction">
+    <jms:listener config-ref="JMS_Config" destination="${originQueue}" transactionalAction="ALWAYS_BEGIN"/>
+    <jms:publish config-ref="JMS_Config" destination="#[attributes.properties.userProperties.redirectDestination]" transactionalAction="JOIN_IF_POSSIBLE"/>
+    <jms:consume config-ref="JMS_Config" destination="#[attributes.properties.userProperties.callbackDestination]" transactionalAction="JOIN_IF_POSSIBLE"/>
+</flow>
+----
+
+或者他们可以加入范围性交易：
+[source, xml, linenums]
+----
+<flow name="nonTxPublishMustNotJoinCurrentTx">
+    <http:listener config-ref="HTTP_Config" path="/orders"/>
+    <try transactionalAction="ALWAYS_BEGIN">
+        <jms:publish config-ref="config" destination="${billingService}" transactionalAction="ALWAYS_JOIN"/>
+        <jms:publish config-ref="config" destination="${shipmentService}" transactionalAction="ALWAYS_JOIN"/>
+        <jms:publish-consume config-ref="JMS_Config" destination="${invoicesVerificationService}"/>
+        <validation:is-true expression="#[payload]"/>
+    </try>
+</flow>
+----
+
+
+

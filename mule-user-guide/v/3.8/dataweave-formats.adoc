@@ -1,0 +1,911 @@
+= 格式
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+DataWeave支持不同类型的数据格式。每种格式都有一个关联的阅读器和一个编写器，并且在某些情况下允许自定义类型。每个阅读器和书写器都定义用于定制的配置属性。
+
+
+== 爪哇
+
+典范模型=== 
+
+Java对象与DataWeave类型之间的映射非常简单：
+
+[%header]
+|=======================
+| Java类型 | DataWeave类型
+| `Collections/Array/Iterator/Iterable`  |  link:dataweave-types#array[：数组]
+| `String/CharSequence/Char/Enum/Class`  |  link:dataweave-types#string[：串]
+| `int/Short/Long/BigInteger/Flat/Double/BigDecimal` | link:dataweave-types#number[：数]
+| `Calendar/XmlGregorainCalendar` | link:dataweave-types#datetime[：约会时间]
+| `TimeZone` | link:dataweave-types#timezone[：时区]
+| `sql.Date/util.Date` | link:dataweave-types#date[：日期]
+| `Bean/Map` | link:dataweave-types#object[：目的]
+| `InputStream/Array[Byte]` | link:dataweave-types#binary[：二进制]
+| `java.lang.Boolean` | link:dataweave-types#boolean[：布尔]
+
+|=======================
+
+
+=== 自定义类型
+
+
+=== 元数据属性*class*
+
+Java开发人员使用'class'元数据密钥作为提示需要创建哪些类并将其作为输入发送。
+如果没有明确定义，DataWeave会尝试从上下文中推断出它或将其分配给默认值：
+
+
+ * java.util.HashMap for *objects*
+用于*lists*的{​​{0}} java.util.ArrayList
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------------
+%dw 1.0
+%type user = :object { class: "com.anypoint.df.pojo.User"}
+%output application/xml
+---
+{
+  name : "Mariano",
+  age : 31
+} as :user
+
+-----------------------------------------------------------------------
+
+上面的代码将所需输入的类型定义为“com.anypoint.df.pojo.User”的一个实例。
+
+=== ：枚举
+
+为了将枚举值放入java.util.Map中，DataWeave java模块定义了一个名为enum的自定义类型。
+它允许您指定给定的字符串应该作为指定的枚举类型的名称进行处理。
+它应该始终与类属性一起使用，并使用枚举的java类名称。
+
+=== 定义元数据类型
+
+在Transform Message组件中，您可以通过以下方法定义Java类型：
+
+* 通过提供一个示例对象
+
+[TIP]
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+==  CSV
+
+典范模型=== 
+
+CSV内容在DataWeave中作为对象列表建模，其中每个记录都是一个对象，并且其中的每个字段都是一个属性。例如：
+
+。输入
+[source,csv,linenums]
+----
+Name,Last Name
+Mariano, De achaval
+Leandro, Shokida
+----
+
+.DataWeave表示
+[source,dataweave,linenums]
+----
+[
+  {
+    Name: "Mariano",
+    "Last Name": " De achaval"
+  },
+  {
+    Name: "Leandro",
+    "Last Name": " Shokida"
+  }
+]
+----
+
+
+=== 阅读器属性
+
+在CSV中，您可以指定任何特殊字符作为分隔字段，切换引号或转义引号的指示符。确保您知道输入中使用了什么特殊字符，以便DataWeave可以正确解释它。
+
+定义CSV类型的输入时，可以在Mule项目的XML定义中添加一些可选参数，以自定义数据解析的方式。
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+|分隔符 | char  |， |将字段分隔开的字符
+|引用 | char  |“ |分隔字段值的字符
+|转义 | char  |  \  |用于转义字段值中分隔符或引号字符出现的字符
+| bodyStartLineNumber | 数字 |  0  | 正文开始的行号。
+| ignoreEmptyLine  | bool  |  true  | 定义是否忽略空行
+|标题 | bool  | true  |指示输出的第一行是否应包含字段名称
+| headerLineNumber  |  number  |  0  | 标题所在的行号
+|=======================
+
+
+[NOTE]
+====
+当`header=true`时，您可以通过名称在任何地方访问输入内的字段。例如：`payload.userName`。
+
+当`header=false`时，您必须按索引访问字段，首先引用该条目然后再引用该字段，例如：`payload[107][2]`
+====
+
+这些属性可以通过你的Mule项目的XML设置：
+
+[source,xml,linenums]
+----
+	 <dw:transform-message metadata:id="33a08359-5085-47d3-aa5f-c7dd98bb9c61"
+	 			doc:name="Transform Message">
+ 			<dw:input-payload
+ 			    <!-- Boolean that defines if the first line in the data contains headers -->
+ 				<dw:reader-property name="header" value="false" />
+ 				<!-- Character that separates fields, `','` by default -->
+ 				<dw:reader-property name="separator" value="," />
+ 				<!-- Character that defines quoted text, `" "` by default -->
+ 				<dw:reader-property name="quote" value="&quot;" />
+ 				<!-- Character that escapes quotes, `\` by default -->
+ 				<dw:reader-property name="escape" value="\" />
+ 			</dw:input-payload>
+ 			<dw:set-payload>
+                <![CDATA[
+                    %dw 1.0
+                    %output application/java
+                    ---
+                    // Your transformation script goes here
+                ]]>
+            </dw:set-payload>
+     </dw:transform-message>
+----
+
+或者通过Transform Message组件的UI：
+
+image::dataweave-formats-580be.png[]
+
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+
+
+
+编写器属性。=== 
+
+定义CSV类型的输出时，可以将一些可选参数添加到输出指令中，以定制数据解析的方式：
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+|分隔符 | char  |， |将字段分隔开的字符
+|编码 |字符串 |  |要用于输出的字符集
+|引用 | char  |“ |分隔字段值的字符
+|转义 | char  |  \  |用于转义字段值中分隔符或引号字符出现的字符
+将使用| lineSeparator |字符串 | 系统行结束默认 | 行分隔符。示例："\r\n"
+|标题 | bool  | true  |指示输出的第一行是否应包含字段名称
+| quoteHeader  | bool  | false  |指示标题值应被引用
+| quoteValues  | bool  | false  |指示是否应引用每个值，而不论其中是否包含特殊字符
+|=======================
+
+所有这些参数都是可选的。例如，CSV输出指令可能如下所示：
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%output text/csv separator=";", header=false, quoteValues=true
+---------------------------------------------------------------------
+
+=== 定义元数据类型
+
+在Transform Message组件中，您可以通过以下方法定义CSV类型：
+
+* 通过提供示例文件
+* 通过图形编辑器，您可以手动设置每个字段
+
++
+image::dataweave-formats-4a556.png[]
+
+[TIP]
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+
+
+==  Excel中
+
+典范模型=== 
+
+
+Excel工作簿是一系列工作表，在DataWeave中映射到每个工作表是关键字的对象。每个Excel表格只允许有一个表格。一个表格被表示为一个行数组。行是一个对象，其中的键是列和单元格内容的值。
+
+例如：
+
+。输入
+
+image:dataweave-formats-exceltable.png[]
+
+.DataWeave表示
+[source,dataweave,linenums]
+----
+%output application/xlsx header=true
+---
+{
+  Sheet1: [
+    {
+      Id: 123,
+      Name: George
+    },
+    {
+      Id: 456,
+      Name: Lucas
+    }
+  ]
+}
+----
+
+
+=== 阅读器属性
+
+
+
+定义类型为excel的输入时，可以在Mule项目的XML定义中添加一些可选参数，以定制数据解析的方式。
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+|标题 |  bool  |  true  |	定义excel表是否包含标题。设置为false时，将使用列名称。 （A，B，C ...）
+| ignoreEmptyLine 	|  bool  |  true  | 定义是否忽略空行
+| tableOffset  |  string  |  A1  |	表中第一个单元格的位置
+|=======================
+
+
+
+这些属性可以通过你的Mule项目的XML设置：
+
+[source,xml,linenums]
+----
+	 <dw:transform-message metadata:id="33a08359-5085-47d3-aa5f-c7dd98bb9c61"
+	 			doc:name="Transform Message">
+ 			<dw:input-payload
+ 			    <!-- Boolean that defines if the first line in the data contains headers -->
+ 				<dw:reader-property name="header" value="true" />
+ 				<!-- Boolean that defines if empty lines are ignored -->
+ 				<dw:reader-property name="ignoreEmptyLine" value="false" />
+ 				<!-- Defines that defines what cell to start reading from. In this case Column A is ignored, and all rows above 9 -->
+ 				<dw:reader-property name="tableOffset" value="B9" />
+ 			</dw:input-payload>
+ 			<dw:set-payload>
+                <![CDATA[
+                    %dw 1.0
+                    %output application/java
+                    ---
+                    // Your transformation script goes here
+                ]]>
+            </dw:set-payload>
+     </dw:transform-message>
+----
+
+或者通过Transform Message组件的UI：
+
+image:dataweave-formats-excell-reader.png[]
+
+
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+
+
+编写器属性。=== 
+
+在定义类型为excel的输出时，可以添加一些可选参数以添加到输出指令以自定义数据的解析方式：
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+|标题 |  bool  |  true  |	定义excel表是否包含标题。如果没有标题，则使用列名称。 （A，B，C ...）
+| ignoreEmptyLine 	|  bool  |  true  | 定义是否忽略空行
+| tableOffset  |  string  |  A1  |	表中第一个单元格的位置
+|=======================
+
+所有这些参数都是可选的。例如，excel输出指令可能如下所示：
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%output application/xlsx header=true
+---------------------------------------------------------------------
+
+=== 定义元数据类型
+
+在Transform Message组件中，可以通过以下方法定义一个excel类型：
+
+* 通过图形编辑器，您可以手动设置每个字段
+
++
+image:dataweave-formats-excel-metadata.png[]
+
+
+
+[TIP]
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+
+==  XML
+
+典范模型=== 
+
+XML数据结构映射到可能包含其他对象作为其键的值的DataWeave对象。支持重复密钥。例如：
+
+。输入
+[source,xml, linenums]
+----
+<users>
+  <company>MuleSoft</company>
+  <user name="Leandro" lastName="Shokida"/>
+  <user name="Mariano" lastName="Achaval"/>
+</users>
+----
+
+.DataWeave表示
+[source,dataweave,linenums]
+----
+{
+  users: {
+    company: "MuleSoft",
+    user @(name: "Leandro",lastName: "Shokida"): "",
+    user @(name: "Mariano",lastName: "Achaval"): ""
+  }
+}
+----
+
+
+=== 阅读器属性
+
+
+定义XML类型的输入时，可以在Mule项目的XML定义中添加一些可选参数，以定制数据解析的方式。
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+| `optimizeFor` | 字符串 | 速度 | 指定读者使用的策略。可能值=内存/速度
+| `nullValueOn` |字符串 | '空' |如果空白或空白文本的标签应该被读为空。
+| `indexedReader` |布尔 | 真 | 选择使用哪种阅读器模式。索引读取器速度更快，但占用更大的内存，而未索引的读取器速度更慢，但占用的内存更少
+| `maxEntityCount` |整数 |  1  | 限制XML代码中可以引用实体的次数。这包含在内以防止 link:https://en.wikipedia.org/wiki/Billion_laughs[拒绝服务攻击]。
+| `externalEntities` |布尔值 |  false  | 定义对XML外部文件中定义的实体的引用是否被接受为有效。建议您也避免使用 link:https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Processing[安全原因]。
+|=======================
+
+
+
+这些属性可以通过你的Mule项目的XML设置：
+
+[source,xml,linenums]
+----
+<dw:transform-message metadata:id="33a08359-5085-47d3-aa5f-c7dd98bb9c61"
+  doc:name="Transform Message">
+    <dw:input-payload>
+      <!-- specifies the strategy to be used by the reader -->
+      <dw:reader-property name="optimizeFor" value="speed" />
+      <!-- If a tag with empty or blank text should be read as null. -->
+      <dw:reader-property name="nullValueOn" value="empty" />
+    </dw:input-payload>
+    <dw:set-payload>
+      <![CDATA[
+          %dw 1.0
+          output application/xml
+          ---
+          // Your transformation script goes here
+      ]]>
+    </dw:set-payload>
+</dw:transform-message>
+----
+
+或者通过Transform Message组件的UI：
+
+image:dataweave-formats-6e5e4.png[]
+
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+
+编写器属性。=== 
+
+定义XML类型的输出时，可以将一些可选参数添加到输出指令中，以定制数据解析的方式：
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+| `indent` | 布尔值 |  true  | 定义XML代码是为了更好的可读性而缩进，还是将其压缩为单行
+定义一个空的XML子元素显示为单个自闭标签或带有开口和关闭标签。值`empty`将其设置为输出自闭标签。
+| `encoding` |字符串 |  UTF-8  |要用于输出的字符集
+| `bufferSize` | 编号 |  153600  | 缓冲区编写器的大小
+| `inlineCloseOn`  | 字符串 |  | 当作者应使用行内关闭标记时。可能的值= `empty` / `none`
+| `skipNullOn` | 字符串 |  | 可能的值= `elements` / `attributes` / `everywhere`。请参阅<<Skip Null On>>
+| `writeDeclaration` | 布尔 |  true  | 定义XML声明是否将包含在第一行（自从Mule 3.8.4开始可用）
+|=======================
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%output application/xml indent=false, skipNullOn="attributes"
+---------------------------------------------------------------------
+
+`inlineCloseOn`参数定义输出结构是否如此（默认情况下）：
+
+[source,xml,linenums]
+----
+<someXml>
+  <parentElement>
+    <emptyElement1></emptyElement1>
+    <emptyElement2></emptyElement2>
+    <emptyElement3></emptyElement3>
+  </parentElement>
+</someXml>
+----
+
+或者像这样（设置值为"empty"）：
+
+[source,xml,linenums]
+----
+<payload>
+  <someXml>
+    <parentElement>
+      <emptyElement1/>
+      <emptyElement2/>
+      <emptyElement3/>
+    </parentElement>
+  </someXml>
+</payload>
+----
+
+==== 跳过空
+
+您可以指定变换是否生成包含具有"null"值字段的出站邮件，或者是否完全忽略这些字段。这可以通过名为*skipNullOn*的输出指令中的属性来设置，该指令可以设置为三个不同的值：*elements*，*attributes*或*everywhere*。
+
+当设置为：
+*  *elements*：具有空值的键：值对将被忽略。
+*  *attributes*：跳过一个空值的XML属性。
+*  *everywhere*：将此规则应用于元素和属性。
+
+=== 定义元数据类型
+
+在Transform Message组件中，您可以通过以下方法定义XML类型：
+
+* 通过提供示例文件
+* 通过指向一个模式文件
+
+[TIP]
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+=== 自定义类型
+
+==== ：CDATA
+
+XML定义了一个名为：cdata的自定义类型，它从字符串扩展并用于标识CDATA XML块。
+它可以用来告诉编写者将内容包装到CDATA中，或者检查输入字符串是否到达CDATA块内。 `:cdata`从类型`:string`继承。
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+{
+  users:
+  {
+    user : "Mariano" as :cdata,
+    age : 31 as :cdata
+  }
+}
+----------------------------------------------------------------------
+
+.OUTPUT
+[source,xml,linenums]
+----------------------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<users>
+  <user><![CDATA[Mariano]]></user>
+  <age><![CDATA[31]]></age>
+</users>
+----------------------------------------------------------------------
+
+
+
+==  JSON
+
+典范模型=== 
+
+JSON数据结构以直接的方式映射到DataWeave数据结构，因为它们有许多相似之处。
+
+
+编写器属性。=== 
+
+定义JSON类型的输出时，可以将一些可选参数添加到输出指令中，以定制数据解析的方式：
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+| `indent` | 布尔值 |  true  | 定义JSON代码是为了更好的可读性而缩进的，还是将其压缩为单行
+| `encoding` | 字符串 |  UTF-8  |要用于输出的字符集
+| `bufferSize` | 编号 |  153600  | 缓冲区编写器的大小
+| `inlineCloseOn`  | 字符串 |  | 当作者应使用行内关闭标记时。可能的值=空/无
+| `skipNullOn` | 字符串 |  | 可能的值= `elements` / `attributes` / `everywhere`。请参阅<<Skip Null On>>
+| `duplicateKeyAsArray` | 布尔值 |  false  |  JSON语言不允许重复的键与一个相同的父项相同，这通常会引发异常。如果设置为true，则输出包含一个指向包含分配给它的所有值的数组的单个键。
+|=======================
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%output application/json indent=false, skipNullOn="arrays"
+---------------------------------------------------------------------
+
+==== 跳过空
+
+您可以指定是否生成包含具有"null"值字段的出站邮件，或者是否完全忽略这些字段。这可以通过名为*skipNullOn*的输出指令中的属性来设置，该指令可以设置为三个不同的值：*elements*，*attributes*或*everywhere*。
+
+当设置为：
+*  *elements*：具有空值的键：值对将被忽略。
+*  *attributes*：跳过一个空值的XML属性。
+*  *everywhere*：将此规则应用于元素和属性。
+
+
+=== 定义元数据类型
+
+在Transform Message组件中，您可以通过以下方法定义JSON类型：
+
+* 通过提供示例文件
+* 通过指向一个模式文件
+
+[TIP]
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+
+
+
+
+== 平面文件
+
+
+=== 阅读器属性
+
+
+定义Flat File类型的输入时，可以在Mule项目的XML定义中添加一些可选参数，以定制数据解析的方式。
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+| `schemaPath` | 字符串 |  | 用于解析输入的模式文件本地磁盘中的位置。 Schema必须有*.ESL*扩展名。
+| `structureIdent` |字符串 |   | 模式文件可能定义了多个不同的结构，该字段选择要使用的结构。如果模式仅定义了一个，则还需要通过此字段明确选择该模式。
+
+| `missingValues` | 字符串 | 空格a | （自3.8.1开始）输入数据中缺少值的表示方式：
+
+*  *none*：将所有数据视为实际值
+*  *spaces*：将只包含空格的字段解释为缺失值
+*  *zeroes*：将只包含'0'字符的数字字段和仅包含空格的字符字段解释为缺失值
+*  *nulls*：将只包含0个字节的字段解释为缺失值
+
+|  `recordParsing`  | 字符串 | 严格限定行/记录之间的| 间隔：
+
+*  *strict*：预计在每条记录的末尾处出现换行符
+*  *lenient*：使用换行符，但记录可能比模式指定的更短或更长
+*  *noTerminator*：表示记录彼此无间隔地相互关联
+|=======================
+
+
+
+这些属性可以通过你的Mule项目的XML设置：
+
+[source, xml, linenums]
+----
+<dw:input-payload mimeType="text/plain" >
+    <dw:reader-property name="schemaPath" value="myschema.esl"/>
+    <dw:reader-property name="structureIdent" value="structure1"/>
+</dw:input-payload>
+----
+
+或者通过Transform Message组件的UI
+
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+[NOTE]
+类型为`Binary`或`Packed`的模式不允许检测换行符，因此将`recordParsing`设置为"lenient"`将只允许处理长记录，但不能短的。这些模式目前仅适用于某些单字节字符编码（所以不适用于UTF-8或任何多字节格式）。
+
+
+编写器属性。=== 
+
+定义类型平面文件的输出时，可以将一些可选参数添加到输出指令中，以定制数据的写入方式：
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+| `schemaPath`  |字符串 |  |要使用的模式文件所在的路径
+| `structureIdent`  |字符串 |  |如果架构文件定义了多种格式，请指出要使用哪种格式
+| `encoding`  |字符串 |  UTF-8  | 输出字符编码
+| `missingValues` | 字符串 | 空格a | 如何表示从提供的映射中缺少的可选值：
+
+*  *spaces*：用空格填充该字段
+*  *nulls*：使用0个字节
+
+| `recordTerminator` | 字符串 | 每个行/记录的系统 | 终止标准Java行终止。在Mule运行时版本3.8.4及更早的版本中，只有在存在多条记录时才将其用作分隔符。可能的值：`lf, cr, crlf, none`。值直接转换为字符代码（`none`不会在每条记录上终止）。
+| `trimValues`  |布尔值 | `false`  |通过截断尾部字符来修整长度超过字段长度的字符串值
+
+|=======================
+
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output text/plain schemaPath="src/main/resources/test-data/QBReqRsp.esl", structureIdent=“QBResponse"
+---
+payload
+----
+
+[TIP]
+====
+有关如何创建所需模式文件的说明和示例，请参阅 link:dataweave-flat-file-schemas[DataWeave平面文件或EDI模式]。
+====
+
+
+=== 定义元数据类型
+
+在Transform Message组件中，您可以通过以下方法定义Flat File类型：
+
+* 通过指向一个模式文件
+
+[TIP]
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+
+
+
+
+
+== 固定宽度
+
+固定宽度类型在技术上被认为是一种<<Flat File>>格式，但是当选择此选项时，“转换消息”组件将为您提供更适合此格式需求的设置。
+
+
+=== 阅读器属性
+
+
+定义固定宽度类型的输入时，可以在Mule项目的XML定义中添加一些可选参数，以定制数据解析的方式。
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+| `schemaPath` | 字符串 |  | 用于解析输入的模式文件本地磁盘中的位置。 Schema必须有*.FFD*扩展名。
+| `missingValues` | 字符串 | 空格a | 在输入数据中如何表示缺失值：
+
+*  *none*：将所有数据视为实际值
+*  *spaces*：将只包含空格的字段解释为缺失值
+*  *zeroes*：将只包含'0'字符的数字字段和仅包含空格的字符字段解释为缺失值
+*  *nulls*：将只包含0个字节的字段解释为缺失值
+
+|  `recordParsing`  | 字符串 | 严格限定行/记录之间的| 间隔：
+
+*  *strict*：预计在每条记录的末尾处出现换行符
+*  *lenient*：使用换行符，但记录可能比模式指定的更短或更长
+*  *noTerminator*：表示记录彼此无间隔地相互关联
+|=======================
+
+
+
+这些属性可以通过你的Mule项目的XML设置：
+
+[source, xml, linenums]
+----
+<dw:input-payload mimeType="text/plain" >
+    <dw:reader-property name="schemaPath" value="myschema.ffd"/>
+    <dw:reader-property name="structureIdent" value="structure1"/>
+</dw:input-payload>
+----
+
+或者通过Transform Message组件的UI
+
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+编写器属性。=== 
+
+定义类型固定宽度的输出时，您可以添加一些可选参数以添加到输出指令以自定义数据的写入方式：
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+| `schemaPath`  |字符串 |  |要使用的模式文件所在的路径
+| `encoding`  |字符串 |  UTF-8  | 输出字符编码
+| `missingValues` |字符串 | 空格a | 如何表示从提供的映射中缺少的可选值：
+
+*  *spaces*：用空格填充该字段
+*  *nulls*：使用0个字节
+
+| `recordTerminator` | 字符串 | 每个行/记录的系统 | 终止标准Java行终止。在Mule运行时版本3.8.4及更早的版本中，只有在存在多条记录时才将其用作分隔符。可能的值：`lf, cr, crlf, none`。值直接转换为字符代码（`none`不会在每条记录上终止）。
+| `trimValues`  |布尔值 | `false`  |通过截断尾部字符来修整长度超过字段长度的字符串值
+|=======================
+
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output text/plain schemaPath="src/main/resources/test-data/QBReqRsp.esl", encoding="UTF-8"
+---
+payload
+----
+
+[TIP]
+====
+有关如何创建所需模式文件的说明和示例，请参阅 link:dataweave-flat-file-schemas[DataWeave平面文件或EDI模式]。
+====
+
+
+
+=== 定义元数据类型
+
+在变换消息组件中，可以通过以下方法定义固定宽度类型：
+
+* 通过提供示例文件
+* 指向<<flat file>>模式文件
+* 通过图形编辑器，您可以手动设置每个字段
+
++
+image::dataweave-formats-27b3c.png[]
+
+[TIP]
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+
+
+==  Cobol Copybook
+
+Copybook类型在技术上被认为是一种<<Flat File>>格式，但是当选择此选项时，“转换消息”组件将为您提供更适合此格式需求的设置。
+
+[[cobol_metadata]]
+=== 导入Copybook定义
+
+要导入副本定义：
+
+. 在变换组件中的输入负载上单击定义元数据，然后选择设置元数据打开设置元数据类型对话框。
++
+您需要创建一个元数据类型来导入副本定义。
++
+. 为您的字帖元数据提供一个名称，例如`copybook`。
+. 选择Copybook类型。
+. 导入您的字帖定义文件。
+. 点击选择。
++
+。导入一本抄本定义文件
+image:copybook_import.png[导入本本定义]
+
+例如，假设您有一个副本定义文件（`mailing-record.cpy`），如下所示：
+
+。示例：Copybook Definition
+----
+01  MAILING-RECORD.
+    05  COMPANY-NAME            PIC X(30).
+    05  CONTACTS.
+        10  PRESIDENT.
+            15  LAST-NAME       PIC X(15).
+            15  FIRST-NAME      PIC X(8).
+        10  VP-MARKETING.
+            15  LAST-NAME       PIC X(15).
+            15  FIRST-NAME      PIC X(8).
+        10  ALTERNATE-CONTACT.
+            15  TITLE           PIC X(10).
+            15  LAST-NAME       PIC X(15).
+            15  FIRST-NAME      PIC X(8).
+    05  ADDRESS                 PIC X(15).
+    05  CITY                    PIC X(15).
+    05  STATE                   PIC XX.
+    05  ZIP                     PIC 9(5).
+----
+注意：Copybook定义必须始终以`01`条目开头。为您的副本中的每个`01`定义生成一个单独的记录类型（必须至少有一个01副本的定义可用，所以如果没有副本，则在副本的开头添加一个任意名称）。如果副本文件中有多个`01`个定义，您可以从下拉列表中选择要在转换中使用的定义。
+
+当您导入架构时，Transform组件会将副本文件转换为它存储在您的Mule项目的`src/main/resources`文件夹中的平面文件架构。在平面文件格式中，上面的副本定义如下所示：
+
+。示例：平面文件架构
+----
+form: COPYBOOK
+id: 'MAILING-RECORD'
+values:
+- { name: 'COMPANY-NAME', type: String, length: 30 }
+- name: 'CONTACTS'
+  values:
+  - name: 'PRESIDENT'
+    values:
+    - { name: 'LAST-NAME', type: String, length: 15 }
+    - { name: 'FIRST-NAME', type: String, length: 8 }
+  - name: 'VP-MARKETING'
+    values:
+    - { name: 'LAST-NAME', type: String, length: 15 }
+    - { name: 'FIRST-NAME', type: String, length: 8 }
+  - name: 'ALTERNATE-CONTACT'
+    values:
+    - { name: 'TITLE', type: String, length: 10 }
+    - { name: 'LAST-NAME', type: String, length: 15 }
+    - { name: 'FIRST-NAME', type: String, length: 8 }
+- { name: 'ADDRESS', type: String, length: 15 }
+- { name: 'CITY', type: String, length: 15 }
+- { name: 'STATE', type: String, length: 2 }
+- { name: 'ZIP', type: Integer, length: 5, format: { justify: ZEROES, sign: UNSIGNED } }
+----
+
+导入模式后，您可以使用`schemaPath`属性通过`output`指令引用平面文件。例如：`output application/flatfile schemaPath="src/main/resources/mailing-record.ffd"`
+
+=== 阅读器属性
+
+在定义类型Copybook的输入时，可以在Mule项目的XML定义中添加一些可选参数，以定制数据解析的方式。
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+| `schemaPath` | 字符串 |  | 用于解析输入的架构文件本地磁盘中的位置
+| `segmentIdent` |字符串 |   | 如果模式文件定义了多个不同的结构，则此字段选择要使用的结构
+| `missingValues` | 字符串 | 空值 | 在输入数据中如何表示缺失值：
+
+*  *none*：将所有数据视为实际值
+*  *spaces*：将只包含空格的字段解释为缺失值
+*  *zeroes*：将只包含'0'字符的数字字段和仅包含空格的字符字段解释为缺失值
+*  *nulls*：将只包含0个字节的字段解释为缺失值
+
+|  `recordParsing`  | 字符串 | 严格限定行/记录之间的| 间隔：
+
+*  *strict*：预计在每条记录的末尾处出现换行符
+*  *lenient*：使用换行符，但记录可能比模式指定的更短或更长
+*  *noTerminator*：表示记录彼此无间隔地相互关联
+|=======================
+
+
+
+这些属性可以通过你的Mule项目的XML设置：
+
+[source, xml, linenums]
+----
+<dw:input-payload mimeType="text/plain" >
+    <dw:reader-property name="schemaPath" value="myschema.ffs"/>
+    <dw:reader-property name="segmentIdent" value="structure1"/>
+</dw:input-payload>
+----
+
+或者通过Transform Message组件的UI
+
+请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+[NOTE]
+类型为`Binary`或`Packed`的模式不允许检测换行符，因此将`recordParsing`设置为"lenient"`将只允许处理长记录，但不能短的。这些模式目前仅适用于某些单字节字符编码（所以不适用于UTF-8或任何多字节格式）。
+
+编写器属性。=== 
+
+定义类型副本的输出时，可以将一些可选参数添加到输出指令中，以定制数据的写入方式：
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+| `schemaPath`  |字符串 |  |要使用的模式文件所在的路径
+| `segmentIdent`  |字符串 |  |如果架构文件定义了多种格式，请指出要使用哪种格式
+| `encoding`  |字符串 |  UTF-8  | 输出字符编码
+
+| `missingValues` | 字符串 | 空值 | 如何表示从提供的映射中缺少的可选值：
+
+*  *spaces*：用空格填充该字段
+*  *nulls*：使用0个字节
+
+| `recordTerminator` | 字符串 | 每个行/记录的系统 | 终止标准Java行终止。在Mule运行时版本3.8.4及更早的版本中，只有在存在多条记录时才将其用作分隔符。可能的值：`lf, cr, crlf, none`。值直接转换为字符代码（`none`不会在每条记录上终止）。
+| `trimValues`  |布尔值 | `false`  |通过截断尾部字符来修整长度超过字段长度的字符串值
+|=======================
+
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output text/plain schemaPath="src/main/resources/test-data/QBReqRsp.esl", structureIdent=“QBResponse"
+---
+payload
+----
+
+[TIP]
+====
+有关如何创建所需模式文件的说明和示例，请参阅 link:dataweave-flat-file-schemas[DataWeave平面文件或EDI模式]。
+====
+
+
+=== 定义元数据类型
+
+在Transform Message组件中，您可以通过以下方法定义Cobol Copybook类型：
+
+* 指向<<flat file>>模式文件
+
+
+[TIP]
+有关如何编写所需模式的更多详细说明，请参阅 link:dataweave-flat-file-schemas[平面文件架构]。
+
+
+== 另请参阅
+
+*  link:dataweave-quickstart[DataWeave快速入门指南]
+*  link:/anypoint-studio/v/6/transform-message-component-concept-studio[关于变换消息组件]
+*  link:dataweave-language-introduction[DataWeave语言介绍]
+*  link:dataweave-operators[DataWeave操作符]
+*  link:dataweave-types[DataWeave类型]
+*  link:dataweave-memory-management[DataWeave内存管理]
+*  link:dataweave-selectors[DataWeave选择器]
+*  link:dataweave-examples[DataWeave示例]
+*  link:mel-dataweave-functions[MEL DataWeave函数]

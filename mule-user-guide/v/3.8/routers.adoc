@@ -1,0 +1,446 @@
+= 路由器
+:keywords: routers, flows, processor chain, async, aggregator, resequencer
+
+Anypoint Studio中的**Routers (Flow Controls**将消息路由到Mule流中的各个目的地。某些路由器在路由发生之前会合并逻辑来分析和可能转换消息。例如，各种流量控制可以：
+
+* 将消息拆分为多个段，然后将每个段路由到不同的处理器
+* 在将几条消息发送到流中的下一个处理器之前，将它们合并成一条消息
+* 在将消息发送给下一个处理器之前重新排序消息列表
+* 评估一条消息，以确定应该将哪个处理器路由到下一个处理器
+* 将相同的消息广播到多个处理器
+
+单击下面“参考”表中的链接，了解有关特定消息处理器的详细信息。
+
+== 路由器参考表
+
+[%header%autowidth.spread]
+|===
+|消息处理器 |说明
+| <<All>>（弃用） |将消息广播到多个目标
+| link:/apikit[APIkit路由器] | 根据API link:https://raml.org[RAML文件]，根据资源和方法将到达的呼叫路由到相应的流程。请参阅 link:/apikit[APIkit文档]。
+| <<Async>>  |在单独的线程中运行消息处理器链
+| <<Choice>>  |根据指定条件评估消息，然后将其发送到符合这些条件的第一个消息处理器。
+| <<Collection Aggregator>>  |检查组中每个消息附带的组标记（称为Correlation ID），以创建共享相同ID的消息的集合。
+| <<Collection Splitter>>  |接受一组消息（或消息的一部分），将它们拆分成单独的消息，然后依次将每个新消息发送到下一条消息
+流程中的处理器。
+| <<Custom Aggregator>>  |允许您编写自己的Java代码来确定消息的构造和发送方式。
+| <<Custom Processor>>  |自定义编写的消息处理器
+| <<First Successful>>  |将消息发送到处理器目标的"circular"列表中的下一个消息处理器。
+| <<Idempotent Message Filter>>  |通过消息ID过滤掉重复的消息
+| <<Idempotent Secure Hash Message Filter>>  |通过邮件内容过滤掉重复邮件
+| <<Message Chunk Aggregator>>  |检查集合中每个消息的组标签（相关标识），选择组标签与指定值相匹配的所有消息，然后将这些消息组合成一条消息然后将其发送到应用程序流中的下一个消息处理器。这对重新组装已经作为多个消息接收的长消息的段是特别有用的，每个消息由由消息块分离器创建并发送的固定长度段组成。
+| <<Message Chunk Splitter>>  |将消息分段为指定长度的段，然后将每个段按顺序发送到流中的下一个消息处理器。当消息接收者不能接受超过指定长度的消息时，这是特别有用的。
+| <<Message Filter>>  |使用过滤器过滤消息
+| <<Processor Chain>>  |从多个目标创建一个消息链
+| <<Recipient List>>  |向多个连接器发送消息
+| <<Request Reply>>  |接收异步处理消息并接受不同通道上的异步响应
+| <<Resequencer>>  |接受一组消息，然后使用每个消息的序列号对这些消息进行重新排序。然后它将消息（按其新序列的顺序）发送到应用程序流中的下一个消息处理器。
+| <<Round Robin>>  |遍历一个包含两个或更多消息处理器的列表，将连续的消息发送到列表中的下一个消息处理器。当它到达列表的末尾时，它跳转到列表的开头并重新开始迭代。
+| link:/mule-user-guide/v/3.8/until-successful-scope[直到成功]  |重复尝试处理消息直至成功
+| link:/mule-user-guide/v/3.8/scatter-gather[分散收集]  |同时向多个目标发送请求消息。它收集来自所有路由的响应，并将它们汇总为一条消息。
+| link:/apikit/apikit-for-soap[SOAP路由器] | 根据WSDL文件，它根据资源和方法将到达的呼叫路由到相应的流程。请参阅 link:/apikit/apikit-for-soap[用于SOAP文档的APIkit]。
+| <<Splitter>>  |评估一个表达式，它决定了它如何将消息分成两个或更多部分。然后，分配器将这些消息部分依次发送到应用程序流中的下一个消息处理器。
+| <<WireTap>>  |将消息发送到额外的消息处理器以及链中的下一个消息处理器
+|===
+
+== 创建一个自定义路由器
+通常，您使用过滤器在Mule中实现自定义路由，但有时您可能需要实现自定义路由器。
+
+有关更多详情，请参阅 link:/mule-user-guide/v/3.8/creating-custom-routers[创建自定义路由器]。
+
+== 所有
+*_Deprecated_*
+
+全部消息处理器可用于将相同的消息发送给多个目标。这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<all>
+  <jms:endpoint queue="test.queue" transformer-refs="StringToJmsMessage"/>
+  <http:endpoint host="10.192.111.11" transformer-refs="StringToHttpClientRequest"/>
+  <tcp:endpoint host="10.192.111.12" transformer-refs="StringToByteArray"/>
+</all>
+----
+
+如果任何指定的目标是配置了过滤器的连接器，则只有该过滤器接受的消息才会发送到该连接器。
+
+目标返回的所有消息（如果有的话）都聚合在一起，并形成来自该处理器的响应。
+
+== 异步
+
+异步消息处理器在另一个线程中运行消息处理器链，可选地为要使用的线程指定线程配置文件。消息处理器配置如下：
+
+[source, xml, linenums]
+----
+<async>
+  <append-string-transformer message="-async" />
+  <vm:outbound-endpoint path="async-async-out"
+                        exchange-pattern="one-way" />
+  <threading-profile doThreading="true" maxThreadsActive="16"/>
+</async>
+----
+
+这将转换当前消息并使用包含多达16个并发线程的线程池将其发送到指定的连接器。
+
+== 选择
+
+选择消息处理器将消息发送到匹配的第一个消息处理器。如果没有匹配且消息处理器已配置为"otherwise"，则会在该消息中发送消息。如果没有匹配，并且没有配置其他消息处理器，则会引发异常。
+
+选项配置如下：
+
+[source, xml, linenums]
+----
+<choice>
+  <when expression="payload=='foo'" evaluator="groovy">
+    <append-string-transformer message=" Hello foo" />
+  </when>
+  <when expression="payload=='bar'" evaluator="groovy">
+    <append-string-transformer message=" Hello bar" />
+  </when>
+  <otherwise>
+    <append-string-transformer message=" Hello ?" />
+  </otherwise>
+</choice>
+----
+
+如果消息有效载荷为"foo"或"bar"，则运行相应的变压器。否则，运行"otherwise"下指定的转换器。
+
+link:/mule-user-guide/v/3.8/choice-flow-control-reference[阅读更多]
+
+== 收集分配器
+
+集合分割器对有效负载为集合类型的消息起作用。它将集合的每个成员作为单独的消息发送到下一个消息处理器。您可以指定属性`enableCorrelation`来确定是否在每条消息上设置了关联ID。
+
+Collection Splitter的配置如下：
+
+[source, xml]
+----
+<collection-splitter enableCorrelation="IF_NOT_SET"/>
+----
+
+== 收集聚合器
+
+Collection Aggregator在转发它们之前对具有匹配组ID的传入消息进行分组。组ID可以来自相关ID或将消息链接在一起的另一个属性，通常在使用收集分离器分割消息时首先分配此ID。
+
+您可以指定`timeout`属性来确定路由器等待邮件完成组等待的时间（以毫秒为单位）。默认情况下，如果预期消息在`timeout`时间内未收到，则会抛出异常并且不会转发消息。您还可以将`failOnTimeout`属性设置为`false`，以防止抛出异常并简单地转发到目前为止收到的任何消息。
+
+Collection Aggregator的配置如下：
+
+[source, xml]
+----
+<collection-aggregator timeout="6000" failOnTimeout="false"/>
+----
+
+Collection Aggregator关注到达它的mule消息中的以下出站属性：
+
+*  MULE_CORRELATION_ID定义了消息所属批次的ID，因此它知道要分组的消息
+
+*  MULE_CORRELATION_GROUP_SIZE定义批次中的消息数量，以便知道它何时具有完整集合
+
+*  MULE_CORRELATION_SEQUENCE是可选的，如果您想保留原始订单
+
+[NOTE]
+====
+这个Aggregator和其他人使用两个对象存储，一个缓存到达时的消息，另一个跟踪已完成的集合。您可以使用默认的内置对象库，也可以引用您自己构建的 link:/mule-user-guide/v/3.8/mule-object-stores[对象商店]。为此，请将相应的属性添加到XML中的聚合器元素中，并指向要使用的对象存储的位置。
+
+* 'event-groups-object-store-ref'处理缓冲区。此对象商店*must be partitionable*
+* 'processed-groups-object-store-ref'记录完成的集合。此对象库必须设置*max capacity*和*expiration interval*以防止其溢出。
+====
+
+
+== 自定义聚合器
+
+自定义聚合器是聚合消息的用户编写类的实例。该类必须实现接口 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/processor/MessageProcessor.html[MessageProcessor的]。通常，对它进行子类 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/routing/AbstractAggregator.html[AbstractAggregator]是很有用的，它提供了一个线程安全的聚合器实现的框架，只需要特定的关联逻辑。与Mule中的大多数自定义对象一样，可以使用完全指定的类名称或者对Spring bean的引用来配置它。它也可以使用<<Collection Aggregator>>中描述的相同`timeout`和`failOnTimeout`属性进行配置。
+
+自定义聚合器的配置如下：
+
+[source, xml, linenums]
+----
+<custom-aggregator failOnTimeout="true" class="com.mycompany.utils.PurchaseOrderAggregator"/>
+----
+
+[NOTE]
+====
+这个Aggregator和其他人使用两个对象存储，一个缓存到达时的消息，另一个跟踪已完成的集合。您可以使用默认的内置对象库，也可以引用您自己构建的 link:/mule-user-guide/v/3.8/mule-object-stores[对象商店]。为此，请将相应的属性添加到XML中的聚合器元素中，并指向要使用的对象存储的位置。
+
+* 'event-groups-object-store-ref'处理缓冲区。此对象商店*must be partitionable*
+* 'processed-groups-object-store-ref'记录完成的集合。此对象库必须设置*max capacity*和*expiration interval*以防止其溢出。
+====
+
+自定义处理器。== 
+
+自定义处理器是充当消息处理器的用户编写类的实例。该类必须实现接口 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/processor/MessageProcessor.html[MessageProcessor的]。与Mule中的大多数自定义对象一样，可以使用完全指定的类名称或者对Spring bean的引用来配置它。
+
+自定义处理器的配置如下：
+
+[source, xml]
+----
+<processor ref="HighSpeedRouter"/>
+----
+
+要么
+
+[source, xml]
+----
+<custom-processor class="com.mycompany.utils.HighSpeedRouter"/>
+----
+
+== 首次成功
+
+第一个成功的消息处理器迭代其子消息处理器列表，将接收到的消息路由到它们中的每一个，直到成功处理消息。如果没有成功，则抛出异常。
+
+成功被定义为：
+
+* 如果子消息处理器发生异常，则这是失败。
+
+* 否则：
+
+** 如果子消息处理器返回包含异常有效负载的消息，则这是失败。
+
+** 如果子消息处理器返回的消息不包含异常有效内容，则这是成功的。
+
+** 如果子消息处理器没有返回消息（例如，是单向连接器），则这是成功的。
+
+这个消息处理器被添加到Mule 3.0.1中。
+
+[source, xml, linenums]
+----
+<first-successful>
+    <http:request config-ref="Config_port90" path="weather-forecast" method="GET" doc:name="HTTP"/>
+    <http:request config-ref="Config_port91" path="weather-forecast" method="GET" doc:name="HTTP"/>
+    <http:request config-ref="Config_port92" path="weather-forecast" method="GET" doc:name="HTTP"/>
+    <vm:outbound-endpoint path="dead-letter-queue" />
+</first-successful>
+----
+
+*From 3.1.0*您可以通过指定_'failureExpression'_来进一步自定义此路由器的行为，您可以使用 link:/mule-user-guide/v/3.8/non-mel-expressions-configuration-reference[Mule表达式]来定义故障。 _failureExpression_属性配置如下：
+
+[source, xml, linenums]
+----
+<first-successful failureExpression="exception-type:java.net.SocketTimeoutException">
+    <http:request config-ref="Config_port90" path="weather-forecast" method="GET" doc:name="HTTP"/>
+    <http:request config-ref="Config_port91" path="weather-forecast" method="GET" doc:name="HTTP"/>
+    <http:request config-ref="Config_port92" path="weather-forecast" method="GET" doc:name="HTTP"/>
+    <vm:outbound-endpoint path="dead-letter-queue" />
+</first-successful>
+----
+
+在上面的例子中，正在使用失败表达式来更准确地定义将被视为失败的异常类型，或者您可以使用任何其他可以与表达式过滤器一起使用的Mule表达式，只要记住表达式表示失败而不是成功。
+
+== 幂等消息过滤器
+
+幂等过滤器检查传入消息的唯一消息ID，以确保只有唯一消息被流接收。 ID可以使用在`idExpression`属性中定义的表达式从消息中生成。默认情况下，使用的表达式是`#[message:id]`，这意味着底层连接器必须支持唯一的消息ID才能使其工作。否则，会抛出`UniqueIdNotSupportedException`。
+
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/routing/IdempotentMessageFilter.html[org.mule.routers.IdempotentMessageFilter]提供了一个简单的幂等过滤器实现。默认实现使用简单的基于文件的机制来存储消息ID，但您可以扩展此类以将ID存储在数据库中，而不是通过实现 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/store/ObjectStore.html[的ObjectStore]接口。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<idempotent-message-filter idExpression="#[message:id]-#[header:foo]">
+    <simple-text-file-store directory="./idempotent"/>
+ </idempotent-message-filter>
+----
+
+可选的`idExpression`属性确定应该用作唯一消息ID的内容。如果不使用此属性，则默认使用`#[message:id]`。
+
+上面显示的嵌套元素配置接收到的消息ID的存储位置。在这个例子中，它们被存储到磁盘，以便路由器可以记住重新启动之间的状态。如果没有指定`directory`属性，则使用默认值`${mule.working.dir}/objectstore`，其中`mule.working.dir`是为Mule实例配置的工作目录。
+
+如果未配置存储，则默认使用InMemoryObjectStore。
+
+== 幂等安全哈希消息过滤器
+
+该过滤器使用消息摘要算法计算消息本身的散列，以确保只有唯一的消息被流接收。这种方法提供了一个无限小的碰撞几率，并可用于过滤消息重复。请注意，哈希是在表示消息的整个字节数组上计算的，所以任何前导或尾随空格或无关字节（如填充）都可以为相同的语义消息内容生成不同的哈希值。因此，您应该确保消息不包含无关的字节。当消息不支持唯一标识符时，此路由器很有用。
+
+此过滤器的配置如下所示：
+
+[source, xml, linenums]
+----
+<idempotent-secure-hash-filter messageDigestAlgorithm="SHA26">
+    <simple-text-file-store directory="./idempotent"/>
+</idempotent-secure-hash-filter>
+----
+
+Idempotent安全哈希消息过滤器也使用对象库，它们的配置方式与Idempotent Message Filter相同。可选的`messageDigestAlgorithm`属性决定了将要使用的散列算法。如果未指定此属性，则使用默认算法SHA-256。
+
+== 消息块分离器
+
+消息块分离器允许您将单条消息拆分为多个固定长度的消息，这些消息都将发送到同一个消息处理器。它会根据为路由器配置的messageSize属性将消息拆分为多个较小的块。首先将消息转换为一个字节数组，然后将该数组拆分成块，即可拆分消息。如果消息无法转换为字节数组，则会引发RoutingException。
+
+如果您在使用特定传输时遇到带宽问题（或大小限制），则消息块分离器很有用。
+
+要再次将分块项目重新组合在一起，可以使用<<Message Chunk Aggregator>>。
+
+消息块分离器的配置如下：
+
+[source, xml]
+----
+<message-chunk-splitter messageSize="512"/>
+----
+
+== 消息块聚合器
+
+在诸如<<Message Chunk Splitter>>之类的分离器将消息拆分为多个部分之后，消息块聚合器路由器会将这些部分重新组合为一条消息。聚合器使用消息的关联ID来标识哪些部分属于同一个消息。
+
+Message Chunk Aggregator的配置如下：
+
+[source, xml, linenums]
+----
+<message-chunk-aggregator>
+  <expression-message-info-mapping messageIdExpression="#[header:id]" correlationIdExpression="#[header:correlation]"/>
+</message-chunk-aggregator>
+----
+
+可选的`expression-message-info-mapping`元素允许您使用表达式在消息中标识关联标识。如果未指定此元素，则使用`MuleMessage.getCorrelationId()`。
+
+Message Chunk Aggregator也接受<<Collection Aggregator>>中所述的`timeout`和`failOnTimeout`属性。
+
+[NOTE]
+====
+这个Aggregator和其他人使用两个对象存储，一个缓存到达时的消息，另一个跟踪已完成的集合。您可以使用默认的内置对象库，也可以引用您自己构建的 link:/mule-user-guide/v/3.8/mule-object-stores[对象商店]。为此，请将相应的属性添加到XML中的聚合器元素中，并指向要使用的对象存储的位置。
+
+* 'event-groups-object-store-ref'处理缓冲区。此对象商店*must be partitionable*
+* 'processed-groups-object-store-ref'记录完成的集合。此对象库必须设置*max capacity*和*expiration interval*以防止其溢出。
+====
+
+== 消息过滤器
+
+消息过滤器用于控制是否使用<<Idempotent Secure Hash Message Filter>>处理消息。除了过滤器之外，您还可以配置是否在过滤器不接受消息和可选消息处理器向其发送未接收消息时引发异常。
+
+消息过滤器的配置如下：
+
+[source, xml, linenums]
+----
+<message-filter throwOnUnaccepted="false" onUnaccepted="rejectedMessageLogger">
+  <message-property-filter pattern="Content-Type=text/xml" caseSensitive="false"/>
+</message-filter>
+----
+
+== 处理器链
+
+处理器链是消息处理器的线性链，它按顺序处理消息。处理器链可以配置在消息处理器出现在Mule模式中的任何地方。例如，要允许<<WireTap>>在发送当前消息之前转换它，可以配置以下内容：
+
+[source, xml, linenums]
+----
+<wire-tap>
+  <processor-chain>
+    <append-string-transformer message="tap" />
+    <vm:outbound-endpoint path="wiretap-tap" exchange-pattern="one-way" />
+  </processor-chain>
+</wire-tap>
+----
+
+== 收件人列表
+
+收件人列表消息处理器允许您通过指定一个表达式来向多个连接器发送消息，该表达式在评估时提供连接器列表。这些消息可以选择赋予相关ID，如<<Collection Splitter>>中所示。一个例子是：
+
+[source, xml]
+----
+<recipient-list enableCorrelation="ALWAYS" evaluator="header" expression="myRecipients"/>
+----
+
+本示例查找名为`myRecipients`的消息标题中的连接器列表。
+
+== 请求回复
+
+请求应答消息处理器在一个通道上接收消息，允许后端进程分叉以异步调用其他流，并在另一个通道上接受异步结果。
+
+以下是使用请求应答消息处理器的示例：
+
+[source, xml, linenums]
+----
+<flow name="main">
+    <vm:inbound-endpoint path="input"/>
+    <request-reply storePrefix="mainFlow">
+        <vm:outbound-endpoint path="request"/>
+        <vm:inbound-endpoint path="reply"/>
+    </request-reply>
+    <component class="com.mycompany.OrderProcessor"/>
+</flow>
+ 
+<flow name="handle-request-reply">
+    <vm:inbound-endpoint path="request"/>
+    <component class="come.mycompany.AsyncOrderGenerator"/>
+</flow>
+----
+
+该请求在主流中接收并传递到请求应答路由器，该请求隐式地将MULE_REPLYTO消息属性设置为其入站连接器的URL（vm：// reply），并异步地将消息分派给（单向） vm：//请求连接器，它由handle-request-reply流处理。主要流程然后等待答复。句柄请求回复流将消息传递给AsynchOrderGenerator组件。完成此处理后，消息将发送到vm：// reply（MULE_REPLYTO属性的值）。接收到异步答复并将其发送给OrderProcessor组件以完成订单处理。
+
+在更高级的情况下，您可能不希望将第二个流的响应自动转发到请求 - 回复入站连接器。例如，第二个流可能会触发第三个流的运行，然后生成并发送回复。在这些情况下，您可以使用Message Properties Transformer删除MULE_REPLYTO属性：
+
+[source, xml, linenums]
+----
+<request-reply storePrefix="mainFlow">
+    <vm:outbound-endpoint path="request">
+        <message-properties-transformer scope="outbound">
+            <delete-message-property key="MULE_REPLYTO"/>
+        </message-properties-transformer>
+    </vm:outbound-endpoint>
+    <vm:inbound-endpoint path="reply"/>
+</request-reply>
+----
+
+== 再顺
+
+Resequencer根据其相关序列属性对接收到的一组消息进行排序，并以正确的顺序发布它们。它使用<<Collection Aggregator>>中描述的`timeout`和`failOnTimeout`属性来确定集合中的所有消息何时收到。
+
+Resequencer配置如下：
+
+[source, xml]
+----
+<resequencer timeout="6000" failOnTimeout="false"/>
+----
+
+== 循环
+
+循环消息处理器以循环方式遍历子消息处理器的列表：接收的第一个消息被路由到第一个孩子，第二个消息被路由到第二个孩子，依此类推。将消息发送给每个孩子后，下一个会再次路由到第一个孩子，重新开始迭代。
+
+这个消息处理器被添加到Mule 3.0.1中。
+
+[source, xml, linenums]
+----
+<round-robin>
+    <http:request config-ref="Config_port90" path="weather-forecast" method="GET" doc:name="HTTP"/>
+    <http:request config-ref="Config_port91" path="weather-forecast" method="GET" doc:name="HTTP"/>
+    <http:request config-ref="Config_port92" path="weather-forecast" method="GET" doc:name="HTTP"/>
+</round-robin>
+----
+
+== 分配器
+
+Splitter使用表达式将消息拆分成片段，然后将所有这些片段发送到下一个消息处理器。像其他分配器一样，它可以为消息ID和关联ID选择性地指定消息中的非0默认位置。
+
+分配器的配置如下所示：
+
+[source, xml]
+----
+<splitter expression="#[xpath3('//acme:Trade')]" doc:name="Splitter"/>
+----
+
+这使用包装在MEL表达式中的指定XPath3表达式来查找当前消息中的节点列表，并将它们中的每一个作为单独的消息发送。
+
+link:/mule-user-guide/v/3.8/splitter-flow-control-reference[阅读更多]
+
+== 窃听
+
+WireTap消息处理器允许您将某些消息路由到不同的消息处理器以及链中的下一个消息处理器。例如，要将所有消息复制到特定连接器，请将其配置为WireTap路由处理器上的出站连接器：
+
+[source, xml, linenums]
+----
+<wire-tap>
+    <vm:outbound-endpoint path="tapped.channel"/>
+</wire-tap>
+----
+
+=== 使用WireTap过滤器
+
+WireTap路由处理器在过滤和不过滤都很有用。如果被过滤，它可以用于记录或记录特定的消息或仅复制需要额外处理的消息。如果不使用过滤器，则可以制作所有收到的消息的备份副本。这里的行为与拦截器的行为类似，但拦截器可以通过阻止消息到达组件来更改消息流。 WireTap路由器不能改变消息流，只是按需复制。在此示例中，只有与过滤器表达式匹配的消息被复制到vm连接器。
+
+[source, xml, linenums]
+----
+<wire-tap>
+    <vm:outbound-endpoint path="tapped.channel"/>
+    <wildcard-filter pattern="the quick brown*"/>
+</wire-tap>
+----
+

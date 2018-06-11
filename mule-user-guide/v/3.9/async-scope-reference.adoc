@@ -1,0 +1,272 @@
+= 异步范围参考
+:keywords: async, scopes, studio, anypoint
+
+*async scope*是一个与父消息流同时执行的分支处理块。这种类型的处理块可以用于执行耗时的操作（如打印文件或连接到邮件服务器） - 只要这些操作不需要将响应发送回启动流。换句话说，主流程可以在启动和处理异步范围时继续执行;它不必暂停，直到嵌入异步流程中的最后一个消息处理器完成其任务。
+
+为了便于同时进行分支处理，异步示波器向其自己的处理块中的第一嵌入式消息处理器发送其接收到的消息的一个副本;同时它将消息的另一个副本发送到主流程中的下一个消息处理器（见下文）。
+
+image:Async+scope+schematic.png[异步+范围+示意]
+
+由于它们在不同线程上对消息的副本进行操作，异步范围根据定义不能支持请求 - 响应交换模式。相反，他们必须实施几种支持的单向处理策略之一，详见下面的配置部分。
+
+如果没有为异步作用域配置处理策略，则Mule应用排队异步处理策略。
+
+*<<Complete Example Code>>*
+
+=== 异步范围与异步流程
+
+异步范围与*{{0}}*类似：
+
+* 它与主流程异步处理消息，因此消息在异步作用域中同时处理，而不会暂停主流程线程中的处理
+* 不将数据从范围传递回主流程线程
+* 它可以有自己的处理策略
+
+但是，_unlike_异步流程，异步范围：
+
+* 与主流程线程保持一致
+* 不被流参考组件调用
+* 不可重复使用
+* 无法拥有自己的异常处理策略 - 它从它所在的流程中继承此策略
+
+=== 异步范围与子流程
+
+异步范围类似于*{{0}}*，因为它继承了主流的异常策略。
+
+但是，_unlike_子流，异步范围：
+
+* 异步处理消息
+* 不会将数据传回主流
+* 与主流程线程保持一致
+* 不被流参考组件调用
+* 不可重复使用
+
+[NOTE]
+====
+即使异步作用域收到Mule消息的副本，也不会复制有效内容。两个Mule消息引用了相同的有效内容对象：一个继续沿着原始流程，另一个由Async范围处理。
+
+换句话说，如果消息的有效负载是可变对象（例如，其中具有不同字段的bean），并且异步作用域中的消息处理器更改了其中一个字段的值，则异步作用域之外的消息处理器看到更改的值。
+====
+
+== 配置
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag the async scope to the canvas and position it within the sequence of message processors that make up your flow at the point where you want to initiate an asynchronous processing block.
++
+image:async1.png[async1]
++
+. Within the scope area, add and configure the sequence of message processors that you want to execute asynchronously with the main flow. See example below.
++
+image:async+2.png[async+2]
++
+. Optionally, configure the async scope itself with a *Display Name*. If you wish to specify a *Processing Strategy*, see the instructions in the next section.
++
+image:async_scope.png[async_scope]
+....
+[tab,title="XML Editor or Standalone"]
+....
+. Add an `async` element to your flow at the point where you want to initiate an asynchronous processing block. Refer to the code sample below.
+. Configure the scope according to the tables below.
++
+[%header%autowidth.spread]
+|===
+|Element |Description
+|*async* |Use to create a block of message processors that execute asynchronously while the rest of the flow continues to execute in parallel.
+|===
++
+[%header,cols="2*"]
+|===
+|Attribute |Description
+|*doc:name* a|
+Customize to display a unique name for the async scope in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+
+|===
++
+. Configure one or more child elements within the async scope to define the processing that should occur within the asynchronous processing block. Refer to code sample below. If you wish to specify a *Processing Strategy*, see the instructions in the next section.
++
+[%header%autowidth.spread]
+|===
+|Child Element |Description
+|*processingStrategy* |Optional. Specify the name of a processing strategy that you have defined as a global element.
+|===
+
+[source,xml,linenums]
+----
+<http:listener-config name="listener-config" host="localhost" port="8081"/>
+<flow name="Async_Scope_ExampleFlow1" doc:name="Async_Scope_FlowFlow1" >
+   <http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+      <async doc:name="Async">
+            <component doc:name="Takes a long time"/>
+            <jms:outbound-endpoint doc:name="Store result"/>
+      </async>
+   <expression-transformer doc:name="Create Response"/>
+</flow>
+----
+....
+------
+
+=== 配置处理策略
+
+配置处理策略是可选的。除非您明确定义了另一个，否则Mule会将排队异步处理策略应用于范围。您可以将异步作用域的*Processing Strategy*配置为以下可用处理策略之一。
+
+[%header,cols="30a,70a"]
+|===
+|策略 |说明
+|异步处理策略 |与排队异步处理策略（如果没有其他处理策略配置，Mule会应用此策略）相同，只是它不使用队列。只有在出于某种原因不希望处理分布在节点上的情况下才可以使用它。
+|自定义处理策略 |用户编写的处理器策略。
+|排队异步处理策略a |
+使用队列将流的接收器与流中其余的步骤分离。它在作用域中的工作方式与流程中的方式相同。除非另有说明，否则Mule会应用此策略。如果您想通过以下方式对此处理策略进行微调，请选择此项：
+
+* 更改可用于流的线程数。
+* 限制可以排队的邮件数量。
+* 指定队列存储以保存数据。
+
+|每个处理器的排队线程处理策略 |不适用于大多数用例。将消息写入队列，然后作用域中的每个处理器按顺序在不同的线程中运行。
+|每处理器线程处理器策略 |不适用于大多数用例。范围中的每个处理器都按照不同的线程顺序运行。
+|===
+
+有关处理策略的更多信息，请参阅 link:/mule-user-guide/v/3.9/flow-processing-strategies[流程处理策略]。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Click the plus *+* sign to the right of the *Processing Strategy* field.
+. In the *Choose Global Type* window, select from the list of available processing strategies, then click *OK*. 
++
+image:Studio_Async_ChooseGlobalType.png[Studio_Async_ChooseGlobalType]
++
+. Configure the processing strategy as needed. For more information, see link:/mule-user-guide/v/3.9/flow-processing-strategies[Flow Processing Strategies].
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+. Define your processing strategy as a global element, with any necessary configuration or optional fine-tuning. (For more information, see link:/mule-user-guide/v/3.9/flow-processing-strategies[Flow Processing Strategies].) Refer to code sample below.
+. Add a `processingStrategy` attribute to your `async` element to specify the processing strategy by name, as in the code sample.
+
+[source,xml,linenums]
+----
+<queued-asynchronous-processing-strategy name="Allow42Threads" maxThreads="42" doc:name="Queued Asynchronous Processing Strategy"/>
+
+<http:listener-config name="listener-config" host="localhost" port="8081"/>
+<flow name="Async_Scope_ExampleFlow1" doc:name="Async_Scope_FlowFlow1" >
+   <http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+      <async doc:name="Async" processingStrategy="Allow42Threads">
+            <component doc:name="Takes a long time"/>
+            <jms:outbound-endpoint queue="myQueue" connector-ref="Active_MQ" doc:name="Store Result"/>
+      </async>
+   <expression-transformer doc:name="Create Response"/>
+</flow>
+----
+....
+------
+
+== 替换与修改对象引用
+
+如果替换，即完全在异步作用域内更改引用，那么原始线程中的有效内容和流变量将继续保持其原始值。
+
+如果修改，即对所引用的对象进行更改，但保留相同的引用，则会为原始线程修改有效内容，但会保留为流变量，因为前者不会被复制，后者会被复制。
+
+例：
+
+以下示例允许您在异步作用域上测试替换与修改。
+
+您可以看到使用这些调用来测试示例：
+
+*  link:http://localhost:9000/replacepayload[替换有效载荷]
+*  link:http://localhost:9000/modifypayload[修改负载]
+
+[source,xml,linenums]
+----
+<flow name="replace"> 
+  <http:inbound-endpoint address="http://localhost:9000/replacepayload" exchange-pattern="request-response" /> 
+  <set-payload value="original payload" /> 
+  <set-variable value="original flowvar" variableName="testflowvar"/> 
+  <logger level="WARN" message="original payload: #[payload]" /> 
+  <logger level="WARN" message="original flowvar: #[flowVars['testflowvar']]" /> 
+  <async> 
+    <set-payload value="new payload" /> 
+    <set-variable value="new flowvar" variableName="testflowvar"/> 
+    <logger level="WARN" message="Payload in async: #[payload]" /> 
+    <logger level="WARN" message="Flowvar in async: #[flowVars['testflowvar']]" /> 
+  </async> 
+  <scripting:component> 
+    <scripting:script engine="groovy"> 
+      <scripting:text> 
+Thread.sleep(3000) 
+return payload 
+      </scripting:text> 
+    </scripting:script> 
+  </scripting:component> 
+  <logger level="WARN" message="Payload after async: #[payload]" /> 
+  <logger level="WARN" message="Flowvar after async: #[flowVars['testflowvar']]" /> 
+</flow> 
+
+<flow name="modify"> 
+  <http:inbound-endpoint address="http://localhost:9000/modifypayload" exchange-pattern="request-response" /> 
+  <set-payload value="#[['key':'originalvalue']]" /> 
+  <set-variable value="#[['key':'originalvalue']]" variableName="testflowvar"/> 
+  <logger level="WARN" message="original payload: #[payload]" /> 
+  <logger level="WARN" message="original flowvar: #[flowVars['testflowvar']]" /> 
+  <async> 
+    <set-payload value="#[payload.key = 'new payload'; return payload]" /> 
+    <set-variable value="#[['key':'new value']]" variableName="testflowvar"/> 
+    <logger level="WARN" message="Payload in async: #[payload]" /> 
+    <logger level="WARN" message="Flowvar in async: #[flowVars['testflowvar']]" /> 
+  </async> 
+  <scripting:component> 
+    <scripting:script engine="groovy"> 
+      <scripting:text> 
+Thread.sleep(3000) 
+return payload 
+      </scripting:text> 
+    </scripting:script> 
+  </scripting:component> 
+  <logger level="WARN" message="Payload after async: #[payload]" /> 
+  <logger level="WARN" message="Flowvar after async: #[flowVars['testflowvar']]" /> 
+</flow> 
+----
+
+== 完整的示例代码
+
+以下示例显示了一个Java组件与Java消息服务队列通信的异步流程。
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:wmq="http://www.mulesoft.org/schema/mule/ee/wmq" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/ee/wmq http://www.mulesoft.org/schema/mule/ee/wmq/current/mule-wmq-ee.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <jms:activemq-connector name="Active_MQ" username="myusername" password="mypassword" brokerURL="tcp://localhost:61616" validateConnections="true" doc:name="Active MQ"/>
+    <queued-asynchronous-processing-strategy name="Queued_Asynchronous_Processing_Strategy" maxThreads="42" doc:name="Queued Asynchronous Processing Strategy"/>
+    <flow name="asyncFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <async doc:name="Async" processingStrategy="Queued_Asynchronous_Processing_Strategy">
+            <component doc:name="Takes a Long Time"/>
+            <jms:outbound-endpoint queue="myQueue" connector-ref="Active_MQ" doc:name="Store Result"/>
+        </async>
+        <wmq:expression-transformer doc:name="Create Response"/>
+    </flow>
+</mule>
+
+----
+
+== 另请参阅
+
+* 有关处理策略以及如何配置它们的更多信息，请参阅 link:/mule-user-guide/v/3.9/flow-processing-strategies[流程处理策略]。
+
+
+
+

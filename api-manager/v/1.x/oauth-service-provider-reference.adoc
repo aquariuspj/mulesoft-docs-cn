@@ -1,0 +1,587 @@
+=  Mule OAuth 2.0服务提供商参考
+
+Mule提供了两个元素，使您能够配置能够完成上述任务的服务提供商。
+
+* 全球OAuth元素`<oauth2-provider:config />`
++
+包含提供程序配置设置的全局元素，例如登录页面详细信息，安全提供程序，是否发出刷新令牌，令牌生命周期以及受支持的授予类型和范围。这个全局元素意味着被消息处理器引用。
++
+* 验证`<oauth2-provider:validate />`
++
+验证令牌，确认客户端提供访问受保护资源的正确范围。
+
+在Studio中，任何OAuth提供者模块消息处理器中的编码引用属性均引用此全局OAuth元素。在Studio中，添加OAuth提供商消息处理器并将`operation`属性设置为验证。
+
+由于OAuth提供者模块消息处理器仅向注册客户端发布令牌，因此Mule还提供了两种注册客户端的方法：
+
+* 在配置Mule应用程序的过程中，手动定义已注册客户端的列表。
+* 使客户端能够在Mule应用程序中动态注册。
+
+OAuth提供程序模块本身不生成客户端ID或秘密。另一种机制（例如具有验证用户输入的表单的Web页面）会生成ID并将密钥传递给OAuth提供程序模块。 OAuth提供者模块负责接受并存储客户端ID和客户端密钥。
+
+
+Mule提供了创建客户端元素`<oauth2-provider:create-client />`来接受和存储clientStore中的客户端数据，包括ID，秘密，重定向URI，作用域和授权类型。根据您的要求，clientStore可以是数据库或默认的持久对象存储。
+
+在Studio中，添加OAuth提供商消息处理器并将`operation`属性设置为`create client`。
+
+== 将OAuth 2.0应用于服务提供商
+
+要将OAuth 2.0应用到您发布的服务，至少需要完成五项任务。前两个任务调用该服务。下表列出了这些任务，以及每个任务中涉及的Mule元素。
+
+[%header%autowidth.spread]
+|===
+|  |任务 |骡元素 | OAuth任务
+| 1  |创建一个Spring bean来定义一个认证管理器和提供者 | Spring bean  |执行客户端认证
+| 2  |配置安全管理器 | Mule Security Manager  |委托客户端身份验证
+| 3  |创建全球OAuth 2.0提供商以定义多个OAuth参数 |全球OAuth提供商元素 |定义大部分服务提供商的OAuth 2.0参数
+| 4  |创建客户端注册流程 | OAuth提供程序模块配置为`Create Client`  |存储客户端ID和秘密
+| 5  |创建OAuth验证流程 |配置为`Validate`或` Validate-client`  |的OAuth提供程序模块验证访问令牌，拒绝，访问受保护的资源。
+|===
+
+== 身份验证路径
+
+服务提供商可以通过多种方式来认证客户端。当客户调用OAuth服务时，它必须将自己标识为以下类型：PUBLIC或CONFIDENTIAL。
+
+*  PUBLIC客户端提供服务提供商用于验证的客户端ID
+
+*  CONFIDENTIAL客户端提供服务提供程序用于验证的验证凭据（客户端ID和客户端密钥）
+
+如果CONFIDENTIAL，客户端必须在请求的三个不同部分之一提供验证凭证：
+
+* 在查询中
+
+* 在正文中
+
+* 在验证标题中
+
+在身份验证标头中，您将OAuth 2.0服务提供程序配置为与您希望接收的客户端请求类型相匹配。如果客户端在正文或请求查询中发送了验证凭据，则OAuth服务提供者会根据clientStore中的内容验证传入凭据（客户端ID和客户端密钥）。另一方面，如果客户端在请求的验证头中发送验证凭证，则服务提供者使用安全管理器将验证委托给验证管理器。身份验证管理器使用身份验证提供程序来验证客户端的主体（例如，用户名和密码）。
+
+== 定义资源
+
+要定义OAuth提供者资源，请完成以下步骤：
+
+. 在您的Mule项目中，创建一个名为`ss-authentication manager`的Spring bean。定义用作允许用户数据库的`authentication-provider`。
++
+[source, xml, linenums]
+----
+<spring:beans>
+        <ss:authentication-manager id="resourceOwnerAuthenticationManager"> 
+            <ss:authentication-provider>
+                <ss:user-service id="resourceOwnerUserService">
+                    <ss:user name="john" password="doe" authorities="RESOURCE_OWNER"/>
+                </ss:user-service>
+            </ss:authentication-provider>
+        </ss:authentication-manager>
+</spring:beans>
+----
++
+在您的Mule项目中，创建一个引用身份验证管理器的安全管理器元素。. 在OAuth环境中，身份验证管理器是安全提供程序。
++
+[source, xml, linenums]
+----
+<mule-ss:security-manager>
+        <mule-ss:delegate-security-provider name="resourceOwnerSecurityProvider" delegate-ref="resourceOwnerAuthenticationManager"/>
+    </mule-ss:security-manager>
+----
+
+OAuth 2.0提供程序使您可以配置两个安全提供程序：
+
+*  resourceOwnerSecurityProvider
++
+验证资源所有者，例如，在登录页面之后验证用户凭据时。授予类型为客户端凭证时，不需要此提供程序。
++
+*  clientSecurityProvider
++
+验证客户端凭据，并且仅在客户端机密且具有客户端密钥时才需要。当在授权标头上发送客户端证书时，您需要此提供者委派身份验证。
+
+
+== 创建OAuth提供程序全局元素
+
+全局元素存储常用配置设置。一个全局元素可以被任意数量的消息处理器引用，以这种方式使用全局元素的配置设置。
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Add an OAuth Provider module message processor to your Mule project.
+
+. Configure the following attributes of the message processor. Scopes and Resource Owner Security Provider Reference are the only attributes required for validating a client app and resource owner. 
+
+Name:: A unique name for the global element.
+Access Token Endpoint Path:: Configures the path of the access token endpoint required to access resource server. Default value: `token`
+Host:: Host used for the generated authorization, token and login endpoints. Default value: `localhost`
+Provider Name:: Name of the service provider. For example, `TweetBook.` This is displayed in the login page.
+Authorization Ttl Seconds:: Lifespan of authorization code in seconds. Default value: `600`
+Port:: Port on which the service is exposed. The authorization endpoint and the token endpoint listen on this port. Default value: `9999`
+Client Store Reference:: In-memory store that retains OAuth client-specific information. Use this field to reference a specific element that implements the ClientStore interface, typically an object store. Default value: `in-memory object store` 
+Authorization Code Store Reference:: In-memory store that retains OAuth client-specific information. Use this field to reference a specific element that implements the AuthorizationCodeStore interface, typically an object store. Default value: `in-memory object store`
+Token Store Reference:: In-memory store that retains OAuth client-specific information. Use this field to reference a specific element that implements the TokenStore interface, typically an object store. Default value: `in-memory object store`
+Authorization Endpoint Path:: Configures the path of the authorization endpoint required to access resource server. Default value: `authorize`
+Login Page:: URL for the service provider's end user login page. The resource owner logs into her account from this page. Default value: `org/mule/modules/oauth2/provider/www/templates/login.html` 
+Scopes:: A space-separated list that defines a set of scopes of data to which to provide access. Consumers may then be limited to access certain scopes only.Example: `READ_PROFILE WRITE_PROFILE READ_BOOKSHELF WRITE_BOOKSHELF`
+Token Ttl Seconds:: Lifespan of token in seconds. Default value: `86400`
+Connector Reference:: A reference to the type of transport, which defaults to HTTP. If your application uses something other than HTTP – Jetty, HTTPS, Servlet – or you have some specific HTTP transport configurations you wish to reference, use this field to reference a specific connector.
+Resource Owner Security Provider Reference:: The reference to the authentication server's security provider. For example, `resourceOwnerSecurityProvider` references the Spring security manager, which references the authentication manager Spring bean). If the only configured grant type is Client Credentials, then this field is not required.
+Client Security Provider Reference:: The reference to the security provider that validates client credentials.
+Supported Grant Types:: Space-separated list of authorization grant types that the OAuth service provider supports. 
+Rate Limiter Reference:: References a package to define limitations for the rate at which a client can call the interface. By default, references `org.mule.modules.oauth2.provider.rateLimit.SimpleInMemmoryRateLimiter`. Use the class to set `maximumFailureCount` (default = 5) and `authResetAfterSeconds` (default = 600).
+Enable Refresh Token:: Set to `TRUE`, this attribute allows Mule to send refresh tokens. +
+Default value: `FALSE`
+
+
+URIs for accessing endpoints are be built following the structure below:
+
+`+http://localhost:<port>/<path>+`
+
+[source, xml, linenums]
+----
+<oauth2-provider:config
+        name="oauth2Provider"
+        providerName="TweetBook"
+        host="localhost"
+        port="${http.port}"
+        authorizationEndpointPath="tweetbook/oauth/authorize"
+        accessTokenEndpointPath="tweetbook/oauth/token"
+        resourceOwnerSecurityProvider-ref="resourceOwnerSecurityProvider"
+        scopes="READ_PROFILE WRITE_PROFILE READ_BOOKSHELF WRITE_BOOKSHELF" doc:name="OAuth provider module">
+    </oauth2-provider:config>
+----
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+. Add a global `oauth2-provider:config` to your Mule application, at the top of your XML config file, outside all flows.
++
+[source, xml, linenums]
+----
+<oauth2-provider:config/>
+----
++
+Add attributes to the global element according to the table below.
++
+[source, xml, linenums]
+----
+<oauth2-provider:config
+        name="oauth2Provider"
+        providerName="TweetBook"
+        host="localhost"
+        port="${http.port}"
+        authorizationEndpointPath="tweetbook/oauth/authorize"
+        accessTokenEndpointPath="tweetbook/oauth/token"
+        resourceOwnerSecurityProvider-ref="resourceOwnerSecurityProvider"
+        scopes="READ_PROFILE WRITE_PROFILE READ_BOOKSHELF WRITE_BOOKSHELF" doc:name="OAuth provider module">
+    </oauth2-provider:config>
+----
+
+Attribute names that correspond to Studio attributes, previously defined are:
+
+doc:name
+
+accessTokenEndpointPath
+
+host
+
+providerName
+
+authorizationTtlSeconds
+
+port
+
+clientStoreReference
+
+authorizationCodeStoreReference
+
+tokenStoreReference
+
+authorizationEndpointPath
+
+loginPage
+
+scopes
+
+tokenTtlSeconds
+
+connectorReference
+
+resourceOwnerSecurityProvider
+
+clientSecurityProvider
+
+supportedGrantTypes
+
+rateLimiterReference
+
+enableRefreshToken
+
+Build URIs for access endpoints as follows: `+http://localhost:<port>/<path>+`
+
+....
+------
+
+
+== 创建客户端注册流程
+
+要使用受OAuth 2.0保护的服务，客户必须先向服务注册。以下过程描述配置Mule流以动态接受客户端注册请求所需的步骤。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Create a new Mule flow with an inbound connector.
+
+. Use one of following methods to store client IDs and secrets. +
+
+*Method 1*
+
+Add an OAuth provider module message processor to the flow which will accept and store client IDs and secrets. Configure the element's fields according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Field |Required |Value
+|*Display Name* |  |Enter a unique name for the global element.
+|*Config Reference* |x |Reference the global OAuth provider module element you created above.
+|*Operation* |x |*Create client*
+|*Client Id* |x |Define where to acquire the client ID. (In the example code below, Mule accesses an object store to validate the `client_ID` and `client_secret`.) Use a Mule expression to dynamically accept this information from clients.
+|*Client Name* |  |Identify the client application by name.
+|*Description* |  |Offer a brief description of the client application.
+|*Principal* |  |Defines a client's principals (username and password, for example).
+|*Secret* |  |Define where to acquire the client secret. +
+Not a required attribute if the type is `PUBLIC`.
+|*Type* |  |Define the client type (`PUBLIC` or `CONFIDENTIAL`).
+|*Strings* |  |Select *Create A List*, then click + to add an `oauth2-provider:authorized-grant-types` child element to the `oauth2-provider:create-client` element in your config. In the dialog, click *Define*, then enter one or more of the following values, separated by spaces: +
+
+`AUTHORIZATION_CODE IMPLICIT RESOURCE_OWNER_PASSWORD_CREDENTIALS CLIENT_CREDENTIALS` 
+|*Strings* |  |Select *Create A List*, then click + to add an `oauth2-provider:redirect-uris` child element to the `oauth2-provider:create-client` element in your config. In the dialog, click *Define*, then enter a URI to which the message processor redirects an authorization code. +
+
+During registration, a client indicates which are its valid redirect URIs. When the client later requests an authorization code, it also includes a redirect URI. If the redirect URI included in the request for authorization code is valid (i.e. matches one of the redirect URIs submitted by the client during registration), the message processor directs the authorization code to the specified URI.
+|*Strings* |  |Select *Create A List*, then click + to add an `oauth2-provider:scopes` child element to the `oauth2-provider:create-client` element in your config. In the dialog, click *Define*, then enter a space-separated list of scopes which the client must provide when it uses the service.
+
+|===
+
+Mule creates a default object store, then loads clients' information into that object store as shown in the following code sample:
+
+[source, xml, linenums]
+----
+<oauth2-provider:config
+        ...
+            <oauth2-provider:clients>
+                <oauth2-provider:client clientId="${client_id}" secret="${client_secret}"
+                                        type="CONFIDENTIAL" clientName="Mule Bookstore" description="Mule-powered On-line Bookstore">
+                    <oauth2-provider:redirect-uris>
+                        <oauth2-provider:redirect-uri>http://oauth-consumer.qa.cloudhub.io*</oauth2-provider:redirect-uri>
+                    </oauth2-provider:redirect-uris>
+                    <oauth2-provider:authorized-grant-types>
+                        <oauth2-provider:authorized-grant-type>AUTHORIZATION_CODE</oauth2-provider:authorized-grant-type>
+                    </oauth2-provider:authorized-grant-types>
+                    <oauth2-provider:scopes>
+                        <oauth2-provider:scope>READ_PROFILE</oauth2-provider:scope>
+                        <oauth2-provider:scope>READ_BOOKSHELF</oauth2-provider:scope>
+                        <oauth2-provider:scope>WRITE_BOOKSHELF</oauth2-provider:scope>
+                        <oauth2-provider:scope>WRITE_PROFILE</oauth2-provider:scope>
+                    </oauth2-provider:scopes>
+                </oauth2-provider:client>
+            </oauth2-provider:clients>
+    </oauth2-provider:config>
+----
+
+*Method 2*
+
+Add a Spring bean and write Java code to be referenced by it, using the default object store. In order to do this you must use the XML Console. In the example code below, the Spring bean invokes the `initialize` method of the `TweetBookInitializer` Java class. Mule generates the value of the default object store, then the Spring bean sets that value on the `clientRegistration `property.
+
+[source, xml, linenums]
+----
+<spring:bean class="org.mule.modules.security.examples.oauth2.TweetBookInitializer"
+                     init-method="initialize"
+                     p:clientRegistration="#{oauth2Provider.configuration.clientStore}" />
+----
+
+[source, java, linenums]
+----
+public class TweetBookInitializer
+{
+    public static final String BOOKSTORE_CLIENT_ID = "e7aaf348-f08a-11e1-9237-96c6dd6a022f";
+    public static final String BOOKSTORE_CLIENT_SECRET = "ee9acaa2-f08a-11e1-bc20-96c6dd6a022f";
+ 
+    private ClientRegistration clientRegistration;
+ 
+    public void initialize()
+    {
+        final Client bookstoreClient = new Client(BOOKSTORE_CLIENT_ID);
+        bookstoreClient.setSecret(BOOKSTORE_CLIENT_SECRET);
+        bookstoreClient.setType(ClientType.CONFIDENTIAL);
+        bookstoreClient.setClientName("Mule Bookstore");
+        bookstoreClient.setDescription("Mule-powered On-line Bookstore");
+        bookstoreClient.getAuthorizedGrantTypes().add(RequestGrantType.AUTHORIZATION_CODE);
+        bookstoreClient.getRedirectUris().add("http://localhost*");
+        bookstoreClient.getScopes().addAll(
+            Utils.tokenize("READ_PROFILE READ_BOOKSHELF WRITE_BOOKSHELF WRITE_PROFILE"));
+ 
+        clientRegistration.addClient(bookstoreClient);
+    }
+ 
+    public void setClientRegistration(final ClientRegistration clientRegistration)
+    {
+        this.clientRegistration = clientRegistration;
+    }
+}
+----
+
+*Method 3*
+
+Create a custom implementation of the object store to store client data, which includes IDs and secrets. +
++
+* Create an implementation of the `org.mule.modules.oauth2.provider.client.ClientStore` interface
+* In the XML configuration, add a `clientStore-ref` property to the `oauth2-provider:create-client` element. Mule invokes the `getClientById` method of the contract to obtain client IDs and secrets.
+....
+[tab,title="XML Editor or Standalone"]
+....
+. Create a new Mule flow with an inbound connector.
+
+. Use one of the following methods to store client IDs and secrets.
+
+*Method 1*
+
+Add an `oauth2-provider:client-create` element to the flow in your Mule application which will accept and store client IDs and secrets. See code example below, notice that Mule creates a default object store, then loads the clients' information into that object store.)
++
+[source, xml, linenums]
+----
+<oauth2-provider:create-client clientId="${client_id}" secret="${client_secret}"
+                                        type="CONFIDENTIAL" clientName="Mule Bookstore" description="Mule-powered On-line Bookstore">
+    <oauth2-provider:redirect-uris>
+    <oauth2-provider:redirect-uri>http://oauth-consumer.qa.cloudhub.io*</oauth2-provider:redirect-uri>
+    </oauth2-provider:redirect-uris>
+    <oauth2-provider:authorized-grant-types>
+        <oauth2-provider:authorized-grant-type>AUTHORIZATION_CODE</oauth2-provider:authorized-grant-type>
+    </oauth2-provider:authorized-grant-types>
+    <oauth2-provider:scopes>
+        <oauth2-provider:scope>READ_PROFILE</oauth2-provider:scope>
+        <oauth2-provider:scope>READ_BOOKSHELF</oauth2-provider:scope>
+        <oauth2-provider:scope>WRITE_BOOKSHELF</oauth2-provider:scope>
+        <oauth2-provider:scope>WRITE_PROFILE</oauth2-provider:scope>
+    </oauth2-provider:scopes>
+</oauth2-provider:create-client>
+----
++
+Configure the element's attributes according to the table below:
++
+[%header%autowidth.spread]
+|===
+|Attribute |Required |Value
+|*config-ref* |x |Use the name of the new global OAuth provider module element you created above.
+|*doc:name* |  |A unique name for the element in the flow.
+|*clientId* |x |Define where to acquire the client ID. (In the example code below, Mule access an object store to validate the `client_ID` and `client_secret`.)
+|*clientName* |  |Identify the client application.
+|*description* |  |Offer a brief description of the client application.
+|*secret* |x |Define where to acquire the client secret. +
+Not a required attribute if the is `PUBLIC`.
+|*type* |x |Define the client type (`PUBLIC` or `CONFIDENTIAL`).
+|===
++
+Add three child elements to the `oauth2-provider:create-client` element in your config:
++
+[%header,cols="3*"]
+|===
+|Child Element |Attribute |Value
+|*oauth2-provider:authorized-grant-types* |ref |Define one or more of the following values, separated by spaces: +
+`AUTHORIZATION_CODE IMPLICIT RESOURCE_OWNER_PASSWORD_CREDENTIALSCLIENT_CREDENTIALS `
+|*oauth2-provider:redirect-uris* |ref |Identify the URI to which the message processor redirects an authorization code. +
+During registration, a client indicates which are its valid redirect URIs. When the client later requests an authorization code, it also includes a redirect URI. If the redirect URI included in the request for authorization code is valid (i.e. matches one of the redirect URIs submitted by the client during registration), the message processor directs the authorization code to the specified URI.
+|*oauth2-provider:scopes* |ref |Define a space-separated list of scopes which the client must provide when it uses the service.
+|===
+
+*Method 2*
+
+Add a Spring bean and write Java code to be referenced by it, using the default object store. In the example code below, the Spring bean invokes the `initialize` method of the `TweetBookInitializer` Java class. Mule generates the value of the default object store, then the Spring bean sets that value on the `clientRegistration `property.
++
+[source, xml, linenums]
+----
+<spring:bean class="org.mule.modules.security.examples.oauth2.TweetBookInitializer"
+                     init-method="initialize"
+                     p:clientRegistration="#{oauth2Provider.configuration.clientStore}" />
+----
++
+[source, java, linenums]
+----
+public class TweetBookInitializer
+{
+    public static final String BOOKSTORE_CLIENT_ID = "e7aaf348-f08a-11e1-9237-96c6dd6a022f";
+    public static final String BOOKSTORE_CLIENT_SECRET = "ee9acaa2-f08a-11e1-bc20-96c6dd6a022f";
+ 
+    private ClientRegistration clientRegistration;
+ 
+    public void initialize()
+    {
+        final Client bookstoreClient = new Client(BOOKSTORE_CLIENT_ID);
+        bookstoreClient.setSecret(BOOKSTORE_CLIENT_SECRET);
+        bookstoreClient.setType(ClientType.CONFIDENTIAL);
+        bookstoreClient.setClientName("Mule Bookstore");
+        bookstoreClient.setDescription("Mule-powered On-line Bookstore");
+        bookstoreClient.getAuthorizedGrantTypes().add(RequestGrantType.AUTHORIZATION_CODE);
+        bookstoreClient.getRedirectUris().add("http://localhost*");
+        bookstoreClient.getScopes().addAll(
+            Utils.tokenize("READ_PROFILE READ_BOOKSHELF WRITE_BOOKSHELF WRITE_PROFILE"));
+ 
+        clientRegistration.addClient(bookstoreClient);
+    }
+ 
+    public void setClientRegistration(final ClientRegistration clientRegistration)
+    {
+        this.clientRegistration = clientRegistration;
+    }
+}
+----
+
+*Method 3*
+
+Create a custom implementation of the object store to store client data, which includes IDs and secrets. +
+
+* Create an implementation of the `org.mule.modules.oauth2.provider.client.ClientStore `interface
+* Add a `clientStore-ref` property to the `oauth2-provider:create-client` element. Mule invokes the `getClientById` method of the contract to obtain client IDs and secrets.
+....
+------
+
+
+=== 用户注册的代码示例
+
+
+如果将以下代码复制到编辑器中，则需要使用特定于实现的数据完成几个字段。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:oauth2-provider="http://www.mulesoft.org/schema/mule/oauth2-provider" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/oauth2-provider http://www.mulesoft.org/schema/mule/oauth2-provider/1.2/mule-oauth2-provider.xsd">
+     
+     
+    <spring:bean id="clientsObjectStore" class="org.mule.util.store.InMemoryObjectStore" init-method="initialise" destroy-method="dispose" />
+     
+    <spring:bean name="clientStore"  class="org.mule.modules.oauth2.provider.client.ObjectStoreClientStore">
+        <spring:property name="objectStore" ref="clientsObjectStore" />
+    </spring:bean>
+     
+    <!-- sample for token store -->   
+    <!--
+    <spring:bean name="tokenStore" class="org.mule.modules.oauth2.provider.token.ObjectStoreTokenStore">
+        <spring:property name="refreshTokenObjectStore" ref="clientsObjectStore" />
+        <spring:property name="accessTokenObjectStore" ref="clientsObjectStore" />
+    </spring:bean>
+     -->
+      
+    <oauth2-provider:config
+        name="oauth2ProviderRegister"
+        providerName="SampleAPI"
+        supportedGrantTypes="IMPLICIT"
+        port="8085"
+        clientStore-ref="clientStore"
+        authorizationEndpointPath="sampleapi/api/authorize"
+        accessTokenEndpointPath="sampleapi/api/token"
+        resourceOwnerSecurityProvider-ref="resourceOwnerSecurityProvider"
+        scopes="READ_RESOURCE POST_RESOURCE" doc:name="OAuth provider module" />
+     
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8085" doc:name="HTTP Listener Configuration"/>
+ 
+ <!-- sample flow for registering a client -->
+    <flow name="register-clientsFlow1" doc:name="register-clientsFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/register" doc:name="HTTP"/> 
+        <oauth2-provider:create-client config-ref="oauth2ProviderRegister" clientId="#[message.inboundProperties.clientId]" clientName="#[message.inboundProperties.clientName]" secret="#[message.inboundProperties.secret]" doc:name="OAuth provider module">
+            <oauth2-provider:redirect-uris>
+                <oauth2-provider:redirect-uri>http://localhost*</oauth2-provider:redirect-uri>
+            </oauth2-provider:redirect-uris>
+            <oauth2-provider:authorized-grant-types>
+                <oauth2-provider:authorized-grant-type>AUTHORIZATION_CODE</oauth2-provider:authorized-grant-type>
+            </oauth2-provider:authorized-grant-types>
+            <oauth2-provider:scopes>
+                <oauth2-provider:scope>READ_RESOURCE</oauth2-provider:scope>
+                <oauth2-provider:scope>POST_RESOURCE</oauth2-provider:scope>
+            </oauth2-provider:scopes>
+        </oauth2-provider:create-client>
+    </flow>
+----
+
+== 创建OAuth验证流程
+
+以下过程描述了配置Mule流以接受受保护资源请求的步骤。您可以创建一个允许客户端应用只访问受保护资源的一个范围或受保护资源的多个范围的流。 （在我们的 link:/mule-user-guide/v/3.8/mule-sts-oauth-2.0-example-application[示例应用]中 - 请参阅以下代码 -  Mule使用两个OAuth提供程序模块流：一个用于访问`READ_PROFILE`范围，一个用于访问`READ_BOOKSHELF`范围。 ）
+
+验证流程必须包含一个OAuth提供程序模块*消息处理程序，该程序定义了Oauth 2.0服务提供程序所需的一些属性。但是，一般来说，流中的OAuth提供程序消息处理器的行为更像占位符，为其大部分处理指令引用了OAuth提供程序全局元素。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Create a new Mule flow that includes an inbound connector and a connection to a protected resource.
+
+. To this Mule flow, add an OAuth2 provider module message processor _before_ the point in the flow at which Mule accesses the protected resource. In other words, set the OAuth2 provider module message processor before Mule calls a database or another service to access the resource owner's private, secure data.
+
+. Configure the attributes of the OAuth2 provider module according to the following table:
++
+[%header%autowidth.spread]
+|===
+|Field |Required |Value
+|*Display Name* | |Enter a unique name for the message processor in your flow.
+|*Config Reference* |x |Use the name of the new global OAuth provider module element you created above.
+.2+|*Operation* .2+|x |Set to *validate* for link:/mule-user-guide/v/3.8/authorization-grant-types[authorization grant types] that utilize "three-legged OAuth" (Authorization Code, Implicit, and Resource Owner Password Credentials).
+|Set to *validate-client* to check that the provided client credentials are valid.
+|*Resource Owner Roles* | |Specifies resource owner roles Mule enforces when validating a token.
+|*Scopes* | |Specifies the scopes of data to which the client app will have access.
+|===
++
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8082" basePath="tweetbook/api" doc:name="HTTP Listener Configuration"/>
+    <flow name="publicProfile" doc:name="publicProfile">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/profile" doc:name="HTTP"/>  
+        <oauth2-provider:validate scopes="READ_PROFILE" config-ref="oauth2Provider" doc:name="OAuth provider module"/>
+        <component class="org.mule.security.examples.oauth2.ProfileLookupComponent" doc:name="Profile Lookup"/>
+    </flow>
+ 
+    <flow name="publicBookshelf" doc:name="publicBookshelf">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/bookshelf" doc:name="HTTP"/>       
+        <oauth2-provider:validate scopes="READ_BOOKSHELF" config-ref="oauth2Provider" doc:name="OAuth provider module"/>
+        <set-payload value="The Lord of the Rings,The Hitchhiker's Guide to the Galaxy" doc:name="Retrieve Bookshelf"/>
+    </flow>
+----
+....
+[tab,title="XML Editor"]
+....
+. Create a new Mule flow that includes an inbound connector and a connection to a protected resource.
+
+. To this Mule flow, add an `oauth2-provider:validate` element or `oauth2-provider:validate-client `element _before_ the point in the flow at which Mule accesses the protected resource. In other words, set the element before Mule calls a database or another service to access the resource owner's private, secure data. +
+* `validate`: for link:/mule-user-guide/v/3.8/authorization-grant-types[authorization grant types] that utilize "three-legged OAuth" (Authorization Code, Implicit, and Resource Owner Password Credentials)
+
+* `validate-client`: to check that the provided client credentials are valid.
+. Configure the attributes of the `oauth2-provider` element as per the table below.
++
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8082" basePath="tweetbook/api" doc:name="HTTP Listener Configuration"/>   
+    <flow name="publicProfile" doc:name="publicProfile">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/profile" doc:name="HTTP"/>  
+        <oauth2-provider:validate scopes="READ_PROFILE" config-ref="oauth2Provider" doc:name="OAuth provider module"/>
+        <component class="org.mule.security.examples.oauth2.ProfileLookupComponent" doc:name="Profile Lookup"/>
+    </flow>
+ 
+    <flow name="publicBookshelf" doc:name="publicBookshelf">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/bookshelf" doc:name="HTTP"/>
+        <oauth2-provider:validate scopes="READ_BOOKSHELF" config-ref="oauth2Provider" doc:name="OAuth provider module"/>
+        <set-payload value="The Lord of the Rings,The Hitchhiker's Guide to the Galaxy" doc:name="Retrieve Bookshelf"/>
+    </flow>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Required |Value
+|*config-ref* |x |Use the name of the new global OAuth provider module element you created above.
+|*doc:name* |  |A unique name for the element in the flow.
+|*resourceOwnerRoles* |  |Specifies resource owner roles Mule enforces when validating a token.
+|*scopes* |  |Specifies the scopes of data to which the client app will have access.
+|===
+....
+------
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.8/configuring-the-spring-security-manager[Spring Security文档]

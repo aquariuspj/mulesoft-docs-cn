@@ -1,0 +1,1057 @@
+=  JMS传输参考
+
+http://java.sun.com/products/jms/docs.html[JMS（Java消息服务）]是 http://en.wikipedia.org/wiki/Message_Oriented_Middleware[面向消息的中间件]广泛使用的API。它允许分布式应用程序的不同组件之间的通信松耦合，可靠和异步。
+
+JMS支持两种消息传递模式：
+
+*  *Queues*  - 点对点
+*  *Topics*  - 发布和订阅
+
+Mule的JMS传输使您可以轻松地将消息发送和接收到实现JMS规范的任何消息服务的队列和主题。
+
+*Note*：Mule JMS连接器不支持validateConnections属性。
+
+== 传输信息
+
+[%header,cols="2*"]
+|===
+| 运输
+|  JMS
+
+| 文件
+|  link:http://www.mulesoft.org/docs/site/current3/apidocs/org/mule/transport/jms/package-summary.html[的JavaDoc]
+
+|入站
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_jms/namespace-overview.html[SchemaDoc]
+
+|外向
+| image:check.png[查]
+
+|要求
+| image:check.png[查]
+
+|交易
+| image:check.png[查]
+
+|流
+| image:check.png[查]（客户端确认，本地，XA）
+
+|重试次数
+| image:error.png[错误]
+
+|的MEP
+| image:check.png[查]
+
+|默认MEP
+|单向请求 - 响应
+
+| Maven Artifact
+| org.mule.transport：骡传输-JMS
+
+|===
+
+*Legend:*
+
+*  *Transport*  - 运输的名称/协议。
+*  *Docs*  - 指向传输的JavaDoc和SchemaDoc的链接。
+*  *Inbound*  - 传输是否可以接收入站事件并可用于入站端点。
+*  *Outbound*  - 传输是否可以生成出站事件并与出站端点一起使用。
+*  *Request*  - 该端点是否可以通过请求调用直接查询（通过MuleClient或EventContext）。
+*  *Transactions*  - 交易是否受交通工具支持。支持事务的传输可以在本地或分布式两阶段提交（XA）事务中进行配置。
+*  *Streaming*  - 此传输是否可以处理输入流中传入的消息。这可以非常有效地处理大数据。有关更多信息，请参阅流式传输。
+*  *Retry*  - 此传输是否支持重试策略。请注意，所有传输都可以配置Retry策略，但只有这里标记的传输才是MuleSoft官方支持的
+*  *MEPs*  - 此传输支持的消息交换模式。
+*  *Default MEP*  - 使用此传输的端点的默认MEP，不会明确配置MEP。
+*  *Maven Artifact*  - 组名称是 link:http://maven.apache.org/[Maven的]中此传输的工件名称。
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source, xml, linenums]
+----
+xmlns:jms "http://www.mulesoft.org/schema/mule/jms"
+----
+
+XML模式位置：
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/jms/3.5/mule-jms.xsd
+----
+
+连接器语法：
+
+[source, xml, linenums]
+----
+<jms:connector name="myConnector" specification="1.1" connectionFactory-ref="myConnectionFactory" username="myuser" password="mypass"/>
+----
+
+端点语法：
+
+[source, xml, linenums]
+----
+<jms:outbound-endpoint queue="my.queue"/>
+ 
+<jms:inbound-endpoint topic="my.topic"/>
+----
+
+== 注意事项
+
+在点对点或排队模型中，发送消息到特定队列，接收者从队列中读取消息。在这里，发送者知道消息的目的地并将消息直接发送到接收者队列。它的特点如下：
+
+* 只有一位消费者获得该消息。
+* 生产者不必在消费者使用该消息时运行，消费者在消息发送时也不需要运行。
+* 成功处理的每条消息均由消费者确认。
+
+发布/订阅模型支持将消息发布到特定的消息主题。订阅者可以注册关于接收关于特定消息主题的消息的兴趣。在这个模型中，发布者和订阅者都不了解对方。一个很好的比喻是匿名公告牌。以下是这款机型的特点：
+
+* 多个使用者（或无）收到此讯息。
+* 发布者和订阅者之间存在时间依赖关系。发布者必须为客户订阅消息主题。
+* 订阅者必须始终保持活动才能接收邮件，除非它建立了持久订阅。在这种情况下，用户未连接时发布的消息在重新连接时会重新分配。
+
+== 特点
+
+* 支持两种版本的JMS规范：1.0.2b和1.1。
+* 支持队列和主题，持久或非持久订阅。
+* 可以通过JNDI查找ConnectionFactory和Queues / Topics。
+* 支持本地（JMS），分布式（XA）和多种资源 link:/mule-user-guide/v/3.5/transaction-management[交易] *Enterprise*
+* 与各种JMS提供商进行测试。
+* 适用于热门提供商的供应商特定配置。
+
+[TIP]
+====
+*WebSphere MQ*
+
+*Enterprise*
+
+Mule Enterprise包含一个 link:/mule-user-guide/v/3.5/mule-wmq-transport-reference[针对WebSphere MQ的增强传输]，如果您使用WebSphere MQ作为您的JMS提供程序，那么建议您使用它。
+====
+
+== 用法
+
+=== 声明名称空间
+
+要使用JMS传输，您必须首先在您的Mule配置文件的标头中声明JMS命名空间。然后您可以配置JMS连接器和端点。
+
+[%header%autowidth.spread]
+|===
+^ | JMS命名空间
+一个|
+
+[source, xml, linenums]
+----
+<mule ...cut...
+   xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+   xsi:schemaLocation=" ...cut...
+     http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.5/mule-jms.xsd">
+----
+|===
+
+=== 配置连接器
+
+连接器上有几个可用属性，其中大部分属于可选项。有关完整信息，请参阅下面的架构文档。
+
+[%header%autowidth.spread]
+|===
+^ |连接器属性
+一个|
+
+[source, xml, linenums]
+----
+<jms:connector name="myConnector"
+               acknowledgementMode="DUPS_OK_ACKNOWLEDGE"
+               clientId="myClient"
+               durable="true"
+               noLocal="true"
+               persistentDelivery="true"
+               maxRedelivery="5"
+               cacheJmsSessions="true"
+               eagerConsumer="false"
+               specification="1.1"
+               numberOfConsumers="7"
+               username="myuser"
+               password="mypass" />
+----
+|===
+
+=== 配置ConnectionFactory
+
+其中最重要的属性之一是`connectionFactory-ref`。这是对ConnectionFactory对象的引用，它将为您的JMS提供程序创建新的连接。该对象必须实现接口`javax.jms.ConnectionFactor`。
+
+[%header%autowidth.spread]
+|===
+^ |的ConnectionFactory
+一个|
+
+[source, xml, linenums]
+----
+<spring:bean name="connectionFactory" class="com.foo.FooConnectionFactory"/>
+ 
+<jms:connector name="jmsConnector1" connectionFactory-ref="connectionFactory" />
+----
+|===
+
+还有一些属性可以让你从JNDI上下文中查找ConnectionFactory：
+
+[%header%autowidth.spread]
+|===
+来自JNDI的^^ | ConnectionFactory
+一个|
+
+[source, xml, linenums]
+----
+<jms:connector name="jmsConnector"
+    jndiInitialFactory="com.sun.jndi.ldap.LdapCtxFactory"
+    jndiProviderUrl="ldap://localhost:10389/"
+    jndiProviderProperties-ref="providerProperties"
+    connectionFactoryJndiName="cn=ConnectionFactory,dc=example,dc=com" />
+----
+|===
+
+[WARNING]
+====
+*JMS Performance*
+
+为了提高性能，在JMS连接器和实际的JMS ConnectionFactory实现之间使用"Caching Connection Strategy"很重要。有关更多信息，请参阅下面的 link:/mule-user-guide/v/3.5/jms-transport-reference[缓存连接工厂]。
+====
+
+=== 配置端点
+
+==== 队列
+
+[source, xml, linenums]
+----
+<jms:inbound-endpoint queue="my.queue"/>
+<jms:outbound-endpoint queue="my.queue"/>
+----
+
+==== 主题
+
+[source, xml, linenums]
+----
+<jms:inbound-endpoint topic="my.topic"/>
+<jms:outbound-endpoint topic="my.topic"/>
+----
+
+默认情况下，Mule对非耐用主题的订阅（也就是说，它仅在连接到主题时接收消息）。您可以通过在连接器上设置`durable`属性来使主题订阅持久。
+
+当使用持久订阅时，JMS服务器需要一个持久名称来标识每个订阅者。默认情况下，Mule以`mule.<connector name>.<topic name>`格式生成持久名称。如果您想自己指定持久名称，则可以使用端点上的`durableName`属性来完成此操作。
+
+[%header%autowidth.spread]
+|===
+^ |持久话题
+一个|
+
+[source, xml, linenums]
+----
+<jms:connector name="jmsTopicConnector" durable="true"/>
+<jms:inbound-endpoint topic="some.topic" durableName="sub1" />
+<jms:inbound-endpoint topic="some.topic" durableName="sub2" />
+<jms:inbound-endpoint topic="some.topic" durableName="sub3" />
+----
+|===
+
+[NOTE]
+====
+*Number of Consumers*
+
+在主题的情况下，端点上的消费者数量设置为1。您可以通过在连接器上设置`numberOfConcurrentTransactedReceivers`或`numberOfConsumers`来覆盖此设置。
+====
+
+=== 变压器
+
+应用于JMS端点的默认转换器如下所示：
+
+入站= [JMSMessageToObject
+
+response = ObjectToJMSMessage
+
+outbound = ObjectToJMSMessage
+
+这些自动转换为标准JMS消息类型或从标准JMS消息类型
+
+[source, code, linenums]
+----
+javax.jms.TextMessage - java.lang.String
+javax.jms.ObjectMessage - java.lang.Object
+javax.jms.BytesMessage - byte[]
+javax.jms.MapMessage - java.util.Map
+javax.jms.StreamMessage - java.io.InputStream
+----
+
+== 从JNDI查找JMS对象
+
+如果您已在连接器上配置JDNI上下文，则还可以使用jndiDestinations属性通过JNDI查找队列/主题。如果无法通过JNDI找到队列/主题，则使用现有的JMS会话创建它，除非您还设置了`forceJndiDestinations`属性。
+
+有两种不同的方式来配置JNDI设置：
+
+. 使用连接器属性（不建议使用）：
++
+[source, xml, linenums]
+----
+<jms:connector name="jmsConnector"
+    jndiInitialFactory="com.sun.jndi.ldap.LdapCtxFactory"
+    jndiProviderUrl="ldap://localhost:10389/"
+    connectionFactoryJndiName="cn=ConnectionFactory,dc=example,dc=com"
+    jndiDestinations="true"
+    forceJndiDestinations="true"/>
+----
+
+. 使用`JndiNameResolver`。 `JndiNameResolver`使用JNDI按名称定义查找对象的策略。该策略包含一个接收名称并返回与该名称关联的对象的查找方法。
+
+目前，该接口有两个简单的实现：
+
+*SimpleJndiNameResolver*：使用JNDI上下文实例来搜索名称。该实例在名称解析器的完整生命周期中保持打开状态。
+
+*CachedJndiNameResolver*：使用简单的缓存来存储以前解析的名称。为每个发送到JNDI服务器的请求创建一个JNDI上下文实例，然后释放该实例。可以清除缓存，重新启动名称解析器。
+
+默认JNDI名称解析器示例：使用*defualt-jndi-name-resolver*标记定义名称解析器，然后向其添加适当的属性。
+
+[source, xml, linenums]
+----
+<jms:activemq-connector name="jmsConnector"
+                            jndiDestinations="true"
+                            connectionFactoryJndiName="ConnectionFactory">
+        <jms:default-jndi-name-resolver
+                jndiInitialFactory="org.apache.activemq.jndi.ActiveMQInitialContextFactory"
+                jndiProviderUrl="vm://localhost?broker.persistent=false&amp;broker.useJmx=false"
+                jndiProviderProperties-ref="providerProperties"/>
+    </jms:activemq-connector>
+----
+
+*Custom JNDI name resolver example*：使用`custom-jndi-name-resolver`标签定义名称解析器，然后使用Spring的属性格式添加适当的属性值。
+
+[source, xml, linenums]
+----
+<jms:activemq-connector name="jmsConnector"
+                            jndiDestinations="true"
+                            connectionFactoryJndiName="ConnectionFactory">
+        <jms:custom-jndi-name-resolver class="org.mule.transport.jms.jndi.CachedJndiNameResolver">
+            <spring:property name="jndiInitialFactory" value="org.apache.activemq.jndi.ActiveMQInitialContextFactory"/>
+            <spring:property name="jndiProviderUrl"
+                             value="vm://localhost?broker.persistent=false&amp;broker.useJmx=false"/>
+            <spring:property name="jndiProviderProperties" ref="providerProperties"/>
+        </jms:custom-jndi-name-resolver>
+    </jms:activemq-connector>
+----
+
+==  JmsConnector中的更改
+
+JmsConnector定义中有一些属性更改。一些属性现在已被弃用，因为它们应该在JndiNameResolver中定义，然后在JmsConnector中使用该JndiNameResolver。
+
+JmsConnector中的弃用属性：
+
+*  jndiContext
+*  jndiInitialFactory
+*  jndiProviderUrl
+*  jndiProviderProperties-REF
+
+新增财产：
+
+*  jndiNameResolver：设置适当的JndiNameResolver。可以使用JmsConnector定义中的`default-jndi-name-resolver`或`custom-jndi-name-resolver`标签进行设置。
+
+==  JMS选择器
+
+您可以将JMS选择器设置为入站端点上的过滤器。 JMS选择器只需在JMS使用者上设置过滤器表达式。
+
+[%header%autowidth.spread]
+|===
+^ | JMS选择器
+一个|
+
+[source, xml, linenums]
+----
+<jms:inbound-endpoint queue="important.queue">
+    <jms:selector expression="JMSPriority=9"/>
+</jms:inbound-endpoint>
+----
+|===
+
+==  JMS标题属性
+
+一旦Mule接收到JMS消息，标准的JMS头如`JMSCorrelationID`和`JMSRedelivered`就可以作为MuleMessage对象的属性使用。
+
+[%header%autowidth.spread]
+|===
+^ |检索JMS头
+一个|
+
+[source, code, linenums]
+----
+String corrId = (String) muleMessage.getProperty("JMSCorrelationID");
+boolean redelivered =  muleMessage.getBooleanProperty("JMSRedelivered");
+----
+|===
+
+您可以通过相同的方式访问消息上的任何自定义标题特性。
+
+== 配置事务轮询（企业）
+
+JMS传输的企业版本可以使用`TransactedPollingJmsMessageReceiver`进行事务性轮询配置。
+
+[%header%autowidth.spread]
+|===
+^ |事务轮询
+一个|
+
+[source, xml, linenums]
+----
+<jms:connector ...cut...>
+     <service-overrides transactedMessageReceiver="com.mulesoft.mule.transport.jms.TransactedPollingJmsMessageReceiver" />
+</jms:connector>
+ 
+<jms:inbound-endpoint queue="my.queue">
+     <properties>
+          <spring:entry key="pollingFrequency" value="5000" /> ❶
+     </properties>
+</jms:inbound-endpoint>
+----
+|===
+
+❶每个接收器轮询间隔5秒
+
+== 禁用回复消息
+
+当传入消息设置了`replyTo`属性时，您可能希望禁用从单向JMS入站端点开始的流程上的自动回复消息。为此，请在流程中的任意位置设置以下变量，以防止Mule自动发送响应。
+
+[source, xml, linenums]
+----
+<set-variable variableName="MULE_REPLYTO_STOP" value="true" doc:name="Variable"/>  
+----
+
+== 实现消息组
+
+消息组提供相关消息的排序，跨多个使用者的负载平衡，以及在JVM关闭时自动故障转移到其他使用者。组中的消息只要可用，就交付给同一个消费者，但如果第一位消费者消失，则交换给其他消费者。
+
+通过在发送客户端生产者（出站端点）之前设置JMSGroupID属性，您可以实现一个消息组。默认情况下，所有消息按照它们到达时的顺序传递，但也可以将JMSXGroupSec属性设置为控制应按何种顺序传递不同的消息。
+
+流程中的一个例子是：
+
+[source, xml, linenums]
+----
+<jms:outbound-endpoint queue="orders.car" connector-ref="amqConnector">
+    <message-properties-transformer scope="outbound">
+        <add-message-property key="JMSXGroupID" value="#[xpath://type]"/>
+    </message-properties-transformer>
+...
+----
+
+有关更多信息，请参阅 link:https://blogs.mulesoft.com/dev/mule-dev/message-sequencing-with-mule-and-jms-message-groups/[使用Mule和JMS消息组的消息排序]。
+
+== 修改消息属性
+
+要修改JMS消息的优先级，请将`priority`键设置为属性的名称，而不是使用`JMSpriority`键：
+
+[source, xml, linenums]
+----
+<message-properties-transformer doc:name="Message Properties">
+    <add-message-property key="priority" value="6"/>
+</message-properties-transformer>
+----
+
+这不会起作用：
+
+[source, xml, linenums]
+----
+<message-properties-transformer doc:name="Message Properties">
+    <add-message-property key="JMSPriority" value="6"/>
+</message-properties-transformer>
+----
+
+== 示例配置
+
+[%header%autowidth.spread]
+|===
+^ |示例配置
+一个|
+
+[source, xml, linenums]
+----
+<mule ...cut...
+  xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+  xsi:schemaLocation="...cut...
+    http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.5/mule-jms.xsd"> ❶
+ 
+    <spring:bean name="connectionFactory" class="com.foo.FooConnectionFactory"/>
+ 
+    <jms:connector name="jmsConnector" connectionFactory-ref="connectionFactory" username="myuser" password="mypass" />
+ 
+    <flow name="MyFlow">
+        <jms:inbound-endpoint queue="in" />
+        <component class="com.foo.MyComponent" />
+        <jms:outbound-endpoint queue="out" />
+    </flow>
+</mule>
+----
+|===
+
+❶导入JMS模式名称空间
+
+[%header%autowidth.spread]
+|===
+^ |具有事务的示例配置
+一个|
+
+[source, xml, linenums]
+----
+<mule ...cut...
+  xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+  xsi:schemaLocation="...cut...
+    http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.5/mule-jms.xsd">
+ 
+    <spring:bean name="connectionFactory" class="com.foo.FooConnectionFactory"/>
+ 
+    <jms:connector name="jmsConnector" connectionFactory-ref="connectionFactory" username="myuser" password="mypass" />
+ 
+    <flow name="MyFlow">
+        <jms:inbound-endpoint queue="in">
+            <jms:transaction action="ALWAYS_BEGIN" /> ❶
+        </jms:inbound-endpoint>
+        <component class="com.foo.MyComponent" />
+        <jms:outbound-endpoint queue="out">
+            <jms:transaction action="ALWAYS_JOIN" /> ❶
+        </jms:outbound-endpoint>
+    </flow>
+</mule>
+----
+|===
+
+❶本地JMS事务
+
+[%header%autowidth.spread]
+|===
+^ |具有例外策略的示例配置
+一个|
+
+[source, xml, linenums]
+----
+<mule ...cut...
+  xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+  xsi:schemaLocation="...cut...
+    http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.5/mule-jms.xsd">
+ 
+    <spring:bean name="connectionFactory" class="com.foo.FooConnectionFactory"/>
+ 
+    <jms:connector name="jmsConnector" connectionFactory-ref="connectionFactory" username="myuser" password="mypass" />
+ 
+    <flow name="MyFlow">
+        <jms:inbound-endpoint queue="in">
+            <jms:transaction action="ALWAYS_BEGIN" />
+        </jms:inbound-endpoint>
+        <component class="com.foo.MyComponent" />
+        <jms:outbound-endpoint queue="out">
+            <jms:transaction action="ALWAYS_JOIN" />
+        </jms:outbound-endpoint>
+        <default-exception-strategy>
+            <commit-transaction exception-pattern="com.foo.ExpectedExceptionType"/> ❶
+            <jms:outbound-endpoint queue="dead.letter"> ❷
+                <jms:transaction action="JOIN_IF_POSSIBLE" />
+            </jms:outbound-endpoint>
+        </default-exception-strategy>
+    </flow>
+</mule>
+----
+|===
+
+❶将`exception-pattern="*"`设置为捕获所有异常类型
+
+❷针对错误消息实施死信队列
+
+== 供应商特定配置（企业版）
+
+Mule Enterprise包含一个 link:/mule-user-guide/v/3.5/mule-wmq-transport-reference[针对WebSphereMQ的增强传输]，如果您使用WebSphereMQ作为您的JMS提供程序，那么建议您使用它。
+
+http://activemq.apache.org/[ActiveMQ的]还广泛用于Mule，并且 link:/mule-user-guide/v/3.5/activemq-integration[简化配置]。
+
+可以在这里找到配置其他JMS提供者的信息。请注意，这些信息可能会过时。
+
+*  link:/mule-user-guide/v/3.5/hornetq-integration[HornetQ的]
+*  link:/mule-user-guide/v/3.5/open-mq-integration[打开MQ]
+*  link:/mule-user-guide/v/3.5/solace-jms[Solace JMS]
+*  link:/mule-user-guide/v/3.5/tibco-ems-integration[Tibco EMS]
+
+== 参考
+
+===  JMS传输
+
+JMS传输为通过JMS队列发送消息提供支持。
+
+=== 连接器
+
+连接器元素配置通用连接器，用于通过JMS队列发送和接收消息。
+
+。<connector...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| connectionFactory-ref  |字符串 |否 |   |引用非连接工厂，这是非供应商JMS配置所必需的。
+| redeliveryHandlerFactory-ref  |字符串 |否 |   |参考重新传送处理程序。
+| acknowledgementMode  |枚举 |否 | AUTO_ACKNOWLEDGE  |使用的确认模式：AUTO_ACKNOWLEDGE，CLIENT_ACKNOWLEDGE或DUPS_OK_ACKNOWLEDGE。
+| clientId  |字符串 |否 |   | JMS客户端的ID。
+|耐久性 |布尔值 |否 |   |是否让所有主题订户持久。
+| noLocal  |布尔值 |否 |   |如果设置为true，订阅者将不会收到由其自己的连接发布的消息。
+| persistentDelivery  |布尔值 |否 |   |如果设置为true，则JMS提供程序会在发送消息时将其记录到稳定存储器中，如果交付不成功，可以恢复。如果消息在传输过程中丢失，客户认为应用程序会遇到问题，则客户会将其标记为持久消息。如果偶尔丢失的消息是可容忍的，则客户端将消息标记为非永久消息。客户使用交付模式告诉JMS提供商如何平衡消息传输可靠性/吞吐量。传送模式仅涵盖将消息传送到目的地。持续传送模式不保证在目的地保留消息，直到收到确认为止。客户应该假定消息保留策略是以管理方式设置的。消息保留策略管理从目的地到消息使用者的消息传递的可靠性。例如，如果客户的消息存储空间耗尽，则可能会丢弃由特定于站点的消息保留策略定义的一些消息。如果消息的传递模式是永久性的，并且目标具有足够的消息保留策略，则消息一定会由JMS提供程序一次性传递一次。
+| honorQosHeaders  |布尔值 |否 |   |如果设置为true，则会遵守消息的QoS标头。如果为false（默认），则连接器设置将覆盖邮件标题。
+| maxRedelivery  |整数 |否 |   |尝试重新传送邮件的最大次数。使用-1接受具有任何重新传送计数的邮件。
+| cacheJmsSessions  |布尔值 |否 | true  |是否缓存并重新使用JMS会话和生产者对象，而不是为每个请求重新创建它们。默认行为是缓存JMS会话和生产者（在3.6之前，默认行为是不缓存它们）。注意：这不受XA事务或JMS 1.0.2b支持。
+| eagerConsumer  |布尔值 |否 |   |是否在创建连接时创建使用者权限，而不是在轮询循环中使用延迟实例化。
+|规范 |枚举 |否 | 1.0.2b  |要使用的JMS规范：1.0.2b（默认值）或1.1
+|用户名 |字符串 |否 |   |连接的用户名
+|密码 |字符串 |否 |   |连接的密码
+| numberOfConsumers  |整数 |否 |   |将用于接收JMS消息的并发使用者数量。 （注意：如果你使用这个属性，你不应该配置'numberOfConcurrentTransactedReceivers'，它具有相同的效果。）
+| jndiInitialFactory  |字符串 |否 |   |连接到JNDI时使用的初始工厂类。 DEPRECATED：使用jndiNameResolver-ref属性来配置此值。
+| jndiProviderUrl  |字符串 |否 |   |连接到JNDI时使用的URL。 DEPRECATED：使用jndiNameResolver-ref属性来配置此值。
+| jndiProviderProperties-ref  |字符串 |否 |   |引用包含其他提供程序属性的Map。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| connectionFactoryJndiName  | string  | no  |   |从JNDI查找连接工厂时使用的名称。
+| jndiDestinations  |布尔值 |否 |   |如果您想从JNDI查找队列或主题，而不是从会话。
+| forceJndiDestinations  |布尔值 |否 |   |如果设置为true，则无法从JNDI检索主题或队列时Mule会失败。如果设置为false，则Mule将在JNDI查找失败时从JMS会话中创建主题或队列。
+| disableTemporaryReplyToDestinations  |布尔值 |否 |   |如果设置为false（默认值），当Mule执行请求/响应调用时，自动设置为接收来自远程JMS调用的响应。
+| embeddedMode  |布尔值 |否 | false  |某些应用程序服务器（如WebSphere AS）不允许在JMS对象上调用某些方法，有效限制可用功能。嵌入模式告诉骡子尽可能避免这些。默认为false。
+|===
+
+。<connector...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| abstract-jndi-name-resolver  | 0..1  | jndi-name-resolver策略元素的占位符。
+|===
+
+=== 入站端点
+
+入站端点元素配置接收JMS消息的端点。
+
+。<inbound-endpoint...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|持久名称 |字符串 |否 |  |（从2.2.2开始）允许指定持久主题订阅的名称。
+|队列 |字符串 |否 |  |队列名称。该属性不能与主题属性一起使用（两者是独占的）。
+|主题 |字符串 |否 |  |主题名称。 "topic:"前缀将自动添加。该属性不能与队列属性一起使用（两者是独占的）。
+| disableTemporaryReplyToDestinations  |布尔值 |否 |  |如果设置为false（默认值），当Mule执行请求/响应调用时，自动设置为接收来自远程JMS调用的响应。
+|===
+
+。<inbound-endpoint...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|骡：抽象-XA的事务 | 0..1  |
+| {选择{1}} 0..1  |
+|===
+
+=== 出站端点
+
+入站端点元素配置JMS消息发送到的端点。
+
+。<outbound-endpoint...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|队列 |字符串 |否 |  |队列名称。该属性不能与主题属性一起使用（两者是独占的）。
+|主题 |字符串 |否 |  |主题名称。 "topic:"前缀将自动添加。该属性不能与队列属性一起使用（两者是独占的）。
+| disableTemporaryReplyToDestinations  |布尔值 |否 |如果设置为false（默认值），当Mule执行请求/响应调用时，临时目标将自动设置为从远程JMS呼叫接收响应。
+|===
+
+。<outbound-endpoint...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|骡：抽象-XA的事务 | 0..1  |
+| {选择{1}} 0..1  |
+|===
+
+=== 端点
+
+端点元素配置全局JMS端点定义。
+
+。<endpoint...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|队列 |字符串 |否 |  |队列名称。该属性不能与主题属性一起使用（两者是独占的）。
+|主题 |字符串 |否 |  |主题名称。 "topic:"前缀将自动添加。该属性不能与队列属性一起使用（两者是独占的）。
+| disableTemporaryReplyToDestinations  |布尔值 |否 |  |如果设置为false（默认值），当Mule执行请求/响应调用时，自动设置为接收来自远程JMS调用的响应。
+|===
+
+。<endpoint...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|骡：抽象-XA的事务 | 0..1  |
+| {selcetor {1}} 0..1  |
+|===
+
+=== 变压器
+
+这些是这种运输特有的变压器。请注意，这些会在启动时自动添加到Mule注册表中。当进行自动转换时，这些将在搜索正确的变压器时包含在内。
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| jmsmessage-to-object-transformer  | jmsmessage-to-object-transformer元素配置一个转换器，通过提取消息负载将JMS消息转换为对象。
+| object-to-jmsmessage-transformer  | object-to-jmsmessage-transformer元素配置一个转换器，它根据传入的对象将对象转换为五种类型的JMS消息之一：java .lang.String  - > javax.jms.TextMessage，byte []  - > javax.jms.BytesMessage，java.util.Map（原始类型） - > javax.jms.MapMessage，java.io.InputStream（或java.util 。基本类型列表） - > javax.jms.StreamMessage和java.lang.Serializable，包括java.util.Map，java.util.List和java.util.Set包含可序列化对象（包括基元）的对象 - > javax.jms.ObjectMessage
+|===
+
+== 过滤器
+
+可以使用过滤器来控制允许哪些数据在流中继续。
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+|属性过滤器 |属性过滤器元素配置一个过滤器，允许您根据JMS属性过滤消息。
+|===
+
+=== 自定义连接器
+
+自定义连接器元素配置用于通过JMS队列发送和接收消息的自定义连接器。
+
+===  Activemq连接器
+
+activemq-connector元素配置JMS连接器的ActiveMQ版本。
+
+。<activemq-connector...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| connectionFactory-ref  |字符串 |否 |   |对连接工厂的可选引用。为供应商特定的JMS配置提供了默认连接工厂。
+| redeliveryHandlerFactory-ref  |字符串 |否 |   |参考重新传送处理程序。
+| acknowledgementMode  |枚举 |否 | AUTO_ACKNOWLEDGE  |使用的确认模式：AUTO_ACKNOWLEDGE，CLIENT_ACKNOWLEDGE或DUPS_OK_ACKNOWLEDGE。
+| clientId  |字符串 |否 |   | JMS客户端的ID。
+|耐久性 |布尔值 |否 |   |是否让所有主题订户持久。
+| noLocal  |布尔值 |否 |   |如果设置为true，订阅者将不会收到由其自己的连接发布的消息。
+| persistentDelivery  |布尔值 |否 |   |如果设置为true，则JMS提供程序会在发送消息时将其记录到稳定存储器中，如果交付不成功，可以恢复。如果消息在传输过程中丢失，客户认为应用程序会遇到问题，则客户会将其标记为持久消息。如果偶尔丢失的消息是可容忍的，则客户端将消息标记为非永久消息。客户使用交付模式告诉JMS提供商如何平衡消息传输可靠性/吞吐量。传送模式仅涵盖将消息传送到目的地。持续传送模式不保证在目的地保留消息，直到收到确认为止。客户应该假定消息保留策略是以管理方式设置的。消息保留策略管理从目的地到消息使用者的消息传递的可靠性。例如，如果客户的消息存储空间耗尽，则可能会丢弃由特定于站点的消息保留策略定义的一些消息。如果消息的传递模式是永久性的，并且目标具有足够的消息保留策略，则消息一定会由JMS提供程序一次性传递一次。
+| honorQosHeaders  |布尔值 |否 |   |如果设置为true，则会遵守消息的QoS标头。如果为false（默认），则连接器设置将覆盖邮件标题。
+| maxRedelivery  |整数 |否 |   |尝试重新传送邮件的最大次数。使用-1接受具有任何重新传送计数的邮件。
+| cacheJmsSessions  |布尔值 |否 | true  |是否缓存并重新使用JMS会话和生产者对象，而不是为每个请求重新创建它们。默认行为是缓存JMS会话和生产者（在3.6之前，默认行为是不缓存它们）。注意：这不受XA事务或JMS 1.0.2b支持。
+| eagerConsumer  |布尔值 |否 |   |是否在创建连接时创建使用者权限，而不是在轮询循环中使用延迟实例化。
+|规范 |枚举 |否 | 1.0.2b  |要使用的JMS规范：1.0.2b（默认值）或1.1
+|用户名 |字符串 |否 |   |连接的用户名
+|密码 |字符串 |否 |   |连接的密码
+| numberOfConsumers  |整数 |否 |   |将用于接收JMS消息的并发使用者数量。 （注意：如果你使用这个属性，你不应该配置'numberOfConcurrentTransactedReceivers'，它具有相同的效果。）
+| jndiInitialFactory  |字符串 |否 |   |连接到JNDI时使用的初始工厂类。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| jndiProviderUrl  |字符串 |否 |   |连接到JNDI时使用的URL。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| jndiProviderProperties-ref  |字符串 |否 |   |引用包含其他提供程序属性的Map。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| connectionFactoryJndiName  | string  | no  |   |从JNDI查找连接工厂时使用的名称。
+| jndiDestinations  |布尔值 |否 |   |如果您想从JNDI查找队列或主题，而不是从会话。
+| forceJndiDestinations  |布尔值 |否 |   |如果设置为true，则无法从JNDI检索主题或队列时Mule会失败。如果设置为false，则Mule将在JNDI查找失败时从JMS会话中创建主题或队列。
+| disableTemporaryReplyToDestinations  |布尔值 |否 |   |如果设置为false（默认值），当Mule执行请求/响应调用时，自动设置为接收来自远程JMS调用的响应。
+| embeddedMode  |布尔值 |否 | false  |某些应用程序服务器（如WebSphere AS）不允许在JMS对象上调用某些方法，有效限制可用功能。嵌入模式告诉骡子尽可能避免这些。默认为false。
+| brokerURL  |字符串 |否 |   |用于连接到JMS服务器的URL。如果未设置，则默认值为vm：// localhost？broker.persistent = false＆broker.useJmx = false。
+|===
+
+。<activemq-connector...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| abstract-jndi-name-resolver  | 0..1  | jndi-name-resolver策略元素的占位符。
+|===
+
+===  Activemq XA连接器
+
+activemq-xa-connector元素用XA事务支持配置JMS连接器的ActiveMQ版本。
+
+。<activemq-xa-connector...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| connectionFactory-ref  |字符串 |否 |   |对连接工厂的可选引用。为供应商特定的JMS配置提供了默认连接工厂。
+| redeliveryHandlerFactory-ref  |字符串 |否 |   |参考重新传送处理程序。
+| acknowledgementMode  |枚举 |否 | AUTO_ACKNOWLEDGE  |使用的确认模式：AUTO_ACKNOWLEDGE，CLIENT_ACKNOWLEDGE或DUPS_OK_ACKNOWLEDGE。
+| clientId  |字符串 |否 |   | JMS客户端的ID。
+|耐久性 |布尔值 |否 |   |是否让所有主题订户持久。
+| noLocal  |布尔值 |否 |   |如果设置为true，订阅者将不会收到由其自己的连接发布的消息。
+| persistentDelivery  |布尔值 |否 |   |如果设置为true，则JMS提供程序会在发送消息时将其记录到稳定存储器中，如果交付不成功，可以恢复。如果消息在传输过程中丢失，客户认为应用程序会遇到问题，则客户会将其标记为持久消息。如果偶尔丢失的消息是可容忍的，则客户端将消息标记为非永久消息。客户使用交付模式告诉JMS提供商如何平衡消息传输可靠性/吞吐量。传送模式仅涵盖将消息传送到目的地。持续传送模式不保证在目的地保留消息，直到收到确认为止。客户应该假定消息保留策略是以管理方式设置的。消息保留策略管理从目的地到消息使用者的消息传递的可靠性。例如，如果客户的消息存储空间耗尽，则可能会丢弃由特定于站点的消息保留策略定义的一些消息。如果消息的传递模式是永久性的，并且目标具有足够的消息保留策略，则消息一定会由JMS提供程序一次性传递一次。
+| honorQosHeaders  |布尔值 |否 |   |如果设置为true，则会遵守消息的QoS标头。如果为false（默认），则连接器设置将覆盖邮件标题。
+| maxRedelivery  |整数 |否 |   |尝试重新传送邮件的最大次数。使用-1接受具有任何重新传送计数的邮件。
+| cacheJmsSessions  |布尔值 |否 | true  |是否缓存并重新使用JMS会话和生产者对象，而不是为每个请求重新创建它们。默认行为是缓存JMS会话和生产者（在3.6之前，默认行为是不缓存它们）。注意：这不受XA事务或JMS 1.0.2b支持。
+| eagerConsumer  |布尔值 |否 |   |是否在创建连接时创建使用者权限，而不是在轮询循环中使用延迟实例化。
+|规范 |枚举 |否 | 1.0.2b  |要使用的JMS规范：1.0.2b（默认值）或1.1
+|用户名 |字符串 |否 |   |连接的用户名
+|密码 |字符串 |否 |   |连接的密码
+| numberOfConsumers  |整数 |否 |   |将用于接收JMS消息的并发使用者数量。 （注意：如果你使用这个属性，你不应该配置'numberOfConcurrentTransactedReceivers'，它具有相同的效果。）
+| jndiInitialFactory  |字符串 |否 |   |连接到JNDI时使用的初始工厂类。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| jndiProviderUrl  |字符串 |否 |   |连接到JNDI时使用的URL。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| jndiProviderProperties-ref  |字符串 |否 |   |引用包含其他提供程序属性的Map。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| connectionFactoryJndiName  | string  | no  |   |从JNDI查找连接工厂时使用的名称。
+| jndiDestinations  |布尔值 |否 |   |如果您想从JNDI查找队列或主题，而不是从会话。
+| forceJndiDestinations  |布尔值 |否 |   |如果设置为true，则无法从JNDI检索主题或队列时Mule会失败。如果设置为false，则Mule将在JNDI查找失败时从JMS会话中创建主题或队列。
+| disableTemporaryReplyToDestinations  |布尔值 |否 |   |如果设置为false（默认值），当Mule执行请求/响应调用时，自动设置为接收来自远程JMS调用的响应。
+| embeddedMode  |布尔值 |否 | false  |某些应用程序服务器（如WebSphere AS）不允许在JMS对象上调用某些方法，有效限制可用功能。嵌入模式告诉骡子尽可能避免这些。默认为false。
+| brokerURL  |字符串 |否 |   |用于连接到JMS服务器的URL。如果未设置，则默认值为vm：// localhost？broker.persistent = false＆broker.useJmx = false。
+|===
+
+。<activemq-xa-connector...>的子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| abstract-jndi-name-resolver  | 0..1  | jndi-name-resolver策略元素的占位符。
+|===
+
+==  Mulemq xa连接器
+
+mulemq-xa-connector元素配置JMS XA连接器的MuleMQ版本。
+
+。<mulemq-xa-connector...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| connectionFactory-ref  |字符串 |否 |   |对连接工厂的可选引用。为供应商特定的JMS配置提供了默认连接工厂。
+| redeliveryHandlerFactory-ref  |字符串 |否 |   |参考重新传送处理程序。
+| acknowledgementMode  |枚举 |否 | AUTO_ACKNOWLEDGE  |使用的确认模式：AUTO_ACKNOWLEDGE，CLIENT_ACKNOWLEDGE或DUPS_OK_ACKNOWLEDGE。
+| clientId  |字符串 |否 |   | JMS客户端的ID。
+|耐久性 |布尔值 |否 |   |是否让所有主题订户持久。
+| noLocal  |布尔值 |否 |   |如果设置为true，订阅者将不会收到由其自己的连接发布的消息。
+| persistentDelivery  |布尔值 |否 |   |如果设置为true，则JMS提供程序会在发送消息时将其记录到稳定存储器中，如果交付不成功，可以恢复。如果消息在传输过程中丢失，客户认为应用程序会遇到问题，则客户会将其标记为持久消息。如果偶尔丢失的消息是可容忍的，则客户端将消息标记为非永久消息。客户使用交付模式告诉JMS提供商如何平衡消息传输可靠性/吞吐量。传送模式仅涵盖将消息传送到目的地。持续传送模式不保证在目的地保留消息，直到收到确认为止。客户应该假定消息保留策略是以管理方式设置的。消息保留策略管理从目的地到消息使用者的消息传递的可靠性。例如，如果客户的消息存储空间耗尽，则可能会丢弃由特定于站点的消息保留策略定义的一些消息。如果消息的传递模式是永久性的，并且目标具有足够的消息保留策略，则消息一定会由JMS提供程序一次性传递一次。
+| honorQosHeaders  |布尔值 |否 |   |如果设置为true，则会遵守消息的QoS标头。如果为false（默认），则连接器设置将覆盖邮件标题。
+| maxRedelivery  |整数 |否 |   |尝试重新传送邮件的最大次数。使用-1接受具有任何重新传送计数的邮件。
+| cacheJmsSessions  |布尔值 |否 | true  |是否缓存并重新使用JMS会话和生产者对象，而不是为每个请求重新创建它们。默认行为是缓存JMS会话和生产者（在3.6之前，默认行为是不缓存它们）。注意：这不受XA事务或JMS 1.0.2b支持。
+| eagerConsumer  |布尔值 |否 |   |是否在创建连接时创建使用者权限，而不是在轮询循环中使用延迟实例化。
+|规范 |枚举 |否 | 1.0.2b  |要使用的JMS规范：1.0.2b（默认值）或1.1
+|用户名 |字符串 |否 |   |连接的用户名
+|密码 |字符串 |否 |   |连接的密码
+| numberOfConsumers  |整数 |否 |   |将用于接收JMS消息的并发使用者数量。 （注意：如果你使用这个属性，你不应该配置'numberOfConcurrentTransactedReceivers'，它具有相同的效果。）
+| jndiInitialFactory  |字符串 |否 |   |连接到JNDI时使用的初始工厂类。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| jndiProviderUrl  |字符串 |否 |   |连接到JNDI时使用的URL。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| jndiProviderProperties-ref  |字符串 |否 |   |引用包含其他提供程序属性的Map。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| connectionFactoryJndiName  | string  | no  |   |从JNDI查找连接工厂时使用的名称。
+| jndiDestinations  |布尔值 |否 |   |如果您想从JNDI查找队列或主题，而不是从会话。
+| forceJndiDestinations  |布尔值 |否 |   |如果设置为true，则无法从JNDI检索主题或队列时Mule会失败。如果设置为false，则Mule将在JNDI查找失败时从JMS会话中创建主题或队列。
+| disableTemporaryReplyToDestinations  |布尔值 |否 |   |如果设置为false（默认值），当Mule执行请求/响应调用时，自动设置为接收来自远程JMS调用的响应。
+| embeddedMode  |布尔值 |否 | false  |某些应用程序服务器（如WebSphere AS）不允许在JMS对象上调用某些方法，有效限制可用功能。嵌入模式告诉骡子尽可能避免这些。默认为false。
+| brokerURL  |字符串 |否 |   |用于连接到JMS服务器的URL。如果未设置，则默认值为nsp：// localhost：9000。使用逗号连接到群集单独的url时。
+| bufferOutput  |字符串 |否 |排队 |指定客户端将用于将事件发送到领域的写入处理程序的类型。这可以是标准的，直接的或排队的。除非指定，否则使用标准。但是，为了获得更好的延迟，直接使用，这会影响CPU，因为每个写操作都没有被缓冲，而是直接刷新。排队的处理程序将改进CPU，并且可以提供更好的整体吞吐量，因为客户端和服务器之间会有一些缓冲。两种选择中最好的选择是标准，它会尝试直接写入，但会在吞吐量增加并影响CPU时退出并缓冲IO刷新。
+| syncWrites  |布尔值 |否 | false  |设置每次写入存储器是否也会在文件系统上调用同步以确保写入所有数据到磁盘，默认为false。
+| syncBatchSize  |整数 |否 | 50  |设置写同步批处理的大小，默认值为50，范围从1到Integer.MAX_VALUE。
+|同步时间 |整数 |否 | 20  |设置同步批次之间的时间间隔，默认值为20毫秒，范围为1至Integer.MAX_VALUE。
+| globalStoreCapacity  |整数 |否 | 5000  |将默认通道/队列容量设置设置为阻止发布主题或队列的其他事件完整，默认值是5000，有效范围是1到Integer.MAX_VALUE。
+| maxUnackedSize  | integer  | no  | 100  |指定在开始删除最旧的默认事件之前，连接将保留在内存中的未确认事件的最大数量是100，范围是1到Integer.MAX_VALUE。
+| useJMSEngine  |布尔值 |否 | true  |所有JMS主题要求此设置为true，但是，如果您希望使用不同的信道类型不同的扇出引擎（仅在MULEMQ +中），这可以设置为false。
+| queueWindowSize  |整数 |否 | 100  |使用队列时，它指定服务器在确认之间每个数据块发送的消息数量，默认值是100，范围是1到Integer.MAX_VALUE。
+| autoAckCount  |整数 |否 | 50  |选择自动确认模式时，不是确认每个事件，将确认每个第n个事件，默认是50，范围是1到Integer.MAX_VALUE。
+| enableSharedDurable  |布尔值 |否 | false  |允许多个持久订阅者共享相同名称的主题，只有1个使用该事件。当第一次持久断开时，第二次将接管等等。默认为false。
+| randomiseRNames  |布尔 |无 |真 |对于多个RNAME，随机化RNAME的能力对于群集节点之间的负载平衡非常有用。
+| messageThreadPoolSize  | integer  | no  | 30  |指示每个连接将用于传递异步事件的最大线程数，默认值为30，范围为1到Integer.MAX_VALUE
+| discOnClusterFailure  |布尔值 |否 | true  |指示客户端连接在群集失败时是否会断开连接，这将导致自动重新连接的发生，默认为true。
+| initialRetryCount  |整数 |否 | 2  |连接尝试在启动时尝试连接到领域的最大尝试次数，默认值为2， 0是无限的，范围是Integer.MIN_VALUE到Integer.MAX_VALUE
+| muleMqMaxRedelivery  |整数 |否 | 100  |这表示为每个消费者存储的重新发送的事件的地图大小，一旦达到此限制最旧的将被删除，默认值是100，范围是1到100
+| retryCommit  |布尔值 |否 | false  |如果事务处理会话提交失败，如果为true，则将重试提交，直到成功或者由于事务超时而失败，则默认为false。
+| enableMultiplexedConnections  |布尔 |否 | false  |如果这是真的，会话将被多路复用到一个连接上，否则会创建一个新的套接字每个会话中，默认为false。
+|===
+
+。<mulemq-xa-connector...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| abstract-jndi-name-resolver  | 0..1  | jndi-name-resolver策略元素的占位符。
+|===
+
+==  Weblogic连接器
+
+weblogic-connector元素配置JMS连接器的WebLogic版本。
+
+。<weblogic-connector...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| connectionFactory-ref  |字符串 |否 |   |对连接工厂的可选引用。为供应商特定的JMS配置提供了默认连接工厂。
+| redeliveryHandlerFactory-ref  |字符串 |否 |   |参考重新传送处理程序。
+| acknowledgementMode  |枚举 |否 | AUTO_ACKNOWLEDGE  |使用的确认模式：AUTO_ACKNOWLEDGE，CLIENT_ACKNOWLEDGE或DUPS_OK_ACKNOWLEDGE。
+| clientId  |字符串 |否 |   | JMS客户端的ID。
+|耐久性 |布尔值 |否 |   |是否让所有主题订户持久。
+| noLocal  |布尔值 |否 |   |如果设置为true，订阅者将不会收到由其自己的连接发布的消息。
+| persistentDelivery  |布尔值 |否 |   |如果设置为true，则JMS提供程序会在发送消息时将其记录到稳定存储器中，如果交付不成功，可以恢复。如果消息在传输过程中丢失，客户认为应用程序会遇到问题，则客户会将其标记为持久消息。如果偶尔丢失的消息是可容忍的，则客户端将消息标记为非永久消息。客户使用交付模式告诉JMS提供商如何平衡消息传输可靠性/吞吐量。传送模式仅涵盖将消息传送到目的地。持续传送模式不保证在目的地保留消息，直到收到确认为止。客户应该假定消息保留策略是以管理方式设置的。消息保留策略管理从目的地到消息使用者的消息传递的可靠性。例如，如果客户的消息存储空间耗尽，则可能会丢弃由特定于站点的消息保留策略定义的一些消息。如果消息的传递模式是永久性的，并且目标具有足够的消息保留策略，则消息一定会由JMS提供程序一次性传递一次。
+| honorQosHeaders  |布尔值 |否 |   |如果设置为true，则会遵守消息的QoS标头。如果为false（默认），则连接器设置将覆盖邮件标题。
+| maxRedelivery  |整数 |否 |   |尝试重新传送邮件的最大次数。使用-1接受具有任何重新传送计数的邮件。
+| cacheJmsSessions  |布尔值 |否 | true  |是否缓存并重新使用JMS会话和生产者对象，而不是为每个请求重新创建它们。默认行为是缓存JMS会话和生产者（在3.6之前，默认行为是不缓存它们）。注意：这不受XA事务或JMS 1.0.2b支持。
+| eagerConsumer  |布尔值 |否 |   |是否在创建连接时创建使用者权限，而不是在轮询循环中使用延迟实例化。
+|规范 |枚举 |否 | 1.0.2b  |要使用的JMS规范：1.0.2b（默认值）或1.1
+|用户名 |字符串 |否 |   |连接的用户名
+|密码 |字符串 |否 |   |连接的密码
+| numberOfConsumers  |整数 |否 |   |将用于接收JMS消息的并发使用者数量。 （注意：如果你使用这个属性，你不应该配置'numberOfConcurrentTransactedReceivers'，它具有相同的效果。）
+| jndiInitialFactory  |字符串 |否 |   |连接到JNDI时使用的初始工厂类。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| jndiProviderUrl  |字符串 |否 |   |连接到JNDI时使用的URL。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| jndiProviderProperties-ref  |字符串 |否 |   |引用包含其他提供程序属性的Map。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| connectionFactoryJndiName  | string  | no  |   |从JNDI查找连接工厂时使用的名称。
+| jndiDestinations  |布尔值 |否 |   |如果您想从JNDI查找队列或主题，而不是从会话。
+| forceJndiDestinations  |布尔值 |否 |   |如果设置为true，则无法从JNDI检索主题或队列时Mule会失败。如果设置为false，则Mule将在JNDI查找失败时从JMS会话中创建主题或队列。
+| disableTemporaryReplyToDestinations  |布尔值 |否 |   |如果设置为false（默认值），当Mule执行请求/响应调用时，自动设置为接收来自远程JMS调用的响应。
+| embeddedMode  |布尔值 |否 | false  |某些应用程序服务器（如WebSphere AS）不允许在JMS对象上调用某些方法，有效限制可用功能。嵌入模式告诉骡子尽可能避免这些。默认为false。
+|===
+
+。<weblogic-connector...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| abstract-jndi-name-resolver  | 0..1  | jndi-name-resolver策略元素的占位符。
+|===
+
+==  Websphere连接器
+
+websphere连接器元素配置WebSphere版本的JMS连接器。
+
+。<websphere-connector...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| connectionFactory-ref  |字符串 |否 |   |对连接工厂的可选引用。为供应商特定的JMS配置提供了默认连接工厂。
+| redeliveryHandlerFactory-ref  |字符串 |否 |   |参考重新传送处理程序。
+| acknowledgementMode  |枚举 |否 | AUTO_ACKNOWLEDGE  |使用的确认模式：AUTO_ACKNOWLEDGE，CLIENT_ACKNOWLEDGE或DUPS_OK_ACKNOWLEDGE。
+| clientId  |字符串 |否 |   | JMS客户端的ID。
+|耐久性 |布尔值 |否 |   |是否让所有主题订户持久。
+| noLocal  |布尔值 |否 |   |如果设置为true，订阅者将不会收到由其自己的连接发布的消息。
+| persistentDelivery  |布尔值 |否 |   |如果设置为true，则JMS提供程序会在发送消息时将其记录到稳定存储器中，如果交付不成功，可以恢复。如果消息在传输过程中丢失，客户认为应用程序会遇到问题，则客户会将其标记为持久消息。如果偶尔丢失的消息是可容忍的，则客户端将消息标记为非永久消息。客户使用交付模式告诉JMS提供商如何平衡消息传输可靠性/吞吐量。传送模式仅涵盖将消息传送到目的地。持续传送模式不保证在目的地保留消息，直到收到确认为止。客户应该假定消息保留策略是以管理方式设置的。消息保留策略管理从目的地到消息使用者的消息传递的可靠性。例如，如果客户的消息存储空间耗尽，则可能会丢弃由特定于站点的消息保留策略定义的一些消息。如果消息的传递模式是永久性的，并且目标具有足够的消息保留策略，则消息一定会由JMS提供程序一次性传递一次。
+| honorQosHeaders  |布尔值 |否 |   |如果设置为true，则会遵守消息的QoS标头。如果为false（默认），则连接器设置将覆盖邮件标题。
+| maxRedelivery  |整数 |否 |   |尝试重新传送邮件的最大次数。使用-1接受具有任何重新传送计数的邮件。
+| cacheJmsSessions  |布尔值 |否 | true  |是否缓存并重新使用JMS会话和生产者对象，而不是为每个请求重新创建它们。默认行为是缓存JMS会话和生产者（在3.6之前，默认行为是不缓存它们）。注意：这不受XA事务或JMS 1.0.2b支持。
+| eagerConsumer  |布尔值 |否 |   |是否在创建连接时创建使用者权限，而不是在轮询循环中使用延迟实例化。
+|规范 |枚举 |否 | 1.0.2b  |要使用的JMS规范：1.0.2b（默认值）或1.1
+|用户名 |字符串 |否 |   |连接的用户名
+|密码 |字符串 |否 |   |连接的密码
+| numberOfConsumers  |整数 |否 |   |将用于接收JMS消息的并发使用者数量。 （注意：如果你使用这个属性，你不应该配置'numberOfConcurrentTransactedReceivers'，它具有相同的效果。）
+| jndiInitialFactory  |字符串 |否 |   |连接到JNDI时使用的初始工厂类。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| jndiProviderUrl  |字符串 |否 |   |连接到JNDI时使用的URL。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| jndiProviderProperties-ref  |字符串 |否 |   |引用包含其他提供程序属性的Map。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+| connectionFactoryJndiName  | string  | no  |   |从JNDI查找连接工厂时使用的名称。
+| jndiDestinations  |布尔值 |否 |   |如果您想从JNDI查找队列或主题，而不是从会话。
+| forceJndiDestinations  |布尔值 |否 |   |如果设置为true，则无法从JNDI检索主题或队列时Mule会失败。如果设置为false，则Mule将在JNDI查找失败时从JMS会话中创建主题或队列。
+| disableTemporaryReplyToDestinations  |布尔值 |否 |   |如果设置为false（默认值），当Mule执行请求/响应调用时，自动设置为接收来自远程JMS调用的响应。
+| embeddedMode  |布尔值 |否 | false  |某些应用程序服务器（如WebSphere AS）不允许在JMS对象上调用某些方法，有效限制可用功能。嵌入模式告诉骡子尽可能避免这些。默认为false。
+|===
+
+。<websphere-connector...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| abstract-jndi-name-resolver  | 0..1  | jndi-name-resolver策略元素的占位符。
+|===
+
+== 事务
+
+事务元素配置一个事务。事务处理允许将一系列操作分组在一起，以便在出现故障时将它们回滚。设置操作（例如ALWAYS_BEGIN或JOIN_IF_POSSIBLE）以及事务的超时设置。
+
+。<transaction...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|===
+
+== 客户端确认交易
+
+client-ack-transaction元素配置客户端确认事务，该事务与事务相同但带有消息确认。客户端确认没有回滚的概念，但是此事务对于控制消息从目的地消耗的方式很有用。
+
+。<client-ack-transaction...>的子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|===
+
+== 默认的jndi名称解析器
+
+。<default-jndi-name-resolver...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| jndiInitialFactory  |字符串 |是 |   |连接到JNDI时使用的初始工厂类。
+| jndiProviderUrl  |字符串 |是 |   |连接到JNDI时使用的URL。
+| jndiProviderProperties-ref  |字符串 |否 |   |引用包含其他提供程序属性的Map。
+| initialContextFactory-ref  |字符串 |否 |   |引用将用于创建JDNI上下文的javax.naming.spi.InitialContextFactory实现。
+|===
+
+。<default-jndi-name-resolver...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|===
+
+== 自定义jndi名称解析器
+
+。<custom-jndi-name-resolver...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|类 |类名 |是 |   | LifecycleAdapter接口的实现。
+|===
+
+。<custom-jndi-name-resolver...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| spring：property  | 0 .. *  |自定义配置的Spring样式属性元素。
+|===
+
+== 缓存连接工厂
+
+DEPRECATED：此元素已从Mule 3.6中弃用。这仍然可以在3.6中使用，但是没有必要从Mule中获得3.6默认情况下，当CachingConnectionFactory未明确配置时，3.6 JMS连接缓存会话/生成器。
+
+。<caching-connection-factory...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|名称 |名称（无空格） |是 |   |标识池，以便连接器可以引用它。
+| sessionCacheSize  |整数 |否 | 1  |定义可以在池中的最大连接数。注意：此高速缓存大小是每个会话确认类型（auto，client，dups_ok，事务）的高速缓存会话数的最大限制。因此，缓存会话的实际数量可能会高达指定值的四倍 - 在混合和匹配不同确认类型的情况不太可能的情况下。
+| cacheProducers  |布尔 |否 | true  |指示是否缓存JMS连接的JMS MessageProducer。默认值是true
+| connectionFactory-ref  |名称（无空格） |是 |   |引用连接工厂
+|用户名 |字符串 |否 |   |连接的用户名
+|密码 |字符串 |否 |   |连接的密码
+|===
+
+。<caching-connection-factory...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|===
+
+===  XML架构
+
+按如下所示为该模块导入XML模式：
+
+[source, xml, linenums]
+----
+xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/jms  http://www.mulesoft.org/schema/mule/jms/3.6/mule-jms.xsd"
+----
+
+=== 的Javadoc
+
+这个运输的Javadoc可以在下面找到：
+
+http://www.mulesoft.org/docs/site/3.5.0/apidocs/org/mule/transport/jms/package-summary.html[JMS运输Javadoc]
+
+=== 的Maven
+
+如果您使用Maven构建应用程序，请使用以下groupId和artifactId将此模块作为依赖项包含在内：
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-jms</artifactId>
+</dependency>
+----
+
+== 注意事项
+
+JMS 1.0.2b规范的限制是仅支持每个ConnectionFactory的队列或主题。如果您同时需要，请配置两个单独的连接器，一个引用`QueueConnectionFactory`，另一个引用`TopicConnectionFactory`。然后，您可以使用`connector-ref`属性消除端点的歧义。
+
+[%header%autowidth.spread]
+|===
+^ | 1.0.2b规范的解决方法
+一个|
+
+[source, xml, linenums]
+----
+<spring:bean name="queueConnectionFactory" class="com.foo.QueueConnectionFactory"/>
+<spring:bean name="topicConnectionFactory" class="com.foo.TopicConnectionFactory"/>
+ 
+<jms:connector name="jmsQueueConnector" connectionFactory-ref="queueConnectionFactory" />
+<jms:connector name="jmsTopicConnector" connectionFactory-ref="topicConnectionFactory" />
+ 
+<jms:outbound-endpoint queue="my.queue1" connector-ref="jmsQueueConnector"/>
+<jms:outbound-endpoint queue="my.queue2" connector-ref="jmsQueueConnector"/>
+ 
+<jms:inbound-endpoint topic="my.topic" connector-ref="jmsTopicConnector"/>
+----
+|===

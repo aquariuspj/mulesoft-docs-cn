@@ -1,0 +1,198 @@
+= 连接器配置参考
+:keywords: anypoint, studio, connectors, transports
+
+Mule中有两种基本连接器结构：基于操作的连接器和<<Endpoint-Based Connector Configuration>>连接器。本文档描述了这两种类型所需的一般配置。
+
+本文档不提供特定连接器的说明;要获得这些说明，您需要查阅所需的连接器文档。
+
+要快速访问与Anypoint Studio捆绑在一起的所有连接器的参考信息，请执行以下步骤：
+
+. 转到 link:/mule-user-guide/v/3.6/anypoint-connectors[Anypoint连接器]页面。
+
+. 转到*Accessing Connectors*部分。
+
+. 检查提供的表格中的*Reference*列。
+
+*Note*：Mule 3.6中的HTTP连接器更改：从Mule 3.6及更高版本开始，基于HTTP和HTTPS端点的连接器和传输已被支持HTTPS的单个基于HTTP操作的连接器替代。未来版本中将删除旧版基于端点的HTTP连接器。
+
+== 假设
+
+本文档假定您熟悉Mule和 link:/anypoint-studio/v/6/index[Anypoint Studio界面]。要提高您对Studio的熟悉度，请考虑完成一个或多个 link:/anypoint-studio/v/6/basic-studio-tutorial[Anypoint Studio教程]。此外，此示例假定您对 link:/mule-user-guide/v/3.6/mule-concepts[骡流]， link:/mule-user-guide/v/3.6/global-elements[全球元素]和 link:/mule-user-guide/v/3.6/anypoint-connectors[Anypoint连接器]有基本的了解。
+
+== 基于操作的连接器配置
+
+基于操作的连接器变化太大以至于无法实现通用配置指令。但是，至少所有基于操作的连接器都需要在“常规”选项卡上配置以下字段：
+
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+| *Connector Configuration*  |定义全局连接参数。大多数基于操作的连接器都要求在全局级别配置连接凭证，而不是在指定操作的流程中进行配置。
+| *Operation*  |从下拉列表中选择一项操作，以指定连接器应对API或协议执行的功能。
+|===
+
+请务必参阅连接器特定的配置说明，以获取有关剩余字段的指导。有关Anypoint Studio中自动捆绑哪些连接器的信息，请访问https://www.mulesoft.com/exchange[Anypoint Exchange]。
+
+在流程中配置基于操作的连接器：
+
+.  *Configure a global connector configuration.*点击Anypoint Studio画布下方的*Global Element*选项卡以创建新的全局连接器配置，或者在XML编辑器中为您的流添加**`<connectorname>:config `**。
+
+.  *Configure connector operation in your flow.*将调色板中的连接器拖放到画布上并选择适当的操作，或者在XML编辑器的流程中添加**`<connectorname>:<operation> `**。
+
+.  *Reference the connector configuration from the connector operation.*单击属性编辑器中的*Connector Configuration*旁边的下拉列表以选择您在步骤1中配置的全局连接器，或者在XML中添加**`config-ref`**属性编辑器并提供全局连接器配置的名称。
+
+.  *Configure any additional parameters necessary for the operation.*
+
+== 基于端点的连接器配置
+
+终端将消息传入和传出Mule流，通常传递给外部资源，如数据库，Web客户端或电子邮件服务器，但它们也可以与其他Mule流交换消息。
+
+==== 入站端点
+
+驻留在流程开始处并充当*Message Source*的{​​{0}}在每次接收到消息时触发一个新的流程实例。
+
+每个传入消息必须遵循接收端点支持的特定协议。例如，电子邮件可以到达POP3或IMAP入站端点，但文件必须使用FTP，文件或SFTP端点。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:connector+conf+inf+3.png[connector+conf+inf+3]
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="localhost" port="8083" doc:name="HTTP Request Configuration"/>   
+    <flow name="exampleflow2" >
+        <pop3:inbound-endpoint host="localhost" user="${prod.user}" responseTimeout="10000" doc:name="POP3"/>
+        <set-payload doc:name="Set Payload" value="foo"/>
+        <http:request config-ref="HTTP_Request_Configuration" path="/" method="POST" doc:name="HTTP"/>
+        <logger level="INFO" doc:name="Logger" message="bar"/>
+    </flow>
+----
+....
+------
+
+==== 复合来源
+
+称为*Composite Source Scope*的特殊范围允许您将两个或多个接收相同类型数据（例如，电子邮件，文件，数据库映射或HTML）的连接器封装到单个消息处理块中。每个嵌入式连接器在其特定通道上侦听传入消息。无论哪个连接器首先收到一条消息，都会成为流的特定实例的消息源。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:connector+config+ref2.png[connector+config+ref2]
+
+Drag the Composite Source Scope onto the canvas from the palette, then drag the connectors into the Composite Source Scope processing block. The composite source then allows the each embedded connector to act as a temporary, non-exclusive message source when it receives an incoming message.
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="localhost" port="8083" doc:name="HTTP Request Configuration"/>
+    <flow name="exampleflow2" >
+        <composite-source doc:name="Composite Source">
+            <pop3:inbound-endpoint host="localhost" user="${prod.user}" responseTimeout="10000" doc:name="POP3"/>
+            <jetty:inbound-endpoint exchange-pattern="one-way" address="www.example.com" doc:name="Jetty"/>
+        </composite-source>
+        <set-payload doc:name="Set Payload" value="foo"/>
+        <http:request config-ref="HTTP_Request_Configuration" path="/" method="POST" doc:name="HTTP"/>
+        <logger level="INFO" doc:name="Logger" message="bar"/>
+    </flow>
+----
+
+Add a composite-source tag into your flow, then embed multiple connectors inside the scope of the tag. The composite source then allows the each connector to act as a temporary, non-exclusive message source when it receives an incoming message.
+....
+------
+
+==== 出站端点
+
+如果基于端点的连接器不是流中的第一个构建块（即消息源），则它被指定为*outbound endpoint*，因为它使用它支持的特定传输通道（如SMTP，FTP，或JDBC）将消息分发到流之外的目标，其范围可以从文件系统到电子邮件服务器到Web客户端，也可以包含其他Mule流。
+
+在许多情况下，*outbound endpoint*通过将完全处理的消息分发到其最终的外部目标来完成流程。但是，出站端点并不总是完成流程处理，因为它们也可以存在于流程的中间，将数据分派到外部源，并将该数据（或其他数据）传递给流程中的下一个消息处理器。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+  image:connector+config+ref+4.png[connector+config+ref+4]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<flow name="exampleflow2" >      
+        <pop3:inbound-endpoint host="localhost" user="${prod.user}" responseTimeout="10000" doc:name="POP3"/>     
+        <set-payload doc:name="Set Payload" value="foo"/>
+        <pop3:outbound-endpoint host="localhost" user="${prod.user}" responseTimeout="10000" doc:name="POP3"/>
+        <logger level="INFO" doc:name="Logger" message="bar"/>
+    </flow>
+----
+....
+------
+
+=== 配置参考
+
+虽然各种基于端点的连接器具有独特的属性，但大多数这些构建模块共享公共属性。
+
+*General*标签通常会提供这些字段。
+
+[%header,cols="2*"]
+|===
+| {字段{1}}说明
+| *Display Name*  |默认为连接器名称。更改显示名称（必须为字母数字）以反映端点的特定角色，例如`Order Entry Endpoint`
+| *Exchange-Pattern*  |定义客户端和服务器之间的交互。可用的模式是*one-way*和**request-response**。单向交换模式假设服务器不需要响应，而请求 - 响应交换模式等待服务器响应，然后才允许消息处理继续。
+| *Host*  |默认名称是`localhost`。输入服务器的完全限定域名（FQDN）或IP地址。
+| *Port*  |用于连接到服务器的端口号。 （例如80）
+| *Path*  |允许指定路径。例如/ enter / the / path
+| *Connector Configuration*  |定义全局连接参数。
+|===
+
+取决于协议和类型（入站或出站）;这些附加参数可能会出现在常规选项卡上：
+
+[%header,cols="2*"]
+|===
+| {字段{1}}说明
+| *Polling Frequency*  |时间是毫秒（ms）以检查传入消息。默认值是1000毫秒。
+| *Output Pattern*  |从下拉列表中选择模式。在将分析的文件名写入磁盘时使用。
+| *Query Key*  |输入要使用的查询的关键字。
+| *Transaction*  |让您选择要用于交易的元素。使用加号按钮添加Mule交易。
+
+| *Cron Information*  |输入cron表达式按日期和时间安排事件。
+| *Method*  |对消息数据执行的操作。可用的选项有：*OPTION, GET, HEAD, POST, PUT, TRACE, CONNECT*和*DELETE*。
+|===
+
+*Advanced*标签通常包含这些字段。
+
+[%header,cols="2*"]
+|===
+| {字段{1}}说明
+| *Address*  |输入网址。如果使用此属性，请将其包含为URI的一部分。与主机，端口和路径互斥。
+| *Response Timeout*  |端点等待响应的时间（以毫秒为单位）。
+| *Encoding*  |选择运输工具将使用的字符集。例如UTF-8
+| *Disable Transport Transformer*  |如果您不想使用端点的默认响应传输，请选中此框。
+| *MIME Type*  |从该端点支持的下拉列表中选择一种格式。
+| *Connector Endpoint*  |定义连接器配置详细信息的全局版本。
+| *Business Events*  |选中该框以启用默认事件跟踪。
+|===
+
+*Transformers*标签通常包含这些字段。
+
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+| *Global Transformers (Request)*  |输入交付前将应用于邮件的变换器列表。变压器将按照他们列出的顺序应用。
+| *Global Transformers (Response)*  |输入一个同步转换器列表，它将在传输返回之前应用于响应。
+|===
+
+== 全局连接器配置
+
+某些连接器要求在全局元素中配置连接信息，例如用户名，密码和安全令牌，而不是在流中的消息处理器级别。此全局连接器配置维护配置和状态，并且同一类型的许多连接器可以在全局级别引用连接器配置。例如，具有四个不同HTTP连接器的Mule应用程序都可以引用同一个全局配置的HTTP连接器，该连接器定义诸如安全性，协议和代理设置等细节。因为它们都引用相同的全局连接器配置，所有四个HTTP端点在应用程序内的行为一致。
+
+选定的全局连接器配置也可以定义为一个域的*shared resources*，然后由引用该域的所有应用程序引用。有关更多信息，请参阅 link:/mule-user-guide/v/3.6/shared-resources[共享资源]。
+
+请注意，您在Anypoint Studio中配置的全局元素称为*Connector Configuration*。对于基于操作的连接器，相应的XML标签为**<connectorName>:config**，对于基于端点的连接器，相应的XML标签为**<connectorName>:connector**。
+
+== 另请参阅
+
+* 返回到 link:/mule-user-guide/v/3.6/anypoint-connectors[Anypoint连接器]主页面。

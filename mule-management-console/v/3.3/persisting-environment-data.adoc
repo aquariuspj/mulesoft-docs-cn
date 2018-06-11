@@ -1,0 +1,999 @@
+= 坚持不懈的环境数据
+
+开箱即用，Mule管理控制台在嵌入式数据库中存储持久状态数据（创建警报，部署，仪表板Portlet配置等）。如果托管控制台的服务器遇到灾难性故障，则此持久数据将丢失。您可以通过将控制台配置为使用外部数据库来存储持久状态数据来避免这种情况。在控制台主机发生灾难性故障后，您可以在另一台主机上设置控制台，然后将其配置为使用与先前实例相同的数据库。
+
+目前您可以在Oracle，Postgres或MySQL数据库中保存环境数据。
+
+[NOTE]
+====
+Mule控制台的嵌入式数据库文件位于：`<MMC installation path>/.mule/mmc/mmc-data/db`
+
+将MMC配置为使用外部数据库存储其持久数据后，请勿删除`mmc-data`文件夹。 `db`子文件夹不再使用，但`repository`，`version`和`workspaces`子文件夹将被Java内容存储库（JCR）内部设置使用。
+====
+
+[WARNING]
+不要将MMC状态信息与Business Events持久性混淆。它们是两个独立的系统，彼此不相关。请参阅 link:/mule-user-guide/v/3.6/business-events[商业活动]的详细说明。
+
+[TIP]
+也可以使用外部数据库来存储Mule事件跟踪信息，这些信息通常是使用Business Events存储的。点击这里查看详情。
+
+==  Oracle安装程序
+
+=== 工具
+
+*  SQL开发人员：
+** 下载 http://www.oracle.com/technetwork/developer-tools/sql-developer/downloads/index.html[最新版本]
+** 咨询 http://docs.oracle.com/cd/E25259_01/doc.31/e26419/toc.htm[Linux，Mac OS X和Windows安装指南]
+*  Oracle数据库速成版11.x：
+** 下载 http://www.oracle.com/technetwork/products/express-edition/downloads/index.html[最新版本]
+** 咨询 http://docs.oracle.com/cd/E17781_01/index.htm[Linux（x86-64）和Windows的安装指南]
+** 浏览 http://www.oracle.com/pls/db112/homepage[完整的文档库]
+
+[IMPORTANT]
+====
+*Important!*
+
+不要尝试使用JDK 1.7运行SQL Developer。**. Even though the SQL installation guide lists “JDK 1.6.0_11 or later” as suitable for installation, attempting to run SQL Developer with JDK 1.7.**会导致警告消息和SQL Developer中格式错误的SQL代码。
+====
+
+=== 安装SQL Developer
+
+遵循列出的<<Tools>>文档提供的简单说明来解压缩安装程序并为SQL Developer运行可执行文件。
+
+=== 安装Oracle Express
+
+Oracle Express为Windows提供了一个直接的图形化安装程序，并为Linux提供了一个.rpm包。按照列出的<<Tools>>文档提供的说明进行操作。
+
+[NOTE]
+Windows和Linux都要求您具有管理员权限才能安装Oracle Express。
+
+=== 配置文件
+
+安装期间会自动生成文件`listener.ora`和`tnsnames.ora`。
+
+对于Linux，这些文件通常驻留在：`/u01/app/oracle/product/11.2.0/xe/network/admin`
+
+在Windows上，`listener.ora`和`tnsnames.ora`通常驻留在：`C:\oraclexe\app\oracle\product\11.2.0\server\network\admin`
+
+////
+ 点击查看listener.ora列表
+
+ 点击查看tnsnames.ora的列表
+////
+
+[NOTE]
+对于`HOST`值，MuleSoft建议使用静态IP地址（例如`192.168.1.10`）或`0.0.0.0`地址。 MuleSoft还建议不要使用`localhost`或`HOST`的主机名。
+
+[IMPORTANT]
+请注意，如果文件`slqnet.ora`存在（通常在`/app/oracle/product/11.2.0/xe/network/admin`中），它可能包含一些已知会导致问题的选项。例如，除非您正在微调数据库，否则应该禁用与`SQLNET.AUTHENTICATION_SERVICES = (NONE)`的NFS安全集成。
+
+=== 创建数据库用户
+
+要使用SQL Developer GUI创建数据库用户，请完成以下步骤：
+
+. 启动SQL Developer
+. 转到`<sqldeveloper install>/sqldeveloper`
+* 在Linux和Mac OS X上，运行`sqldeveloper.sh` shell脚本
+* 在Windows上，启动`sqldeveloper.exe`
+
+如果SQL开发人员要求提供完整的Java路径，请输入完整路径（如果使用GUI，请导航到该路径）。典型的Java路径是：
+
+*  Linux：`/usr/java/jdk1.6.0_31/bin`
+*  Windows：`C:\Program Files\Java\jdk1.6.0_31\bin`
+
+. 创建一个新的数据库连接：
+.. 点击左侧窗格中的*Connections*标签，右键点击*Connections*，然后选择*New Connection*，显示`New / Select Database connection`对话框。
+.. 在连接*Name*字段中输入：`mmc_persistency_status`
+.. 在*Username*字段中输入：`SYSTEM`
+.. 在*Password*字段中，输入您在Oracle Express安装过程中发出的SYSTEM密码。
+.. 在*Hostname*字段中，确保主机名是正确的。 （如果Oracle安装在本地计算机上，它将是`localhost`）。
+.. 在*SID*字段中输入`xe`
+. 点击*Test*验证连接。测试完成后，确认在对话框底部附近出现`Status: Success`。
+. 点击*Save*保存您指定的连接设置。
+. 点击*Connect*，然后点击*Connections*标签上连接名称旁边的加号，展开连接元素菜单。
+. 右键单击*Other Users,*，然后选择*Create User*以显示*Create/Edit User*对话框。
+. 填写所需信息的字段。以下提供样本指导：
+** 用户名：`MMC_STATUS`
+** 新密码：`mmc123`
+** 默认表空间：`USERS`
+** 临时表空间：`TEMP`
+** 角色选项卡：`RESOURCE`，`CONNECT`
+** 系统权限选项卡：`CREATE TRIGGER`，`CREATE TABLE`，`CREATE SEQUENCE`
+
+[NOTE]
+此设置在USERS表空间上使用无限配额进行测试。
+. 点击*Apply*，然后点击*Close*。
+
+=== 设置数据库
+
+==== 创建表格
+
+在第一次运行时，JCR自动创建存储持久Mule控制台信息所需的所有表。但是，您必须手动创建存储Quartz作业信息的表;否则会发生类似于以下内容的错误：`ERROR: relation “qrtz_locks” does not exist`。
+
+创建并插入表格：
+
+. 转到`<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/classes/quartz`
+. 找到`tables_oracle.sql`
+. 将文件解压缩到一个方便的位置，例如您的主目录或Linux系统上的`/tmp`目录。
+. 在用户`MMC_STATUS`下执行目标数据库中的`tables_oracle.sql`
+
+////
+ 单击以查看如何使用sqlplus实用程序执行tables_oracle.sql
+
+. 根据您的操作系统，访问Oracle Express菜单并完成以下步骤之一：
+* 从Windows开始菜单：要打开*sqlplus*命令提示符，请导航至*Programs*（或所有程序）> *Oracle Database Express 11g Edition*>，*Run SQL Command Line*。
+* 在Linux中：打开适当的菜单（Gnome中的*Applications*或KDE中的*K*菜单），然后选择*Oracle Database 11g Express Edition*，然后选择*Run SQL Command Line*。
+. 打开*sqlplus*命令提示符后，键入：`connect MMC_STATUS/mmc123@XE`
+. 输入以下内容运行`tables_oracle.sql`脚本：`start <path to script>/tables_oracle.sql`，通常会解析为`start /tmp/tables_oracle.sql`
+. 要退出*sqlplus*，请键入：`exit`
++
+[TIP]
+====
+有关`sqlplus`命令的详细信息，请查阅 http://docs.oracle.com/cd/E11882_01/server.112/e16604/qstart.htm#SQPUG002[SQL * Plus参考指南]。
+====
+
+////
+
+此时，Oracle数据库已完全定义。
+
+=== 为Oracle设置Mule控制台
+
+==== 驱动程序
+
+您可以从以下位置获取适当的驱动程序：
+
+*  `ojdbc5.jar`（ http://www.oracle.com/technetwork/database/features/jdbc/index-091264.html[下载JDBC驱动程序]）
+*  `quartz-oracle-1.8.5.jar`（ http://repo1.maven.org/maven2/org/quartz-scheduler/quartz-oracle/1.8.5/quartz-oracle-1.8.5.jar[下载]）
+
+[IMPORTANT]
+石英Oracle jar必须与为石英提供的库版本（即`quartz-1.8.5.jar`）匹配
+
+=====  MMC驱动程序以Mule应用程序运行
+
+将Oracle驱动程序复制到以下目录：`<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/lib`
+
+或者通过将驱动程序复制到：`<Mule install path>/lib/user`
+
+用于MMC的===== 驱动程序以Web应用程序的形式运行
+
+将Oracle驱动程序复制到以下目录：`<Mule install path>/mmc/webapps/mmc/WEB-INF/lib`
+
+===== 常规设置
+
+本示例使用本文档前面用于设置Oracle数据库的参数。
+
+*  Oracle正在`localhost`和端口`1521`上监听SID：`XE`
+* 用户：`MMC_STATUS`
+* 密码：`mmc123`
+
+===== 配置文件：`mmc.properties`
+
+转到以下目录：`<Mule install path>/mmc/webapps/mmc/WEB-INF/classes/META-INF`
+
+找到名为`mmc.properties`的文件
+
+编辑文件如下：
+
+[source, code, linenums]
+----
+script=oracle
+    datasource.username=MMC_STATUS
+    datasource.password=mmc123
+    datasource.url=jdbc\:oracle\:thin\:MMC_STATUS/mmc123@localhost\:1521\:xe
+    datasource.driver=oracle.jdbc.driver.OracleDriver
+    # Existing entries
+    plugin.directory=WEB-INF/plugins
+    console.inactivityTimeout=60
+    mmc.data=./mmc-data 
+----
+
+[WARNING]
+连接字符串上的冒号（":"）应始终转义，即以反斜杠（"\"）开头。
+
+[IMPORTANT]
+====
+确保没有出现以下行：
+
+[source, code, linenums]
+----
+datasource.dbName=${galaxy.data}/db from mmc.properties
+----
+
+该行与用于访问正确数据库的参数冲突，导致连接错误。如果该行存在于`mmc.properties`文件中，请将其删除。
+====
+
+===== 配置文件：`applicationContext.xml`
+
+在同一个目录中，找到名为`applicationContext.xml`的文件。打开它进行编辑，然后查找名为`internalDataSource`的bean。编辑如下：
+
+[source, xml, linenums]
+----
+<bean name="internalDataSource" class="org.springframework.jdbc.datasource.SimpleDriverDataSource">
+        <property name="driverClass" value="oracle.jdbc.driver.OracleDriver"/>
+        <property name="url" value="jdbc:oracle:thin:MMC_STATUS/mmc123@localhost:1521:xe"/>
+    </bean>
+----
+
+===== 配置文件：jackrabbit-repo.xml
+
+[IMPORTANT]
+====
+为了安全起见，请务必在编辑`jackrabbit-repo.xml`之前删除以下文件（如果列出）：
+
+*  `jackrabbit-repo-default.xml`
+*  `jackrabbit-repo-test.xml`
+====
+
+在同一个目录中，找到文件`jackrabbit-repo.xml`并将其打开进行编辑。将适当的参数替换为使用Oracle而不是默认的Derby数据库。下面提供了修改文件的完整列表。您可能希望将此默认的`jackrabbit-repo.xml`替换为此文件的内容。
+
+为数据库连接使用以下参数：
+
+* 角色：`MMC_STATUS`
+* 密码：`mmc123`
+* 架构：`oracle`
+
+[WARNING]
+架构应始终为`Oracle`。它定义了数据库，而不是用于存储持久数据的实际模式。使用的{{1}是`org.apache.jackrabbit.core.persistence.pool.OraclePersistenceManager.`所使用的*File System*是`org.apache.jackrabbit.core.fs.db.OracleFileSystem`。
+
+[IMPORTANT]
+====
+*Important!*
+
+在配置默认工作区和工作区名称本身时，请确保您符合下列条件之一：
+
+* 为这两个工作空间分配相同的_new_名称（例如`myOracleWorkspace`）
+_要么_
+
+* 删除`$MULE_HOME/.mule/mmc/mmc-data/workspaces`中的所有子文件夹，特别是`default`子文件夹
+
+如果上述两个条件都不满足，则所有二进制数据都将保留在本地而不是外部数据库中。
+====
+
+////
+  jackrabbit-repo.xml的示例
+////
+===== 配置文件：scheduler.properties
+
+找到名为`scheduler.properties`的文件。编辑它看起来像这样：
+
+[source, code, linenums]
+----
+org.quartz.jobStore.isClustered=false
+    org.quartz.jobStore.driverDelegateClass=org.quartz.impl.jdbcjobstore.oracle.OracleDelegate
+    org.quartz.jobStore.useProperties=true
+    org.quartz.scheduler.instanceId=AUTO
+----
+
+==  Postgres安装程序
+
+以下教程介绍了MMC与Postgres数据库一起使用的简单设置。这里概述的Postgres安装是基本的：数据库安装在默认端口上的本地机器上，并且安全性被停用（与数据库的不安全连接，具有完全管理权限的用户）。
+
+=== 工具
+
+*  PostgreSQL 9.1.3（ http://www.enterprisedb.com/products-services-training/pgdownload[下载]）
+*  pgAdmin III（安装Postgres时选择它）
+*  Postgres JDBC驱动程序：`postgresql-9.1-901.jdbc4.jar`。在安装时选择它，或从我们的 http://corp.wiki.mulesource.com/display/MULEDEV/Drivers[内部驱动页面]下载
+
+=== 安装PostgreSQL
+
+按照安装步骤操作，然后继续阅读本文档的下一部分。
+
+=== 创建数据库用户
+
+我们将使用与默认用户`postgres`相同的权限创建用户`MMC_STATUS`。用户`MMC_STATUS`将具有以下参数：
+
+* 角色名称：`MMC_STATUS`
+* 密码：`mmc123`
+
+[NOTE]
+`postgres`是超级用户。用户`MMC_STATUS`可以使用比`postgres`更少的权限进行操作，但最小的一组权限尚未确定。
+
+==== 使用pgAdmin III：
+
+* 使用pgAdmin III的对象浏览器（位于右侧窗格中）右键单击*localhost*上的服务器*PostgreSQL*，以用户`postgres`身份登录数据库服务器，然后选择*Connect*。
+* 在*Object Browser,*上点击右键*Login Roles*，然后选择*New Login Role*。
+* 在*New Login Role*对话框中，在*Role name*字段中键入`MMC_STATUS`。
+* 转到对话框中的*Definition*标签，然后在*Password*字段中输入密码`mmc123`。
+* 在*Role Privileges*标签中，选中所有复选框。
+* 点击*OK*关闭*New Login Role*对话框。
+
+=== 创建新的数据库
+
+我们将创建一个名为`mmc_persistency_status`的数据库，由用户`MMC_STATUS`拥有
+
+==== 使用pgAdmin III：
+
+* 使用对象浏览器，导航至*Databases*> *New Database*。
+* 在对话框中，在*Name*字段中键入`mmc_persistency_status`。
+* 在*Owner*字段中，选择`MMC_STATUS`
+* 在*Definition*标签中，确保*Encoding*设置为`UTF8`
+* 单击*OK*关闭“新建数据库”对话框。
+
+=== 验证新数据库
+
+使用PostgreSQL的*psql*命令行实用程序以用户`MMC_STATUS`登录数据库`mmc_persistency_status`。为此，请打开终端并运行：
+
+`psql postgres –UMMC_STATUS`
+
+////
+ 点击查看如何运行psql命令
+
+默认情况下，系统上的任何用户都可以运行`psql`命令。但是，Postgres的默认安装目录通常不包含在用户的PATH环境变量中，导致shell在尝试运行`psql`命令时返回`command not found`错误。
+
+有几种方法可以进行：
+
+* 通过指定完整路径运行`psql`命令：`<postgres install dir>/9.1/bin/psql`
+* 通过运行`export PATH=$PATH:<postgres install dir>/bin`，将`PATH`环境变量设置为包含`<postgres install dir>/bin`目录
+* 导航至`psql`所在的目录（使用`cd <postgres install dir>/9.1/bin/`），然后以`./psql`身份运行命令
+*  Postgres包含一个方便的shell脚本来自动设置有用的环境变量，如`PATH`。该脚本位于`<postgres install dir>/9.1/pg_env.sh`。要使用脚本中定义的值设置环境变量，请发出`source <postgres install dir>/9.1/pg_env.sh`
+////
+
+当你运行这个命令时，psql应该提示输入用户的密码。输入后，你应该得到类似如下的提示：
+
+`mmc_persistency_status=#`
+
+这表示您已成功以用户`MMC_STATUS`连接到`mmc_persistency_status`数据库。
+
+完整登录命令和输出的示例：
+
+[source, code, linenums]
+----
+mitra:/opt/PostgreSQL/9.1/bin$ ./psql mmc_persistency_status -UMMC_STATUS
+Password for user MMC_STATUS:
+psql.bin (9.1.3)
+Type "help" for help.
+mmc_persistency_status=#
+----
+
+要退出psql，请键入`\q`，然后按Enter键。
+
+==== 创建表格
+
+在第一次运行时，JCR将自动创建存储持久性MMC信息所需的所有表。但是，您必须手动创建一些存储Quartz作业信息的表;否则在某些时候会出现以下错误：
+
+创建并插入表格：
+
+[source, code, linenums]
+----
+ERROR: relation "qrtz_locks" does not exist
+  Position: 15 [See nested exception: org.postgresql.util.PSQLException: ERROR: relation "qrtz_locks" does not exist
+  Position: 15]]
+----
+
+* 转到目录`<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/classes/quartz`
+* 如果有一个名为`talbes_postgres.sql`的文件，请将其重命名为`tables_postgres.sql`
+* 在目标数据库`mmc_persistency_status`上执行`tables_postgres.sql`脚本。一种方法是运行以下命令：`psql –d mmc_persistency_status –UMMC_STATUS –f tables_postgres.sql`（如有必要，指定`<full path>/tables_postgres.sql`）
+
+此时，Postgres数据库应该完全定义。
+
+=== 设置MMC以用于Postgres
+
+====  MMC驱动程序以Mule应用程序运行
+
+将Postgres jdbc驱动程序`postgresql-9.1-901.jdbc3.jar`复制到以下目录：`<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/lib`
+
+或者将其复制到：`<Mule install path>/lib/user`
+
+用于MMC的==== 驱动程序以Web应用程序的形式运行
+
+将Postgres jdbc驱动程序`postgresql-9.1-901.jdbc3.jar`复制到以下目录：`<Mule install path>/mmc/webapps/mmc/WEB-INF/lib`
+
+==== 配置文件：`mmc.properties`
+
+转到以下目录：`<Mule install path>/mmc/webapps/mmc/WEB-INF/classes/META-INF`
+
+找到名为mmc.properties的文件。编辑文件如下：
+
+[source, code, linenums]
+----
+script=postgres
+    datasource.username=MMC_STATUS
+    datasource.password=mmc123
+    datasource.url=jdbc\:postgresql\://localhost\:5432/mmc_persistency_status
+    datasource.driver=org.postgresql.Driver
+----
+
+[WARNING]
+连接字符串上的冒号（":"应始终使用反斜杠（"\"）转义。
+
+[WARNING]
+====
+确保没有出现以下行：
+
+[source, code, linenums]
+----
+datasource.dbName=${galaxy.data}/db from mmc.properties
+----
+
+该行与用于访问正确数据库的参数冲突，导致连接错误。如果该行存在于`mmc.properties`文件中，请将其删除。
+====
+
+==== 配置文件：`applicationContext.xml`
+
+在同一个目录中，找到名为`applicationContext.xml`的文件。打开它进行编辑，然后查找名为`internalDataSource`的bean。编辑如下：
+
+[source, xml, linenums]
+----
+<bean name="internalDataSource" class="org.springframework.jdbc.datasource.SimpleDriverDataSource">
+        <property name="driverClass" value="org.postgresql.Driver"/>
+        <property name="url" value="jdbc:postgresql://localhost:5432/mmc_persistency_status"/>
+    </bean>
+----
+
+==== 配置文件：`jackrabbit-repo.xml`
+
+[IMPORTANT]
+为了安全起见，在编辑此文件之前，请删除以下文件（如果列出）：`jackrabbit-repo-default.xml`和`jackrabbit-repo-test.xml`。
+
+在同一个目录中，找到文件`jackrabbit-repo.xml`并将其打开进行编辑。替换适当的参数以使用Postgres而不是默认的Derby数据库。下面提供了修改文件的完整列表。您可能希望将此默认的`jackrabbit-repo.xml`替换为此文件的内容。
+
+为数据库连接使用以下参数：
+
+* 角色：`MMC_STATUS`
+* 密码：`mmc123`
+* 架构：`postgresql`
+*  IP：`localhost`
+* 端口：`5432`（默认安装）
+
+[WARNING]
+架构应始终为`postgresql`。它定义了数据库，而不是用于存储持久数据的实际模式。
+
+[NOTE]
+有一个更新版本的`org.apache.jackrabbit.core.persistence.bundle.PostgreSQLPersistenceManage`，名为`org.apache.jackrabbit.core.persistence.pool.PostgreSQLPersistenceManage`，但目前存在问题，因此尚不推荐。
+
+//示例jackrabbit-repo.xml
+
+==== 配置文件：`scheduler.properties`
+
+找到名为`scheduler.properties`的文件。编辑它看起来像这样：
+
+[source, code, linenums]
+----
+org.quartz.jobStore.isClustered=false
+    org.quartz.jobStore.driverDelegateClass=org.quartz.impl.jdbcjobstore.PostgreSQLDelegate
+    org.quartz.jobStore.useProperties=true
+    org.quartz.scheduler.instanceId=AUTO
+----
+
+MMC现在配置为将其持久数据存储在指定的Postgres数据库中。启动Mule并正常登录到MMC。
+
+[WARNING]
+有可能在使用PostgreSQL数据库时尝试连接到MMC将导致"503 - Service unavailable” error, even if the system is configured correctly. In this case, check the file `<Mule installation path>/logs/mule-app-mmc.log`. Look for a line that contains `PSQLException: FATAL: role " <user>“不存在`, where <user> is the OS system user running Mule. If you find this line, use pgAdmin III to create a new role with the same name as the OS system user that runs Mule, and assign full admin privileges to this new role (you can follow the same steps as when creating the ` MMC_STATUS`角色）。重新启动Mule和MMC现在应该正常启动。
+
+==  MySQL安装程序
+
+本节介绍如何设置管理控制台以使用MySQL数据库。这里概述的MySQL安装是基本的：数据库安装在默认端口3306的本地机器上，并且安全性被禁用（即假定与数据库的不安全连接并且该用户具有完全的管理权限）。
+
+=== 工具
+
+*  MySQL社区服务器 http://dev.mysql.com/downloads/mysql/[下载]
+*  mysql命令行实用程序
+*  phpMyAdmin，一个基于Web的数据库管理工具（可选） http://www.phpmyadmin.net/home_page/downloads.php[下载]
+
+这个配置在MySQL社区服务器5.5上进行了测试。
+
+在MySQL中创建数据库和数据库用户相对简单。您可以使用`mysql`命令行实用程序或基于`phpMyAdmin`的基于Web的管理工具来执行这些任务。本文档不介绍如何设置或安装MySQL，或者如何使用`phpMyAdmin`创建表;但是，它列出了用于创建数据库，用户和表的命令。有关详情，请参阅<<Creating the Tables>>中的展开式部分。
+
+=== 创建数据库
+
+使用以下参数创建一个新数据库：
+
+*  **Database name:** `mmc_persistency_status`
+*  **Database owner:** `MMC_STATUS`
+
+=== 创建数据库用户
+
+使用默认权限和以下参数创建一个新的数据库用户：
+
+*  **Username:** `MMC_STATUS`
+*  **Password:** `mmc123`
+
+=== 创建表格
+
+导航到以下目录：`$MMC_HOME/webapps/mmc/WEB-INF/classes/quartz`。在这个目录中有两个MySQL脚本：
+
+适用于早于4.1的MySQL服务器版本的*  `tables_mysql.sql`
+*  `tables_mysql_version_4_1_and_above.sql`用于MySQL服务器4.1及更高版本
+
+根据您的MySQL服务器版本，在目标数据库`mmc_persistency_status`中执行相应的脚本。
+
+////
+[TIP]
+====
+
+使用mysql实用程序创建数据库，用户和表
+
+. 打开终端并使用以下命令运行`mysql`实用程序。
+.  `mysql`会提示您输入root的用户密码。输入密码，您应该看到以下`mysql`提示。
+. 按照下面显示的顺序输入以下命令。每个命令都以分号（;）结尾。当您在每个分号后按Enter时，终端将显示一条以`Query OK`开头的消息，表示该命令已成功完成。
+. 退出`mysql`后，找到管理控制台随附的MySQL相关脚本（默认情况下位于`$MMC_HOME/webapps/mmc/WEB-INF/classes/quartz`）。在您的终端中，通过运行`cd`命令切换到包含脚本的目录。下面是一个示例命令。
+. 从这个目录再次运行`mysql`，这次使用下面显示的参数。
+. 输入密码后，以用户`MMC_STATUS`登录到数据库`mmc_persistency_status`。
+. 通过发出以下命令来运行MySQL脚本。
+. 根据您的MySQL服务器版本，脚本名称将为`tables_mysql.sql`或`tables_mysql_versions_4_1_and_above.sql`。根据以下内容，`mysql`显示一长串状态消息。
+. 状态消息指示表已成功创建。要验证，发出以下命令（下面，顶部），它会产生以下输出（下面，底部）。
+要查看特定表的内容，请运行以下命令。
+以下示例包含命令输出：
+此时，您已完成MySQL的配置。您可以继续设置管理控制台以使用您刚刚创建的数据库。
+====
+
+////
+
+=== 设置用于MySQL的MMC
+
+本示例使用创建MySQL数据库时使用的参数<<MySQL Setup>>。
+
+*  MySQL正在本地主机端口3306上侦听
+* 数据库名称：`mmc_persistency_status`
+* 数据库用户：`MMC_STATUS`
+* 密码：`mmc123`
+
+==== 获取MySQL驱动程序
+
+.  http://dev.mysql.com/downloads/connector/j/5.0.html[下载]最新的MySQL驱动程序。 （您需要免费下载Oracle帐户。）该驱动程序称为`mysql-connector-java-<version>`，例如`mysql-connector-java-5.1.26`。您可以将驱动程序作为zip或tar.gz文件下载。
+. 解压缩.zip或.tar.gz安装和文件，然后在生成的目录结构中找到名为`mysql-connector-java-<version>-bin.jar`的文件。这是jbdc驱动程序本身，您将复制到管理控制台目录结构。
+
+=====  MMC驱动程序以Mule应用程序运行
+
+将MySQL jdbc驱动程序`mysql-connector-java-<version>-bin.jar`复制到以下目录：`<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/lib`。
+
+或者，通过将驱动程序复制到：`<Mule install path>/lib/user`
+
+用于MMC的===== 驱动程序以Web应用程序的形式运行
+
+将MySQL jdbc驱动程序`mysql-connector-java-<version>-bin.jar`复制到以下目录：`<Mule install path>/mmc/webapps/mmc/WEB-INF/lib`
+
+===== 配置文件：`mmc.properties`
+
+. 访问以下目录：`<Mule install path>/mmc/webapps/mmc/WEB-INF/classes/META-INF`。
+. 找到名为`mmc.properties`的文件，然后根据以下内容编辑该文件。
+
+[source, code, linenums]
+----
+datasource.driver=com.mysql.jdbc.Driver
+datasource.username=MMC_STATUS
+datasource.password=mmc123
+datasource.url=jdbc:mysql://localhost/mmc_persistency_status
+script=mysql
+mmc.data=./mmc-data
+plugin.directory=WEB-INF/plugins
+console.inactivityTimeout=60
+----
+
+[NOTE]
+在上面的示例中以及本节中的所有配置文件中，数据库URL将假定MySQL服务器的默认端口为3306.如果您的MySQL服务器正在侦听其他端口，请使用以下格式在URL中包含端口号： `jdbc:mysql://<host>:<port>/<database name>`。
+
+[IMPORTANT]
+====
+确保没有出现以下行：
+
+[source, code, linenums]
+----
+datasource.dbName=${galaxy.data}/db from mmc.properties
+----
+
+该行与用于访问正确数据库的参数冲突，导致连接错误。如果该行存在于`mmc.properties`文件中，请将其删除。
+====
+
+===== 配置文件：`applicationContext.xml`
+
+. 在同一个目录中，找到名为`applicationContext.xml`的文件。
+. 打开它进行编辑，然后查找名为`internalDataSource`的bean。按照以下内容进行编辑。
+
+[source, xml, linenums]
+----
+<bean name="internalDataSource" class="org.springframework.jdbc.datasource.SimpleDriverDataSource">
+   <!-- TODO: change this via the configurator -->
+   <property name="driverClass" value="com.mysql.jdbc.Driver"/>
+   <property name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+   <property name="username" value="MMC_STATUS"/>
+   <property name="password" value="mmc123"/>
+</bean>
+----
+
+===== 配置文件：`jackrabbit-repo.xml`
+
+[IMPORTANT]
+在编辑此文件之前，删除以下文件（如果列出）：`jackrabbit-repo-default.xml`和`jackrabbit-repo-test.xml`。
+
+. 在同一个目录中，找到文件`jackrabbit-repo.xml`并将其打开进行编辑。
+. 替换适当的参数以使用MySQL，而不是默认的Derby数据库。为数据库连接使用以下参数：
+* 用户：`MMC_STATUS`
+* 密码：`mmc123`
+* 网址：`jdbc:mysql://localhost/mmc_persistency_status`
+* 架构：`mysql`
+* 司机：`com.mysql.jdbc.Driver`
+*  IP：`localhost`
+* 端口：`3306`（默认安装）
+. 替换下面代码片段中显示的相应部分中的参数。
+
+[WARNING]
+架构应始终为`mysql`。它定义了数据库，而不是用于存储持久数据的实际模式。
+
+[source, xml, linenums]
+----
+...
+<Repository>
+    <!--
+        virtual file system where the repository stores global state
+        (e.g. registered namespaces, custom node types, etc.)
+    -->
+    <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+        <param name="driver" value="com.mysql.jdbc.Driver"/>
+        <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+        <param name="schema" value="mysql"/>
+        <param name="schemaObjectPrefix" value="rep_"/>
+        <param name="user" value="MMC_STATUS"/>
+        <param name="password" value="mmc123"/>
+    </FileSystem>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<!--
+        workspace configuration template:
+        used to create the initial workspace if there's no workspace yet
+    -->
+    <Workspace name="Jackrabbit Core">
+        <!--
+            virtual file system of the workspace:
+            class: FQN of class implementing the FileSystem interface
+        -->
+        <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+            <param name="driver" value="com.mysql.jdbc.Driver"/>
+            <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+            <param name="schema" value="mysql"/>
+            <param name="schemaObjectPrefix" value="rep_"/>
+            <param name="user" value="MMC_STATUS"/>
+            <param name="password" value="mmc123"/>
+        </FileSystem>
+...
+----
+
+[IMPORTANT]
+====
+*Important!*
+
+在配置默认工作区和工作区名称本身时，请确保您符合下列条件之一：
+
+* 为这两个工作空间分配相同的_new_名称（例如`myOracleWorkspace`）
+要么
+
+* 删除`$MULE_HOME/.mule/mmc/mmc-data/workspaces`中的所有子文件夹，特别是`default`子文件夹
+
+如果上述两个条件都不满足，则所有二进制数据将保留在本地而不是外部数据库中。
+====
+
+[source, xml, linenums]
+----
+...
+<!--
+            persistence manager of the workspace:
+            class: FQN of class implementing the PersistenceManager interface
+        -->
+        <PersistenceManager class="org.apache.jackrabbit.core.persistence.pool.MysqlPersistenceManager">
+          <param name="schemaObjectPrefix" value="Jackrabbit Core_"/>
+          <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+          <param name="externalBLOBs" value="true"/>
+          <param name="schemaCheckEnabled" value="true"/>
+          <param name="user" value="MMC_STATUS"/>
+          <param name="password" value="mmc123"/>
+        </PersistenceManager>
+...
+----
+
+[TIP]
+====
+*PersistenceManager parameters*
+
+`externalBLOBs`布尔参数定义是否将二进制数据（通过管理控制台部署的应用程序）存储在数据库或文件系统上。默认值`true,`表示该数据存储在文件系统中。将值设置为`false`以将数据存储在数据库中。
+
+`schemaCheckEnabled`参数指定是否在管理控制台启动时创建其他必需的数据库表。它必须始终设置为`true`。
+====
+
+[source, xml, linenums]
+----
+...
+<!--
+            Search index and the file system it uses.
+            class: FQN of class implementing the QueryHandler interface
+        -->
+        <SearchIndex class="org.apache.jackrabbit.core.query.lucene.SearchIndex">
+            <param name="path" value="${wsp.home}/index"/>
+            <param name="textFilterClasses"
+                value="org.apache.jackrabbit.extractor.PlainTextExtractor,
+                       org.apache.jackrabbit.extractor.MsExcelTextExtractor,
+                       org.apache.jackrabbit.extractor.MsPowerPointTextExtractor,
+                       org.apache.jackrabbit.extractor.MsWordTextExtractor,
+                       org.apache.jackrabbit.extractor.PdfTextExtractor,
+                       org.apache.jackrabbit.extractor.HTMLTextExtractor,
+                       org.apache.jackrabbit.extractor.XMLTextExtractor,
+                       org.apache.jackrabbit.extractor.RTFTextExtractor,
+                       org.apache.jackrabbit.extractor.OpenOfficeTextExtractor" />
+            <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+                <param name="driver" value="com.mysql.jdbc.Driver"/>
+                <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+                <param name="schema" value="mysql"/>
+                <param name="schemaObjectPrefix" value="rep_"/>
+                <param name="user" value="MMC_STATUS"/>
+                <param name="password" value="mmc123"/>
+            </FileSystem>
+        </SearchIndex>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<Versioning rootPath="${rep.home}/version">
+        <!--
+            Configures the filesystem to use for versioning for the respective
+            persistence manager
+        -->
+        <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+            <param name="driver" value="com.mysql.jdbc.Driver"/>
+            <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+            <param name="schema" value="mysql"/>
+            <param name="schemaObjectPrefix" value="rep_"/>
+            <param name="user" value="MMC_STATUS"/>
+            <param name="password" value="mmc123"/>
+        </FileSystem>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<!--
+            Configures the persistence manager to be used for persisting version state.
+            Please note that the current versioning implementation is based on
+            a 'normal' persistence manager, but this could change in future
+            implementations.
+        -->
+        <PersistenceManager class="org.apache.jackrabbit.core.persistence.pool.MySqlPersistenceManager">
+        <param name="schemaCheckEnabled" value="true"/>
+          <param name="schemaObjectPrefix" value="version_"/>
+          <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+          <param name="externalBLOBs" value="true"/>
+          <param name="user" value="MMC_STATUS"/>
+          <param name="password" value="mmc123"/>
+        </PersistenceManager>
+    </Versioning>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<!--
+        Search index for content that is shared repository wide
+        (/jcr:system tree, contains mainly versions)
+ 
+        -->
+    <SearchIndex class="org.apache.jackrabbit.core.query.lucene.SearchIndex">
+        <param name="path" value="${rep.home}/repository/index"/>
+        <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+            <param name="driver" value="com.mysql.jdbc.Driver"/>
+            <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+            <param name="schema" value="mysql"/>
+            <param name="schemaObjectPrefix" value="rep_"/>
+            <param name="user" value="MMC_STATUS"/>
+            <param name="password" value="mmc123"/>
+        </FileSystem>
+    </SearchIndex>
+</Repository>
+----
+
+//示例jackrabbit-repo.xml
+
+===== 配置文件：`scheduler.properties`
+
+. 找到名为`scheduler.properties`的文件。
+. 根据以下内容编辑文件。
+
+[source, code, linenums]
+----
+org.quartz.jobStore.isClustered=false
+org.quartz.jobStore.driverDelegateClass=org.quartz.impl.jdbcjobstore.StdJDBCDelegate
+org.quartz.jobStore.useProperties=true
+org.quartz.scheduler.instanceId=AUTO
+----
+
+.  Management Console现在配置为将其持久数据存储在指定的MySQL数据库中。启动管理控制台并正常登录。
+
+=== 连接到远程MySQL服务器
+
+如果MySQL服务器驻留在远程主机上，则很可能无法连接，除非执行以下两个操作：
+
+* 配置MySQL服务器以允许远程数据库连接
+* 授予您的数据库用户权限，允许其远程连接
+
+==== 远程数据库连接
+
+. 要检查MySQL服务器是否允许远程数据库连接，请找到MySQL服务器配置文件，例如`/etc/mysql/my.cnf`。
+. 搜索以下行。
+
+[source, code, linenums]
+----
+bind-address        = 127.0.0.1
+----
+
+. 如果该行存在，请执行以下步骤：
+
+.. 停止MySQL服务器。
+.. 打开配置文件进行编辑，然后用数字符号（＃）注释掉该行，如下所示。
+
+[source, code, linenums]
+----
+# bind-address      = 127.0.0.1
+----
+
+.. 关闭文件，然后重新启动MySQL服务器。
+
+==== 远程访问权限
+
+. 要向数据库用户授予远程数据库访问权限，请使用以下命令以MySQL服务器root用户身份登录到MySQL。
+
+[source, code, linenums]
+----
+mysql -u root -D mysql -p
+----
+
+. 输入root的密码。
+. 通过运行以下命令获取数据库用户密码的41位十六进制表示形式（在本例中为用户MMC_STATUS的密码）。
+
+[source, code, linenums]
+----
+SELECT * FROM user WHERE User = '<user>';
+----
+
+. 在上一个命令的输出中，查找，然后复制41位数的十六进制数字，前面带星号。
+. 使用以下命令授予权限。
+
+[source, code, linenums]
+----
+GRANT ALL PRIVILEGES ON <database>.* TO '<user>'@'<host|net>' IDENTIFIED BY PASSWORD '<password>' WITH GRANT OPTION;
+----
+
+. 对于`<password>`参数，粘贴您在上一步中复制的41位十六进制数。通过以下命令告诉MySQL服务器重新加载授权表。
+
+[source, code, linenums]
+----
+FLUSH PRIVILEGES;
+----
+
+////
+[TIP]
+====
+有关GRANT ALL PRIVILEGES命令的更多详细信息
+`<host|net>`的值可以是主机或网络规范。可以使用通配符，例如`'MMC_STATUS'@'172.16.0.%'`。
+`<password>`的值是代表密码的41位十六进制数字。要获取用户的密码，请从`mysql`提示符处运行以下命令。
+一个完整的命令示例如下。
+====
+
+[NOTE]
+====
+
+使用telnet命令测试远程连接
+
+如果您不确定MySQL服务器的配置，但确定您已连接到MySQL服务器主机和端口_（即您确定没有路由问题，防火墙等阻止连接），那么您可以使用{{ 0}}命令来执行MySQL服务器的远程测试。
+
+如果MySQL服务器不接受远程连接，即使服务器确实在监听指定的主机和端口，尝试远程登录到MySQL主机和端口也会生成"Connection refused error,"。
+
+如果MySQL服务器正在接受远程连接，但没有允许远程连接的用户，则输出如下所示。在这个例子中，连接成功，但被远程主机关闭。
+
+如果与MySQL服务器的连接正常工作，并且服务器授予用户访问权限，则输出与以下内容类似。
+
+如果您获得此输出，但无法成功将管理控制台连接到远程MySQL服务器，那么管理控制台配置可能有问题。有关详细信息，请查看Mule或Web应用程序服务器中的日志。
+
+====
+
+////
+
+== 灾难恢复
+
+开箱即用，MMC将持久状态数据存储在文件夹`<Mule install path>/.mule/mmc/mmc-data`中。如果由于某些原因数据库文件损坏，您可能需要删除`mmc-data`并从头开始，除非您有`mmc-data`的备份副本。但是拥有`mmc-data`的备份副本不会覆盖MMC主机本身完全丢失数据的灾难性故障，也不允许使用主动 - 被动配置进行即时恢复。
+
+一种可能的解决方案是将数据库备份到单个文件，然后将其复制到另一台机器。如果需要立即恢复，则可以使用此文件将数据库恢复到其原始状态。
+
+[IMPORTANT]
+====
+当您将MMC恢复到之前的状态时，请注意以下事项：
+
+* 您正在还原MMC状态数据，这与Business Events的持久性无关，后者使用完全不同的机制来存储数据。
+* 备份时注册的服务器已恢复，这意味着可能会出现以下情况之一：
+** 服务器与另一个Mule实例配对。在这种情况下，通过MMC“取消配对”服务器，然后重新配对。这可能会影响部署和服务器组。
+** 服务器不再存在。取消配对服务器。
+** 另一台服务器与原始服务器使用相同的IP和端口。尝试识别原始服务器的当前IP和端口，然后重新配对。
+在备份，部署和/或未部署应用程序未显示或显示不正确之后，** 服务器已正确连接。根据需要取消部署/重新部署以消除未协调的状态。
+====
+
+=== 的Postgres
+
+==== 方案：
+
+* 数据库服务器：`PostgreSQL 9.1`
+*  MMC连接到Postgres
+* 数据库已创建。对于这个例子，将使用以下参数：
+** 角色：`MMC_STATUS`（具有与"postgres"角色相同的权限）
+** 数据库名称：`mmc.test`
+*** 编码：`UTF8`
+*** 所有者：`MMC_STATUS`
+* 访问数据库的工具：`pgAdmin III`
+
+==== 备份数据库
+
+要备份`mmc.test`数据库，请完成以下步骤：
+
+* 以管理员身份登录到pgAdmin III（角色`postgres`）
+* 在左侧窗格中的对象浏览器上，转到*Server Groups*> *PostgreSQL 9.1*> *Databases*> *mmc.test*
+* 右键点击`mmc.test`，然后导航至*Backup*> *File Options*并选择：
+** 格式：`Tar`
+** 编码：`UTF8`
+** 角色名称：`MMC_STATUS`
+** 文件名：`<Suitable name and folder>`
+* 点击*Backup*，在您指定的位置创建数据库的tar存档。
+
+==== 恢复数据库
+
+要恢复`mmc.test`数据库，请完成以下步骤：
+
+. 转到mmc-data文件夹（`<Mule install path>/.mule/mmc/mmc-data`）并删除以下文件夹：
+*  `db`（如果存在）
+*  `repository`
+*  `tracking`（这是避免生成与JCR相关的几个堆栈轨迹所必需的）。
+* 您可能还需要删除工作区/ <name of your workspace> /索引
+. 以管理员身份登录到pgAdmin III（角色`postgres`）
+. 在对象浏览器上，确保定义了名为`mmc.test`的数据库
+. 确保可以在数据库上定义的所有表都被删除
+. 右键点击`mmc.test`，选择*Restore*
+. 在*File Options*标签上，选择：
+* 文件名：`<Database backup file>`
+* 格式：`Custom or tar`
+* 角色名称：`MMC_STATUS`
+. 点击*Restore*。
+
+[NOTE]
+此过程在MMC运行时进行了测试，但未加载。
+
+=== 的Oracle
+
+此方案假定以下条件：
+
+*  Oracle Xpress 11.x
+* 数据库已经被创建，包括以下数据表格：
+** 用户：`MMC_STATUS`
+** 权限：
+***  `EXP_FULL_DATABASE`
+***  `IMP_FULL_DATABASE`
+***  `DBA`
+* 访问数据库的工具：SQL Developer 3.0.04
+* 备份工具：`exp`（与Oracle分发包的二进制文件捆绑）
+* 还原工具：`imp`（与Oracle分发包的二进制文件捆绑在一起）
+* 任意转储文件名：`OracleMMCDB`
+
+==== 数据库备份程序
+
+[IMPORTANT]
+数据库上的表包含二进制大对象（BLOB）。使用SQL Developer进行常规数据库导出不会导出BLOB内容，因此在恢复数据库时，这些字段将标记为`NULL`。
+
+要备份数据库，请打开终端并发出以下命令：
+
+`exp MMC_STATUS/mmc123 file=OracleMMCDB.dmp full=yes`
+
+文件`OracleMMCDB.dmp`将在`exp`实用程序驻留的相同文件夹中创建。
+
+有关`exp`命令参数的帮助，请运行：`exp help=yes`
+
+//点击查看exp输出列表
+
+==== 数据库恢复过程
+
+打开终端并运行：`imp MMC_STATUS/mmc123 file=OracleMMCDB.dmp full=yes`
+
+[WARNING]
+该示例假定转储文件与imp实用程序位于同一文件夹中。如有必要，指定`.dmp`文件的完整路径。
+
+有关`imp`命令参数的帮助，请运行：`imp help=yes`

@@ -1,0 +1,80 @@
+=  Mule Concepts
+:keywords: studio, server, components, connectors, elements, big picture, architecture
+
+基于事件驱动架构（EDA）的概念，Mule通过响应由外部资源（即事件）发起的消息来工作。在最简单的层面上，Mule应用程序通过*flow*中的多个消息处理器将接收和处理事件视为*messages*。或者，大型或流式消息可以在*batch job*中处理为*records*。了解基本的流程架构和批量作业结构是理解Mule的关键。基本上，每个Mule流都包含一系列接受，然后处理消息的*message processors*。 Mule应用程序通常包含多个链接流和/或批处理作业，这些作业组合在一起执行您的用例所需的集成。
+
+== 流
+
+一个流程是一个构造，您可以在其中连接几个单独的元素来处理消息的接收，处理和最终路由。您可以将多个流连接在一起以构建一个完整的应用程序，然后您可以在本地，Mule或其他应用程序服务器或云中进行部署。
+
+在最简单的层面上，流程是消息处理事件的序列。进入流程的消息可能会经过各种处理器。在下面的示例图中，Mule通过请求 - 响应入站端点接收消息，将内容转换为新格式，并在通过消息源返回响应之前处理组件中的业务逻辑。
+
+image:Flow1-1.png[Flow1-1]
+
+构建流的单元通常称为**building blocks **（在Studio的流图形表示中）** *or* elements **（在XML配置中）。通常，构建模块对应于Anypoint Studio GUI中的图标，该图标又代表消息源，处理器或组件。 Building Block是Mule应用程序配置文件中XML元素的可视化表示。
+
+下面的例子是在Anypoint Studio的可视化编辑器中创建的简单流程;点击*XML Editor*标签查看相同流程的XML版本。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:simple+flow2.png[simple+flow2]
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration" />
+ 
+    <flow name="Simple_Example_Flow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" doc:name="HTTP" path="kittens"/>
+        <set-payload doc:name="Set Payload" value="#[Kittens? Kittens!]"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+....
+------
+== 批量作业
+
+*batch job*是Mule中的一个顶级元素，它存在于所有Mule流之外。批量作业将大量消息拆分为*records*，这是Mule异步处理的;就像流程处理消息一样，批处理作业处理记录。
+
+image:batch_main1.png[batch_main1]
+
+批处理作业包含一个或多个*batch steps*，而该*batch steps*又包含任意数量的消息处理器，这些消息处理器在移动批处理作业时对记录起作用。在批处理过程中，您可以使用**record-level variables **（`recordVars`）和MEL表达式来丰富，路由或以其他方式处理记录。
+
+批处理作业在由Mule流中的*batch executor*或批处理接受输入中的**message source **触发时执行;当被触发时，Mule会创建一个新的*batch job instance*。当所有记录都已通过所有批处理步骤时，批处理作业实例将结束，并且可以在报告中汇总*batch job result*以指示哪些记录成功，哪些在处理期间失败。
+
+== 消息来源
+
+Mule处理在外部资源中启动的消息（即事件）。例如，消息可以由诸如来自移动设备的消费者请求或数据库中数据的改变，或在SaaS应用程序中创建新客户ID的事件发起。
+
+大多数流程或批处理作业的第一个构建块是接收器，它接收新消息并将它们放入队列中进行处理。在上面的示例中，*message source*是入站HTTP端点，它接收来自一个或多个外部源的消息，从而触发流或批处理作业的执行。 Mule中的消息源通常是Anypoint连接器，这些连接器可以通过标准协议（如HTTP，FTP，SMTP）或第三方API（如Salesforce.com，Twitter或MongoDB）提供与特定外部源的连接。 。）
+
+== 消息处理器
+
+在Mule中，消息处理器按类别分组。
+
+Mule *transformers*是节点之间交换数据的关键，因为它们允许Mule将消息负载数据转换为其他应用程序可以理解的格式。 Mule还支持内容丰富的消息，使您可以在处理期间检索其他数据并将其附加到消息中。
+
+Mule使用*components*为特定业务逻辑执行后端进程，例如检查客户和库存数据库。组件将消息路由到正确的应用程序，例如订单履行系统。 Mule将 link:http://en.wikipedia.org/wiki/Staged_event-driven_architecture[分阶段事件驱动体系结构（SEDA）]用于流程中的核心异步消息处理。重要的是，组件不必具有任何Mule特定的代码;他们可以简单地是POJO，Spring bean，Java bean，Groovy脚本或包含处理数据的业务逻辑的Web服务。组件甚至可以用其他语言开发，如Python，JavaScript，Ruby和PHP。 Mule的构建模块目录支持最常用的企业集成模式。
+
+流程和批处理作业还可以包含*filters*，*scopes*和*routers*。例如，您可以使用过滤器将应用程序接受消息的IP地址列入白名单;您可以使用范围"wrap"围绕多个消息处理器并缓存它们执行的处理结果;您可以使用路由器根据消息负载的内容在应用程序的不同路径中发送消息。 Mule包含各种过滤器，范围和路由器，以定制流程或批处理作业如何处理消息。
+
+当您配置链接在一起的各个元素以进行流程或批处理作业时，可以使用 link:/mule-user-guide/v/3.7/mule-expression-language-mel[骡子表达语言]提取有关消息或其环境的信息，并指示Mule根据该信息作出处理决策。
+
+== 另请参阅
+
+*  *NEXT STEP:*详细了解 link:/mule-user-guide/v/3.7/elements-in-a-mule-flow[骡子流中的元素]。
+* 详细了解 link:/mule-user-guide/v/3.7/batch-processing[批量处理]。 +

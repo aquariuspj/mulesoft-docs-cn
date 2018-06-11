@@ -1,0 +1,92 @@
+= 对JSON的本机支持
+
+JSON现在在Mule中得到本地支持，这意味着您可以使用JSON文档并将它们自动绑定到Java对象。更多信息可在 link:/mule-user-guide/v/3.2/json-module-reference[JSON模块]配置参考中找到。
+
+添加了==  JSON变形金刚
+
+JSON转换器已被添加，以便使用JSON编码的消息轻松处理。我们使用了优秀的https://github.com/codehaus/jackson [杰克逊框架]，这意味着Mule也支持Json / Object绑定。
+
+== 示例
+
+例如，使用AJAX，您通常会收到JSON。从这里，你可以从服务器端获得一个javabean的请求，并且你可以自动将它转换为JSON。
+
+另一个例子，如果您从外部获取请求（例如Web服务请求），那么您的REST类型内容可能是JSON或XML，而内部组件则是javabeans。
+
+在这种情况下，该功能会自动响应带有JSON响应的JSON请求。
+
+= 使用JSON模块
+
+JSON是JavaScript Object Notation的缩写，是一种轻量级的数据交换格式。它是一种基于文本的，人类可读的格式，用于表示简单的数据结构和关联数组（称为对象）。
+
+==  JSON绑定
+
+Mule支持将JSON数据绑定到对象，并使用https://github.com/codehaus/jackson[Jackson]框架将Java对象封装到JSON。 Jackson使用注释来描述数据如何映射到Java对象模型。例如，假设我们有一个描述一个人的JSON文件。当我们收到我们想要将其转换为`Person`对象的JSON数据时。 JSON看起来像这样 - 
+
+[source, code, linenums]
+----
+{    "name":"John Doe",    "dob":"01/01/1970",    "emailAddresses":[        {            "type":"home",            "address":"john.doe@gmail.com"        },        {            "type":"work",            "address":"jdoe@bigco.com"        }    ]}
+----
+
+我们有一个我们想从JSON数据创建的对象`Person`。我们使用注释来描述如何执行映射。我们使用`@JsonAutoDetect`来表示字段成员名称直接映射到JSON字段名称 - 
+
+[source, java, linenums]
+----
+@JsonAutoDetectpublic class Person{    private String name;    private String dob;    private List<EmailAddress> emailAddresses;    public String getName()    {        return name;    }    public void setName(String name)    {        this.name = name;    }    public String getDob()    {        return dob;    }    public void setDob(String dob)    {        this.dob = dob;    }    public List<EmailAddress> getEmailAddresses()    {        return emailAddresses;    }    public void setEmailAddresses(List<EmailAddress> emailAddresses)    {        this.emailAddresses = emailAddresses;    }}
+----
+
+_emailAddresses_中使用的`EmailAddress`对象只是另一个带有`@JsonAutoDetect`注释的JavaBean。
+
+此时，iBeans可以根据所调用的方法的参数来确定是否执行JSON转换。例如 -
+
+[source, java, linenums]
+----
+public class PersonService {    public void processPerson(Person person) {        //tickle person    }}
+----
+
+现在，如果我们在一个流程中配置这个组件：
+
+[source, xml, linenums]
+----
+<flow name="processPerson">    <jms:inbound-endpoint queue="people.queue"/>    <component class="org.mule.example.PersonService"/></flow>
+----
+
+在这里，我们可以在JMS队列中接收上面`people.json`文件的内容，Mule会看到`Person.class`是一个带注释的JSON对象，我们已经从JMS队列接收到JSON数据并执行转换。
+
+=== 明确使用变形金刚
+
+通常你可能想要在Mule中明确定义一个变换器，这是通过导入`json`命名空间来完成的 - 
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?><mule xmlns="http://www.mulesoft.org/schema/mule/core"      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"      xmlns:json="http://www.mulesoft.org/schema/mule/json"      xsi:schemaLocation="       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd       http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/3.1/mule-json.xsd"></mule>
+----
+
+然后简单地配置变压器就像任何其他变压器。当从JSON转换为对象形式时，转换器需要定义_returnClass_这是Json有效负载转换成的类。
+
+[source, xml, linenums]
+----
+<json:json-to-object-transformer name="jsonToFruitCollection" returnClass="org.mule.module.json.transformers.FruitCollection"/>
+----
+
+将对象转换为Json时，需要指定要转换的期望源类 - 
+
+[source, xml, linenums]
+----
+<json:object-to-json-transformer name="fruitCollectionToJson"     sourceClass="org.mule.module.json.transformers.FruitCollection">
+----
+
+=== 注释对象
+
+Jackson使用注释来描述如何对JSON进行编组和解组，这在概念上与JAXB类似。但是，有时可能无法注释要编组的对象类（通常是因为您无法访问其源代码）。相反，你可以定义mixin。 Mixin是一个接口或抽象类（在构造函数注入时需要）用Jackson注释定义抽象方法。方法签名必须匹配被占用的对象上的方法，在运行时，注释将与对象类型“混合”。要配置Mixins，请使用_mixin-map_元素或直接在变压器上配置它们。
+
+[source, xml, linenums]
+----
+<json:mixin-map name="myMixins">    <json:mixin mixinClass="org.mule.module.json.transformers.FruitCollectionMixin"        targetClass="org.mule.module.json.transformers.FruitCollection"/>    <json:mixin        mixinClass="org.mule.module.json.transformers.AppleMixin"        targetClass="org.mule.tck.testmodels.fruit.Apple"/></json:mixin-map>    <json:json-to-object-transformer name="jsonToFruitCollection" returnClass="org.mule.module.json.transformers.FruitCollection" mixins-ref="myMixins">
+----
+
+或直接在变压器上 - 
+
+[source, xml, linenums]
+----
+<json:object-to-json-transformer name="fruitCollectionToJson"            sourceClass="org.mule.module.json.transformers.FruitCollection">        <json:serialization-mixin                mixinClass="org.mule.module.json.transformers.AppleMixin"                targetClass="org.mule.tck.testmodels.fruit.Apple"/></json:object-to-json-transformer>
+----

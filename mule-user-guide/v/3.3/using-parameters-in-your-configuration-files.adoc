@@ -1,0 +1,79 @@
+= 在配置文件中使用参数
+
+当应用程序部署在不同的环境（如QA，预生产或生产环境）中时，通常需要对服务器名称，凭证和其他类似参数进行不同配置。
+
+作为面临这种变化的开发人员，您的目标是为您的所有环境生成一个Mule应用程序，并将所有环境特定的配置参数外部化。这是可重复部署的关键。
+
+考虑将配置的其他方面进行外部化，例如超时值，轮询频率等等，即使它们在环境之间不变化。这将有助于调整和试验，因为整个Mule应用程序可以通过单个属性文件进行配置。
+
+在Mule中，你通过使用Spring的属性占位符解析机制来实现这一点。考虑下面的Mule配置片段，它定义了指向受密码保护的Web资源的HTTP端点：
+
+[source, xml, linenums]
+----
+<http:endpoint name="ProtectedWebResource"
+               user="${web.rsc.user}"
+               password="${web.rsc.password}"
+               host="${web.rsc.host}"
+               port="80"
+               path="path/to/resource" />
+----
+
+变量位是清晰可见的：用户，密码和主机可以针对每个部署此端点的环境而有所不同。要为这些变量提供值，我们使用标准Java属性文件：
+
+[source, code, linenums]
+----
+web.rsc.user=alice
+web.rsc.password=s3cr3t
+web.rsc.host=www.acme.com
+----
+
+为您的属性使用一致的命名策略，并使其在应用程序中保持唯一：这将极大地促进跨团队的重用。
+
+您还需要配置Spring的属性占位符配置器。不要配置Spring来加载单个属性文件，请按照以下方法进行操作：
+
+* 配置Spring以加载默认属性文件和另一个包含覆盖的文件。
+* 发送一个默认属性文件，其中包含适用于您的Mule应用程序可部署的开发人员工作站的值。
+* 仅在需要的环境中创建属性覆盖文件，并且只有实际需要覆盖的属性。
+
+这种方法的优点是：
+
+* 开发人员不需要在本地部署和运行应用程序。
+*  ops团队只需要使用他们必须为特定环境配置的一组属性。
+
+这是一个完成这个的方法：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:context="http://www.springframework.org/schema/context"
+  xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/core
+            http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+      http://www.springframework.org/schema/beans
+            http://www.springframework.org/schema/beans/spring-beans-current.xsd
+      http://www.springframework.org/schema/context
+            http://www.springframework.org/schema/context/spring-context-3.0.xsd">
+  <spring:beans>
+    <context:property-placeholder
+             location="classpath:my-mule-app.properties,
+                       classpath:my-mule-app-override.properties" />
+  </spring:beans>
+</mule>
+----
+
+有了这个，在您的应用程序资源目录`(src/main/resources`中添加一个`my-mule-app.properties`文件作为Mule应用程序Maven项目），并在其中放置默认和开发环境值。要覆盖某些值，请创建一个my-mule-app-override.properties文件并将其放入`$MULE_HOME/conf`中。
+
+如果您的操作团队无法删除Mule目录层次结构中的文件，则可以选择配置占位符配置程序以从已知位置获取覆盖文件，如下所示：
+
+[source, xml, linenums]
+----
+<context:property-placeholder
+         location="classpath:my-mule-app.properties,
+                   file:///etc/mule/conf/my-mule-app-override.properties" />
+----
+
+为您的属性文件使用唯一的文件名以减轻系统管理员的负担。一个好的策略是在默认和覆盖属性文件名中使用应用程序名称或ID。
+
+如果您需要加密属性文件中的密码，请考虑使用 link:/mule-user-guide/v/3.3/mule-credentials-vault[Mule证书库]。有关在Mule中保护应用程序的更多信息，请参阅 link:/mule-user-guide/v/3.3/anypoint-enterprise-security[Anypoint企业安全]的文档。

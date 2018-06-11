@@ -1,0 +1,261 @@
+=  Quartz传输参考
+
+Quartz传输为调度事件和触发新事件提供支持。入站石英端点可用于触发可重复的入站事件，例如每秒钟。出站石英端点可用于安排现有事件在日后启动。用户可以使用cron表达式创建日程表，事件可以保存在数据库中。
+
+此传输使用 http://www.quartz-scheduler.org/documentation/[石英项目]。 Quartz站点有更多关于如何使用Quartz的通用信息。
+
+*Notes:*
+
+* 在具有多个工作者或节点的环境中运行时，默认情况下，Quartz调度程序在每个节点上运行，而Poll Scope仅在单个节点上运行。可以将Quartz调度程序配置为以这种方式工作，但需要配置JDBC JobStore。
+* 使用Quartz入站端点时，您无法通过“调度程序”选项卡进行管理。
+
+== 关于Cron表达式
+
+cron表达式是由空格分隔的六个或七个字段组成的字符串。字段可以包含任何允许的值，以及该字段允许的特殊字符的各种组合。这些字段如下所示：
+
+[%header%autowidth.spread]
+|===
+|字段名称 |强制性 |允许的值 |允许的特殊字符
+|秒 |是 | 0-59  |， -  * /
+|分钟 |是 | 0-59  |， -  * /
+|小时数 |是 | 0-23  |， -  * /
+|个月中的某天 |是 | 1-31  |， -  *？ / L W C
+|月 |是 | 1-12或JAN-DEC  |， -  * /
+|星期几 |是 | 1-7或SUN-SAT  |， -  *？ / L C＃
+|年份 |否 |为空，1970-2099  |， -  * /
+|===
+
+Cron表达式可以像这样简单：+
+  `* * * * ? *`
+
+或更复杂的，如下所示：+
+  `0 0/5 14,18,3-39,52 ? JAN,MAR,SEP MON-FRI 2002-2010`。
+
+以下是一些例子：
+
+[%header%autowidth.spread]
+|===
+| {式{1}}行为
+| 0 0 12 * *？ |每天12点（中午）开火
+| 0 15 10？ * *  |每天上午10点15分开火
+| 0 15 10 * *？ |每天上午10点15分开火
+| 0 15 10 * *？ *  |每天上午10点15分开火
+| 0 15 10 * *？ 2005年 | 2005年每天上午10点15分开火
+| 0 * 14 * *？ |每天下午2点开始，每天下午2点59分结束，每天开火
+| 0 0/5 14 * *？ |每天下午2点开始，每天下午2点55分结束，每天开火
+|===
+
+如果您不熟悉cron语法，则这是 http://www.quartz-scheduler.org/documentation/quartz-1.x/tutorials/crontrigger[好教程]。
+
+== 关于乔布斯
+
+当Quartz传输发生时间触发时，Jobs用于执行操作。 Mule提供了一些用于生成和安排事件的作业。这些在下面详述。用户还可以编写自己的作业，并使用Mule附带的自定义作业类型将其挂接。
+
+=== 连接器
+
+Quartz连接器用于配置引用连接器的Quartz端点的默认行为。注意，如果只配置了一个Quartz连接器，则所有Quartz端点将使用该连接器。
+
+。<connector...>的属性
+[%header%autowidth.spread]
+|======
+| {名称{1}}输入 |必 |缺省 |说明
+| scheduler-ref  |字符串 |否 |   |提供Quartz Scheduler接口的实现。如果未提供值，则从StdSchedulerFactory检索调度程序。如果没有提供属性，则调用getDefaultScheduler方法。否则，使用给定的属性创建新的工厂实例，并使用getScheduler方法检索调度程序。
+|======
+
+。<connector...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|工厂属性 | 0 .. *  |在工厂上设置属性（请参阅scheduler-ref）。
+|===
+
+[NOTE]
+====
+设置`org.quartz.scheduler.instanceName`工厂属性时，请确保*avoid duplicate names*。
+
+对于在相同Mule实例中运行的每个Quartz连接器，`instanceName`的值必须不同，即使在不同的应用程序中也是如此。
+
+[source, xml, linenums]
+----
+<quartz:factory-property key="org.quartz.scheduler.instanceName" value="MuleScheduler1"/>
+----
+
+如果Quartz连接器为`instanceName`属性共享相同的值，则这些连接器可能会错误地触发它们所在的应用程序中的预定作业。
+====
+
+
+=== 出站端点
+
+出站Quartz端点允许存储事件并在稍后的时间/日期触发。如果您正在使用持久性事件存储库，则事件的有效内容必须实现java.io.Serializable。您可以在端点上配置org.quartz.Job实现，以告知它要采取的操作。骡有一些默认的工作，但你也可以自己写。
+
+。<outbound-endpoint...>的属性
+[%header%autowidth.spread]
+|====
+| {名称{1}}输入 |必 |缺省 |说明
+| jobName  |字符串 |否 |   |与端点上的作业相关联的名称。这只在内部存储事件时才真正使用。
+| cronExpression  |字符串 |否 |   |在指定日期/时间安排事件的cron表达式。此属性或repeatInterval是必需的。 cron表达式是由空格分隔的6或7个字段组成的字符串。字段可以包含任何允许的值，以及该字段允许的特殊字符的各种组合。有关字段名称，允许的值和示例，请参阅<<About Cron Expressions>>。
+| repeatInterval  | long  |否 |   |两个事件之间的毫秒数。该属性或cronExpression是必需的。
+| repeatCount  |整数 |否 |   |要安排的事件数量。该值默认为-1，这意味着事件将无限期地排定。
+| startDelay  | long  | no  |   |在第一个事件触发前将经过的毫秒数。
+|====
+
+。<outbound-endpoint...>的子元素
+[%header%autowidth.spread]
+|===========
+| {名称{1}}基数 |说明
+|抽象作业 | 1..1  |可以在端点上设置的Quartz作业的占位符。
+|===========
+
+=== 入站端点
+
+Quartz入站端点可用于生成事件。当你想以给定的时间间隔（或cron表达式）触发一个流而不是让一个外部事件触发这个流时，这是非常有用的。
+
+。<inbound-endpoint...>的属性
+[%header%autowidth.spread]
+|=====
+| {名称{1}}输入 |必 |缺省 |说明
+| jobName  |字符串 |否 |   |与端点上的作业相关联的名称。这只在内部存储事件时才真正使用。
+| cronExpression  |字符串 |否 |   |在指定日期/时间安排事件的cron表达式。此属性或repeatInterval是必需的。 cron表达式是由空格分隔的6或7个字段组成的字符串。字段可以包含任何允许的值，以及该字段允许的特殊字符的各种组合。有关字段名称，允许的值和示例，请参阅<<About Cron Expressions>>。
+| repeatInterval  | long  |否 |   |两个事件之间的毫秒数。该属性或cronExpression是必需的。
+| repeatCount  |整数 |否 |   |要安排的事件数量。该值默认为-1，这意味着事件将无限期地排定。
+| startDelay  | long  | no  |   |在第一个事件触发前将经过的毫秒数。
+|=====
+
+。<inbound-endpoint...>的子元素
+[%header%autowidth.spread]
+|===========
+| {名称{1}}基数 |说明
+|抽象作业 | 1..1  |可以在端点上设置的Quartz作业的占位符。
+|===========
+
+=== 端点
+
+可用作模板的全局端点，用于创建入站和出站Quartz端点。通用配置可以在全局端点上设置，然后使用本地端点上的@ref属性进行引用。请注意，因为作业有时仅适用于入站或出站端点，所以必须在本地端点上进行设置。
+
+。<endpoint...>的属性
+[%header%autowidth.spread]
+|=====
+| {名称{1}}输入 |必 |缺省 |说明
+| jobName  |字符串 |否 |   |与端点上的作业相关联的名称。这只在内部存储事件时才真正使用。
+| cronExpression  |字符串 |否 |   |在指定日期/时间安排事件的cron表达式。此属性或repeatInterval是必需的。 cron表达式是由空格分隔的6或7个字段组成的字符串。字段可以包含任何允许的值，以及该字段允许的特殊字符的各种组合。有关字段名称，允许的值和示例，请参阅<<About Cron Expressions>>。
+| repeatInterval  | long  |否 |   |两个事件之间的毫秒数。该属性或cronExpression是必需的。
+| repeatCount  |整数 |否 |   |要安排的事件数量。该值默认为-1，这意味着事件将无限期地排定。
+| startDelay  | long  | no  |   |在第一个事件触发前将经过的毫秒数。
+|=====
+
+。<endpoint...>的子元素
+[%header%autowidth.spread]
+|===========
+| {名称{1}}基数 |说明
+|抽象作业 | 0..1  |可以在端点上设置的Quartz作业的占位符。
+|===========
+
+=== 抽象作业
+
+可以在端点上设置的Quartz作业的占位符。
+
+。<abstract-job...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| groupName  |字符串 |否 |   |计划作业的组名。
+| jobGroupName  |字符串 |否 |   |计划作业的作业组名称。
+|===
+
+=== 抽象入站作业
+
+Quartz作业的占位符，只能在入站端点上设置。
+
+。<abstract-inbound-job...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| groupName  |字符串 |否 |   |计划作业的组名。
+| jobGroupName  |字符串 |否 |   |计划作业的作业组名称。
+|===
+
+=== 事件生成器作业
+
+入站端点作业将根据端点上的时间表为流触发新事件。这对于定期触发流而不需要发生外部事件很有用。
+
+。<event-generator-job...>的属性
+[%header%autowidth.spread]
+|======
+| *Name*  | *Type*  | *Required*  | *Default*  | *Description*
+|有状态 |布尔 |否 |   |确定作业是否持久。如果是这样，那么作业细节状态将会保留每个请求。更重要的是，每个触发的作业都将按顺序执行。如果作业花费的时间超过下一个触发器，则下一个作业将等待当前作业执行。
+|======
+
+。<event-generator-job...>的子元素
+[%header%autowidth.spread]
+|========
+| {名称{1}}基数 |说明
+|有效载荷 | 0..1  |新创建事件的有效载荷。有效负载可以是对文件，固定字符串或配置为Spring bean的对象的引用。如果未设置此值，则会使用org.mule.transport.NullPayload实例生成事件。
+|========
+
+=== 端点轮询作业
+
+入站端点作业，可用于定期从外部源（通过另一个端点）读取。这对于从不支持轮询的源触发基于时间的事件或仅用于控制从源接收事件的速率非常有用。
+
+。<endpoint-polling-job...>的属性
+[%header%autowidth.spread]
+|======
+| *Name*  | *Type*  | *Required*  | *Default*  | *Description*
+|有状态 |布尔 |否 |   |确定作业是否持久。如果是这样，那么作业细节状态将会保留每个请求。更重要的是，每个触发的作业都将按顺序执行。如果作业花费的时间超过下一个触发器，则下一个作业将等待当前作业执行。
+|======
+
+。<endpoint-polling-job...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|作业端点 | 0..1  |对从中接收事件的另一个配置端点的引用。
+|===
+
+=== 计划调度作业
+
+出站作业将安排作业在稍后时间/日期发送。该事件将使用配置的端点引用进行分派。
+
+。<scheduled-dispatch-job...>的属性
+[cols="5*"]
+|======
+| *Name*  | *Type*  | *Required*  | *Default*  | *Description*
+|有状态 |布尔 |否 |   |确定作业是否持久。如果是这样，那么作业细节状态将会保留每个请求。更重要的是，每个触发的作业都将按顺序执行。如果作业花费的时间超过下一个触发器，则下一个作业将等待当前作业执行。
+|======
+
+。<scheduled-dispatch-job...>的子元素
+[%header%autowidth.spread]
+|=======
+| {名称{1}}基数 |说明
+|作业端点 | 0..1  |用于分派调度事件的端点。首选方法是创建一个全局端点并使用ref属性引用它。但是，您也可以使用address属性来定义一个URI端点（它支持表达式）。您可以使用timeout属性来指定与端点关联的任意超时值，该端点可以被阻止等待接收事件的作业使用。
+|=======
+
+=== 自定义作业
+
+可以在入站或出站端点上配置自定义作业。您可以创建和配置自己的作业实现，并在Quartz端点上使用它。可以将自定义作业配置为XML配置中的bean，并使用此作业进行引用。
+
+。<custom-job...>的属性
+
+[%header%autowidth.spread]
+|=======
+| {名称{1}}输入 |必 |缺省 |说明
+| groupName  |字符串 |否 |   |预定作业的组名
+| jobGroupName  |字符串 |否 |   |计划作业的作业组名称。
+| job-ref  |字符串 |否 |   |执行此作业时使用的自定义作业的bean名称或标识。
+|=======
+
+=== 来自消息的自定义作业
+
+允许将作业存储在当前消息中。这只能用于出站端点。收到消息时，读取​​作业，并使用当前消息将作业添加到调度程序。这允许由消息本身确定的自定义调度行为。通常流程或变压器会根据应用程序特定的逻辑在消息上创建作业。任何Mule支持的表达式都可以用来从消息中读取作业。通常，您将作业添加为标题，但也可以使用附件。
+
+。<custom-job-from-message...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| groupName  |字符串 |否 |   |计划作业的组名。
+| jobGroupName  |字符串 |否 |   |计划作业的作业组名称。
+|===
+
+== 继续
+
+* 有关在Studio的可视化编辑器中设置Quartz终结点属性的详细信息，请参阅 link:/mule-user-guide/v/3.5/quartz-connector[石英连接器]。
+* 阅读关于在Mule中使用Quartz的 link://blogs.mulesoft.com/mule-and-quartz-scheduled-jobs-and-long-running-tasks/[在MuleSoft的博客中发布]
+* 阅读 link://quartz-scheduler.org/documentation[Quartz的文档]

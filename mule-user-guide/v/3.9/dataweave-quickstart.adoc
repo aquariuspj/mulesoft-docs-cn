@@ -1,0 +1,534 @@
+=  DataWeave快速入门指南
+:keywords: studio, anypoint, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+
+
+[NOTE]
+按照本指南探索DataWeave中的数据转换，使用将*XML*订单请求发送给期望*JSON*的其他服务的示例T恤服务 - 您可以通过Transform Message组件， DataWeave编辑器和交互式GUI。
+
+Anypoint Studio中的*Transform Message*组件为您提供了利用*DataWeave*语言的工具，允许您映射和连接任何内容，而不管数据类型或结构如何。
+
+本DataWeave快速入门指南介绍了Transform Message组件和DataWeave的关键功能特性：
+
+*  _类型转换_
+*  _用于数据映射的图形用户界面
+*  _基于样本的输出预览_
+*  _浏览I / O映射_
+*  _过滤器和groupBy运算符_
+
+
+== 概述
+
+在两个Web服务之间设计一个示例DataWeave转换，一个处理SOAP请求和响应，另一个是一个HTTP服务，其资源在RAML中建模。在本指南结束时，您应该了解如何：
+
+* 使用DataWeave将XML数据转换为JSON
+* 将JSON输入发送到REST Web服务
+
+[NOTE]
+要遵循此快速入门的步骤，您需要下载并提取 link:_attachments/dw-quickstart-bundle.zip[dw-quickstart-bundle.zip]中的两个文件
+
+[TIP]
+有关编写DataWeave代码的高级示例，请参阅 link:/mule-user-guide/v/3.9/dataweave-examples[DataWeave示例]。
+
+
+此示例的目标是向基于从销售服务（以XML结构输出数据）派生的信息放置T恤订单的Web服务发送HTTP请求。接受订单请求的服务需要一个JSON输入结构，其中包含以下键集的值：
+
+*  _ size_
+*  _ email_
+*  _名_
+*  _ address1_
+*  _ address2_（可选）
+*  _ city_
+*  _ stateOrProvince_
+*  _ postalCode_
+*  _ country_
+
+订单处理服务在本示例中使用 link:http://raml.org/[肾错构瘤]定义，这是一种轻量级的API建模语言，其格式由HTTP连接器支持，以向Studio提供元数据。
+
+销售服务的原始数据遵循以下结构：
+
+[source, xml, linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<order>
+  <product>
+    <price>5</price>
+    <model>MuleSoft Connect 2016</model>
+  </product>
+  <item_amount>3</item_amount>
+  <payment>
+    <payment-type>credit-card</payment-type>
+    <currency>USD</currency>
+    <installments>1</installments>
+  </payment>
+  <buyer>
+    <email>mike@hotmail.com</email>
+    <name>Michael</name>
+    <address>Koala Boulevard 314</address>
+    <city>San Diego</city>
+    <state>CA</state>
+    <postCode>1345</postCode>
+    <nationality>USA</nationality>
+  </buyer>
+  <shop>main branch</shop>
+  <salesperson>Mathew Chow</salesperson>
+</order>
+----
+
+[NOTE]
+====
+这种XML格式不会作为我们Web服务的原始输入，因为Web服务要求将数据序列化为JSON。
+
+此外，正如您可能已经猜到的那样，只需要这些字段的子集来完成订单，或者可能需要重新命名并用于推断其他所需的值。您可以在以下两节中设置*metadata structure*和*mapping*。
+====
+
+== 阶段1  - 定义输入和输出元数据
+
+[NOTE]
+转换消息组件获取有关流中组件任何一侧的输入和输出的所有可用元数据 - 此元数据感知功能可帮助您通过UI交互式构建转换。
+
+总是建议您在配置“变换消息”组件之前设置流程的其他组件。
+
+. 在Anypoint Studio中，点击*File*> *New*> *Mule Project*创建一个新项目，为项目命名，然后点击*Finish*。
+. 如果您尚未下载并提取 link:_attachments/dw-quickstart-bundle.zip[dw-quickstart-bundle.zip]，并将其中的两个文件拖到新Mule项目的`src/main/resources`文件夹中。
+. 将调色板中的 link:/mule-user-guide/v/3.9/http-connector[HTTP连接器]拖放到您的空画布上，然后是*Transform Message*组件，然后是另一个HTTP连接器。
++
+image::dataweave-quickstart-5a4cb.png[]
+. 单击第一个HTTP Connector打开其属性编辑器，然后单击绿色加号图标创建HTTP连接器配置。在弹出窗口中，保留所有字段的默认值 - 只需点击*OK*即可。
++
+image::dataweave-quickstart-a56f0.png[]
+
+. 在上面的属性窗口中的*Path*字段中，写入`place-order`。一旦部署了Mule应用程序，就可以在`+0.0.0.0:8081/place-order+`处访问所需的端点
+. 从HTTP连接器的属性窗口中选择*Metadata*选项卡，然后单击*Add Metadata*按钮。
++
+image::dataweave-quickstart-702fd.png[]
+. 点击下拉菜单旁边的*Edit*图标 image:edit_button.png[编辑]。
++
+image::dataweave-quickstart-8ea02.png[]
++
+. 点击绿色加号为*Add*的新元数据类型。
++
+image::dataweave-quickstart-c8ae5.png[]
++
+. 将元数据类型命名为`XML-order-input`，然后单击*Create type*。
++
+image::dataweave-quickstart-22a00.png[]
++
+. 选择*XML*作为类型，从下拉列表中选择*Example*，并将其指向`dw-tshirt-inputsample.xml`文件的位置，您可以从您在本指南的开始（ link:_attachments/dw-quickstart-bundle.zip[dw-quickstart-bundle.zip]）。然后点击*Select*以使用此元数据类型。
++
+image::dataweave-quickstart-26f37.png[]
++
+[TIP]
+====
+现在，如果通过单击流中的变换来选择“变换消息”组件，则输入部分应通过变换消息显示*incoming payload*中预期的字段。
+
+image:dataweave-quickstart-4a1db.png[]
+====
+. 点击*_second HTTP connector in the flow_*打开其属性编辑器。点击绿色加号为HTTP连接器创建一个新的配置。在全局元素属性弹出窗口中，将端口字段更改为8082（由于端口8081已被其他HTTP连接器占用，所以必须更改）。
+. 在全局配置弹出窗口中，找到"RAML Location"字段，并为您之前下载的软件包中提供的`t-shirt.raml`文件提供正确的路径。您可以输入文件位置，或者 - 如果您将文件解压缩到Mule项目文件夹中，请通过*browse*按钮找到它。然后点击*Ok*。
++
+image:dataweave-quickstart-6d4b7.png[]
+
+. 返回到HTTP连接器属性窗口，将"Path"设置为*/orders*，并使用*POST*作为"Method"，选择RAML中描述的选项连接。
++
+image::dataweave-quickstart-3c9c7.png[]
+
++
+[TIP]
+====
+请注意，如果您单击Transform Message组件，则输出节现在将*POST*的RAML文件中描述的数据结构反映为`/orders`。
+
+image::dataweave-quickstart-f39a5.png[]
+====
+
+[NOTE]
+在这个例子中，我们需要将XML输入转换为JSON输出。因为这种差异是在输入和输出的元数据中定义和已知的*DataWeave handles the conversion _implicitly_*。
+
+=== 可选：从RAML文件创建模拟服务
+
+使用您分配给第二个HTTP连接器的相同RAML定义，您可以使用 link:/apikit[APIkit]轻松构建API和模拟后端。通过这种方式，当您运行应用程序时，您的HTTP连接器将针对此服务并接收实际响应，而不会引发任何错误。
+
+你可以创建你的DataWeave映射，而不需要通过任何这些，只要记住，如果你部署mule项目并调用它的端点，你将不会得到任何响应。
+
+. 在资源管理器中，左键单击项目中的`t-shirt.raml`文件，然后选择*Mule*> *Generate Flows from RAML*。这会自动生成一个新的Mule配置XML，其中包含每个资源上的Mule流和RAML上描述的方法。
++
+image:dataweave-quickstart-flows-from-raml.png[]
++
+. 打开项目中生成的`t-shirt.xml`文件，并查找标记为`post:/orders:application/json:t-shirt-config`的流。
+. 打开该流中`Set Payload`元素的属性，并将其值设置为`&#x0023;[payload]`
++
+image:dataweave-quickstart-set-payload.png[]
+
+== 阶段2  - 将输入字段映射到输出字段
+
+使用 link:/anypoint-studio/v/6/transform-message-component-concept-studio[关于变换消息组件]创建输入和输出字段之间的实际映射。只需单击并将输入端的字段拖动到输出端的字段即可。最明显的任务是将类似命名的字段匹配在一起，从而有助于验证输出数据：
+
+**  `address`和`address1`
+**  `city`和`city`
+**  `nationality`和`country`。
+**  `email`和`email`
+**  `name`和`name`
+**  `postalCode`和`postCode`
+**  `state`和`stateOrProvince`
+
+*Note:*输出端的`address2`和`size`字段应保持未分配状态。
+
+image::dataweave-quickstart-1984d.png[地图]
+
+这些操作中的每一个都在UI中绘制连接，并在文本编辑器中生成DataWeave代码。此时，您的DataWeave代码应如下所示：
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+	address1: payload.order.buyer.address,
+	city: payload.order.buyer.city,
+	country: payload.order.buyer.nationality,
+	email: payload.order.buyer.email,
+	name: payload.order.buyer.name,
+	postalCode: payload.order.buyer.postCode as :string,
+	stateOrProvince: payload.order.buyer.state
+}
+----
+
+== 如何将固定值分配给输出
+
+我们在前一节中映射的变换未考虑字段`size`或`address2`  - 您可以为这些字段提供一个表达式以使用所需的值填充它们。
+
+. 双击输出中的`address2`字段，看看它如何在`address2`字段旁边添加一个图标，并生成一行DataWeave代码，该代码将该字段赋值为{{ 3}}。
++
+image::dataweave-quickstart-c1e53.png[]
++
+. 对`size`字段执行相同操作，然后直接编辑DataWeave代码以将值`M`分配给`size`，而不是使用{{4} }值。
++
+image::dataweave-quickstart-4abf1.png[]
+
+
+== 如何在DataWeave中使用条件逻辑
+
+转型的可能性是无止境的。让我们通过修改填充`size`字段的表达式，将我们刚刚完成的转换更有趣地转换为条件表达式。
+
+看看评估`size`的表达式是如何改变的 - 它使用 link:/mule-user-guide/v/3.9/dataweave-language-introduction#unless-otherwise[除非和其他运营商]将值设置为`M` _unless_买方的名字是Homer Simpson，在这种情况下，衬衫尺寸表示为`size`变为`XXL`。
+
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+	address1: payload.order.buyer.address,
+	address2: null,
+	city: payload.order.buyer.city,
+	country: payload.order.buyer.nationality,
+	email: payload.order.buyer.email,
+	name: payload.order.buyer.name,
+	postalCode: payload.order.buyer.postCode as :string,
+	size: "M" unless payload.order.buyer.name == "Homer Simpson" otherwise "XXL",
+	stateOrProvince: payload.order.buyer.state
+}
+----
+
+
+== 如何在转换消息组件中预览输出
+
+转换消息组件在编辑器中提供实时反馈;预览您的输出数据在_run time_处的样子，这对_design time_中元数据结构的变化作出响应。
+
+*NOte:* *Preview*只有在提供有效的输入样本数据时才能显示输出预览。
+
+. 要打开此部分，请点击编辑器右上角的`Preview`按钮。
++
+image::dataweave-quickstart-07f8a.png[]
++
+. 由于您的元数据基于您之前提供的示例输入，Studio使用此示例中的数据构建输出示例。
++
+image::dataweave-quickstart-59e9c.png[]
++
+. 您可以自由编辑样本数据以测试角落案件中会发生的情况。选择输入部分中的`payload`选项卡，并随意替换所有值。这样做时，请注意如何将这些值实时填充到预览值中，从而为您提供有关映射最终结果的实际表示。
++
+image::dataweave-quickstart-75ca5.png[]
++
+. 尝试使用TX填充输入示例中的"state"字段，并注意输出示例中的"size"字段是如何实时更新的。
+. 保存您的Mule项目并将其部署到Studio的虚拟服务器中，通过右键单击该项目并选择`Run As > Mule Application`来尝试它。
+. 使用像Postman这样的工具（chrome扩展名），用如下所示的XML主体发送HTTP POST请求到http：// localhost：8081 / place-order：
+
+[source, xml, linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<order>
+  <product>
+    <price>5</price>
+    <model>MuleSoft Connect 2016</model>
+  </product>
+  <item_amount>3</item_amount>
+  <payment>
+    <payment-type>credit-card</payment-type>
+    <currency>USD</currency>
+    <installments>1</installments>
+  </payment>
+  <buyer>
+    <email>mike@hotmail.com</email>
+    <name>Michael</name>
+    <address>Koala Boulevard 314</address>
+    <city>San Diego</city>
+    <state>TX</state>
+    <postCode>1345</postCode>
+    <nationality>USA</nationality>
+  </buyer>
+  <shop>main branch</shop>
+  <salesperson>Mathew Chow</salesperson>
+</order>
+----
+
+您应该获得具有单个值的JSON正文的响应，这是您刚刚放置的衬衫订单的订单ID。
+
+
+== 为练习2定义输入和输出元数据
+
+. 将两个HTTP连接器和一个转换消息组件拖放到新流程中。
++
+image::dataweave-quickstart-e4466.png[]
+
+. 单击第一个HTTP连接器打开其属性编辑器，然后在*Connector Configuration*中选择您在之前的步骤中创建的连接器。
+
+. 在*Path*字段中输入`get-products`。部署完成后，会在`+0.0.0.0:8081/get-products+`处生成可到达的端点
+
+. 单击第二个HTTP连接器以打开其属性编辑器，然后在*Connector Configuration*中选择您之前创建的链接到您下载的RAML文件的链接。
+
+. 将路径设置为*/products*，将方法设置为*GET*。
+. 如果您点击转换消息组件，请注意其输入已填充适当的数据结构，通过GET请求发送到/ products。
++
+image::dataweave-quickstart-2196b.png[]
+
+. 点击*Preview*按钮打开输出预览。由于没有可用的样本数据，系统会提示您提供样本。
+
++
+image::dataweave-quickstart-be7fd.png[]
+
+. 点击超链接通知。这将在输入部分使用已知输入结构的空支架打开编辑器选项卡，其中每个字段都填充`????`。您可以编辑它以显示更多可用的数据。将以下示例粘贴到该编辑器中：
+
+[source,json,linenums]
+----
+[
+  {
+    "productCode": "5423",
+    "size": "m",
+    "description": "Connect 2016",
+    "count": 151
+  },
+    {
+    "productCode": "2452",
+    "size": "m",
+    "description": "RAML",
+    "count": 23
+  },
+    {
+    "productCode": "4567",
+    "size": "xxl",
+    "description": "Connect 2016",
+    "count": 329
+  },
+    {
+    "productCode": "1256",
+    "size": "s",
+    "description": "RAML",
+    "count": 0
+  }
+]
+----
+
+== 类型转换
+
+与本快速入门指南第一个示例中使用的其他Transform消息组件一样，您可以在*input section*中看到描述数据结构的树。由于没有关于所需输出的元数据，所以在输出部分中没有任何指定。在这个例子中，我们将编写DataWeave代码*manually*来访问比通过UI提供的更多高级功能。
+
+
+点击您的Transform Message组件。在文本编辑器窗格中，将大括号'{}'替换为'有效内容'。
+
+image::dataweave-quickstart-7c173.png[]
+
+这是您可以执行的最简单的转换，它复制输入结构，但将格式从*JSON*更改为*Java*。无论在有效载荷中存在什么 - 包括任何深度的任何子元素 - 都可以直接转换成Java，而不会改变它的任何结构。
+
+打开*Preview*选项卡并查看描述数据结构的树，这就是Java预览的样子：
+
+image::dataweave-quickstart-fb3b7.png[]
+
+您可以轻松地将 link:/mule-user-guide/v/3.9/dataweave-language-introduction#output-directive[输出指令]从默认`application/java`更改为`text/csv`，或者更改为 link:/mule-user-guide/v/3.9/dataweave-formats[支持的格式]中的任意一个，然后查看该转换的结果。
+
+image::dataweave-quickstart-c8b4f.png[]
+
+[NOTE]
+请注意，在此特定示例中，格式`application/XML`不会按原样工作，因为XML需要一个父节点，此处不存在。
+
+将 link:/mule-user-guide/v/3.9/dataweave-language-introduction#output-directive[输出指令]更改为`application/json`，以便最终结果与输入中的示例数据相同。稍后你可以用更有趣的方式来改变它。
+
+image::dataweave-quickstart-6381c.png[]
+
+== 地图运算符
+
+如果要保留数据结构，可以传递简单的"payload"，但如果需要更改有效内容中的任何特定数据字段，则需要单独与有效内容的项目进行交互。
+
+. 将以下代码放入DataWeave编辑器中：
++
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+shirts: payload map {
+	size: upper $.size,
+	description: $.description,
+	count: $.count
+}
+----
+
+由于输入是元素的集合，每个元素描述库存中的产品，因此此代码使用 link:/mule-user-guide/v/3.9/dataweave-operators#map[地图运算符]分别处理这些实例。对于集合中的每个元素，映射运算符执行一次后，大括号中的内容将包含在括号内。在此操作中，代码通过`$`选择器引用当前选定的实例。本示例中的代码仅将输入的每个项目都映射到相同的字段，但*size*字段除外，它应用 link:/mule-user-guide/v/3.9/dataweave-operators#upper[上层操作员]将其更改为大写。
+
+如果您打开*Preview*窗格，则可以看到该变换将输出的内容，并将样本作为输入。输出是一个包含单个数组的对象，该数组中的每个元素都是输入中的元素之一，除了大小字段以大写形式出现以外，它们保持相同。
+
+
+[source,json,linenums]
+----
+{
+  "shirts": [
+    {
+      "size": "M",
+      "description": "Connect 2016",
+      "count": 151
+    },
+    {
+      "size": "M",
+      "description": "RAML",
+      "count": 23
+    },
+    {
+      "size": "XXL",
+      "description": "Connect 2016",
+      "count": 329
+    },
+    {
+      "size": "S",
+      "description": "RAML",
+      "count": 0
+    }
+  ]
+}
+----
+
+
+== 过滤器运算符
+
+
+上一步的结果包括零库存的产品。我们可以使用 link:/mule-user-guide/v/3.9/dataweave-operators#filter[筛选运算符]轻松过滤这些案例。修改您的DataWeave代码以最终包含`filter $.count > 0`。你的代码应该是这样的：
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+shirts: payload map {
+	size: upper $.size,
+	description: $.description,
+	count: $.count
+} filter $.count > 0
+----
+
+过滤器运算符将一个数组作为输入，根据条件验证其中的每个元素。在这种情况下，它所需的数组是由映射操作创建的结果数组，因为过滤器操作只有在映射操作已编译完成时才会执行。请注意，该条件使用`$`选择器来指示当前正在修改的数组的元素。
+
+[TIP]
+查看 link:/mule-user-guide/v/3.9/dataweave-language-introduction#precedence-table[优先表]，了解每个表达式编译的时间。
+
+
+如果您打开*Preview*窗格，则可以看到该变换将输出的内容，并将样本作为输入。输出的数组现在包含少一个元素，这是具有0个库存的产品。
+
+[source,json,linenums]
+----
+{
+  "shirts": [
+    {
+      "size": "M",
+      "description": "Connect 2016",
+      "count": 151
+    },
+    {
+      "size": "M",
+      "description": "RAML",
+      "count": 23
+    },
+    {
+      "size": "XXL",
+      "description": "Connect 2016",
+      "count": 329
+    }
+  ]
+}
+----
+
+
+==  groupBy运算符
+
+输出中的元素可以方便地分组。 link:/mule-user-guide/v/3.9/dataweave-operators#group-by[groupBy运营商]可以将一个集合安排到一个集合集合中，每个集合的元素在其中一个字段中共享一个共同的值。修改您的DataWeave代码以最终包含`groupBy $.size`。你的代码应该是这样的：
+
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+shirts: payload map {
+	size: upper $.size,
+	description: $.description,
+	count: $.count
+} filter $.count > 0 groupBy $.size
+----
+
+
+
+Group By运算符将一个数组作为输入，并将焦点放在其中一个字段上，以根据此字段中的值对这些元素进行分组。在这种情况下，它所需的数组是由map操作创建的结果数组，因为groupBy操作仅在map操作已编译完成后才会执行。请注意，该条件使用`$`选择器来指示当前正在修改的数组的元素。
+
+
+如果您打开*Preview*部分，则可以看到该变换将输出的内容，并将样本作为输入。输出现在包含一个对象，其中包含一个"shirts"对象，其中包含一个数组。 "size"的每个不同可用值都将在"shirts"对象内具有相应的元素，每个元素都包含一个对象数组，每个产品与该值匹配的大小。
+
+
+[source,json,linenums]
+----
+{
+  "shirts": {
+    "M": [
+      {
+        "size": "M",
+        "description": "Connect 2016",
+        "count": 151
+      },
+      {
+        "size": "M",
+        "description": "RAML",
+        "count": 23
+      }
+    ],
+    "XXL": [
+      {
+        "size": "XXL",
+        "description": "Connect 2016",
+        "count": 329
+      }
+    ]
+  }
+}
+----
+
+
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.9/dataweave-examples[DataWeave示例]中的更高级示例
+*  link:/anypoint-studio/v/6/transform-message-component-concept-studio[关于变换消息组件]
+*  link:/mule-user-guide/v/3.9/dataweave-language-introduction[DataWeave语言介绍]
+*  link:/mule-user-guide/v/3.9/dataweave-operators[DataWeave操作符]
+*  link:/mule-user-guide/v/3.9/dataweave-types[DataWeave类型]
+*  link:/mule-user-guide/v/3.9/dataweave-formats[DataWeave格式]
+*  link:/mule-user-guide/v/3.9/dataweave-selectors[DataWeave选择器]
+*  link:/mule-user-guide/v/3.9/mel-dataweave-functions[MEL DataWeave函数]
+* 使用 link:/mule-user-guide/v/3.9/dataweave-migrator[DataWeave Migrator工具]自动迁移旧的DataMapper变换

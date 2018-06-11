@@ -1,0 +1,201 @@
+= 传输原型
+
+*  <<Configuring Maven>>
+*  <<Using the Archetype>>
+*  <<The Questions Explained>>
+*  <<Example Console Output>>
+*  <<Command Line Options>>
+
+Mule提供了Maven原型，您可以将其用作Mule项目的代码模板。这些模板包含一组实施说明和"todo"指针，可帮助您快速入门。骡运输原型将帮助您在几秒钟内生成量身定制的样板运输项目。有关Maven的更多信息，请参阅使用Maven。
+
+如果您想更新现有的传输器而不是创建新的传输器，例如将新的模式名称空间和注册表引导添加到传输器，请改用 link:/mule-user-guide/v/3.4/creating-module-archetypes[创建模块原型]。
+
+按照以下说明为新传输创建模板文件，其中包括评论中所有必需的Java样板文件和详细的实施说明。
+
+== 配置Maven
+
+将以下内容添加到文件`settings.xml`（通常在您的Maven `conf`或`$HOME/.m2`目录中），以便Maven允许您执行Mule插件。
+
+*settings.xml*
+
+[source, code, linenums]
+----
+
+----
+
+== 使用原型
+
+首先，打开命令shell并切换到您想要创建项目的目录。
+
+----
+ > cd yourDir
+----
+
+接下来，执行原型并生成代码。如果这是您第一次运行此命令，Maven将为您下载原型。
+
+----
+> mvn mule-transport-archetype:create -DtransportId=xxx -DmuleVersion=3.1.1
+----
+
+[NOTES]
+====
+*Running the archetype* +
+
+Maven默认使用原型的最新版本。如果您想为早期版本的Mule创建传输，这可能会导致问题。在这种情况下，运行mule-transport-archetype，指定插件的完整版本，如下所示：
+----
+mvn org.mule.tools:mule-transport-archetype:3.1.1:create ...
+----
+====
+
+至少，你传入两个系统参数：
+
+*  `transportId`：项目的简称（如'tcp'）。这必须是一个小写字母，不能包含空格，句点，连字符等。对于传输而言，这通常是所连接的基础传输协议的简短协议名称。
+*  `muleVersion`：您要使用的Mule项目原型的版本。这也将是用于生成的工件的默认Mule版本。
+
+插件会询问各种问题（如下所述），然后生成文件。您也可以通过在命令行中输入所有参数，在没有用户提示的情况下使用此插件。有关可以传入的参数的完整列表，请参阅<<Command Line Options>>。
+
+在回答所有问题后，原型将使用您指定的传输名称创建一个目录。该目录包括一个用Maven构建的POM文件，一个Mule配置文件（`src\main\resources\mule-config.xml`），它包含您指定的传输和模块的命名空间，并且包含用于创建第一个流的占位符元素，以及一个`package.html`文件在`src\main\java`下使用您指定的包路径。最后，它会在`src\test`下创建一些模板文件，以帮助您开始为传输创建单元测试。将在项目的根目录中创建一个新的`MULE-README.txt`文件，以解释创建了哪些文件。
+
+== 问题解释
+
+该插件会提示您回答有关您正在编写的传输的几个问题。这些可能会根据您选择的选项而有所不同。输出示例如下所示。
+
+=== 提供有关运输工具的说明：
+
+您应该提供关于交通工具的准确描述，并提供您可以或不可以用它做什么的高级细节。本文将用于需要描述运输的地方。
+
+=== 这个传输的目标是哪个版本的Mule？
+
+您希望用于运输的骡子版本。默认情况下，这将默认为在命令行中传入的版本。
+
+=== 此传输器是否具有用于在Xml中配置传输的自定义架构？
+
+所有新的传输应该定义一个XML模式来定义传输如何配置。如果您不使用此选项，用户将不得不使用通用配置来使用您的传输。
+
+=== 传输可以接收入站请求吗？
+
+此传输可以接收入站事件吗？例如，文件传输允许您侦听写入目录的文件。 JMS允许您监听正在写入主题或队列的事件。
+
+=== 消息接收器是否需要轮询基础资源？
+
+要接收消息，一些传输必须进行轮询。例如，文件传输必须轮询一个目录以知道已经写入了某个目录，而JMS提供了一个回调（`MessageListener`）来传递该消息。只有在传输可以接收入站请求时才会询问此问题。
+
+=== 如果这个运输工具有一个默认的入站变压器，请输入变压器的名称？
+
+如果正在连接的应用程序的协议具有其自己的消息类型，则可以定义默认入站转换器，该转换器在定义使用此传输的端点时将默认调用。输入要生成的转换器类的名称（不带包名称），例如`JmsMessageToObject`。
+
+=== 传输调度出站请求吗？
+
+询问消息是否可以写入此传输。通过文件传输，您可以将文件数据写入目录，使用JMS您可以写入队列或主题。
+
+=== 如果此传输将具有默认的出站变压器，请输入变压器的名称？
+
+如果正在连接的应用程序的协议具有其自己的消息类型，则可以定义默认出站转换器，该转换器在定义使用此传输的出站端点时将默认调用。输入要生成的转换器类的名称（不带包名称），例如`ObjectToJmsMessage`。
+
+=== 传输是否需要一个自定义的MuleMessageFactory？
+
+这通常只有在底层传输的API具有+时才需要
+ 消息对象，即JMSMessage或HttpServletRequest。
+
+=== 传输可以请求来自底层资源的单个消息吗？
+
+如果传输可以从消息通道或资源请求消息，而不是订阅入站事件或轮询资源，请对此问题回答“是”。这将生成一个`MessageRequester`类。
+
+=== 此传输是否支持交易？
+
+如果此传输的底层资源是事务性的，您可以让Mule生成一个事务包装器，它允许用户启用使用此传输器定义的端点上的事务。
+
+=== 此传输是否使用非JTA事务管理器？
+
+并非所有技术（如JavaSpaces）都支持标准的JTA事务管理器。 Mule仍然可以与不同的非JTA事务管理器一起工作，并且这个原型可以为您生成必要的存根。
+
+=== 此传输使用哪种类型的端点？
+
+Mule支持许多明确定义的端点
+
+* 资源端点（例如，jms：//my.queue）
+* 个URL端点（例如，http：// localhost：1234 / context / foo？param = 1）
+* 套接字端点（例如，tcp：// localhost：1234）
+* 自定义
+
+自定义选项允许您偏离现有的端点样式并解析您自己的。
+
+=== 您希望在此项目中包含哪些Mule传输？
+
+如果您要扩展一个或多个现有传输，请在这里用逗号分隔的列表指定它们。
+
+=== 你想在这个项目中包含哪些Mule模块？
+
+默认情况下，包含Mule客户端模块以便于测试。如果您想包含其他模块，请在这里用逗号分隔的列表指定它们。
+
+== 示例控制台输出
+
+注意：在下面的示例中，MuleForge托管不再存在。在MuleForge提示符处输入*n*。
+
+----
+Provide a description of what the transport does:   [default: ]
+[INFO] muleVersion:
+Which version of Mule is this transport targeted at?   [default: 3.1.1]
+[INFO] forgeProject:
+Will this project be hosted on MuleForge? [y] or [n]   [default: y]
+[INFO] hasCustomSchema:
+Will this transport have a custom schema for configuring the transport in Xml? [y] or [n]   [default: y]
+[INFO] hasReceiver:
+Can the transport receive inbound requests? [y] or [n]   [default: y]
+[INFO] isPollingReceiver:
+Does the Message Receiver need to poll the underlying resource? [y] or [n]   [default: n]
+[INFO] inboundTransformer:
+If this transport will have a default inbound transformer, enter the name of thetransformer? (i.e. JmsMessageToObject)   [default: n]
+[INFO] hasDispatcher:
+Can the transport dispatch outbound requests? [y] or [n]   [default: y]
+[INFO] outboundTransformer:
+If this transport will have a default outbound transformer, enter the name of thetransformer? (i.e. ObjectToJmsMessage)   [default: n]
+[INFO] hasCustomMessageFactory:
+Does the transport need a custom MuleMessageFactory? [y] or [n](This is usually only required if the underlying transport has an API that has a message object i.e. JMSMessage or HttpServletRequest)   [default: n]
+[INFO] hasRequester:
+Can the transport request incoming messages programmatically? [y] or [n]   [default: y]
+[INFO] hasTransactions:
+Does this transport support transactions? [y] or [n]   [default: n]
+[INFO] hasCustomTransactions:
+Does this transport use a non-JTA Transaction manager? [y] or [n](i.e. needs to wrap proprietary transaction management)   [default: n]
+[INFO] endpointBuilder:
+What type of endpoints does this transport use? - [r]esource endpoints (i.e. jms://my.queue) - [u]rl endpoints (i.e. http://localhost:1234/context/foo?param=1) - [s]ocket endpoints (i.e. tcp://localhost:1234) - [c]ustom - parse your own   [default: r]
+[INFO] transports:
+Which Mule transports do you want to include in this project? If you intend extending a transport you should add it here:(options: axis, cxf, ejb, file, ftp, http, https, imap, imaps, jbpm, jdbc, jetty, jms, multicast, pop3, pop3s, quartz, rmi, servlet, smtp, smtps, servlet, ssl, tls, stdio, tcp, udp, vm, xmpp):   [default: vm]
+[INFO] modules:
+Which Mule modules do you want to include in this project? The client is added for testing:(options: bulders,client,jaas,jbossts,management,ognl,pgp,scripting, spring-extras,sxc,xml):  [default: client]
+----
+
+== 命令行选项
+
+默认情况下，此插件以交互模式运行，但可以使用以下选项以无提示模式运行它：
+
+----
+-DinteractiveMode=false
+----
+
+以下选项可以传入：
+
+[%header,cols="34,33,33"]
+|===
+|姓名 |示例 |默认值
+| {transportId {1}}  -  DtransportId = TCP  |无
+|描述 |  -  Ddescription = "some text"  |无
+| {muleVersion {1}}  -  DmuleVersion = 3.1.1  |无
+| {hasCustomSchema {1}}  -  DhasCustomSchema =真 |真
+| {forgeProject {1}}  -  DforgeProject =真 |真
+| {hasDispatcher {1}}  -  DhasDispatcher =真 |真
+| {hasRequester {1}}  -  DhasRequester =真 |真
+| {hasCustomMessageFactory {1}}  -  DhasCustomMessageFactory =真 |假
+| {hasTransactions {1}}  -  DhasTransactions =假 |假
+|版本 |  -  Dversion = 1.0-SNAPSHOT  | <muleVersion>
+| {inboundTransformer {1}}  -  DinboundTransformer =假 |假
+|的groupId  |  - 。DgroupId = org.mule.transport.tcp  | org.mule.transport <transportId>
+| {hasReceiver {1}}  -  DhasReceiver =真 |真
+| {isPollingReceiver {1}}  -  DisPollingReceiver =假 |假
+| {outboundTransformer {1}}  -  DoutboundTransformer =假 |假
+| {endpointBuilder {1}}  -  DendpointBuilder = S  |  -  [R
+| {hasCustomTransactions {1}}  -  DhasCustomTransactions =假 |假
+| {运输{1}}  -  Dtransports = VM，JMS  | VM
+| {模块{1}}  -  Dmodules =客户端，XML  |客户端
+|===

@@ -1,0 +1,111 @@
+= 测试您的连接器
+
+开发你的Mule扩展的一个重要部分是编写单元测试。单元测试分为几个不同的类别，全部涵盖如下。
+
+=== 测试输入数据的验证
+
+由于您的云服务接受将发送至云服务的数据，因此可能会对其输入执行一致性检查。有些参数可能是可选的，有些参数必须对云服务具有有意义的价值。您应该实施单元测试，为每个云连接器的方法指定一个无效输入，并检查是否执行了正确的输入验证。
+
+=== 测试与云服务的交互
+
+您的云连接器的主要目的是将本地API与远程API集成。通过本地API，开发人员可以像使用本地服务一样使用Web服务。
+
+然而，云连接器通常通过一些远程服务在互联网上进行交谈。这意味着与服务的连接可能会发生错误，例如超时或网络数据包丢失。您的云连接器可以通过重试或简单地抛出异常来正常处理这些类型的错误。无论您选择哪种类型的错误处理，都要确保测试错误处理。通常情况下，您可能需要模拟您正在测试的Web服务，因为您无法从您身边重现某些错误情况（例如超时，连接丢失）。
+
+在创建新项目时，会在项目中创建一个测试用例框架。
+
+=== 测试Mule集成
+
+当您创建一个新项目时，Mule命名空间处理程序类和模式将从您的云连接器类自动生成。除了其他的单元测试外，你还应该测试这个Mule集成。作为tumb的规则，为每个生成Muel模式的元素添加至少一个测试。
+
+命名空间处理程序的测试类在创建时会在项目中创建。测试类有一些帮助程序方法和注释，它们让您了解如何开始使用Mule配置中的流编写单元测试。
+
+让我们走过一个典型的测试课：
+
+[source, java, linenums]
+----
+package org.mule.module.movies;
+ 
+import org.mule.api.MuleEvent;
+import org.mule.construct.SimpleFlowConstruct;
+import org.mule.tck.FunctionalTestCase;
+ 
+public class MovieConnectorTest extends FunctionalTestCase
+{
+ 
+    @Override
+    protected String getConfigResources()
+    {
+        return "config/movie-search.xml";
+    }
+ 
+    public void testSearch() throws Exception
+    {
+        String payload = "<movie/>";
+        SimpleFlowConstruct flow = lookupFlowConstruct("search");
+        MuleEvent event = getTestEvent(payload);
+        MuleEvent responseEvent = flow.process(event);
+    }
+ 
+    private SimpleFlowConstruct lookupFlowConstruct(String name)
+    {
+        return (SimpleFlowConstruct) muleContext.getRegistry().lookupFlowConstruct(name);
+    }
+ 
+}
+----
+
+首先，你会注意到它继承自FunctionalTestCase。这是Mule ESB中所有功能测试的基类。
+
+*getConfigResources*必须在包含描述Mule配置的XML的类路径中返回一个资源。它通常位于**src/main/resources**内。
+
+接下来是测试方法本身。让我们一行一行地走过去。
+
+[source, code, linenums]
+----
+String payload = "<movie/>";
+----
+
+这里没什么特别的，它只是设置一些有效载荷的变量。我们建议您从测试文件夹中的资源获取此内容。
+
+[source, code, linenums]
+----
+SimpleFlowConstruct flow = lookupFlowConstruct("search");
+----
+
+这一行将使用convienienve方法lookupFlowConstruct（反过来使用Mule的注册表）来查找您在XML配置中定义的流。
+
+[source, code, linenums]
+----
+MuleEvent event = getTestEvent(payload);
+MuleEvent responseEvent = flow.process(event);
+----
+
+现在，这又很简单了。第一行将使用您指定的有效载荷生成测试事件，第二行将使用生成的测试事件启动流程。假设你的流程调用你的连接器都应该是好的。
+
+您也可以从responseEvent获取输出有效内容，并根据需要进行声明。
+
+以下是一个Mule配置的例子：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:movie="http://www.mulesoft.org/schema/mule/movie"
+      xsi:schemaLocation="
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+        http://www.mulesoft.org/schema/mule/movie mule-movie.xsd">
+ 
+    <movie:config apiKey="ded7fc9a3f7607459664c8d4931772ea0"/>
+ 
+    <flow name="search">
+        <movie:search text="The Matrix"/>
+    </flow>
+</mule>
+----
+
+[TIP]
+有关Mule测试的更多信息，请咨询 link:/mule-user-guide/v/3.3/testing-with-mule-esb-3[用Mule ESB测试3]。

@@ -1,0 +1,151 @@
+= 创建非MEL表达式评估程序
+
+[WARNING]
+====
+本页面涉及Mule 3.3表达式评估器。不再推荐这种扩展表达式的方法。
+
+相反，请参阅 link:/mule-user-guide/v/3.9/mule-expression-language-mel[Mule表达语言MEL]以获取完整的用户指南和参考。
+====
+
+除了Mule提供的 link:/mule-user-guide/v/3.9/non-mel-expressions-configuration-reference[标准表达式评估器]外，您还可以创建自己的评估人员。本页面介绍了如何创建自定义评估程序，以及如何向自定义模块添加表达式支持。
+
+== 创建自定义评估程序
+
+要创建自定义评估程序，第一步是实现 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/expression/ExpressionEvaluator.html[的ExpressionEvaluator]界面。这是一个简单的策略界面：
+
+[source, java, linenums]
+----
+public interface ExpressionEvaluator extends NamedObject
+{
+    Object evaluate(String expression, MuleMessage message);
+}
+----
+
+请注意，此接口实现了`NamedObject`，它允许评估者被命名。这是在配置中使用此评估程序时用于`evaluator`属性的名称。
+
+`evaluate`方法的参数是不言自明的。 `expression`参数是要传递给当前`message`的表达式。
+
+让我们以`header`表达式计算器为一个具体的例子。它会假定`expression`将包含要返回的标题的名称。 *Note that this is a simplified example without message property scopes support. Consult the evaluators full source code for a more advanced version supporting scopes in expressions.*
+
+[source, java, linenums]
+----
+public class MessageHeaderExpressionEvaluator implements ExpressionEvaluator
+{
+    public static final String NAME = "myEval";
+ 
+    public Object evaluate(String expression, MuleMessage message)
+    {
+        Object result = null;
+        boolean required;
+   
+        //Is the header optional? the '*' denotes optional
+        if (expression.endsWith("*"))
+        {
+            expression = expression.substring(expression.length() - 1);
+            required = false;
+        }
+        else
+        {
+            required = true;
+        }
+  
+        //Look up the property on the message
+        result = message.getProperty(expression);
+ 
+        if (result == null && required)
+        {
+            throw new RequiredValueException(CoreMessages.expressionEvaluatorReturnedNull(NAME, expression));
+        }
+        return result;
+    }
+ 
+    public String getName()
+    {
+        return NAME;
+    }
+ 
+    public void setName(String name)
+    {
+        throw new UnsupportedOperationException("setName");
+    }
+}
+----
+
+*Note*表达式计算器的名称被固定为"myEval"，所以`setName`方法抛出`UnsupportedOperationException`。
+
+== 注册自定义评估程序
+
+创建自定义表达式评估器后，您必须使用Mule注册它。有两种方法可以做到这一点，这取决于你如何配置你的Mule实例。
+
+=== 将Evaluator配置为Bean
+
+如果你使用XML配置，你可以将你的表达式求值器配置成一个bean，然后Mule会发现它。
+
+[source, xml, linenums]
+----
+<spring:beans>
+    <spring:bean class="org.mule.expressions.MessageHeaderExpressionEvaluator"/>
+</spring:beans>
+----
+
+=== 引导评估者
+
+如果您希望表达式评估程序在您的模块（JAR）位于类路径中时由Mule自动加载，则需要在您的JAR的以下目录下添加一个`registry-bootstrap.properties`文件：
+
+[source]
+----
+/META-INF/services/org/mule/config
+----
+
+`registry-bootstrap.properties`的内容应该如下所示：
+
+[source]
+----
+object.1=org.mule.expression.MessageHeaderExpressionEvaluator
+----
+
+当Mule启动时，它会在加载任何配置之前发现该引导文件，并将该文件中列出的任何对象安装到本地注册表中。有关更多信息，请参阅 link:/mule-user-guide/v/3.9/bootstrapping-the-registry[引导注册表]。
+
+== 使用自定义评估程序
+
+要使用自定义评估程序，请按以下方式使用变量`custom-evaluator`：
+
+[source, xml, linenums]
+----
+<expression-transformer>
+    <return-argument evaluator="custom" custom-evaluator="myEval" expression="foo"/>
+</expression-transformer>
+----
+
+或者如下所示用于过滤器：
+
+[source, xml, linenums]
+----
+<expression-filter evaluator="custom" custom-evaluator="myEval" expression="foo"/>
+----
+
+嵌入表达式时，可以使用正常语法：
+
+[source]
+----
+#[myEval:foo]
+----
+
+== 将表达式支持添加到自定义模块
+
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/expression/ExpressionManager.html[ExpressionManager]负责维护支持的表达式计算器的列表并在运行时解析表达式。如果您要在自定义Mule扩展中添加对表达式的支持，则需要访问此对象。这是一个静态类，所以所有方法都可以静态调用，例如：
+
+[source]
+----
+Object result = ExpressionManager.evaluate("#[xpath://foo/bar]", muleMessage);
+----
+
+从Mule 2.2开始，您可以使用以下方法获取ExpressionManager：
+
+[source]
+----
+Object result = muleContext.getExpressionManager().evaluate("#[xpath://foo/bar]", muleMessage);
+----
+
+请注意，_muleContext_可通过实现 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/context/MuleContextAware.html[MuleContextAware]来使用。如果你正在扩展一个Mule API抽象类（即AbstractConnector），那么总是检查基类是否已经提供了MuleContext。
+

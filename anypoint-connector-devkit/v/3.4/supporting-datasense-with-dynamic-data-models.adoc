@@ -1,0 +1,275 @@
+= 支持DataSense与动态数据模型
+
+DataSense的基本功能是能够通过连接器从应用程序公开的数据模型中提取元数据。当连接器将它的实体公开为POJO时 - 也就是说，当它具有静态数据模型时 - 这很简单：POJO实体类定义提供了Java中需要的所有元数据，可通过内省查看。
+
+当连接器具有动态数据模型时 - 也就是说，当它将实体作为键值映射向Mule公开时，元数据不会立即可用。要为具有动态数据模型的连接器支持DataSense功能，请实现其他功能以创建元数据基于应用程序提供的数据。
+
+[WARNING]
+如果具有动态数据模型的连接器依赖于OAuth，则不支持DataSense元数据。 DataSense是一项设计时功能，Mule Studio目前无法在设计过程中执行"OAuth dance"和管理令牌以访问目标应用程序上的元数据。
+
+了解构建元数据的连接器的最直接的方法是查看支持具有大量元数据的复杂对象的连接器的示例。因此，本讨论将从https://github.com/mulesoft/salesforce-connector/[Salesforce.com连接器]中绘制其示例。
+
+
+
+== 假设
+
+* 您熟悉 link:/anypoint-connector-devkit/v/3.4/anypoint-connector-concepts[Anypoint连接器概念]中提供的连接器体系结构。
+* 您从用户角度熟悉 link:/mule-user-guide/v/3.4/mule-datasense[Mule DataSense]。
+
+表示DataSense元数据的== 
+
+包`org.mule.common.metadata`定义了管理和表示DataSense元数据的类。用于构建元数据的最重要的DevKit类包括：
+
+* 接口MetadataModel
+* 接口MetadataKey和类DefaultMetadataKey。这些代表了用于在模型中引用元数据的关键字。
+
+下一节将介绍如何正确使用这些类来构建元数据表示。
+
+DevKit在连接器上需要两种与元数据相关的方法来为动态模式生成DataSense元数据：
+
+*  `@MetadataKeyRetriever`方法从应用程序中检索所有实体类型名称的列表。
+*  `@MetadataRetriever`方法使用元数据键列表来检索有关每个实体类型的元数据。
+
+对具有动态模式的启用DataSense的连接器的操作还必须包含一个注释为`@MetadataKeyParam`的参数，该参数标识传递的Map的实体类型。
+
+== 准备一个`@Connector`类来添加元数据支持
+
+将以下导入添加到`@Connector`类中：
+
+[source, java, linenums]
+----
+import org.mule.common.metadata.*;
+import org.mule.common.metadata.builder.DefaultMetaDataBuilder;
+import org.mule.common.metadata.builder.DynamicObjectBuilder;
+import org.mule.common.metadata.builder.EnumMetaDataBuilder;
+import org.mule.common.metadata.datatype.DataType;
+ 
+import org.mule.api.annotations.MetaDataKeyRetriever;
+import org.mule.api.annotations.MetaDataRetriever;
+----
+
+注意：
+
+*  `org.mule.common.metadata.*`类包含用于表示和管理元数据的Mule类。
+*  `org.mule.common.metadata.builder`类用于构建元数据表示（可能非常复杂的一组对象）。
+*  `org.mule.common.metadata.datatype.DataType`类表示不同的对象字段数据类型及其属性。
+
+Salesforce.com连接器代码在上下文中使用这些类，如下所述。
+
+== 实施`@MetadataKeyRetriever`方法
+
+`@MetadataKeyRetriever`方法返回表示应用程序中定义的对象类型列表的`List<MetaDataKey>`。检索对象类型名称的细节将取决于特定的目标应用程序;对于Salesforce.com，类`com.sforce.soap.partner.DescribeGlobal`从Salesforce检索元数据，`@MetadataKeyRetrieve` r方法根据结果构建类型列表。
+
+[source, java, linenums]
+----
+@MetaDataKeyRetriever
+public List<MetaDataKey> getMetaDataKeys() throws Exception {
+    List<MetaDataKey> keys = new ArrayList<MetaDataKey>();
+    DescribeGlobalResult describeGlobal = describeGlobal();
+ 
+    if (describeGlobal != null) {
+        DescribeGlobalSObjectResult[] sobjects = describeGlobal.getSobjects();
+        for (DescribeGlobalSObjectResult sobject : sobjects) {
+            keys.add(new DefaultMetaDataKey(sobject.getName(), sobject.getLabel(), sobject.isQueryable()));
+        }
+    }
+ return keys;
+}
+----
+
+`List<MetaDataKey>`密钥存储https://github.com/mulesoft/mule-common/blob/master/src/main/java/org/mule/common/metadata/DefaultMetaDataKey.java[DefaultMetadataKey]实例。 DefaultMetadataKey的构造函数通过`String id`标识元数据键：
+
+[source, code, linenums]
+----
+public DefaultMetaDataKey(String id, String displayName, boolean isFromCapable) {
+        this.id = id;
+        this.displayName = displayName;
+        this.isFromCapable = isFromCapable;
+    }
+----
+
+注意：
+
+* 将`DefaultMetadataKey`属性`id`设置为Salesforce的`sObject`的名称。
+*  `isFromCapable`属性指示给定的类型是否可用于DSQL查询中的FROM子句。应用程序支持的某些类型的对象可能无法查询。
+
+实现类似的功能，根据应用程序中可用的元数据填充元数据键列表。
+
+== 实施`@MetadataRetriever`方法
+
+本节介绍Mule如何表示在`@MetadataKeyRetriever`的输出中命名的实体类型的实际元数据。
+
+下面显示了SalesForce连接器`@MetadataRetriever`方法，以及帮助器方法`addField()`  -  `addField`所调用的`getDataType()`方法。
+
+*getMetadata() and addField()*
+
+[source, java, linenums]
+----
+@MetaDataRetriever
+    public MetaData getMetaData(MetaDataKey key) throws Exception {
+        DescribeSObjectResult describeSObject = describeSObject(key.getId());
+ 
+ 
+        MetaData metaData = null;
+        if (describeSObject != null) {
+            Field[] fields = describeSObject.getFields();
+            DynamicObjectBuilder dynamicObject = new DefaultMetaDataBuilder().createDynamicObject(key.getId());
+            for (Field f : fields) {
+               addField(f, dynamicObject);
+            }
+            MetaDataModel model = dynamicObject.build();
+            metaData = new DefaultMetaData(model);
+        }
+        return metaData;
+    }
+ 
+    private void addField(Field f, DynamicObjectBuilder dynamicObject) {
+        DataType dataType = getDataType(f.getType());
+        switch (dataType){
+            case POJO:
+                dynamicObject.addPojoField(f.getName(), Object.class);
+                break;
+            case ENUM:
+                EnumMetaDataBuilder enumMetaDataBuilder = dynamicObject.addEnumField(f.getName());
+                if (f.getPicklistValues().length != 0){
+                    String[] values = new String[f.getPicklistValues().length];
+                    int i =0;
+                    for (PicklistEntry picklistEntry : f.getPicklistValues()){
+                        values[i] = (picklistEntry.getValue());
+                        i++;
+                    }
+                    enumMetaDataBuilder.setValues(values)
+                            .isWhereCapable(f.isFilterable())
+                            .isOrderByCapable(f.isSortable());
+                }
+                break;
+            default:
+                dynamicObject.addSimpleField(f.getName(), dataType)
+                        .isWhereCapable(f.isFilterable())
+                        .isOrderByCapable(f.isSortable());
+        }
+    }
+----
+
+*SalesforceConnector.getDataType()*
+
+[source, code, linenums]
+----
+private DataType getDataType(FieldType fieldType) {
+        DataType dt;
+        switch (fieldType) {
+            case _boolean:
+                dt = DataType.BOOLEAN;
+                break;
+            case _double:
+                dt = DataType.DOUBLE;
+                break;
+            case _int:
+                dt = DataType.INTEGER;
+                break;
+            case anyType:
+                dt = DataType.POJO;
+                break;
+            case base64:
+                dt = DataType.STRING;
+                break;
+            case combobox:
+                dt = DataType.ENUM;
+                break;
+            case currency:
+                dt = DataType.STRING;
+                break;
+            case datacategorygroupreference:
+                dt = DataType.STRING;
+                break;
+            case date:
+                dt = DataType.DATE_TIME;
+                break;
+            case datetime:
+                dt = DataType.DATE_TIME;
+                break;
+            case email:
+                dt = DataType.STRING;
+                break;
+            case encryptedstring:
+                dt = DataType.STRING;
+                break;
+            case id:
+                dt = DataType.STRING;
+                break;
+            case multipicklist:
+                dt = DataType.ENUM;
+                break;
+            case percent:
+                dt = DataType.STRING;
+                break;
+            case phone:
+                dt = DataType.STRING;
+                break;
+            case picklist:
+                dt = DataType.ENUM;
+                break;
+            case reference:
+                dt = DataType.STRING;
+                break;
+            case string:
+                dt = DataType.STRING;
+                break;
+            case textarea:
+                dt = DataType.STRING;
+                break;
+            case time:
+                dt = DataType.DATE_TIME;
+                break;
+            case url:
+                dt = DataType.STRING;
+                break;
+            default:
+                dt = DataType.STRING;
+        }
+        return dt;
+    }
+ 
+----
+
+注意：
+
+* 对于传递的MetaDataKey，`@MetadataRetriever` `getMetadata()`方法调用Salesforce为对象提取字段名称和字段类型。 `addField()`方法用于填充字段元数据的`dynamicObject`表示形式，包括字段是否可用于排序（`isOrderCapable`）和过滤（{{6} }}）在查询中。 +
+ +
+*  `getDataType()`中的DataType枚举类型中的不同值表示Mule可以在其元数据中表示的不同数据类型。对于许多应用程序，数据类型比Mule的数据类型更丰富，更具领域特定性。例如，`string`，`url`，`textarea`，`reference`，`email`和`encryptedString`等许多Salesforce字段类型均表示为{{ 8}}然而` ` `date`，`time`和`date_time`都表示为Mule的`DataType.DATE_TIME`。
+
+在连接器的`@MetadataRetriever`方法和任何支持方法中实施类似的逻辑。
+
+== 实施启用元数据的操作
+
+对于使用`Map<String, Object>`作为参数或返回值的操作的连接器：
+
+* 有一个假设，只有一个`Map<String, Object>`（或`List<Map<String,Object>>`）参数用于这样的操作。
+* 用`@MetaDataKeyParam`注释的一个参数必须为连接器的元数据模型提供实体类型名称（与每种类型的`DefaultMetadataKey.id`字段相同）。指定的类型用作`Map<String, Object>`表示的实体类型。
+
+考虑一个这样的操作`BaseSalesforceConnector.create()`的实现：
+
+[source, code, linenums]
+----
+public List<SaveResult> create(@MetaDataKeyParam String type,
+                                   @Optional @Default("#[payload]") List<Map<String, Object>> objects) throws Exception {
+        try {
+                return Arrays.asList(
+                   getConnection().create(toSObjectList(type, objects)));
+        } catch (Exception e) {
+                throw handleProcessorException(e);
+        }
+    }
+----
+
+`@MetaDataKeyParam`参数`type`标识要添加的Salesforce实体类型，并传递给`toSObjectList(type, objects)`方法，该方法将传入地图列表转换为`SObjects`列表。对于另一个应用程序，实现是相同的：获取应用程序的类型名称，并使用应用程序将传递的对象转换为该类型的方法。
+
+在这种情况下，传入`List<Map<String, Object>>`，同样使用`List<SaveResult>`来收集每个操作的成功或失败。
+
+[WARNING]
+在某些情况下，采用Map或`List<Map>`作为参数的`@MetaDataKeyParam`操作返回POJO或POJO列表是有效且合理的。然而，对于用户的可预测性，设计良好的连接器应该在使用POJO作为所有操作的输入和输出或者无输出时保持一致。
+
+== 另请参阅
+
+* 返回到 link:/anypoint-connector-devkit/v/3.4/devkit-advanced-topics[DevKit高级主题]页面
+* 返回到 link:/anypoint-connector-devkit/v/3.4/devkit-shortcut-to-success[DevKit成功的捷径]

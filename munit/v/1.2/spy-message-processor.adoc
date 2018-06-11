@@ -1,0 +1,232 @@
+= 间谍消息处理器
+：版本信息：3.7.0和更新
+:keywords: munit, testing, unit testing
+
+== 概述
+
+MUnit提供的Spy功能允许您_spy_调用消息处理器之前和之后发生的情况。这允许您除其他事项外，验证选定的Mule消息到达特定的消息处理器，这样做是否包含特定的有效负载或变量。
+
+== 定义间谍
+
+定义间谍时，我们告诉MUnit在消息处理器执行之前运行一系列指令（通常是断言或验证）_before_和/或__之后。
+
+提示：你可以在任何消息处理器上定义一个间谍（即使你还没有为它创建一个模拟）。
+
+就本文件而言，我们假设我们正在测试以下Mule代码：
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:mock-processor-code-to-test.png[mock-processor-code-to-test]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<flow name="exampleFlow">
+  <set-payload value="#['real_payload']" doc:name="Real Set Payload"/>
+</flow>
+----
+....
+------
+
+=== 定义哪个消息处理器为间谍
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:spy-message-processor.png[spy-message-processor]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<mock:spy messageProcessor="mule:set-payload"/>
+----
+....
+------
+
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `messageProcessor`
+|该属性用于描述我们想要模拟的消息处理器。它采用`{name-space}:{message-processor-name}`的形式。它支持正则表达式。
+
+|===
+
+由于`messageProcessor`属性接受正则表达式，因此可以创建如下所示的相同验证。
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:spy-using-mel.png[spy-using-mel]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source,xml,linenums]
+----
+<mock:spy messageProcessor=".*:set-payload"/>
+----
+....
+------
+
+在上面的例子中，我们为一个名为`set-payload`的消息处理器定义了一个间谍，不管消息处理器属于哪个名称空间。
+
+注：只有在严格需要的情况下才能在Spy中使用正则表达式正则表达式使得将Spy及其代码应用到您想要的更多消息处理器变得非常容易。
+
+=== 使用消息处理器属性定义间谍
+
+间谍定义基于_matchers_，即与所需消息处理器的功能相匹配的参数。仅根据消息处理器的名称定义间谍很大程度上限制了您的范围和模拟操作。因此，MUnit允许您通过定义消息处理器属性值的匹配器来定义间谍。
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:spy-with-attributes.png[spy-with-attributes]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<mock:spy messageProcessor="mule:set-payload" doc:name="Spy">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#['Real Set Payload']" name="doc:name"/>
+  </mock:with-attributes>
+</mock:spy>
+----
+....
+------
+
+您可以根据您认为进行验证所需的属性来定义许多属性
+尽可能代表。
+
+定义一个属性时，通过定义：
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `name`
+|属性的名称。这个值是字面的，它不接受正则表达式。
+
+| `whereValue`
+|定义（实际消息处理器的）属性应包含的值。它接受MEL表达式。如果保留为文字，它会假设一个字符串值。
+
+|===
+
+提示：如果希望Spy消息处理器匹配的属性与`config-ref`相似并解析为实际bean，则可以使用MUnit MEL函数`getBeanFromMuleContext('bean_name')`。此函数检查Mule注册表，并返回具有匹配名称的bean（如果存在）。有关详细信息，请参阅 link:/munit/v/1.2/assertion-message-processor[断言消息处理器]。
+
+=== 定义间谍行动
+
+间谍的权力在于它能够在消息处理器调用之前或之后运行动作。
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:spy-before-and-after.png[spy-before-and-after]
+
+. The actions inside `assertions-before-call` are run _before_ the message processor call.
+. The actions inside `assertions-after-call` are run _after_ the message processor call.
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<mock:spy messageProcessor="mule:set-payload" doc:name="Spy">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['Real Set Payload']"/>
+            </mock:with-attributes>
+            <mock:assertions-before-call>   // <1>
+                <munit:assert-null message="Ooops! Payload Is not Null" doc:name="Assert Null Payload"/>
+            </mock:assertions-before-call>
+            <mock:assertions-after-call>   // <2>
+                <munit:assert-not-null message="Ooops! Payload is Null" doc:name="Assert Not Null Payload"/>
+            </mock:assertions-after-call>
+</mock:spy>
+
+----
+
+<1> The actions inside `assertions-before-call` are run _before_ the message processor call.
+<2> The actions inside `assertions-after-call` are run _after_ the message processor call.
+....
+------
+
+
+
+提示：在模拟消息处理器之后定义间谍是没有意义的，因为你最终会验证自己的模拟。
+
+注：目前，间谍消息处理器中的操作仅适用于消息负载和调用属性。
+
+注意：目前的限制是你不能修改间谍内的Mule消息有效载荷的内容。此操作导致异常。
+
+=== 单向端点和消息处理器
+
+使用本指南中的信息，您现在可以侦测任何消息处理器。但是，对于单向端点，确保在端点执行之前完成间谍活动，而不是之后完成。这是因为单向端点不会等待响应并返回`VoidMuleEvent`。
+
+如果消息处理器试图对`VoidMuleEvent`执行操作，并且即使这些操作是断言，操作也会失败。
+
+为避免出现意外错误，如果将`VoidMuleEvent`发送给Spy消息处理器的任何部分，则MUnit Spy消息处理器将失败，并返回`MUnitError`。
+
+您仍然可以监视单向端点，但是不能在本节中的节或消息处理器之后出现。
+
+用== 定义间谍Java代码
+
+以下示例使用MUnit Java API重现了上述行为。
+
+[source, java, linenums]
+----
+import org.junit.Test;
+import org.mule.munit.common.mocking.Attribute;
+import org.mule.munit.common.mocking.SpyProcess;
+import org.mule.munit.runner.functional.FunctionalMunitSuite;
+
+public class TheTest extends FunctionalMunitSuite {
+
+  @Test
+  public void test() throws Exception{
+    Attribute attribute = Attribute.attribute("name").
+      ofNamespace("doc").withValue("Real Set Payload"); //<1>
+
+    spyMessageProcessor("set-payload")    //<2>
+      .ofNamespace("mule")                //<3>
+      .withAttributes(attribute)
+      .before(beforeCallSpy())            //<4>
+      .after(afterCallSpy());             //<5>
+  }
+
+  private SpyProcess beforeCallSpy(){
+    return  new SpyProcess() {
+      public void spy(MuleEvent event) throws MuleException {
+        /* Define actions */              //<6>
+        }
+  	};
+  }
+
+  private SpyProcess afterCallSpy(){
+    return  new SpyProcess() {
+      public void spy(MuleEvent event) throws MuleException {
+        /* Define actions */             //<7>
+        }
+  	};
+  }
+}
+----
+<1>定义要匹配的真实消息处理器属性。
+<2>定义要验证的消息处理器的名称（接受正则表达式）。
+<3>定义要验证的消息处理器的名称空间（接受正则表达式）。
+<4>设置`SpyProcess`在消息处理器执行之前运行。
+<5>设置`SpyProcess`在消息处理器执行后运行。
+<6>定义在消息处理器执行之前运行的操作。
+<7>定义消息处理器执行后要执行的操作。
+

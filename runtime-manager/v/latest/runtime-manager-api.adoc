@@ -1,0 +1,517 @@
+= 关于Runtime Manager REST API
+:keywords: cloudhub, cloudhub api, manage, api, rest
+
+本主题详细介绍了通过Runtime Manager REST API部署Mule应用程序的过程。运行时管理器REST API使您能够以编程方式访问运行时管理器提供的大部分功能。
+
+所描述的过程将作为持续集成管道中的任务来实施。该任务可以作为shell（例如Microsoft PowerShell，Bash等）脚本或者用Java编写的Jenkins / Maven插件来实现。
+
+有关通过API支持的所有操作的更完整参考信息，请参阅 link:https://anypoint.mulesoft.com/apiplatform/anypoint-platform/#/portals/organizations/ae639f94-da46-42bc-9d51-180ec25cf994/apis/38784/versions/127446/pages/182845[API参考1.5]。
+
+
+一个Mule Maven插件也存在，它提供了完全相同的功能。因此，本文档将被用作不能或不想使用该插件的人的替代选择。
+
+另请注意，还存在允许您将应用程序部署到CloudHub的 link:/runtime-manager/cloudhub-api[CloudHub API]。本文档旨在用于部署到您自己的内部服务器或其他云服务器。
+
+== 数据格式
+
+所有返回或接受类型的资源或方法都使用JSON作为数据格式。作为一个例子，下面是您可能收到的数据，采用JSON格式，以响应获取应用程序的请求：
+
+[source,json, linenums]
+----
+{
+  "access_token": {
+    "access_token": "4c091a7c-5d28-43af-b949-214251e5472c",
+    "expires_in": 3543
+  },
+  "user": {
+    "id": "c4cf05d7-74c4-4178-b013-d976c57b4c8a",
+    "organization": {
+      "name": "MyOrganisation",
+      "id": "8d05377b-132c-43ef-994b-4cd8143e6c79"
+    }
+  }
+}
+
+----
+
+== 工作流程概述
+
+根据您的喜好，下面解释的工作流程可以通过各种不同的方式进行，但步骤保持不变。它首先将用户登录到Anypoint Platform中，获取有关在该帐户上注册的服务器/服务器组/群集的信息，然后向其部署应用程序。它与MuleSoft Anypoint Platform核心服务和运行时管理器的API进行接口。
+
+工作流程必须接收以下输入参数：
+
+*  *Username*  -  Anypoint Platform帐户用户名
+*  *Password*  -  Anypoint Platform用户名的密码
+*  *Environment*  - 部署环境（Dev，Test，Prod等）
+*  *Target Name*  - 部署应用程序的目标的名称
+*  *Target Type*  - 目标类型（服务器，集群或ServerGroup）
+*  *Artifact Name*  - 要部署的Mule应用程序的名称
+*  *File*  - 要部署的Mule应用程序的二进制文件
+
+工作流按顺序执行以下API调用：
+
+. 使用有效的Anypoint Platform用户名和密码在*Core Services API*上拨打*Login*，以获得在所有后续呼叫中使用的'access_token'和'token_type'。
+. 拨打*Core Services API*上的*Accounts*以检索组织'id'。
++
+[TIP]
+这一步不是强制性的，因为组织标识符可以作为本地参数传递给任务，因为它的静态属性。
+
+. 在*Core Services API*上调用*Environments*，传递上一步检索的组织'id'，并根据相关的环境名称选择正确的环境'id'（例如Dev，Test，生产等）。
+. 调用*Runtime Manager API*中的*Servers*，*Clusters*或*Server Groups*，传递服务器/集群/服务器组名称以及检索到的组织' id'和环境'id'。这将返回有关此服务器/群集/服务器组的所有数据，包括'targetId'。
+. 在*Runtime Manager API*上调用*Applications*，传递组织的“id”和环境的“id”，以检索应用程序的“id”及其余数据。
+. 在*Runtime Manager API*上调用*Applications*，传递组织的'id'，环境的'id'，'artifactName'，'targetId'（在步骤4中检索），Mule应用程序.zip'文件'来部署和选择应用程序'id'。有关部署过程如何通过用户界面的详细信息，请参阅 link:/runtime-manager/deploying-to-cloudhub[部署到CloudHub]。
+
+image:arm-api-workflow.png[工作流程]
+
+== 登录（核心服务API）
+
+[%header,cols="30a,70a"]
+|===
+| API端点 | + https：//anypoint.mulesoft.com/accounts/login+
+| {方法{1}} POST
+| {头{1}}
+|的Content-Type  | 应用/ JSON
+|===
+
+
+。输入
+[source,json,linenums]
+----
+{
+  "username": "donald.duck",
+  "password": "aBs12Dvz5"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "access_token": "895d1a05-ba24-44f2-a9df-3675c1bde97b",
+  "token_type": "bearer",
+  "redirectUrl": "/accounts/#/cs/profile/home"
+}
+----
+
+如果使用Jenkins，则需要在任务中配置*Username*和*Password*。建议创建专门用于部署和CI相关活动的专用Anypoint Platform帐户。
+
+该任务必须连接'token_type'和'access_token'，并在整个工作流程过程中保存它们。这些字段必须如下连接：
+
+'token = token_type + " " + access_token'
+
+*E.g.*'"bearer 895d1a05-ba24-44f2-a9df-3675c1bde97b"'
+
+连续表单中的标记必须在每个后续API调用中作为标头传递。
+
+
+== 帐户（核心服务API）
+
+
+[%header,cols="30a,70a"]
+|===
+| API端点 | + https：//anypoint.mulesoft.com/accounts/api/me+
+| {方法{1}} GET
+|标题 | 授权：令牌（来自步骤1）
+|的Content-Type  |
+|===
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "access_token": {
+    "access_token": "4c091a7c-5d28-43af-b949-214251e5472c",
+    "expires_in": 3543
+  },
+  "user": {
+    "id": "c4cf05d7-74c4-4178-b013-d976c57b4c8a",
+    "organization": {
+      "name": "MyOrganization",
+      "id": "8d05377b-132c-43ef-994b-4cd8143e6c79"
+    }
+  }
+}
+----
+
+此步骤用于检索稍后在过程中使用的组织标识符。这不是强制性的，因为组织标识符不太可能改变，所以你可以将它硬编码到脚本中。
+
+然后该任务必须从位置'user.organisation.id'中提取组织标识符并将其保存以备后用。
+
+
+== 环境（核心服务API）
+
+
+[%header,cols="30a,70a"]
+|===
+| API端点 | anypoint.mulesoft.com/accounts/api/organizations/ {orgId} / environments
+| {方法{1}} GET
+| URI参数： |  {orgId}：organisationId（来自步骤2）
+|标题 | 授权：令牌（来自步骤1）
+|的Content-Type  |
+|===
+
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "data": [
+    {
+      "id": "876a4e54e2b0617fe28f1b42",
+      "name": "Integration",
+      "organizationId": "8d05377b-132c-43ef-994b-4cd8143e6c79",
+      "isProduction": false
+    },
+    {
+      "id": "225c4e73a3b0219fe26e1a88",
+      "name": "Release",
+      "organizationId": "8d05377b-132c-43ef-994b-4cd8143e6c79",
+      "isProduction": false
+    },
+    {
+      "id": "371e4e53f7f0812fe14d1c34",
+      "name": "Production",
+      "organizationId": "8d05377b-132c-43ef-994b-4cd8143e6c79",
+      "isProduction": true
+    }
+  ],
+  "total": 3
+}
+----
+
+此步骤将检索您希望部署到的环境的'id'，稍后将其用作部署的目标。在步骤2中检索到的组织“id”必须作为API URI的一部分传递。
+
+该任务需要根据提供的环境选择合适的环境'id'，您可以在工作流程开始时将其设置为输入。必须从路径'data [i] .id'中提取环境'id'，其中'data [i] .name == inputEnvironment'（可能需要'Dev'，'Test'，'Production'或在您的Anypoint平台中设置的任何有效的环境名称）。
+
+
+== 服务器（运行时管理器API）
+
+
+===  GET服务器
+
+[NOTE]
+只有作为输入参数传递给工作流任务的*Target Type*等于*Server*时，才必须执行此步骤。
+
+[%header,cols="30a,70a"]
+|===
+| API端点 |  + https：//anypoint.mulesoft.com/hybrid/api/v1/servers+
+| {方法{1}} GET
+| URI参数： |
+|标题 | 授权：令牌（来自步骤1）
+
+X-ANYPNT-ORG-ID：organisationId（来自步骤2）
+
+X-ANYPNT-ENV-ID：environmentId（来自步骤3）
+|的Content-Type  |
+|===
+
+[source,json,linenums]
+----
+Output
+{
+  "data": [
+    {
+      "id": 721,
+      "name": "api-gateway-local-01",
+      "serverType": "GATEWAY",
+      "type": "SERVER"
+    },
+    {
+      "id": 734,
+      "name": "mule-esb-local-01",
+      "serverType": "MULE",
+      "type": "SERVER"
+    },
+    {
+      "id": 724,
+      "name": "mule-esb-local-02",
+      "serverType": "MULE",
+      "type": "SERVER"
+    }
+  ]
+}
+----
+
+该步骤将检索服务器'id'，然后将其用作部署的目标。
+
+该任务需要根据提供的目标名称选择正确的服务器标识符，您可以在工作流程开始时将其设置为输入。服务器'id'必须从'data [i] .id'中提取，其中'data [i] .name == inputTargetName'。
+
+===  获取群集
+
+[NOTE]
+只有作为输入参数传递给工作流任务的*Target Type*等于*Cluster*时，才必须执行此步骤。
+
+
+[%header,cols="30a,70a"]
+|===
+| API端点 |  + https：//anypoint.mulesoft.com/hybrid/api/v1/clusters+
+| {方法{1}} GET
+| URI参数： |
+|标题 | 授权：令牌（来自步骤1）
+
+X-ANYPNT-ORG-ID：organisationId（来自步骤2）
+
+X-ANYPNT-ENV-ID：environmentId（来自步骤3）
+|的Content-Type  |
+|===
+
+[source,json,linenums]
+----
+Output
+{
+  "data": [
+    {
+      "id": 725,
+      "name": "ap-gateway-cluster",
+      "multicastEnabled": false,
+      "servers": [
+        {
+          "id": 722,
+          "name": "api-gateway-local-02",
+          "serverType": "GATEWAY",
+          "type": "SERVER"
+        },
+        {
+          "id": 721,
+          "name": "api-gateway-local-01",
+          "serverType": "GATEWAY",
+          "type": "SERVER"
+        }
+      ]
+    }
+  ]
+}
+----
+
+该步骤将检索群集“id”，然后将其用作部署的目标。
+
+该任务需要根据提供的目标名称选择正确的群集标识符，您可以在工作流程开始时将其设置为输入。集群'id'必须从'data [i] .id'中提取，其中'data [i] .name == inputTargetName'。
+
+===  GET服务器组
+
+[NOTE]
+只有当作为工作流任务的输入参数传递的*Target Type*等于*ServerGroup*时，才必须执行此步骤
+
+
+[%header,cols="30a,70a"]
+|===
+| API端点 |  + https：//anypoint.mulesoft.com/hybrid/api/v1/serverGroups+
+| {方法{1}} GET
+| URI参数： |
+|标题 | 授权：令牌（来自步骤1）
+
+X-ANYPNT-ORG-ID：organisationId（来自步骤2）
+
+X-ANYPNT-ENV-ID：environmentId（来自步骤3）
+|的Content-Type  |
+|===
+
+[source,json,linenums]
+----
+Output
+{
+  "data": [
+    {
+      "id": 751,
+      "name": "mule-esb-group",
+      "servers": [
+        {
+          "id": 734,
+          "name": "mule-esb-local-03",
+          "serverType": "MULE",
+          "type": "SERVER"
+        },
+        {
+          "id": 724,
+          "name": "mule-esb-local-02",
+          "serverType": "MULE",
+          "type": "SERVER",
+        }
+      ]
+    }
+  ]
+}
+----
+
+
+该步骤将检索服务器组“id”，然后将其用作部署的目标。
+
+该任务需要根据提供的目标名称选择正确的服务器组标识符，您可以在工作流程开始时将其设置为输入。服务器组'id'必须从'data [i] .id'中提取，其中'data [i] .name == inputTargetName'。
+
+== 应用程序（运行时管理器API）
+
+===  GET应用程序
+
+[%header,cols="30a,70a"]
+|===
+| API端点 |  + https：//anypoint.mulesoft.com/hybrid/api/v1/applications+
+| {方法{1}} GET
+| URI参数： |
+|标题 | 授权：令牌（来自步骤1）
+
+X-ANYPNT-ORG-ID：organisationId（来自步骤2）
+
+X-ANYPNT-ENV-ID：environmentId（来自步骤3）
+|的Content-Type  |
+|===
+
+[source,json,linenums]
+----
+Outputw
+{
+  "data": [
+    {
+      "id": 686,
+      "artifact": {
+        "id": 1027,
+        "name": "test-new"
+      },
+      "target": {
+        "id": 734
+      }
+    },
+    {
+      "id": 684,
+      "artifact": {
+        "id": 1026,
+        "name": "test",
+      },
+      "target": {
+        "id": 734
+      }
+    }
+  ]
+}
+----
+
+
+此步骤检索应用程序的“id”以确定以下步骤是新部署（6a）还是重新部署（6b）。
+
+应用程序'id'必须从'data [i] .id'中提取，其中'data [i] .artifact.name == inputArtifactName'和'data [i] .target.id == serverId'/'clusterId'/ 'serverGroupId'
+
+===  POST应用程序
+
+[NOTE]
+只有在步骤5中没有检索到应用程序标识符时，才必须执行此步骤。
+
+[%header,cols="30a,70a"]
+|===
+| API端点 |  + https：//anypoint.mulesoft.com/hybrid/api/v1/applications+
+| {方法{1}} POST
+| URI参数： |
+|标题 | 授权：令牌（来自步骤1）
+
+X-ANYPNT-ORG-ID：organisationId（来自步骤2）
+
+X-ANYPNT-ENV-ID：environmentId（来自步骤3）
+|的Content-Type  | 应用程序/压缩
+| 正文 |  artifactName = inputArtifactName（在工作流程开始处传递）
+
+file = inputFile（在工作流程开始时作为输入传递）
+
+targetId = serverId / clusterId / serverGroupId（来自步骤4a，4b或4c）
+|===
+
+
+[source,json,linenums]
+----
+Output
+{
+  "data": {
+    "id": 684,
+    "artifact": {
+      "id": 1027,
+      "name": "test",
+      "fileName": "test.zip",
+      "fileChecksum": "e98753b28c0fc7f2d01c56682de1387be0faf040",
+      "timeUpdated": 1441221944496
+    },
+    "lastReportedStatus": "UNDEPLOYED"
+  }
+}
+----
+
+这一步是部署一个新的应用程序。
+此步骤首次将实际的Mule应用程序工件部署到目标环境和服务器/集群/服务器组。
+
+
+
+===  PATCH应用程序
+
+[NOTE]
+只有在步骤5中检索到应用程序标识符时，才必须执行此步骤。
+
+[%header,cols="30a,70a"]
+|===
+| API端点 |  + https：//anypoint.mulesoft.com/hybrid/api/v1/applications/ {appId} +
+| {方法{1}} PATCH
+| URI参数： |  {appId}：applicationId（来自步骤5）
+|标题 | 授权：令牌（来自步骤1）
+
+X-ANYPNT-ORG-ID：organisationId（来自步骤2）
+
+X-ANYPNT-ENV-ID：environmentId（来自步骤3）
+|的Content-Type  | 应用程序/压缩
+| 正文 |  artifactName = inputArtifactName（在工作流程开始处传递）
+
+file = inputFile（在工作流程开始时作为输入传递）
+
+targetId = serverId / clusterId / serverGroupId（来自步骤4a，4b或4c）
+|===
+
+[source,json,linenums]
+----
+Output
+{
+  "data": {
+    "id": 684,
+    "artifact": {
+      "id": 1027,
+      "name": "test",
+      "fileName": "test.zip",
+      "fileChecksum": "e98753b28c0fc7f2d01c56682de1387be0faf040",
+      "timeUpdated": 1441221944496
+    },
+    "lastReportedStatus": "STARTED"
+  }
+}
+----
+
+
+此步骤将实际的Mule应用程序工件重新部署到目标环境和服务器/集群/服务器组。
+
+
+
+
+== 状态码和错误处理
+
+当您调用REST API时，会返回以下状态码：
+
+[%header,cols="2*"]
+|===
+|状态码 |说明
+| 200  |操作成功。
+| 201  |资源（如应用程序）已创建。位置标题包含资源的位置。
+| 404  |找不到资源。
+| 409  |创建资源（如服务器，服务器组或部署）时，具有该名称的资源已存在。
+| 500  |操作失败。有关详细信息，请参阅HTTP正文。
+|===
+
+发生错误时（例如，500状态码），HTTP响应包含带有错误消息的JSON响应。例如：
+
+[source,json, linenums]
+----
+500
+Content-Type: application/json
+Server: Apache-Coyote/1.1
+Date: Mon, 10 Aug 2015 00:12:55 GMT
+ 
+{
+  message : "Some error message."
+}
+----
+
+请参阅Runtime Manager REST API的 link:https://anypoint.mulesoft.com/apiplatform/anypoint-platform/#/portals/organizations/ae639f94-da46-42bc-9d51-180ec25cf994/apis/38784/versions/40477/pages/53915[API门户]以查看所有支持的资源，方法，所需属性和预期响应的交互式参考。
+
+此外，请查看专门管理云部署的 link:/runtime-manager/cloudhub-api[CloudHub API]。
+====

@@ -1,0 +1,73 @@
+= 结果对象
+:keywords: mule, sdk, result, output, mimeType, attributes, operation, source
+
+`Result`对象表示组件执行的结果。它用于组件不仅需要返回要在消息有效负载上设置的值，还将指定消息属性和/或MIME类型的情况。
+
+该类有两个通用类型，一个用于进入有效负载的值的类型，另一个用于返回消息属性的类型。
+
+例如，考虑来自文件连接器的过于简化的`read`操作。该操作将有效负载设置为带有文件内容的`InputStream`。它还将属性设置为包含信息的`FileAttributes`对象，如文件名，大小，时间戳，权限等。
+
+[source, java, linenums]
+----
+public Result<InputStream, FileAttributes> read(String path) { // <1>
+  InputStream content = getContent(path);
+  FileAttributes attributes = getAttributes(path);
+
+  return Result.<InputStream, FileAttributes>builder() // <2>
+        .output(content) // <3>
+        .attributes(attributes) // <4>
+        .build(); // <5>
+}
+----
+
+<1>该操作返回`Result<InputStream, FileAttributes>`。这告诉运行时，该操作返回`InputStream`作为有效内容，`FileAttributes`返回属性。
+<2>一旦获得结果值，它就会使用`Result.builder()`创建一个新实例。请注意，这是强类型化的，因​​此您需要在创建构建器时指定泛型。
+<3>构建器中的`output(Object)`方法用于设置有效负载。
+<4> `attributes(Object)`用于设置属性。
+<5>该示例调用`build()`方法并返回创建的`Result`。
+
+== 设置MIME类型
+
+`Result`对象可用于设置输出`mimeType`。基于前面的示例，此处的操作根据其文件扩展名对文件`mimeType`进行了最佳猜测：
+
+[source, java, linenums]
+----
+public Result<InputStream, FileAttributes> read(String path) {
+  InputStream content = getContent(path);
+  FileAttributes attributes = getAttributes(path);
+
+  MediaType guessedMediaType = MediaType.ANY;
+  if (path.endsWith(".json")) {
+    guessedMediaType = MediaType.APPLICATION_JSON;
+  } else if (path.endsWith("*.xml")) {
+    guessedMediaType = MediaType.APPLICATION_XML;
+  } else if (path.endsWith("*.bin")) {
+    guessedMediaType = MediaType.BINARY;
+  }
+
+  return Result.<InputStream, FileAttributes>builder()
+        .output(content)
+        .attributes(attributes)
+        .mediaType(guessedMediaType)
+        .build();
+}
+----
+
+[TIP]
+在上例中，`MediaType`类不是`@MediaType`注释，而是Mule API的`org.mule.runtime.api.metadata.MediaType`。
+
+== 空白属性
+
+对于您要设置有效内容和`mimeType`但不想设置属性的用例，请使用`<Void>`类型，例如：
+
+[source, java, linenums]
+----
+public Result<InputStream, Void> read(String path) {
+  InputStream content = getContent(path);
+
+  return Result.<InputStream, Void>builder()
+        .output(content)
+        .mediaType(bestGuessMediaType(path))
+        .build();
+}
+----

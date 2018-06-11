@@ -1,0 +1,107 @@
+= 自定义应用程序警报和通知
+:keywords: cloudhub, monitoring, api, runtime manager, arm
+：imagesdir：./_images
+
+[NOTE]
+自定义警报和通知功能目前仅适用于部署到CloudHub工作人员的应用程序。它们不适用于通过运行时管理器部署到本地服务器的应用程序。有关更多详情，请参阅 link:/runtime-manager/deployment-strategies[部署策略]。
+
+image:logo-cloud-active.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-disabled.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-disabled.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+== 先决条件
+
+在继续之前，请完成 link:/getting-started/deploy-to-cloudhub[部署到CloudHub]示例，因为它基于它构建。另外，您需要在Studio中有"Mavenized"您的项目。有关更多信息，请参阅 link:/anypoint-studio/v/6/enabling-maven-support-for-a-studio-project[为Studio项目启用Maven支持]。
+
+== 如何使用通知
+
+通知使您能够查看应用程序内与业务相关的事件。例如，您可以在下列情况下发出通知：
+
+* 您的应用程序无法连接到远程服务
+* 发生需要人工干预的错误，例如数据映射问题
+* 您希望创建应用程序内部发生的事件摘要，例如处理的订单数量。
+
+结合使用 link:/runtime-manager/alerts-on-runtime-manager[警报]，您可以将这些通知发送给不同的人员，以处理警报并解决潜在的问题。
+
+这个例子说明：
+
+* 如何发送与业务相关的事件作为通知
+* 如何将错误作为通知发送
+* 如何在通知到达时发送电子邮件通知
+
+您可以使用提供的软件在CloudHub中创建警报。如果您想创建自定义提醒，则需要获取 link:https://www.mulesoft.com/exchange/#!/cloudhub-integration-connector[CloudHub连接器]并将其安装到Anypoint Studio中。
+
+[TIP]
+有关安装和配置的详细信息，请阅读 link:/mule-user-guide/v/3.8/cloudhub-connector[CloudHub连接器用户指南]。
+
+
+== 部署您的应用程序
+
+要部署您的应用程序，请在运行时管理器中点击*Applications*菜单中的*Deploy Application*。有关更多信息，请参阅 link:/runtime-manager/deploying-to-cloudhub[部署到CloudHub]。
+
+== 触发您的通知
+
+一旦您的应用程序正在运行，您可以通过简单地转到应用程序的URL来触发通知，例如：+ http：//YOURAPP.cloudhub.io/hello-notification+。该页面应显示`Hello World`消息，并在Runtime Manager控制台中自动创建新通知。接下来，返回到Runtime Manager控制台并单击右上角的新通知指示器铃声指示器以显示警报消息：
+
+image:image2014-10-24+17-41-16-1.png[image2014-10-24 + 17-41-16-1]
+
+如果通知是在发生异常之后发送的，则附加该通知
+`exception.message`和`exception.stacktrace`作为通知的自定义属性，可以从Runtime Manager控制台访问它们。
+
+== 创建自定义提醒
+
+警报允许您根据您的应用程序通知发送电子邮件。要为您的应用程序通知创建自定义提醒，请点击您的应用程序，然后点击左侧菜单中的*Alerts*。
+
+在*New Alert*对话框中：
+
+. 点击*New alert*。
+. 输入一个警报名称，"Hello World"。
+. （可选）选择您的应用程序名称或将选择保留为"any"
+. 选择"custom application notification"作为事件类型
+. 输入"Hello"作为触发您通知的单词。回想一下您在上面配置的消息是"Hello World!"
+. 输入您希望通过电子邮件发送的电子邮件地址
+. 点击*Create*。
+
+这会创建您的警报。现在，通过转到应用的网址来再次触发您的通知，例如：`+http://YOURAPP.cloudhub.io/+`。然后您会收到一封包含您的通知的电子邮件！
+
+如果*Custom Properties*与通知一起发送。即：
+
+[source,xml, linenums]
+----
+<cloudhub:create-notification message="Error processing transaction." priority="ERROR"> 
+  <cloudhub:custom-properties > 
+    <cloudhub:custom-property key="originalPayload">#[flowVars.originalPayload]</cloudhub:custom-property> 
+  </cloudhub:custom-properties> 
+</cloudhub:create-notification> 
+----
+然后，它们可以作为消息中的常规属性进行访问。即：$ {originalPayload}
+
+== 发送错误通知
+
+除了发送来自商业活动的通知外，您还可以在错误发生时发送通知，以便可以采取措施。为此，您可以在捕获异常策略中使用CloudHub连接器。为此，请将以下XML添加到mule-config.xml中：
+
+[source,xml, linenums]
+----
+<flow name="create notification from exception">
+    <inbound-endpoint address="http://0.0.0.0:${http.port}/create-notification-from-exception"/>
+    <scripting:component>
+        <scripting:script engine="groovy">
+            throw new Exception("Could not connect to remote service.")
+        </scripting:script>
+    </scripting:component>
+    <default-exception-strategy>
+        <cloudhub:create-notification message="Error processing transaction." priority="ERROR"/>
+    </default-exception-strategy>
+</flow>
+----
+
+此流程引发异常，并使用消息"Error processing transaction."从该异常创建通知。流程的异常堆栈跟踪会附加到消息。这可以选择使用`attachStacktrace`属性关闭。
+
+像以前一样，构建和部署您的应用程序，然后转到网址`+http://YOURAPP.cloudhub.io/create-notification-from-exception+`。然后返回到运行时管理器控制台，并在右上角显示通知弹出窗口。点击通知链接，通知列表中将显示堆栈跟踪通知。
+
+image:notifications_exception.png[notifications_exception]
+
+要查看整个堆栈跟踪和详细信息，请单击"More..."，整个消息将显示在弹出窗口中：
+
+image:notifications_stack_trace.png[notifications_stack_trace]

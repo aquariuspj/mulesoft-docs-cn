@@ -1,0 +1,1101 @@
+=  REST API示例
+
+本主题介绍以下使用REST API的示例：
+
+* 简单示例：使用REST API显示如何从REST API检索数据
+* 从REST API提取XML数据并将其插入到外部数据库中
+*  JSON to Object Transformer示例，展示了如何使用REST API并将选定的数据插入到外部数据库
+
+== 简单示例：使用REST API
+
+这是设计用于快速轻松设置和测试的完整功能示例。它查询生成Lorem_ipsum文本的 http://baconipsum.com/[培根石膏] REST API，并且很方便，因为它不需要HTTPS或设置要使用的帐户。该示例仅包含一个流程，如下所示。
+
+image:rest+api+1.png[其余+ API + 1]
+
+
+[source, xml, linenums]
+----
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+    <flow name="test2Flow1" >
+        <http:inbound-endpoint host="localhost" port="8081" path="/" />
+        <http:outbound-endpoint host="baconipsum.com" port="8081" path="api" method="GET" exchange-pattern="one-way">
+          <http:request-builder>
+                <{{0}}"/>
+                <{{0}}"/>
+            </http:request-builder>
+        </http:outbound-endpoint>
+        <file:outbound-endpoint path="/tmp/" outputPattern="out.json" responseTimeout="10000" doc:name="File"/>
+    </flow>
+</mule>
+----
+
+第一个元素 link:/mule-user-guide/v/3.6/http-connector[HTTP入站端点]在本地主机端口8081（缺省值）上侦听传入的GET请求。击中侦听器会触发流程。对HTTP入站端点的请求必须采用以下格式：
+
+[source, code, linenums]
+----
+http://localhost:8081?<query>
+----
+
+请求的`<query>`部分由REST API接受的参数组成。当HTTP入站端点接收到HTTP请求时，URL的`<query>`部分将被记录为一组入站属性。 HTTP入站端点将这些属性传递给流中的下一个元素，HTTP出站端点。此出站连接器配置为在 http://baconipsum.com/api. The HTTP Outbound Endpoint uses a couple of simple link:/mule-user-guide/v/3.7/mule-expression-language-mel[MEL表达式]处查询远程REST API，以从它从侦听器接收的消息中提取查询参数，并构建远程API的完整URL（包括查询参数）。
+
+例如，如果您使用` http://localhost:8081?type=meat-and-filler`访问HTTP入站端点，则应用程序将查询`http://baconipsum.com/api/?type=meat-and-filler`。
+
+下面详细介绍这个例子的完整配置。
+
+=== 配置此示例
+
+====  HTTP入站端点
+
+设置连接器的属性编辑器：
+
+image:http+listener+basic.png[HTTP +监听+基本]
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Display Name*  | `HTTP`
+| *Path*  | /
+|===
+
+创建一个新的连接器配置元素并设置端口和主机：
+
+image:http+config+1.png[HTTP +配置+ 1]
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | `HTTP_Listener_Configuration`
+| *Host*  | `localhost`
+| *Port*  | `8081`
+|===
+
+在独立XML编辑器中，输入：
+
+如下配置HTTP入站端点：
+
+[source, xml, linenums]
+----
+    <http:inbound-endpoint host="localhost" port="8081" path="/" />
+----
+
+[%header,cols="2*"]
+|===
+一个|
+属性
+一个|
+值
+| *doc:name*  | `HTTP`
+| *path*  | `/`
+| *host*  | `localhost`
+| *port*  | `8081`
+|===
+
+====  HTTP出站端点
+
+. 创建一个新的连接器配置元素并设置*Host*和*Base Path*：
++
+image:http+global+element+baconipsum.png[HTTP +全球+元素+ baconipsum]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | `HTTP_Request_Connector`
+| *Host*  | `baconipsum.com`
+| *Base Path*  | `api`
+|===
++
+该配置向http://baconipsum.com/api发送请求。
+
+. 通过单击确定保存更改并返回到连接器的属性编辑器。然后设置路径和方法：
++
+image:http+connector+basic.png[HTTP +连接器+基本]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Display Name*  | `HTTP`
+| *Path*  | `/`
+| *Method*  | `GET`
+|===
+
+. 点击两次*Add Parameter*按钮添加两个参数。保留默认类型**query-param**。对于每个的`value`字段，写一个mule表达式，该表达式首先到达HTTP入站端点的请求的查询参数中获取等价值，这些参数在到达HTTP出站端点时转换为入站属性。
++
+image:request+connector+w+params.png[请求+连接器+ W +参数]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `type`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.type]`
+|===
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `sentences`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.sentence]`
+|===
+
+通过这种方式进行配置，到达HTTP入站端点的查询参数不会被原样转发到baconipsum API。
+
+在独立XML编辑器中，输入：
+
+按如下所示配置HTTP连接器：
+
+[source, xml, linenums]
+----
+<http:outbound-endpoint host="baconipsum.com" port="8081" path="api" method="GET" exchange-pattern="one-way">
+          <http:request-builder>
+                <{{0}}"/>
+                <{{0}}"/>
+            </http:request-builder>
+</http:outbound-endpoint>
+----
+
+[%header,cols="2*"]
+|===
+一个|
+属性
+一个|
+值
+| *doc:name*  | `HTTP`
+| *config-ref* a | `HTTP_Request_Configuration` | *path*  | `/`
+| *method* a | `GET`
+|===
+
+连接器的一系列子元素定义了两个查询参数，这些参数从消息的入站属性中获取其值。将定义这些查询参数的两个元素括起来是在向请求添加参数时始终需要的`request-builder`元素。
+
+[%header,cols="2*"]
+|===
+| {参数{1}}值
+| *type*  | `http:query-param`
+| *paramName*  | `type`
+| *value*  | `#[message.inboundProperties.'http.query.params'.type]`
+|===
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *type*  | `http:query-param`
+| *paramName*  | `sentences`
+| *value*  | `#[message.inboundProperties.'http.query.params'.sentences`]
+|===
+
+通过这种方式进行配置，到达HTTP inboudn端点的查询参数将被无变化地转发到baconipsum API。
+
+==== 文件出站端点
+
+您可以使用您希望的任何参数来设置此出站端点，也可以使用下面提供的值。下面显示的配置将生成的JSON输出到文件`/tmp/out.json`。
+
+*General Tab*
+
+* 参数：显示名称，值：文件
+* 参数：路径，值：`/tmp/`
+* 参数：输出模式，值：`out.json`
+
+该端点的其余选项卡（高级，参考和注释）均使用其默认值进行设置;没有配置是必要的。
+
+在独立XML编辑器中，输入：
+
+[source, xml, linenums]
+----
+<file:outbound-endpoint path="/tmp/" outputPattern="out.json"
+----
+
+=== 运行此示例
+
+要在此应用程序中触发流程，请使用Web浏览器或HTTP客户端（例如 http://curl.haxx.se/download.html[卷曲]命令行实用程序在localhost端口8081上点击HTTP入站端点。
+
+image:browser1.png[browser1]
+
+[source, code, linenums]
+----
+curl 'http://localhost:8081?type=meat-and-filler'
+----
+
+将示例作为Mule应用程序运行，然后使用查询命中HTTP入站端点。 http://baconipsum.com/api/[培根Ipsum API页面]包含您可以使用的参数列表，但由于您设置连接器的方式，因此只能使用*type*和*sentences*。
+
+[source, code, linenums]
+----
+type=meat-and-filler
+sentences=<num>
+----
+
+要使用任何其他查询参数，您必须首先将其添加到HTTP连接器。
+
+`sentences`确定在JSON响应中返回的语句的数量。这是可选的，您可能不会将其包含在您的请求中。
+
+第一个参数=值对必须以`?`运算符开头。要插入其他参数=值对，请使用`&`运算符。
+
+发送到本地端口8081上的HTTP入站端点的示例查询：
+
+[source, code, linenums]
+----
+http://localhost:8081?type=meat-and-filler
+http://localhost:8081?sentences=2
+http://localhost:8081?type=all-meat&sentences=3
+----
+
+第一示例中，与操作`type=meat-and-filler`，返回下面所示的输出。{{}} CRLF
+
+[source, code, linenums]{{}} CRLF
+----
+["Doner ullamco ea non, porchetta incididunt brisket ball tip in chuck ex bresaola beef tongue.  Et aute ham hock kielbasa chuck fatback short ribs.  Kevin in reprehenderit est esse, ham bacon ut ball tip.  Laborum ut nulla ex irure t-bone flank, biltong cupidatat venison proident aliquip pork belly ham hock.  In consequat proident, cillum labore pariatur nisi.  Reprehenderit boudin beef ribs, frankfurter cillum enim pork loin consectetur kielbasa laboris.  Hamburger prosciutto nisi, jerky biltong ex pork chop venison.","Fatback tongue anim, irure ut ut cupidatat occaecat eiusmod ham hock laborum commodo.  Anim pig shank kielbasa, drumstick corned beef esse nostrud ham salami id laborum ribeye aute.  Duis pancetta sunt magna occaecat dolor leberkas, short loin meatloaf flank enim pastrami.  Prosciutto proident landjaeger deserunt tenderloin short loin.  Adipisicing aute in bresaola meatball, ut frankfurter pastrami shoulder porchetta turducken strip steak doner.  In filet mignon bresaola, sed deserunt pariatur eu mollit commodo shankle laborum.  Andouille aliqua jowl pork chop jerky sed consequat turkey voluptate bacon pastrami.","Ground round elit boudin reprehenderit.  Brisket shankle esse, leberkas veniam andouille rump proident drumstick.  Consequat sausage do ut prosciutto nostrud andouille tongue ullamco bacon est exercitation.  Do fugiat biltong est tempor short ribs reprehenderit adipisicing shoulder.  Tail venison shank incididunt, hamburger adipisicing voluptate corned beef fugiat sirloin fatback in tri-tip nisi ut.  Tail non excepteur, fugiat veniam corned beef dolore ex pig pork belly sint mollit chuck pork.","Pig hamburger dolore proident brisket landjaeger in boudin kielbasa ut elit.  Velit incididunt boudin qui.  Fatback anim adipisicing, pig jowl voluptate sirloin drumstick chicken esse.  Strip steak consequat tenderloin pastrami, ullamco brisket hamburger bacon beef adipisicing.  Tri-tip ham hock eu non et, flank dolore kevin.  Et duis frankfurter, ut ullamco do non quis boudin andouille aliqua venison ham.  Ut aliqua shoulder, aliquip pariatur bacon spare ribs irure.","Aliqua jerky frankfurter, swine ham in ground round sed qui laborum cow.  Sint turducken shank ut ea id.  Kevin dolore pig excepteur, anim ut magna.  Enim consequat short ribs corned beef ham hock nostrud fugiat chuck.  Tail spare ribs dolore boudin, andouille incididunt laboris occaecat strip steak.  Cow frankfurter capicola, landjaeger cupidatat porchetta ad ground round voluptate."]
+----
+
+== 从一个REST API提取XML数据并在一个外部DB将其插入{{}} CRLF
+
+这个示例应用程序从外部REST API消耗的XML数据，那么从XML提取值，并将它们插入到外部Postgres数据库。该应用程序使用 http://developer.yahoo.com/yql/console/[雅虎REST API]的金融服务，这是免费使用，并且不需要用户帐户。该API允许您检索使用基于语言的SQL查询雅虎，其陈述你在URL中包括自身的金融报价。{{}} CRLF
+
+此应用程序打雅虎REST API与您指定的任何查询。的回复查询本身的格式被确定，与`format=<format>`参数。此示例使用`format=XML`。{{}} CRLF
+
+当它接收XML的答复，该应用程序中提取一些值，例如股票名称，日期，价格等并且将它们插入到一个表在外部数据库中的Postgres。{{}} CRLF
+
+该应用程序包含仅一个流，如下所示。{{}} CRLF
+
+image:yahoo+xml.png[雅虎+ XML]{{}} CRLF
+
+== 查看XML{{}} CRLF
+
+[source, xml, linenums]{{}} CRLF
+----
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    
+    <db:generic-config name="Postgres" url="jdbc:postgresql://dbserver/stock" driverClassName="org.postgresql.Driver" doc:name="Generic Database Configuration"/>
+    <db:template-query name="insert_into_current" doc:name="Template Query">
+        <db:parameterized-query><![CDATA[INSERT INTO current("name", "date", "bookvalue") VALUES(:name,:date,:bookvalue);]]></db:parameterized-query>
+        <db:in-param name="name" defaultValue="#[xpath('//Name').text]"/>
+        <db:in-param name="date" type="DATE" defaultValue="#[xpath('//LastTradeDate').text]"/>
+        <db:in-param name="bookvalue" defaultValue="#[xpath('//BookValue').text])"/>
+    </db:template-query>
+        
+    <flow name="financeapiFlow1" >
+                <http:inbound-endpoint host="localhost" port="8081" path="/" />
+        <http:outbound-endpoint host="query.yahooapis.com" port="8081" path="v1/public/yql" method="GET" exchange-pattern="one-way" followRedirects="true">
+            <http:request-builder>
+                <{{0}}"/>
+                <{{0}}"/>
+                <{{0}}"/>
+            </http:request-builder>
+        </http:outbound-endpoint>
+        <logger level="INFO" doc:name="Logger"/>
+         
+        <byte-array-to-string-transformer doc:name="Byte Array to String"/>
+        <splitter expression="#[xpath('//results')]" doc:name="Splitter"/>
+        <db:insert config-ref="Postgres" doc:name="Database">
+            <db:dynamic-query><![CDATA[INSERT INTO mystock("name", "date", "bookvalue") VALUES(#[xpath('//Name').text], #[xpath('//LastTradeDate').text], #[xpath('//BookValue').text]);]]></db:dynamic-query>
+        </db:insert> 
+    </flow>
+</mule>
+----
+
+
+第一个元素 link:/mule-user-guide/v/3.6/http-connector[HTTP入站端点]在本地主机端口8081（缺省值）上侦听传入的GET请求。撞击连接器会触发流动。对HTTP入站端点的请求必须采取以下形式：
+
+[source, code, linenums]
+----
+http://localhost:8081?<query>
+----
+
+请求的`<query>`部分由REST API接受的参数组成。当HTTP入站端点接收到HTTP请求时，URL的`<query>`部分将成为一组入站属性。 HTTP lsitener将消息传递给流中的下一个元素，即HTTP Outbound Endpoint。 HTTP出站端点使用一组简单的MEL表达式从消息中提取查询参数，并构建远程API的完整URL（包括查询参数）。
+
+例如，如果您使用以下命令来访问HTTP入站端点：
+
+[source, code, linenums]
+----
+http://localhost?q=select%20*%20from%20yahoo.finance.quotes%20where%20symbol%20in%20(%22BAC%22)%0A%09%09&env=http%3A%2F%2Fdatatables.org%2Falltables.env&format=XML
+----
+
+该应用程序查询下面列出的URL：
+
+[source, code, linenums]
+----
+http://query.yahooapis.com/v1/public/yql?q=select * from yahoo.finance.quotes where symbol in ("BAC")%0A%09%09&env=http%3A%2F%2Fdatatables.org%2Falltables.env&format=XML
+----
+
+上述查询检索美国银行的股票代码BAC的信息。 REST API返回一个XML，你可以通过点击下面看到。
+
+*XML returned by the REST API*
+
+[source, xml, linenums]
+----
+<query yahoo:count="1" yahoo:created="2014-04-04T16:35:37Z" yahoo:lang="en"><results><quote symbol="BAC"><Ask/><AverageDailyVolume>107198000</AverageDailyVolume><Bid/><AskRealtime>17.00</AskRealtime><BidRealtime>16.99</BidRealtime><BookValue>20.708</BookValue><Change_PercentChange>-0.158 - -0.92%</Change_PercentChange><Change>-0.158</Change><Commission/><ChangeRealtime>-0.158</ChangeRealtime><AfterHoursChangeRealtime>N/A - N/A</AfterHoursChangeRealtime><DividendShare>0.04</DividendShare><LastTradeDate>4/4/2014</LastTradeDate><TradeDate/><EarningsShare>0.903</EarningsShare><ErrorIndicationreturnedforsymbolchangedinvalid/><EPSEstimateCurrentYear>1.09</EPSEstimateCurrentYear><EPSEstimateNextYear>1.60</EPSEstimateNextYear><EPSEstimateNextQuarter>0.34</EPSEstimateNextQuarter><DaysLow>16.96</DaysLow><DaysHigh>17.22</DaysHigh><YearLow>11.23</YearLow><YearHigh>18.03</YearHigh><HoldingsGainPercent>- - -</HoldingsGainPercent><AnnualizedGain/><HoldingsGain/><HoldingsGainPercentRealtime>N/A - N/A</HoldingsGainPercentRealtime><HoldingsGainRealtime/><MoreInfo>cnsprmiIed</MoreInfo><OrderBookRealtime/><MarketCapitalization>179.6B</MarketCapitalization><MarketCapRealtime/><EBITDA>0</EBITDA><ChangeFromYearLow>+5.762</ChangeFromYearLow><PercentChangeFromYearLow>+51.31%</PercentChangeFromYearLow><LastTradeRealtimeWithTime>N/A - <b>16.992</b></LastTradeRealtimeWithTime><ChangePercentRealtime>N/A - -0.92%</ChangePercentRealtime><ChangeFromYearHigh>-1.038</ChangeFromYearHigh><PercebtChangeFromYearHigh>-5.76%</PercebtChangeFromYearHigh><LastTradeWithTime>12:20pm - <b>16.992</b></LastTradeWithTime><LastTradePriceOnly>16.992</LastTradePriceOnly><HighLimit/><LowLimit/><DaysRange>16.96 - 17.22</DaysRange><DaysRangeRealtime>N/A - N/A</DaysRangeRealtime><FiftydayMovingAverage>16.9586</FiftydayMovingAverage><TwoHundreddayMovingAverage>15.602</TwoHundreddayMovingAverage><ChangeFromTwoHundreddayMovingAverage>+1.39</ChangeFromTwoHundreddayMovingAverage><PercentChangeFromTwoHundreddayMovingAverage>+8.91%</PercentChangeFromTwoHundreddayMovingAverage><ChangeFromFiftydayMovingAverage>+0.0334</ChangeFromFiftydayMovingAverage><PercentChangeFromFiftydayMovingAverage>+0.20%</PercentChangeFromFiftydayMovingAverage><Name>Bank of America C</Name><Notes/><Open>17.21</Open><PreviousClose>17.15</PreviousClose><PricePaid/><ChangeinPercent>-0.92%</ChangeinPercent><PriceSales>2.12</PriceSales><PriceBook>0.83</PriceBook><ExDividendDate>Mar  5</ExDividendDate><PERatio>18.99</PERatio><DividendPayDate>Mar 28</DividendPayDate><PERatioRealtime/><PEGRatio>0.76</PEGRatio><PriceEPSEstimateCurrentYear>15.73</PriceEPSEstimateCurrentYear><PriceEPSEstimateNextYear>10.72</PriceEPSEstimateNextYear><Symbol>BAC</Symbol><SharesOwned/><ShortRatio>1.10</ShortRatio><LastTradeTime>12:20pm</LastTradeTime><TickerTrend>&nbsp;==+--+&nbsp;</TickerTrend><OneyrTargetPrice>17.54</OneyrTargetPrice><Volume>38512660</Volume><HoldingsValue/><HoldingsValueRealtime/><YearRange>11.23 - 18.03</YearRange><DaysValueChange>- - -0.92%</DaysValueChange><DaysValueChangeRealtime>N/A - N/A</DaysValueChangeRealtime><StockExchange>NYSE</StockExchange><DividendYield>0.23</DividendYield><PercentChange>-0.92%</PercentChange></quote></results></query><!-- total: 22 --><!-- engine3.yql.bf1.yahoo.com -->
+----
+
+HTTP Outbound Endpoint将它从API接收到的XML传递给字节数组到字符串的转换器，该转换器将消息有效载荷转换为字符串。接下来， link:/mule-user-guide/v/3.6/splitter-flow-control-reference[分离器]将消息拆分为多个部分。分离器被配置为使用XML元素`<results`>作为分隔符来分割传入的消息。原因在于REST API使用`<results>`为检索到的每个股票代码分隔信息，如下所示。
+
+[source, xml, linenums]
+----
+<results><quote symbol="BAC"><Ask/><AverageDailyVolume>107198000</AverageDailyVolume><Bid/>
+...
+</results>
+----
+
+因此，如果您要使用此示例应用程序一次查询多个股票代码，分解器会将传入的XML分割为与每个查询符号对应的块，然后将每个块馈送到下一个消息处理器。
+
+要拆分传入的XML，拆分器将使用 link:/mule-user-guide/v/3.7/mule-expression-language-mel[骡子表达语言]表达式`#[xpath('//results')]`，其中包含 http://en.wikipedia.org/wiki/XPath[XPath的]表达式，该表达式实际上会检索XML元素`<results>`。
+
+流中的最后一个元素 link:/mule-user-guide/v/3.7/jdbc-connector[数据库（JDBC）]连接器接收每个查询符号对应的每个XML块。 JDBC连接器配置为运行以下SQL查询：
+
+[source, code, linenums]
+----
+INSERT INTO mystock("name", "date", "bookvalue") VALUES(#[xpath('//Name').text], #[xpath('//LastTradeDate').text], #[xpath('//BookValue').text]);
+----
+
+下面详细介绍这个例子的完整配置。要查看应用程序，请跳至<<Running This Example>>。
+
+=== 配置此示例
+
+====  HTTP入站端点
+
+设置连接器的属性编辑器：
+
+image:http+listener+basic.png[HTTP +监听+基本]
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Display Name*  | `HTTP`
+| *Path*  | /
+|===
+
+创建一个新的连接器配置元素并设置端口和主机：
+
+image:http+config+1.png[HTTP +配置+ 1]
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | `HTTP_Listener_Configuration`
+| *Host*  | `localhost`
+| *Port*  | `8081`
+|===
+
+在独立XML编辑器中，按如下所示配置HTTP连接器：
+
+[source, xml, linenums]
+----
+        <http:inbound-endpoint host="localhost" port="8081" path="/" />
+----
+
+[%header,cols="2*"]
+|===
+一个|
+属性
+
+ 为|
+值
+
+| *doc:name*  | `HTTP`
+| *host*  | `localhost`
+| *port*  | `8081`
+|===
+
+====  HTTP出站端点
+
+. 创建一个新的连接器配置元素并设置*Host*和*Base Path*：
++
+image:yahoo+global+element.png[雅虎+全球+元素]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | `HTTP_Request_Connector`
+| *Host*  | `query.yahooapis.com`
+| *Base Path*  | `v1/public.yql`
+|===
++
+使用此配置，请求将发送到`query.yahooapis.com/v1/public.yql`
+. 通过单击*OK*保存更改并返回到连接器的属性编辑器。然后设置路径和方法：
++
+image:http+connector+basic.png[HTTP +连接器+基本]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Display Name*  | `HTTP`
+| *Path*  | `/`
+| *Method*  | `GET`
+|===
+. 单击*Add Parameter*按钮三次以添加三个参数。保留所有默认类型**query-param**。对于每个的`value`字段，写一个mule表达式，该表达式首先到达HTTP入站端点的请求的查询参数中获取等价值，这些参数在到达HTTP出站端点时转换为入站属性。
++
+image:yahoo+http+w+params.png[雅虎+ HTTP + W +参数]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `q`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.q]`
+|===
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `env`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.env]`
+|===
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `format`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.format]`
+|===
++
+通过这种方式进行配置，将到达HTTP入站端点的查询参数不变地转发到雅虎API。
+. 选择连接器左侧面板上的*Advanced*选项卡，勾选标记为*Follow Redirects*的复选框
+
+在独立XML编辑器中，按如下所示配置HTTP连接器：
+
+[source, xml, linenums]
+----
+<http:outbound-endpoint host="query.yahooapis.com" port="8081" path="/" method="GET" exchange-pattern="one-way" followRedirects="true">
+            <http:request-builder>
+                <{{0}}"/>
+                <{{0}}"/>
+                <{{0}}"/>
+            </http:request-builder>
+</http:outbound-endpoint>
+----
+
+[%header,cols="2*"]
+|===
+一个|
+属性
+一个|
+值
+
+| *doc:name*  | `HTTP`
+| *config-ref* a | `HTTP_Request_Configuration`  | *path*  | `/`
+| *method* a | `GET` a | `followRedirects` a | `true`
+|===
+
+有一系列连接器的子元素，这些元素定义了三个查询参数，这些参数从消息的入站属性中获取它们的值。将定义这些查询参数的三个元素括起来是在向请求添加参数时始终需要的`request-builder`元素。
+
+[%header,cols="2*"]
+|===
+| {参数{1}}值
+| *type*  | `http:query-param`
+| *paramName*  | `q`
+| *value*  | `#[message.inboundProperties.'http.query.params'.q]`
+|===
+
+[%header,cols="2*"]
+|===
+| {参数{1}}值
+| *type*  | `http:query-param`
+| *paramName*  | `env`
+| *value*  | `#[message.inboundProperties.'http.query.params'.env]`
+|===
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *type*  | `http:query-param`
+| *paramName*  | `format`
+| *value*  | `#[message.inboundProperties.'http.query.params'.format]`
+|===
+
+通过这种方式进行配置，将到达HTTP入站端点的查询参数不变地转发到雅虎API。
+
+要使此元素有效，您必须引用*Connector Configuration*。连接器中的**config-ref **属性引用此连接器配置元素。您现在必须在与所引用名称匹配的流程之外创建一个元素。
+
+[source, xml, linenums]
+----
+<http:outbound-endpoint host="query.yahooapis.com" port="8081" path="/" method="GET" exchange-pattern="one-way" followRedirects="true">
+----
+
+[cols="2*"]
+|===
+| *Attribute*  | *Value*
+| *name* a | `HTTP_Request_Configuration`  | *host*  | `baconipsum.com`
+| *basePath*  | `api`
+| *doc:name* a | `HTTP Request Configuration`
+|===
+
+将==== 字节数组转换为字符串转换器
+
+该变压器设置为其默认值;完整的配置如下所示。
+
+*General Tab*
+
+[%header,cols="33,33,34"]
+|===
+|参数 |值 |配置窗口图像
+| *Display Name*  | `Byte Array to String` .5 + | image:byte_array_to_str.png[byte_array_to_str]
+| *Return Class*  | `-`
+| *Ignore Bad Input*  |无
+| *Encoding*  | `-`
+| *MIME Type*  | `-`
+|===
+
+在独立XML编辑器中，输入：
+
+[source, xml, linenums]
+----
+<byte-array-to-string-transformer doc:name="Byte Array to String"/>
+----
+
+==== 分配器
+
+分离器将传入的消息拆分为多个部分，并将它们与用户定义的表达式分开。
+
+*General Tab*
+
+[%header,cols="33,33,34"]
+|===
+|参数 |值 |配置窗口图像
+| *Display Name*  | `Byte Array to String` .4 + | image:byte_array_to_str.png[byte_array_to_str]
+| *Enable Correlation*  | `IF_NOT_SET (default)`
+| *Message Info Mapping*  | `-`
+| *Expression*  | `#[xpath('//results')]`
+|===
+
+“高级”选项卡设置为其默认值;没有配置是必要的。
+
+在独立XML编辑器中，输入：
+
+[source, xml, linenums]
+----
+<splitter expression="#[xpath('//results')]" doc:name="Splitter"/>
+----
+
+
+数据库连接器==== 
+
+*General Tab*
+
+[%header,cols="33,33,34"]
+|===
+|参数 |值 |配置窗口图像
+| *Display Name*  | `Database` .5 + | image:db_conn_general_tab.png[db_conn_general_tab]
+| *Connector configuration*
+| `Postgres`
+（此连接器引用的数据库全局元素。）
+| *Operation*  | `Insert`
+| *Query type*  | `Dynamic`
+| *Dynamic query* a |
+[SOURCE]
+----
+INSERT INTO mystock("name", "date", "bookvalue") VALUES(#[xpath('//Name').text], #[xpath('//LastTradeDate').text], #[xpath('//BookValue').text]);
+----
+|===
+
+*Advanced Tab*
+
+“高级”选项卡设置为其默认值;没有配置是必要的。
+
+image:db_conn_adv_tab.png[db_conn_adv_tab]
+
+在独立XML编辑器中，输入：
+
+[source, xml, linenums]
+----
+<db:insert config-ref="Postgres" doc:name="Database">
+   <db:dynamic-query><![CDATA[INSERT INTO mystock("name", "date", "bookvalue") VALUES(#[xpath('//Name').text], #[xpath('//LastTradeDate').text], #[xpath('//BookValue').text]);]]> 
+   </db:dynamic-query>
+</db:insert>
+----
+
+==== 数据库全局连接器
+
+数据库全局连接器是包含所需数据库连接配置的 link:/mule-user-guide/v/3.4/global-elements[全球元素]。它由应用程序流中的数据库连接器引用。
+
+您必须在Studio应用程序中为您的数据库安装适当的驱动程序。有关详细信息，请参阅 link:/mule-user-guide/v/3.6/database-connector[数据库连接器]中的添加数据库驱动程序部分。
+
+
+[%header,cols="33,33,34"]
+|===
+|参数 |值 |配置窗口图像
+| *Name*  | `Postgres` .5 + | image:db_conn_general_tab.png[db_conn_general_tab]
+
+| *Database URL*
+| `jdbc:postgresql://dbserver/stock`
+
+| *Driver Class Name*  | `org.postgresql.Driver`
+| *Use XA Transactions*  | `No (default)`
+| *Enable DataSense*  |是（默认）
+|===
+
+在独立XML编辑器中，输入;
+
+[source, xml, linenums]
+----
+<db:generic-config name="Postgres" url="jdbc:postgresql://dbserver/stock" driverClassName="org.postgresql.Driver" doc:name="Generic Database Configuration"/>
+----
+
+=== 运行此示例
+
+要在此应用程序中触发流，请使用Web浏览器或诸如 http://curl.haxx.se/download.html[卷曲]命令行实用程序之类的HTTP客户端来打击localhost端口8081上的HTTP侦听器。
+
+image:browser2.png[browser2]
+
+[source, code, linenums]
+----
+curl 'http://localhost?q=select%20*%20from%20yahoo.finance.quotes%20where
+%20symbol%20in%20(%22BAC%22)%0A%09%09&env=http%3A%2F%2Fdatatables.org%2
+Falltables.env&format=XML'
+----
+
+将示例作为Mule应用程序运行，然后使用查询命中HTTP入站端点。有关可以使用的参数列表，请参阅https://developer.yahoo.com/yql/console/[Yahoo！查询语言页面]，它允许您在联机控制台中构建您的REST查询。
+
+在这个例子中，为了检索美国银行（股票代码BAC）的报价，我们点击应用程序的HTTP监听器：
+
+[source, code, linenums]
+----
+http://localhost?q=select%20*%20from%20yahoo.finance.quotes%20where%20symbol%20in%20
+(%22BAC%22)%0A%09%09&env=http%3A%2F%2Fdatatables.org%2Falltables.env&format=XML
+----
+
+检查Mule Console输出以查看应用程序的进度：
+
+[source, code, linenums]
+----
+INFO  2014-04-08 15:42:33,531 [main] org.mule.module.launcher.MuleDeploymentService:
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Started app 'financeapi'                                 +
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+INFO  2014-04-08 15:43:09,155 [[financeapi].financeapiFlow1.stage1.02] org.mule.transport.service.DefaultTransportServiceDescriptor: Loading default outbound transformer: org.mule.transport.http.transformers.ObjectToHttpClientMethodRequest
+INFO  2014-04-08 15:43:09,167 [[financeapi].financeapiFlow1.stage1.02] org.mule.transport.service.DefaultTransportServiceDescriptor: Loading default response transformer: org.mule.transport.http.transformers.MuleMessageToHttpResponse
+INFO  2014-04-08 15:43:09,168 [[financeapi].financeapiFlow1.stage1.02] org.mule.transport.service.DefaultTransportServiceDescriptor: Loading default outbound transformer: org.mule.transport.http.transformers.ObjectToHttpClientMethodRequest
+INFO  2014-04-08 15:43:09,168 [[financeapi].financeapiFlow1.stage1.02] org.mule.lifecycle.AbstractLifecycleManager: Initialising: 'connector.http.mule.default.dispatcher.1157186244'. Object is: HttpClientMessageDispatcher
+INFO  2014-04-08 15:43:09,171 [[financeapi].financeapiFlow1.stage1.02] org.mule.lifecycle.AbstractLifecycleManager: Starting: 'connector.http.mule.default.dispatcher.1157186244'. Object is: HttpClientMessageDispatcher
+INFO  2014-04-08 15:43:10,591 [[financeapi].financeapiFlow1.stage1.02] org.mule.routing.ExpressionSplitter: The expression does not evaluate to a type that can be split: org.dom4j.tree.DefaultElement
+INFO  2014-04-08 15:43:10,597 [[financeapi].financeapiFlow1.stage1.02] org.mule.lifecycle.AbstractLifecycleManager: Initialising: 'Database.dispatcher.1108267618'. Object is: EEJdbcMessageDispatcher
+INFO  2014-04-08 15:43:10,622 [[financeapi].financeapiFlow1.stage1.02] org.mule.lifecycle.AbstractLifecycleManager: Starting: 'Database.dispatcher.1108267618'. Object is: EEJdbcMessageDispatcher
+INFO  2014-04-08 15:43:11,105 [[financeapi].financeapiFlow1.stage1.02] com.mulesoft.mule.transport.jdbc.sqlstrategy.UpdateSqlStatementStrategy: Executing SQL statement: 1 row(s) updated
+----
+
+下图显示了插入数据库行的数据，如Postgres的GUI界面pgAdmin III中所示。
+
+image:pgadmin.png[pgAdmin的]
+
+== 从REST API中提取JSON数据并将其插入到外部数据库中
+
+这个示例应用程序使用来自外部REST API的JSON数据，然后从JSON中提取值并将其插入到外部Postgres数据库中。该应用程序使用Yahoo!适用于金融服务的REST API，可免费使用并且不需要用户帐户。该API允许您使用基于SQL的Yahoo查询语言检索金融报价，这些报价包含在URL本身中。
+
+这个应用程序击中雅虎！ REST API可以在http://query.yahooapis.com/v1/public/yql上找到您指定的任何查询。回复的格式是在查询本身中使用`format=<format>`参数确定的。这个例子使用`format=json`。
+
+当它以JSON接收到回复时，应用程序会提取一些值，如股票名称，日期，价格等，并将它们插入到外部Postgres数据库的表中。
+
+该应用程序仅包含一个流程，如下所示。
+
+image:yahoo+flow+2.png[雅虎+流动+ 2]
+
+[source, xml, linenums]
+----
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd">
+    <db:generic-config name="Postgres" url="jdbc:postgresql://dbserver/stock" driverClassName="org.postgresql.Driver" doc:name="Generic Database Configuration"/>
+    <db:template-query name="insert_into_current" doc:name="Template Query">
+        <db:parameterized-query><![CDATA[INSERT INTO current("name", "date", "bookvalue") VALUES(:name,:date,:bookvalue);]]></db:parameterized-query>
+        <db:in-param name="name" defaultValue="#[xpath('//Name').text]"/>
+        <db:in-param name="date" type="DATE" defaultValue="#[xpath('//LastTradeDate').text]"/>
+        <db:in-param name="bookvalue" defaultValue="#[xpath('//BookValue').text])"/>
+    </db:template-query>
+
+    <flow name="financeapiFlow1" >
+        <http:inbound-endpoint host="localhost" port="8081" path="/" />
+        <http:outbound-endpoint host="query.yahooapis.com" port="${port2}" path="v1/public/yql"
+    method="GET" exchange-pattern="one-way" followRedirects="true">
+            <http:request-builder>
+                <{{0}}"/>
+                <{{0}}"/>
+                <{{0}}"/>
+            </http:request-builder>
+        </http:outbound-endpoint>
+        <json:json-to-object-transformer returnClass="java.util.Map" doc:name="JSON to Object"/>
+        <db:insert config-ref="Postgres" doc:name="Database">
+            <db:dynamic-query><![CDATA[INSERT INTO mystock("name", "date", "bookvalue") VALUES('#[message.payload.query.results.quote.symbol]','#[message.payload.query.results.quote.LastTradeDate]','#[message.payload.query.results.quote.BookValue]');]]></db:dynamic-query>
+        </db:insert>
+    </flow>
+</mule>
+----
+
+
+第一个元素，一个HTTP入站端点，监听本地端口8081（默认）传入的GET请求。击中侦听器会触发流程。对HTTP入站端点的请求必须采取以下形式：
+
+[source, code, linenums]
+----
+http://localhost:8081?<query>
+----
+
+请求的`<query>`部分由REST API接受的参数组成。当HTTP入站端点接收到HTTP请求时，URL的`<query>`部分将成为一组入站属性。 HTTP lsitener将消息传递给流中的下一个元素，即HTTP Outbound Endpoint。 HTTP出站端点使用一组MEL表达式从消息中提取查询参数，并构建远程API的完整URL（包括查询参数）。
+
+例如，如果您使用以下命令来访问HTTP入站端点：
+
+[source, code, linenums]
+----
+http://localhost?q=select%20*%20from%20yahoo.finance.quotes%20where%20symbol%20in
+(%22GE%22)%0A%09%09&env=http%3A%2F%2Fdatatables.org%2Falltables.env&format=json
+----
+
+该应用程序将查询下面列出的URL：
+
+[source, code, linenums]
+----
+http://query.yahooapis.com/v1/public/yql?q=select
+ * from yahoo.finance.quotes where symbol in
+("GE")%0A%09%09&env=http%3A%2F%2Fdatatables.org%2Falltables.env&format=json
+----
+
+以上查询检索通用电气的股票代码GE的信息。 REST API返回一个JSON，你可以通过点击下面看到。
+
+
+*JSON returned by the REST API*
+
+[source, json, linenums]
+----
+{"query":{"count":1,"created":"2014-04-10T16:33:09Z","lang":"en","results":{"quote":{"symbol":"GE","Ask":null,"AverageDailyVolume":"36983100","Bid":null,"AskRealtime":"25.87","BidRealtime":"25.86","BookValue":"12.978","Change_PercentChange":"-0.09 - -0.35%","Change":"-0.09","Commission":null,"ChangeRealtime":"-0.09","AfterHoursChangeRealtime":"N/A - N/A","DividendShare":"0.82","LastTradeDate":"4/10/2014","TradeDate":null,"EarningsShare":"1.264","ErrorIndicationreturnedforsymbolchangedinvalid":null,"EPSEstimateCurrentYear":"1.70","EPSEstimateNextYear":"1.82","EPSEstimateNextQuarter":"0.40","DaysLow":"25.80","DaysHigh":"26.11","YearLow":"21.11","YearHigh":"28.09","HoldingsGainPercent":"- - -","AnnualizedGain":null,"HoldingsGain":null,"HoldingsGainPercentRealtime":"N/A - N/A","HoldingsGainRealtime":null,"MoreInfo":"cn","OrderBookRealtime":null,"MarketCapitalization":"259.5B","MarketCapRealtime":null,"EBITDA":"28.875B","ChangeFromYearLow":"+4.75","PercentChangeFromYearLow":"+22.50%","LastTradeRealtimeWithTime":"N/A - <b>25.86</b>","ChangePercentRealtime":"N/A - -0.35%","ChangeFromYearHigh":"-2.23","PercebtChangeFromYearHigh":"-7.94%","LastTradeWithTime":"12:18pm - <b>25.86</b>","LastTradePriceOnly":"25.86","HighLimit":null,"LowLimit":null,"DaysRange":"25.80 - 26.11","DaysRangeRealtime":"N/A - N/A","FiftydayMovingAverage":"25.6261","TwoHundreddayMovingAverage":"25.9491","ChangeFromTwoHundreddayMovingAverage":"-0.0891","PercentChangeFromTwoHundreddayMovingAverage":"-0.34%","ChangeFromFiftydayMovingAverage":"+0.2339","PercentChangeFromFiftydayMovingAverage":"+0.91%","Name":"General Electric","Notes":null,"Open":"26.09","PreviousClose":"25.95","PricePaid":null,"ChangeinPercent":"-0.35%","PriceSales":"1.79","PriceBook":"2.00","ExDividendDate":"Feb 20","PERatio":"20.53","DividendPayDate":"Apr 25","PERatioRealtime":null,"PEGRatio":"1.80","PriceEPSEstimateCurrentYear":"15.26","PriceEPSEstimateNextYear":"14.26","Symbol":"GE","SharesOwned":null,"ShortRatio":"2.50","LastTradeTime":"12:18pm","TickerTrend":"&nbsp;======&nbsp;","OneyrTargetPrice":"28.73","Volume":"13263903","HoldingsValue":null,"HoldingsValueRealtime":null,"YearRange":"21.11 - 28.09","DaysValueChange":"- - -0.35%","DaysValueChangeRealtime":"N/A - N/A","StockExchange":"NYSE","DividendYield":"3.16","PercentChange":"-0.35%"}}}}
+----
+
+
+HTTP出站端点将从API接收到的JSON传递给配置为输出java.util.Map对象的 link:/mule-user-guide/v/3.7/json-module-reference[JSON到对象的变换器]。变换器将包含JSON数据的此对象作为key = value对发送到流中的最后一个元素 link:/mule-user-guide/v/3.6/database-connector[数据库接口]。此连接器使用带有嵌入式 link:/mule-user-guide/v/3.7/mule-expression-language-mel[骡子表达语言]表达式的SQL查询从JSON中提取特定值并将其插入到外部数据库中。完整的SQL查询如下所示。
+
+[source, code, linenums]
+----
+INSERT INTO mystock("name", "date", "bookvalue") VALUES('#[message.payload.query.results.quote.symbol]','#[message.payload.query.results.quote.LastTradeDate]','#[message.payload.query.results.quote.BookValue]');
+----
+
+在上面显示的查询中，MEL表达式扩展为JSON数据中每个指定元素的文本。例如，`#[message.payload.query.results.quote.symbol]`从下面显示的JSON结构中检索`symbol`的值。
+
+[source, json, linenums]
+----
+{
+  "query":    {
+        "count":1,
+        "created":"2014-04-10T16:33:09Z",
+        "lang":"en",
+        "results":    {
+                "quote":    {
+                    "symbol":"GE",
+----
+
+下面详细介绍这个例子的完整配置。要查看应用程序，请跳至<<Running This Example>>。
+
+=== 配置此示例
+
+====  HTTP入站端点
+
+设置连接器的属性编辑器：
+
+image:http+listener+basic.png[HTTP +监听+基本]
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Display Name*  | `HTTP`
+| *Path*  | /
+|===
+
+创建一个新的连接器配置元素并设置端口和主机：
+
+image:http+config+1.png[HTTP +配置+ 1]
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | `HTTP_Listener_Configuration`
+| *Host*  | `localhost`
+| *Port*  | `8081`
+|===
+
+在独立XML编辑器中：
+
+按如下所示配置HTTP连接器：
+
+[source, xml, linenums]
+----
+        <http:inbound-endpoint host="localhost" port="8081" path="/" />
+----
+
+[%header,cols="2*"]
+|===
+一个|
+属性
+一个|
+值
+| *doc:name*  | `HTTP`
+| *host*  | `localhost`
+| *port*  | `8081`
+|===
+
+====  HTTP出站端点
+
+. 创建一个新的连接器配置元素并设置*Host*和*Base Path*：
++
+image:yahoo+global+element.png[雅虎+全球+元素]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | `HTTP_Request_Connector`
+| *Host*  | `query.yahooapis.com`
+| *Base Path*  | `v1/public.yql`
+|===
++
+使用此配置，请求将发送到`query.yahooapis.com/v1/public.yql`
+
+. 通过单击确定保存更改并返回到连接器的属性编辑器。然后设置路径和方法：
++
+image:http+connector+basic.png[HTTP +连接器+基本]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Display Name*  | `HTTP`
+| *Path*  | `/`
+| *Method*  | `GET`
+|===
+
+. 单击*Add Parameter*按钮三次以添加三个参数。保留所有默认类型**query-param**。对于每个的`value`字段，写一个mule表达式，该表达式首先到达HTTP入站端点的请求的查询参数中获取等价值，这些参数在到达HTTP出站端点时转换为入站属性。
++
+image:yahoo+http+w+params.png[雅虎+ HTTP + W +参数]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `q`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.q]`
+|===
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `env`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.env]`
+|===
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `format`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.format]`
+|===
++
+通过这种方式进行配置，将到达HTTP入站端点的查询参数不变地转发到雅虎API。
++
+. 选择连接器左侧面板上的*Advanced*选项卡，勾选标记为*Follow Redirects*的复选框
+
+在独立XML编辑器中，按如下所示配置HTTP连接器：
+
+[source, xml, linenums]
+----
+<http:outbound-endpoint host="localhost" port="8081" path="hello" method="GET" exchange-pattern="one-way" followRedirects="true" >
+            <http:request-builder>
+                <{{0}}"/>
+                <{{0}}"/>
+                <{{0}}"/>
+            </http:request-builder>
+</http:outbound-endpoint>
+----
+
+[%header,cols="2*"]
+|===
+一个|
+属性
+一个|
+值
+| *doc:name*  | `HTTP`
+| *config-ref* a | `HTTP_Request_Configuration`
+| *path*  | `/`
+| *method* a |
+`GET`
+一个| `followRedirects`
+一个| `true`
+|===
+
+有一系列连接器的子元素，这些元素定义了三个查询参数，这些参数从消息的入站属性中获取它们的值。将定义这些查询参数的三个元素括起来是在向请求添加参数时始终需要的`request-builder`元素。
+
+[%header,cols="2*"]
+|===
+| {参数{1}}值
+| *type*  | `http:query-param`
+| *paramName*  | `q`
+| *value*  | `#[message.inboundProperties.'http.query.params'.q]`
+|===
+
+[%header,cols="2*"]
+|===
+| {参数{1}}值
+| *type*  | `http:query-param`
+| *paramName*  | `env`
+| *value*  | `#[message.inboundProperties.'http.query.params'.env]`
+|===
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *type*  | `http:query-param`
+| *paramName*  | `format`
+| *value*  | `#[message.inboundProperties.'http.query.params'.format]`
+|===
+
+通过这种方式进行配置，将到达HTTP入站端点的查询参数不变地转发到雅虎API。
+
+要使此元素有效，您必须引用*Connector Configuration*。连接器中的**config-ref **属性引用此连接器配置元素。您现在必须在与所引用名称匹配的流程之外创建一个元素。
+
+[source, xml, linenums]
+----
+<http:outbound-endpoint host="baconipsum.com" port="8081" path="api" method="GET" exchange-pattern="one-way" followRedirects="true" />
+----
+
+[cols="2*"]
+|===
+| *Attribute*  | *Value*
+| *name* a |
+`HTTP_Request_Configuration`
+| *host*  | `baconipsum.com`
+| *basePath*  | `api`
+| *doc:name* a | `HTTP Request Configuration`
+|===
+
+====  JSON到对象变换器
+
+*General Tab*
+[%header%autowidth.spread]
+|===
+|参数 |值 |配置窗口图像
+| *Display Name*  | `JSON to Object` .2 + | image:json.to.object.general.png[json.to.object.general]
+| *Mapper Reference*  | `-`
+|===
+
+*Advanced Tab*
+[%header%autowidth.spread]
+|===
+|参数 |值 |配置窗口图像
+| *Return Class*  | `java util.Map` .4 + | image:json.to.object-adv_tab.png[json.to.object-adv_tab]
+| *Ignore Bad Input*  | `no`
+| *Encoding*  | `-`
+| *MIME Type*  | `-`
+|===
+
+在独立XML编辑器中，输入：
+
+[source, xml, linenums]
+----
+<json:json-to-object-transformer doc:name="JSON to Object" returnClass="java.util.Map"/>
+----
+
+数据库连接器==== 
+
+*Advanced Tab*
+[%header%autowidth.spread]
+|===
+|参数 |值 |配置窗口图像
+| *Display Name*  | `Database` .5 + | image:db_conn_json_gral_tab.png[db_conn_json_gral_tab]
+| *Connector configuration*  | `Postgres`
+| *Operation*  | `insert`
+| *Query Type*  | `Dynamic`
+| *Dynamic query* a |
+[SOURCE]
+----
+INSERT INTO mystock("name", "date", "bookvalue") VALUES('#[message.payload.query.results.quote.symbol]','#[message.payload.query.results.quote.LastTradeDate]','#[message.payload.query.results.quote.BookValue]');
+----
+|===
+
+*Advanced Tab*
+
+“高级”选项卡设置为其默认值;没有配置是必要的。
+
+image:db_conn_adv_tab.png[db_conn_adv_tab]
+
+
+==== 数据库全局连接器
+
+数据库全局连接器是一个全局元素，它包含所需数据库的连接配置。它由应用程序流中的数据库连接器引用。
+
+请注意，您必须在Studio应用程序中为您的数据库安装适当的驱动程序。有关详情，请参阅数据库连接器中的添加数据库驱动程序部分
+
+[%header%autowidth.spread]
+|===
+|参数 |值 |配置窗口图像
+| *Name*  | `Postgres` .5 + | image:db_global_elem.png[db_global_elem]
+| *Database URL*  | `jdbc:postgresql://dbserver/stock`
+| *Driver Class Name*  | `org.postgresql.Driver`
+| *Use XA Transactions*  |否（默认）
+| *Enable DataSense* a | 是（默认）
+|===
+
+在独立XML编辑器中，输入：
+
+[source, xml, linenums]
+----
+<db:generic-config name="Postgres" url="jdbc:postgresql://dbserver/stock" driverClassName="org.postgresql.Driver" doc:name="Generic Database Configuration"/>
+----
+
+=== 运行此示例
+
+要在此应用程序中触发流程，请使用Web浏览器或HTTP客户端（例如 http://curl.haxx.se/download.html[卷曲]命令行实用程序在localhost端口8081上点击HTTP入站端点。
+
+image:browser2.png[browser2]
+
+[source, code, linenums]
+----
+curl 'http://localhost?q=select%20*%20from%20yahoo.finance.quotes%20where
+%20symbol%20in%20(%22BAC%22)%0A%09%09&env=http%3A%2F%2Fdatatables.org%2
+Falltables.env&format=json'
+----
+
+在命令行中使用空白字符作为命令参数时，请确保根据需要充分转义特殊字符（例如，在使用单引号的Unix系统上，如上所示）。
+
+将示例作为Mule应用程序运行，然后使用查询命中HTTP入站端点。有关可以使用的参数列表，请参阅https://developer.yahoo.com/yql/console/[Yahoo！查询语言页面]，它允许您在联机控制台中构建您的REST查询。
+
+在本例中，为了检索通用电气（股票代码GE）的报价，我们用以下命令打开应用程序的HTTP入站端点：
+
+[source, code, linenums]
+----
+http://localhost?q=select%20*%20from%20yahoo.finance.quotes%20where%20symbol%20in%20(%22GE%22)%0A%09%09&env=http%3A%2F%2Fdatatables.org%2Falltables.env&format=json
+----
+
+检查Mule Console输出以查看应用程序的进度：
+
+[source, code, linenums]
+----
+INFO  2014-04-14 18:22:54,315 [main] org.mule.module.launcher.MuleDeploymentService:
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Started app 'financeapi'                                 +
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+INFO  2014-04-14 18:23:04,573 [[financeapi].financeapiFlow2.stage1.02] org.mule.transport.service.DefaultTransportServiceDescriptor: Loading default outbound transformer: org.mule.transport.http.transformers.ObjectToHttpClientMethodRequest
+INFO  2014-04-14 18:23:04,583 [[financeapi].financeapiFlow2.stage1.02] org.mule.transport.service.DefaultTransportServiceDescriptor: Loading default response transformer: org.mule.transport.http.transformers.MuleMessageToHttpResponse
+INFO  2014-04-14 18:23:04,583 [[financeapi].financeapiFlow2.stage1.02] org.mule.transport.service.DefaultTransportServiceDescriptor: Loading default outbound transformer: org.mule.transport.http.transformers.ObjectToHttpClientMethodRequest
+INFO  2014-04-14 18:23:04,584 [[financeapi].financeapiFlow2.stage1.02] org.mule.lifecycle.AbstractLifecycleManager: Initialising: 'connector.http.mule.default.dispatcher.208700779'. Object is: HttpClientMessageDispatcher
+INFO  2014-04-14 18:23:04,588 [[financeapi].financeapiFlow2.stage1.02] org.mule.lifecycle.AbstractLifecycleManager: Starting: 'connector.http.mule.default.dispatcher.208700779'. Object is: HttpClientMessageDispatcher
+INFO  2014-04-14 18:23:05,955 [[financeapi].financeapiFlow2.stage1.02] org.mule.lifecycle.AbstractLifecycleManager: Initialising: 'Database.dispatcher.209950951'. Object is: EEJdbcMessageDispatcher
+INFO  2014-04-14 18:23:05,957 [[financeapi].financeapiFlow2.stage1.02] org.mule.lifecycle.AbstractLifecycleManager: Starting: 'Database.dispatcher.209950951'. Object is: EEJdbcMessageDispatcher
+INFO  2014-04-14 18:23:06,239 [[financeapi].financeapiFlow2.stage1.02] com.mulesoft.mule.transport.jdbc.sqlstrategy.UpdateSqlStatementStrategy: Executing SQL statement: 1 row(s) updated
+----
+
+下图显示了插入数据库行的数据，如Postgres的GUI界面pgAdmin III中所示。
+
+image:pgadmin-json.png[pgAdmin的，JSON]
+
+
+

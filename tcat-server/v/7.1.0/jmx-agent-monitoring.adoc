@@ -1,0 +1,90 @@
+=  JMX代理程序监视
+:keywords: tcat, jmx, agent, monitoring
+
+本页介绍系统管理员和开发人员如何使用MuleSoft Tcat Server监视JMX MBean属性。这些MBean与Tcat服务器代理位于同一个Java虚拟机中。如果您想了解更多关于JMX标准的信息，请参阅Oracle Java文档页面 http://java.sun.com/j2se/1.5.0/docs/guide/management/agent.html[使用JMX监视和管理]。
+
+默认情况下，Tcat Server的运行时环境启用Java虚拟机的JMX代理。如果您通过部署Tcat代理使用库存Apache Tomcat，那么Tcat将在第一个由Tcat控制的JVM重新启动时在您的股票Tomcat的JVM中启用JMX。
+
+{Tomcat}支持的==  JMX代理功能
+
+Tomcat的容器系统被设计为每个重要的对象都作为MBeans而暴露在JMX之上，同时具有属性和操作。这适用于所有Tomcat版本4.0及更高版本。 Tomcat 7.0.3及更高版本具有容器MBean，它允许JMX远程实例化，配置和生命周期状态更改，这使得可以通过JMX连接远程启动和配置新的Tomcat 7实例。
+
+所有版本的Tomcat都实现了一组丰富的服务器MBean，可以轻松检查一组丰富的属性度量标准。这包括服务器，服务，连接器，线程池（执行程序），引擎，主机，Web应用程序（WebModules），阀门等。所有这些对象公开可以通过JMX独立监控的JMX属性。
+
+如果需要从Tomcat服务器机器外部监视Tomcat的JMX MBean（例如从网络监视控制台（如`jconsole`或 http://nagios.org[Nagios的]）监视Tomcat），则需要启用JMX远程服务器端口在Tomcat JVM中。从Tomcat 6.0.26开始，添加了一个新的*`JmxRemoteLifecycleListener`*，允许通过RMI打开一个JMX远程服务器端口，其中服务器端口是固定的端口号。通常情况下，端口号是随机的，在生产中通常不会很好，因为防火墙必须预先配置为允许TCP连接到指定的端口。
+
+[WARNING]
+*NOTE*：如果您通过Tcat服务器控制台监视Tomcat的MBean，则不需要打开JMX远程服务器端口，因此您不需要`JmxRemoteLifecycleListener`。
+
+`JmxRemoteLifecycleListener`是Tomcat "extras"的一部分，并且是一个单独的下载 - 监听器包含在`catalina-jmx-remote.jar`文件中，您可以将它放在Tomcat的`lib/`目录中。您可以通过直接在`<Server>`元素下添加以下内容来在`server.xml`中配置它，如下所示：
+
+*server.xml Snippet*
+
+[source, xml, linenums]
+----
+<Listener className="org.apache.catalina.mbeans.JmxRemoteLifecycleListener"
+          rmiRegistryPort="10001" rmiServerPort="10002"/>
+----
+
+与以下系统属性设置（例如在`conf/Catalina/localhost/tcat-env.sh`中）：
+
+[source, code, linenums]
+----
+-Dcom.sun.management.jmxremote.password.file=${catalina.base}/conf/jmx-password.txt
+-Dcom.sun.management.jmxremote.access.file=${catalina.base}/conf/jmx-access.txt
+----
+
+`jmx-password.txt`文件只需包含一行包含用户名和密码的行，如"admin mypassword"。 jmx-access.txt文件只需要一行："admin readwrite"。在非Windows操作系统上，您可以像这样填充文件：
+
+[source, code, linenums]
+----
+# echo 'admin mypassword' >$CATALINA_BASE/conf/jmx-password.txt# echo 'admin readwrite' >$CATALINA_BASE/conf/jmx-access.txt# chmod 600 $CATALINA_BASE/conf/jmx-password.txt $CATALINA_BASE/conf/jmx-access.txt
+----
+
+配置完成后，重新启动Tomcat JVM。
+
+然后打开内部局域网防火墙中的端口10001（RMI注册表）和10002（JMX RMI服务器）将使局域网中的其他计算机连接到Tomcat实例。
+
+Tcat Server支持的==  JMX功能
+
+Tcat服务器控制台通过使用X.509客户端证书认证的HTTPS实现与所有Tcat服务器代理JVM的安全通信。通过这个安全的网络连接，您可以在远程Tomcat JVM中列出JMX MBean，您可以检查它们的属性，并且可以监视它们的属性值。 Tcat控制台允许您配置绘制任意数字JMX度量标准的图表，并且还允许您为任意数字JMX度量标准值配置警报，这些度量值会低于或高于您选择的阈值。
+
+Tcat服务器代理使用额外的MBean扩充了Tomcat的JMX MBean，这些MBean将附加度量公开为MBean属性。另外，作为Tcat服务器代理安全通信设计的一部分，Tcat代理允许JMX监视Tomcat JVM，而无需打开任何额外的TCP网络端口。
+
+=== 在服务器上绘制MBean属性度量标准
+
+在控制台中，选择一个注册的服务器。这会将您带到该服务器的*Dashboard*。在仪表板上，您可以将度量标准图添加到*Server Metrics* portlet。
+
+image:tcat-server-metrics-portlet-1.png[图片] +
+
+服务器仪表板上的==== 服务器度量Portlet
+
+点击*Server Metrics* portlet右上角的配置按钮，配置*Server Metrics* portlet。
+
+image:tcat-server-metrics-portlet-2.png[图片] +
+
+==== 服务器度量Portlet配置面板
+
+在portlet配置对话框中，选择要添加新的*JMX Attribute*图表类型，然后单击*Browse*查看远程MBeanServer。这些MBean在远程JVM的平台MBeanServer上注册。除了属于Tcat和Tomcat的MBean之外，这可能还包括属于webapps的MBeans。
+
+image:tcat-jmx-browser-error-count-1.png[图片] +
+
+====  Tcat JMX浏览器显示远程Tomcat JVM MBean
+
+通过远程Tomcat JVM的MBeans树浏览，然后选择要绘制其值的属性。您可以在任何列出的MBean上选择任何数字属性。然后，点击*Ok*。
+
+然后，完成填写JMX属性图表类型配置对话框。确保为您正在监控的属性输入*Display Name*，然后键入*Period*（整秒）。这是属性值被采样的周期间隔。每次对属性进行采样时，控制台都会调用对代理JVM的方法调用以读取MBean属性的值。设置采样周期越低，网络和CPU使用率越高，因此我们建议您谨慎使用，以免将采样周期设置得过低。接下来，通过选中或取消选中*Track Delta*复选框来决定是否要绘制增量图。如果您希望在所有服务器上监控此指标，则可以选中*Add to All Servers*复选框，并且此指标图表将显示在每个服务器仪表板上的“服务器指标”Portlet上。完成图表配置后，点击图表类型配置对话框中的*Ok*。
+
+image:tcat-jmx-attribute-chart-def-1.png[图片]
+
+==== 图表类型定义对话框 - 配置JMX属性度量图表
+
+然后点击“服务器指标”配置面板中的*Save*以应用更改并开始监控并绘制您选择的指标。您应该在服务器仪表板上看到新的指标图表。
+
+image:tcat-server-metrics-portlet-3.png[图片]
+
+服务器度量标准portlet显示新的JMX属性图。
+
+=== 关于MBean属性值的警报
+
+Tcat Server的控制台也可以监视JMX属性指标，并在值等于或超过您定义的阈值时发送警报。在定义*JMX Attribute*警报类型时，您可以浏览远程服务器的MBean，并选择一个属性进行监视，就像我们在绘制JMX MBean属性的上一部分中所示的一样。有关Tcat服务器控制台内置警报功能的详细说明和教程，请参阅使用警报和定义通知和目标页面。

@@ -1,0 +1,107 @@
+= 国际化字符串
+:keywords: mule, esb, studio, internationalize, strings, string operations, exception messages
+
+*  <<Internationalized Messages>>
+*  <<Exceptions>>
+*  <<Using Custom Message Bundles>>
+*  <<Creating Message Instances from your Code>>
+
+Mule ESB支持异常消息和任何其他类型的字符串消息的国际化。
+
+////
+Mule支持以下语言：
+
+* 英语
+*  http://mule.mulesoft.org/display/JAPANLP/UserGuide[日本]
+////
+
+国际化邮件。== 
+
+Mule使用Java link:https://docs.oracle.com/javase/7/docs/api/java/util/ResourceBundle.html[资源包]类根据当前系统的语言环境从类路径上的属性文件加载消息。 Mule提供全套英文信息。
+
+////
+和 http://mule.mulesoft.org/display/JAPANLP/UserGuide[日本]，但未来可能会提供其他语言。
+////
+
+Mule的国际化消息由 http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/config/i18n/Message.html[org.mule.config.i18n.Message]类表示。实例由消息ID和零个或多个消息参数构成。您可以看到Mule在`META-INF/service/org/mule/i18n/core-messages.properties`中提供的核心消息列表。
+
+您从不直接创建`Message`的实例。相反，您使用 http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/config/i18n/MessageFactory.html[的MessageFactory]的子类。 Mule核心项目的消息可以通过 http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/config/i18n/CoreMessages.html[org.mule.config.i18n.CoreMessages]课程获得。
+
+每个Mule的模块和传输都有这样的消息类。它的名字与带有_Messages_的模块相同。例如，对于JMS传输，您将使用`JmsMessages`来检索邮件。
+
+每个模块/传输的专用消息类别具有以下优点：
+
+* 封装消息代码
+* 客户端代码不会与`Message`构造函数混淆
+* 客户端代码具有对其消息的类型安全访问
+* 客户端代码不会与消息参数格式混杂在一起。相反，你在模块特定的消息类中处理tihs
+
+== 例外
+
+`MuleException`是所有Mule检查异常的基类，只能使用国际化消息来构造。要为异常创建消息，请按如下方式使用`MuleExtension`：
+
+[source, code, linenums]
+----
+MuleException e = new MuleException(CoreMessages.failedToGetPooledObject());
+throw e;
+----
+
+== 使用自定义消息包
+
+在编写使用Mule国际化类的Mule扩展或应用程序时，您可以提供包含特定于您的扩展或应用程序的消息的自定义消息包。您按如下所示创建资源包：
+
+[source, code, linenums]
+----
+1=Error message one
+2=Error message with 2 parameters; param {0} and param {1}
+...
+----
+
+号码是消息ID并且实际消息在后面。请注意，消息参数是使用'\ {0}'表示法指定的，这在使用Java link:https://docs.oracle.com/javase/7/docs/api/java/text/MessageFormat.html[的MessageFormat]类时是标准的。
+
+该文件应该命名为`x-messages.properties`，其中`x`是此捆绑软件的标识名称。您必须将此文件放置在`META-INF/services/org/mule/i18n/x-messages.properties`下的JAR文件或类路径中的任何其他位置。
+
+要访问您自己的资源包的消息，您可以创建`MessageFactory`的子类，如下所示：
+
+[source, java, linenums]
+----
+public class MyMessages extends MessageFactory
+{
+    // getBundlePath puts together the correct path (META-INF/services/org/mule/i18n/my-messages.properties)
+    private static final String BUNDLE_PATH = getBundlePath("my");
+
+    public static Message errorMessageOne()
+    {
+        return createMessage(BUNDLE_PATH, 1);
+    }
+
+    public static Message anotherErrorMessage(Object param1, Object param2)
+    {
+        createMessage(BUNDLE_PATH, 2, param1, param2);
+    }
+}
+----
+
+要从此捆绑包加载消息，请按如下方式传入资源捆绑包名称：
+
+[source, java, linenums]
+----
+Message m = MyMessages.anotherErrorMessage("one", "two");
+System.out.println(m.toString());
+----
+
+这将加载来自`x-messages.properties`的ID 2的消息，使用参数"one"和"two"对消息进行格式化，并将消息打印到_System.out_，如下所示：
+
+[source]
+----
+Error message with 2 parameters; param one and param two
+----
+
+== 从您的代码创建消息实例
+
+如果您需要自定义代码中的`Message`实例（例如，来自自定义转换器），请按如下所示创建它们：
+
+[source]
+----
+Message myMessage = MessageFactory.createStaticMessage("Oops");
+----

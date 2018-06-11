@@ -1,0 +1,195 @@
+= 自定义Mule Runtime Buildpack
+
+在大多数情况下，默认的Mule Runtime Buildpack就足够了。但是，如果您需要自定义构建包或添加部署Mule应用程序时包含的其他资源，则可以创建自定义构建包。
+
+1.下载Mule运行时buildpack（zip文件）。
+
+1.解压缩构建包。
+
+1.添加额外的资源
++
+`resources/mule`目录复制Mule运行时目录结构。部署期间，此位置中的文件和目录包含在运行时中。您可能想添加的常用资源包括：
++
+`resources/mule/lib/user`中的* 自定义共享库（jar文件）
+`resources/mule/lib/user`，`resources/mule/lib/mule`和`resources/mule/plugins`中的* 修补程序（jar文件）
+`resources/mule/domains`中的* 自定义域
++
+1.根据需要创建所需的目录。有关使用自定义库和修补程序的详细信息，请参阅 link:/mule-user-guide/v/3.8/classloader-control-in-mule[MuleSoft文档]。
++
+1.压缩定制的buildpack，包括您的更改。
++
+----
+zip -r <buildpack.zip file> <buildpackdir>
+----
++
+1.运行以下代码将buildpack添加到PCF安装中：
++
+----
+cf create-buildpack <BUILDPACK_NAME> <BUILDPACK_ZIP_PATH> <POSITION> --enable
+----
++
+使用以下参数：
++
+[%autowidth.spread]
+|===
+|  BUILDPACK_NAME  | 您的buildpack的名称必须符合以下格式：`mule_runtime_buildpack_<runtime_version_number>`
+|  BUILDPACK_ZIP_PATH  | 您的buildpack的本地路径
+|  POSITION  | 在优先级列表中指定buildpack的位置。一般来说，这个值应该是1。
+|   - 启用 | 允许您使用此buildpack推送应用程序
+|===
++
+您运行的命令应类似于以下内容：
++
+----
+cf create-buildpack mule_runtime_buildpack_3_8_1 mule-runtime-buildpack-3.8.1.zip 1 --enable
+----
+
+== 入站HTTP端点
+
+在设计应用程序时，请记住PCF自动为容器分配一个内部端口。该内部端口链接到由PCF路由子系统创建的应用程序路由。
+
+该端口通过Java属性`${http.port}`提供给应用程序。这是您的应用程序接收入站流量的唯一端口。另外，应用程序只能提供一个HTTP侦听器组件。
+
+您必须确保您的应用程序未在通过弹簧属性占位符加载的`mule-app.properties`文件或配置文件中指定`http.port`变量。在这些位置定义的属性会覆盖通过PCF环境变量提供的端口。这将阻止部署后与应用程序的连接。
+
+== 容器磁盘大小
+
+确保为应用程序分配比内存更多的磁盘空间。这使您能够根据MuleSoft支持团队的要求生成JVM堆转储，以便进行诊断。
+
+== 特定于应用程序的配置
+
+应用程序特定的配置通过环境变量提供。这些可以通过PCF Apps Manager用户界面或通过应用程序清单文件提供。
+
+以下示例显示了一个基本的`manifest.yml`：
+
+[source, yaml, linenums]
+----
+---
+applications:
+- name: simpleapi
+  buildpack: mule_runtime_buildpack_3_8_1
+  env:
+    MYCUSTOM_ENV_VARIABLE: -mycustomflag=1234
+----
+
+== 内存分配
+
+Mule运行时buildpack使用默认的Java buildpack内存分配给不同的JVM内存空间，直到通过配置分配给应用程序的最大内存。
+
+== 特定于JVM的参数
+
+特定于JVM的配置参数通过以下之一使用`JAVA_OPTS`属性提供：
+
+*  `JAVA_OPTS`环境变量
+*  `config/java_opts`配置文件。
+
+== 将修补程序应用于Mule运行时
+
+将MuleSoft补丁（jar文件）添加到`resources/mule`目录结构中，如[此处]（＃application-specific-configuration）所述。
+
+[NOTE]
+请注意修补程序适用的运行时版本，并确保它与buildpack认为在`user_config.yml`文件中定义的版本相匹配。
+
+
+== 将第三方组件与Mule Runtime Buildpack集成
+
+===  AppDynamics集成
+
+Mule运行时buildpack通过标准的JavaBuildpack App Dynamics扩展提供与App Dynamics的即时可用的集成。如果应用程序在 link:https://github.com/cloudfoundry/java-buildpack/blob/master/docs/framework-app_dynamics_agent.md[命名约定]后面绑定了自定义服务并指向App Dynamics实例，则JVM将以适当的标志开始连接。
+
+查看有关App Dynamics集成 link:https://github.com/cloudfoundry/java-buildpack/blob/master/docs/framework-app_dynamics_agent.md[这里]的更多详情
+
+=== 与Java Buildpack支持的其他组件集成
+
+可以通过`config/components.yml`文件启用最初由官方 link:https://github.com/cloudfoundry/java-buildpack[`Java的buildpack`]支持的其他组件/代理，并根据需要取消注释条目。虽然这些组件/代理应使用Java Buildpack标准扩展机制为JVM提供所需的标志，但请记住，这些组件未经MuleSoft测试或支持。
+
+== 调试和排除故障
+
+=== 调试Buildpack供应过程
+
+添加一个`JBP_LOG_LEVEL=debug`环境变量以生成整个buildpack供应过程的详细调试输出，如部分（＃Application-specific-configuration）所述。调试信息将在应用程序日志上生成。
+
+
+===  JVM诊断信息
+
+如果通过builpack部署在Cloud Foundry环境中的运行时遇到问题，MuleSoft支持团队将请求JVM堆转储或JVM线程转储用于诊断目的。为了生成一个，您需要登录运行应用程序的CF容器，使用JDK工具生成转储，然后通过CF env外部的`scp`或`sftp`上传数据。
+
+[IMPORTANT]
+*Make sure your application always has more disk space allocated than memory, to be able to store the dumps on the container transient storage file system and upload to an external SFTP or SSH server.*
+
+要执行此过程，请按照下列步骤操作：
+
+1.通过SSH登录您的应用程序容器
++
+如果您的空间配置允许，您可以使用CF CLI启用SSH访问：
++
+----
+cf enable-ssh MY-APP
+----
++
+然后您可以通过以下命令登录容器：
++
+----
+cf ssh MY-APP
+----
++
+（如果您的空间不允许SSH访问，请向CF管理员请求或在允许它的空间上部署应用程序）
++
+有关启用SSH访问的更多信息，请访问：https：//docs.cloudfoundry.org/devguide/deploy-apps/ssh-apps.html
+
+
+1.查找JVM进程PID
++
+您可以通过以下命令确定运行Mule运行时的JVM进程：
++
+----
+$ PID=$(pgrep java)
+----
+
+1.生成诊断数据
++
+您可以使用JDK工具包来生成MuleSoft支持团队请求的诊断数据。
++
+例如，要使用Oracle JDK生成JVM堆转储，请使用以下命令：
++
+----
+$ /home/vcap/app/.java-buildpack/oracle_jre/bin/jmap -dump:format=b,file=heap.bin $PID
+----
+
+1.要使用Open JDK生成JVM堆转储，请使用以下命令：
++
+----
+ $ /home/vcap/app/.java-buildpack/open_jdk_jre/bin/jmap -dump:format=b,file=heap.bin $PID
+----
++
+例如，要使用Oracle JDK生成JVM线程转储，请使用以下命令：
++
+----
+$ /home/vcap/app/.java-buildpack/oracle_jre/bin/jstack -dump:format=b,file=heap.bin $PID
+----
+
+1.要使用Open JDK生成JVM线程转储，请运行以下命令：
++
+----
+ $ /home/vcap/app/.java-buildpack/open_jdk_jre/bin/jstack -dump:format=b,file=heap.bin $PID
+----
+
+1.将诊断数据发送到外部SSH / SFTP服务器
++
+您可以使用`scp`或`sftp`将转储上传到外部服务器，您可以从中将其提供给MuleSoft支持团队：
++
+----
+scp heap.bin user@externalserver.myorg.com:/home/user
+----
+
+== 为MuleSoft支持团队提供诊断信息
+
+如果您需要通过MuleSoft支持流程报告Mule运行时或构建包本身的问题，则必须提供以下信息：
+
+* 提供buildpack诊断信息。
+* 如果问题与Anypoint运行时引擎相关，请提供JVM诊断信息。
+* 如果问题与buildpack供应过程相关，请提供调试buildpack供应过程。
+
+== 另请参阅
+
+*  link:https://docs.run.pivotal.io/devguide/deploy-apps/manifest.html[使用应用程序清单进行部署]

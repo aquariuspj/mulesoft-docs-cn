@@ -1,0 +1,516 @@
+=  Anypoint连接器教程
+
+image:mulestudio.png[mulestudio]
+在学习完 link:/anypoint-studio/v/5/basic-studio-tutorial[基本]和 link:/getting-started/content-based-routing[基于内容的路由]中的一些基本功能之后，您就可以开始使用**Anypoint Connectors**开发更复杂的应用程序了。
+
+开箱即用，Mule带有一组连接器，您可以轻松地将这些连接器添加到流程中，以将您的应用程序与几种常见软件（SaaS）应用程序（例如Salesforce，Google Contacts，Facebook和Twitter）连接起来。这些连接器大大简化了与SaaS提供商的API的交互，因为它们为所有可用的连接器操作提供了预构建的方法。由于各个连接器的大部分功能都取决于其目标，因此每个连接器都存在 http://www.mulesoft.org/connectors[具体文件];也就是说，几乎所有的连接器都有很多共同的特点。在本教程中创建并运行应用程序后，您应该能够将所学知识应用于将应用程序连接到各种SaaS应用程序。
+
+== 假设
+
+本教程假设您拥有 link:/anypoint-studio/v/6/download-and-launch-anypoint-studio[下载并安装Mule Studio]。如果您之前没有使用Eclipse或基于Eclipse的IDE的经验，请查看 link:/anypoint-studio/v/5/index[Mule Studio界面]的简要介绍和描述 link:/mule-user-guide/v/3.4/global-elements[骡子的全球元素]的文档。此外，请考虑遵循 link:/anypoint-studio/v/5/basic-studio-tutorial[基本]和 link:/getting-started/content-based-routing[基于内容的路由]教程。
+
+== 目标
+
+在本教程中，您的目标是：
+
+. 查看获取Twitter API访问和凭证的流程。
+. 在Mule Studio中创建一个使用连接器访问Twitter API的应用程序。
+. 了解如何在应用程序中使用Global Elements和Foreach范围。
+. 在嵌入Mule Studio的本地运行时运行应用程序。
+. 使用浏览器测试应用程序。
+. 停止应用程序。
+.  _（可选）_将您的知识应用于额外的信用挑战。
+
+
+== 获取对Twitter API的访问权限
+
+为了使用Twitter API，您必须先创建一个Twitter开发者帐户并获取一组凭据。
+
+. 如果您还没有，请创建一个 http://twitter.com/signup[普通的Twitter帐户]。您可能希望创建一个模拟帐户进行测试，因为您将在此练习中向Twitter发布内容。
+. 访问https://dev.twitter.com/[Twitter开发人员页面]并使用您的Twitter帐户凭据登录。此活动会为您创建一个单独的开发人员帐户，并与您的常规Twitter帐户建立关联。 +
+. 要创建新的*Twitter Application*，请导航至https://dev.twitter.com/apps/new
+. 根据下面的表格和图像完成*Application Details*表单。
++
+[%autowidth.spread]
+|===
+| *Field*  | *Value*
+| *Name*  |您的应用程序的名称必须是唯一的Twitter系统，并且不能包含单词"Twitter"。
+| *Description*  |简要介绍您正在构建的应用程序。
+| *Website*  |然而，这里需要一个条目，因为这个Twitter应用程序不会公开，这个字段是没有意义的;输入一个简单的占位符值。
+| *Callback URL*  |保留空白。
+|===
+
++
+image:devacct1.png[devacct1]
++
+
+. 同意条款，为CAPTCHA输入一个值，然后点击*Create your Twitter application*。
+. （可选）访问*Settings*选项卡，将*Application Type*从`Read only`调整为`Read and Write`。使用*Application Type*下的单选按钮调整设置，然后保存更改。 +
+ +
+image:devacct4.png[devacct4] +
+
+. 访问*Details*标签。点击屏幕底部的按钮创建一个*Access Token*（见下图）。 +
+
++
+image:devacct2.png[devacct2] +
++
+
++
+[TIP]
+====
+使用*Access Token*，您可以通过自己的应用程序轻松连接Twitter API。但是，您对API的访问权限仅限于您自己的用户帐户。就本教程而言，访问令牌为您提供应用程序与Twitter API进行交互所需的访问权限。
+
+但是，如果您想公开公开此类应用程序，则需要将应用程序配置为 link:/mule-user-guide/v/3.4/using-a-connector-to-access-an-oauth-api[通过OAuth进行身份验证]。
+====
++
+
+. 刷新浏览器中的页面以显示*Access token*和*Access token secret*的值。因为你需要在你的Mule应用程序中输入这些值，所以记录Twitter中的以下四个键（参见下图）：+
+.. 使用者密钥
+{0}}消费者的秘密
+.. 访问令牌
+.. 访问令牌密钥+
+ +
+image:devacct3.png[devacct3]
+
+== 使用连接器建模流程
+
+启动Mule Studio并创建一个名为`Connector Tutorial`的新Mule项目。如果您在启动Studio和创建项目时需要更多指导，请参阅 link:/anypoint-studio/v/5/basic-studio-tutorial[基本工作室教程]。
+
+接下来，使用Studio调色板中的构建模块对以下应用程序进行建模：
+
+. 收到一个HTTP请求
+. 通过Twitter的API提交查询以检索用户的推文时间表
+. 记录每个单独的推文，并在Studio控制台中显示推文
+
+您可以在Studio中使用以下构建块对此应用程序进行建模：
+
+[%autowidth.spread]
+|===
+| link:/mule-user-guide/v/3.4/http-endpoint-reference[HTTP端点]  |允许您的Mule应用程序通过HTTP或HTTPS协议连接到Web资源;在调色板的Endpoints部分找到它
+| https://www.anypoint.mulesoft.com/exchange/?type=connector&search=twitter [Twitter连接器]  |可让您针对一个或多个Twitter资源执行操作;在调色板的Cloud Connectors部分找到它
+| Twitter全局元素 |定义连接凭证以连接到Twitter的API;在Studio的全局元素选项卡中定义此项
+| link:/mule-user-guide/v/3.4/foreach[Foreach范围]  |迭代地处理POJO中的每个项目
+| link:/mule-user-guide/v/3.4/logger-component-reference[记录器组件]  |根据Mule表达式的值记录消息或活动;在屏幕右侧的调色板的组件部分找到它
+|===
+
+将这些构建块拖放到画布上以便可视化地构建或建模一个流，如下所示。
+
+image:foreach2.png[foreach2]
+
+一旦你配置了它的单个元素，你将在下一节中做到这一点，这个流程将完成你设定的用这个应用程序实现的目标。您选择并放置在画布上的每个构建块都将执行应用程序的部分功能，如下图所示。
+
+image:connector_tutorial_activities.png[connector_tutorial_activities] +
+
+== 配置流程元素
+
+接下来，配置流程元素以使应用程序接受HTTP请求，并向用户的推文时间表提交对Twitter的查询。当你调用`+http://localhost:8081/gettweets?sname=mulesoft+`时，应用程序应该向Twitter发送一个请求，以检索特定用户的所有最近的推文，在这种情况下，它是MuleSoft。
+
+几乎所有的Mule元素都提供配置选项，您可以通过以下两种方式之一进行设置：
+
+通过Studio的可视化编辑器控制台中的构建块*Properties* *Editor*创建* 
+通过Studio的*XML*编辑器或任何其他XML编辑环境中的XML代码* 
+
+以下说明将指导您如何在可视化编辑器和XML中配置每个构建块。使用选项卡在可视化编辑器和XML编辑器的指令之间来回切换。
+
+===  HTTP端点
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+Click the *HTTP Endpoint* on your canvas to view its Properties Editor, then enter values for the fields according to the table below.
+
+image:http2.png[http2] +
+
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*Display Name* |`HTTP`
+|*Host* |`localhost`
+|*Port* |`8081`
+|*Path* |`gettweets`
+|===
+....
+[tab,title="XML Editor or Standalone"]
+....
+Configure the HTTP inbound endpoint as follows:
+
+[source, xml, linenums]
+----
+<http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP" path="gettweets"/>
+----
+
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*doc:name* |`HTTP`
+|*host* |`localhost`
+|*port* |`8081`
+|*path* |`gettweets`
+|===
+....
+------
+
+===  Twitter连接器
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+Click the *Twitter connector* to open its Properties Editor, then enter values for the fields according to the table below.
+
+image:twt2.png[twt2]
+
+[%header%autowidth.spread]
+|===
+|Field |Value |Description
+|*Display Name* |`Twitter` |The name Studio displays for the element in the flow.
+|*Operation* |`Get user timeline by screen name` |Defines the operation to perform on Twitter; this value returns a tweet stream from the twitter user you specify.
+|*Screen Name* |`&#x0023;[message.inboundProperties['http.query.params']['sname']]` |Defines the Twitter user; set to an expression that extracts a parameter from the HTTP request.
+|*Count* |`20` |Defines the number of tweets the query returns.
+|===
+....
+[tab,title="XML Editor or Standalone"]
+....
+Configure the HTTP inbound endpoint as follows (note that one attribute is excluded on purpose; you will add the attribute in the next step):
+
+[source, xml, linenums]
+----
+<twitter:get-user-timeline-by-screen-name doc:name="Twitter" screenName="#[message.inboundProperties['http.query.params']['sname']]"/>
+----
+
+[%header%autowidth.spread]
+|===
+|Element |Description
+|*`twitter:get-user-timeline-by-screen-name`* |Defines the operation to perform on Twitter; this value returns a tweet stream from the twitter user you specify.
+|===
+
+[%header%autowidth.spread]
+|===
+|Attribute |Value |Description
+|*doc:name* |`Twitter` |The name Studio displays for the element in the flow.
+|*screenName* |`&#x0023;[message.inboundProperties['http.query.params']['sname']]` |Defines the twitter user; set to an expression that extracts a parameter from the HTTP request.
+|===
+....
+------
+
+===  Twitter全球元素
+
+*Global Element*允许您输入一次配置信息，然后引用多个流中元素的凭据。在这种情况下，您可以使用Twitter全局元素来配置您的流程中的Twitter连接器在查询Twitter时使用的所有连接详细信息和API访问凭证。
+
+详细了解 link:/mule-user-guide/v/3.4/global-elements[骡子的全球元素]。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Click the *Twitter connector* to open its Properties Editor, then click the plus sign next to the Config Reference field.
++
+image:twt3.png[twt3]
+
+. Enter values for the fields according to the table below.
++
+image:twt4.png[twt4]
++
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*Name* |`Twitter1`
+|*Access Key* |Your unique Access Token value as obtained from Twitter
+|*Access Secret* |Your unique Access Token Secret value as obtained from Twitter
+|*Consumer Key* |Your unique Consumer Key value as obtained from Twitter
+|*Consumer Secret* |Your unique Consumer Secret value as obtained from Twitter
+|*Use SSL* |`true` (checked)
+|===
++
+. Click *OK* to save the configurations, then, in the *Config Reference* field of the Twitter connector in your flow, use the drop-down to select the name of the global element you just created, `Twitter1`.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+. Above all flows in your application, configure the global element as follows:
++
+[source, xml, linenums]
+----
+<twitter:config name="Twitter1" accessKey="" accessSecret="" consumerKey="" consumerSecret="" doc:name="Twitter1">
+        <twitter:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+</twitter:config>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*name* |`Twitter1`
+|*accessKey* |Your unique Access Token value as obtained from Twitter
+|*accessSecret* |Your unique Access Token Secret value as obtained from Twitter
+|*consumerKey* |Your unique Consumer Key value as obtained from Twitter
+|*consumerSecret* |Your unique Consumer Secret value as obtained from Twitter
+|*doc:name* |Twitter1
+|===
++
+. Add a child element to the global element, configuring as follows:
++
+[source, xml, linenums]
+----
+<twitter:config name="Twitter1" accessKey="" accessSecret="" consumerKey="" consumerSecret="" doc:name="Twitter1">
+        <twitter:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+</twitter:config>
+----
++
+[%header%autowidth.spread]
+|===
+|Child Element
+|`twitter:connection-pooling-profile`
+|===
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*`initialisationPolicy`* |`INITIALISE_ONE`
+|*`exhaustedAction`* |`WHEN_EXHAUSTED_GROW`
+|===
++
+. Revisit the configuration of the Twitter connector in your flow. Add the *`config-ref`* attribute as follows:
++
+[source, xml, linenums]
+----
+<twitter:get-user-timeline-by-screen-name config-ref="Twitter1"      doc:name="Twitter" screenName="#[message.inboundProperties['http.query.params']['sname']]"/>
+----
+
+....
+------
+
+===  Foreach范围
+
+当Twitter返回对查询的响应时，有效负载是一个对象数组，每个对象描述一条推文及其参与元数据。该应用程序需要访问的唯一字段是`, as it contains the actual tweet content. You can access the text of the latest tweet via the expression `＃[payload [0] .text]`，但该应用程序使用Foreach范围来访问数组中每条推文的文本。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+Click the *Foreach* to open its Properties Editor, then enter values for the fields according to the table below.
+
+image:foreach.png[foreach]
+
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*Display Name* |`For Each`
+|*Counter Variable Name* |`counter`
+|*Batch Size* |`1`
+|*Root Message Variable Name* |`rootMessage`
+|===
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Configure the *Foreach* scope as follows:
+
+[source, xml, linenums]
+----
+<foreach doc:name="For Each">
+</foreach>
+----
+
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*doc:name* |`For Each`
+|===
+....
+------
+
+=== 记录器
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+Click the *Logger* to open its Properties Editor, then enter values for the fields according to the table below.
+
+image:log1.png[log1]
+
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*Display Name* |`Logger`
+|*Message* |`#[payload.text]`
+|*Level* |`INFO`
+|===
+....
+[tab,title="xml Editor or Standalone"]
+....
+Configure the *Logger*, _inside the Foreach scope_, as follows:
+
+[source, xml, linenums]
+----
+<foreach doc:name="For Each">
+         <logger message="#[payload.text]" level="INFO" doc:name="Logger"/>
+</foreach>
+----
+
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*doc:Name* |`Logger`
+|*message* |`#[payload.text]`
+|*level* |`INFO`
+|===
+....
+------
+
+完整的应用程序XML一经配置，应该看起来像下面的代码。
+
+[NOTE]
+====
+请记住，要使此示例有效，您必须手动配置*Twitter global element*（`twitter:config`元素的以下值）：
+
+* 访问密钥
+* 访问秘密
+* 消费者密钥
+* 消费者的秘密
+====
+
+[source, code, linenums]
+----
+?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:twitter="http://www.mulesoft.org/schema/mule/twitter" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/twitter http://www.mulesoft.org/schema/mule/twitter/2.4/mule-twitter.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <twitter:config name="Twitter1" accessKey="" accessSecret="" consumerKey="" consumerSecret="" doc:name="Twitter">
+        <twitter:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </twitter:config>
+    <flow name="connector_tutorialFlow1" doc:name="connector_tutorialFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP" path="gettweets"/>
+        <twitter:get-user-timeline-by-screen-name config-ref="Twitter1"      doc:name="Twitter" screenName="#[message.inboundProperties['http.query.params']['sname']]"/>      
+        <foreach doc:name="For Each">
+         <logger message="#[payload.text]" level="INFO" doc:name="Logger"/>
+        </foreach>
+    </flow>
+</mule>
+----
+
+== 运行应用程序
+
+在构建，配置和保存新应用程序后，您就可以在嵌入式Mule服务器上运行它（作为Mule Studio捆绑下载的一部分）。
+
+. 在*Package Explorer*窗格中，右键点击`Connector Tutorial.mflow`文件，然后选择*Run As*> *Mule Application*。 （如果你还没有保存，Mule会提示你现在保存。）
+.  Mule立即开始启动应用程序并运行。启动过程完成后，Studio将在控制台中显示一条消息，内容为`Started app 'connector_tutorial'`。 +
++
+image:started_connector_app.png[started_connector_app]
+
+== 使用应用程序
+
+. 打开Web浏览器，然后导航到以下URL：+
+`+http://localhost:8081/gettweets?sname=mulesoft+`
+. 此请求向应用程序发起请求，最终返回您的浏览器提示您下载的`gettweets`文件。不要下载文件，请返回Mule Studio并检查控制台的内容以获取记录的消息。该控制台显示一组20条日志条目，其中列出了MuleSoft官方Twitter账户的最新推文（见下图）。
++
+image:tweets.png[微博] +
++
+. 在您的浏览器中，将`mulesoft`的值替换为另一个Twitter用户的屏幕名称。按enter键，然后在Studio控制台中查看记录的结果。
+
+== 停止应用程序
+
+要停止应用程序，请点击控制台上方的红色正方形*Terminate*图标。
+
+image:Studio-stopcbrapp.png[工作室stopcbrapp]
+
+== 额外信用
+
+现在您已熟悉连接器，请尝试将您的知识应用于额外的任务。修改您的应用程序，以便在从用户获取推文后，将其中最后一个发布到您自己的演示Twitter帐户。
+
+因为在不承认其来源的情况下复制某人的推文是不礼貌的，请记住，您的推特应该遵循此结构*RT @screenname : tweet text*
+
+如果您需要帮助，请使用下面的提示。
+
+*How do I get the username?*
+
+在您的应用中插入第二个Twitter连接器，然后重新使用screenName属性（“屏幕名称”字段）中的表达式。
+
+[source]
+----
+#[message.inboundProperties['http.query.params']['sname']]
+----
+
+或者，您可以使用更可靠的表达式：每条推文都附带元数据，您可以访问您需要的变量 - 从此元数据中筛选名称。在这种情况下，可以使用以下表达式访问屏幕名称：
+
+[source, code, linenums]
+----
+#[payload[0].user.screenName]
+----
+
+*How do I alter the tweet to include RT @username: ?*
+
+有几种方法可以完成这个任务，其中之一就是将额外的文本添加到新变量中的推文中。但是，您可以使用 link:/mule-user-guide/v/3.4/set-payload-transformer-reference[设置负载]转换器获取快捷方式。使用由多个部分组成的表达式替换整个有效内容的内容，例如以下内容：
+
+[source]
+----
+RT @#[payload[0].user.screenName]:  #[payload[0].text]
+----
+
+image:set+payload2.png[设置+ payload2]
+
+*How do I post the tweet to Twitter?*
+
+您可以配置第二个twitter连接器以使用*Operation*字段执行各种操作。将操作设置为`Update Status`。如果您在上一步中更换了有效负载，只需使用`#[payload]`作为状态。如果您将推文的文本存储在变量中，则改为调用该变量。
+
+image:twp.png[TWP]
+
+==== 答案
+
+*View the answer, including explanation of steps and complete code*
+
+. 将*Set Payload*消息处理器附加到流程的末尾，然后单击以打开其“属性编辑器”。
+. 在*Value*字段中，将有效载荷设置为`RT @#[payload[0].user.screenName]: #[payload[0].text]`。这使用Get timeline操作返回的对象中的两个变量：screenName和tweet文本。
+. 将另一个*Twitter Connector*添加到流程末尾，然后单击以打开其属性编辑器。
+. 将其*Config Reference*设置为与第一个Twitter连接器相同的全局元素。
+. 将其操作设置为*Update Status*，然后将状态设置为`#[payload]`。
+
+image:solution.png[解]
+
+[NOTE]
+====
+image:information.png[信息]请记住，要使此示例有效，您必须手动配置全局Twitter连接器（`twitter:config`元素）的以下值：
+
+*  ACCESSKEY
+*  accessSecret
+*  consumerKey
+*  consumerSecret。
+====
+
+[source, xml, linenums]
+----
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:twitter="http://www.mulesoft.org/schema/mule/twitter" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/twitter http://www.mulesoft.org/schema/mule/twitter/2.4/mule-twitter.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+ 
+    <twitter:config name="Twitter1" accessKey="" accessSecret="" consumerKey="" consumerSecret="" doc:name="Twitter">
+        <twitter:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </twitter:config>
+    <flow name="connector_tutorialFlow1" doc:name="connector_tutorialFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP" path="gettweets"/>
+        <twitter:get-user-timeline-by-screen-name config-ref="Twitter1"      doc:name="Get Twitter Timeline" screenName="#[message.inboundProperties['http.query.params']['sname']]"/>
+        <foreach doc:name="For Each">
+            <logger message="#[payload.text]" level="INFO" doc:name="Logger"/>
+        </foreach>
+        <set-payload value="RT @#[payload[0].user.screenName]:  #[payload[0].text]" doc:name="Set Payload"/>
+        <twitter:update-status config-ref="Twitter1" status="#[payload]" doc:name="Publish to Twitter"/>
+    </flow>
+</mule>
+----
+
+== 另请参阅
+
+*  *NEXT STEP:*了解如何从命令行 link:/mule-user-guide/v/3.4/starting-and-stopping-mule-esb[开始和停止骡]。
+* 请参阅https://www.anypoint.mulesoft.com/exchange/?type=connector [每个连接器的特定文档]。
+* 将 link:/mule-user-guide/v/3.4/installing-connectors[附加连接器]导入Studio的实例。

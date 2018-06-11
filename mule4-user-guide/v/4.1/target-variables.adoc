@@ -1,0 +1,134 @@
+利用目标参数丰富数据= 
+
+在Mule应用程序中创建流时，可能需要将数据存储在变量中，以便流中的任何组件都可以使用它。非无效操作（例如对文件连接器的读取操作）可以将它们返回的消息数据存储在变量中。一旦定义，用目标参数创建的变量就可以在流程中使用，并且可以像访问任何其他变量一样访问它们。
+
+您经常通过这些参数定义变量：
+
+* 目标（`target`）：要存储消息数据的变量的名称。名称只能包含数字，字符和下划线。例如，名称中不允许使用连字符。
+* 目标值（`targetValue`）：要存储在目标变量中的数据的值。默认情况下，该值是消息负载（`payload`）。该字段接受变量接受的任何值：任何支持的数据类型，DataWeave表达式，关键字`payload`，`attributes`和`message`，但不是关键字`vars`。
+
+理解设置目标变量会改变流程中消息的典型过程非常重要。通常情况下，操作会输出与收到的输入不同的消息。但是，当您从操作设置变量时，操作会向输出中的_next_组件输出与接收到的输入相同的消息。例如，假设您有一个由组件A组成的流，然后是组件B，目标值为`myMessage`，然后是组件C.在这种情况下，组件C将收到B从A接收到的相同消息。
+
+// TODO：添加A，B，C的图形
+
+这里，读取操作将`readme.txt`的有效载荷存储在`myVar`中：
+
+----
+<file:read path="readme.txt" target="myVar" />
+----
+
+请注意，目标变量`myVar`默认存储有效负载。如果要存储除完整负载以外的其他内容，则只需指定一个目标值（`targetValue`）。
+
+
+在这里，整个消息存储在`myVar`中：
+
+----
+<file:read path="readme.txt" target="myVar" targetValue="#[message]" />
+----
+
+通过这种方式，变量`myVar`不仅包含文件的内容，还包含所有相关的元数据。
+
+* 用于访问文件内容的表达式：`#[myVar.payload]`
+* 用于访问文件元数据的表达式：`#[myVar.attributes]`
+
+这里，只有文件大小存储在`myVar`中：
+
+----
+<file:read path="readme.txt" target="size" targetValue="#[attributes.size]" />
+----
+
+这些场景描述了一些可能使用目标变量的情况。
+
+== 情景：在操作中设置目标变量
+
+假定您想记录由数据库连接器操作（例如Insert）返回的整个消息（有效内容和属性）。在操作之后不使用Set Variable组件，您可以通过直接向操作添加目标变量来捕获消息数据：
+
+----
+<db:insert config-ref="dbConfig" target="result" targetValue="#[message]">
+    <db:sql>INSERT INTO PLANET(POSITION, NAME, DESCRIPTION) VALUES (777, 'Pluto', :description)</db:sql>
+    <db:parameter-types>
+        <db:parameter-type key="description" type="CLOB"/>
+    </db:parameter-types>
+    <db:input-parameters>
+        #[{'description' : payload}]
+    </db:input-parameters>
+</db:insert>
+----
+
+插入操作的* 目标变量：`result`
+设计中心内的* 目标值：`message`，Anypoint Studio中的`#[message]`。
+
+然后你可以像这样从Logger中获取结果：
+
+----
+<logger level="INFO" doc:name="Logger" doc:id="8dca355c-a85c-44db-8c53-5b9c188a2431" message="Payload is: #[vars.result.payload] and attributes are: #[vars.result.attributes]"/>
+----
+
+* 消息：`Payload is: #[vars.result.payload] and attributes are: #[vars.result.attributes]`
+
+假设您想要记录行星数据库中第一个条目的名称。您可以通过数据库连接器的选择操作来定义一个像这样的目标变量：
+
+----
+<db:select config-ref="dbConfig" target="planetName" targetValue="#[payload[0].name]">
+    <db:parameterized-query>select * from PLANET order by ID</db:parameterized-query>
+</db:select>
+----
+
+* 选择操作的目标变量：`customerName`
+设计中心内的* 目标值：`payload[0].name`，Anypoint Studio中的`#[payload[0].name]`。
+
+然后你可以像这样从Logger中获取结果：
+
+----
+<logger level="INFO" doc:name="Logger" doc:id="8dca355c-a85c-44db-8c53-5b9c188a2431" message="#['Customer name is: ' ++ vars.customerName]"/>
+----
+
+* 消息：`'Customer name is: ' ++ vars.customerName`
+
+== 情景：使用存储值作为操作的输入
+
+假设您想要访问在发现某颗行星后发现的所有行星。您可以在选择操作中创建名为`discoveryDate`的目标变量，以捕捉行星的发现日期。
+
+----
+<db:select config-ref="dbConfig" target="discoveryDate" targetValue="#[payload[0].discoveryDate]">
+    <db:sql>select discoveryDate from PLANET where name = :name</db:sql>
+    <db:input-parameters>
+        #[{'name' : 'pluto'}]
+    </db:input-parameters>
+</db:select>
+----
+
+* 检索操作的目标变量：`discoveryDate`
+
+然后，可以使用流中其他操作的Input参数（例如对数据库连接器进行选择操作），以使变量可用于查询中，例如：
+
+----
+<db:select config-ref="dbConfig" target="discoveryDate" targetValue="#[payload[0].discoveryDate]">
+    <db:sql>select * from PLANET where discoveryDate > :discoveryDate</db:sql>
+    <db:input-parameters>
+        #[{'discoveryDate' : vars.discoveryDate}]
+    </db:input-parameters>
+</db:select>
+----
+
+* 选择操作的输入参数定义：
+ ** 键：`discoveryDate`
+设计中心的 ** 价值：`vars.discoveryDate`，Anypoint Studio中的`#[vars.discoveryDate]`。
+
+
+== 情景：绕过普通消息流
+
+假设您想要将多个记录插入到位于消息有效负载中的数据库中，然后将相同的记录传递给流中下一个组件进行进一步处理。尽管要对数据库连接器使用批量插入操作来插入记录，但该操作会返回一个成功消息，该消息将替换当前有效内容，从而使记录无法访问。因此，要将记录传递到下一个组件，而不是使用Bulk Insert结果替换有效内容，可以将成功消息存储在目标变量中，例如：
+
+* 目标变量：`bulkInsertResult`
+
+然后，流中的下一个操作可以处理位于有效负载中的记录。
+
+== 另请参阅
+
+*  link:intro-programming-model[Mule 4编程模型]
+*  link:about-mule-event[关于骡子事件]
+*  link:about-mule-variables[关于Mule事件中的变量]
+
+//文件被删除，没有明显的替换：
+// * link:/connectors/database-sync-workflow[工作流程：同步数据库]

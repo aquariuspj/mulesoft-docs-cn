@@ -1,0 +1,397 @@
+= 连接器迁移指南 -  DevKit 3.5到3.6
+:keywords: release notes, devkit, migration
+
+
+*January 16, 2015*
+
+== 兼容性
+
+[%header%autowidth.spread]
+|===
+| {软件{1}}版本
+| Mule ESB  | 3.6
+| {JDK {1}} 1.7
+|===
+
+== 从DevKit 3.5迁移到3.6
+
+以下各节介绍了如何将Anypoint Connector迁移到3.6。
+
+=== 将@TestConnectivity注释添加到@Connect方法
+
+在使用@Connect注释之前，DevKit默认启用*Test Connectivity*功能：
+
+image:36TestConnection.png[图片]
+
+对于版本3.6和更高版本，DevKit增强了测试连接功能，可用于除了@Connect方法以外的连接管理方案。用@Connect注释的方法现在还必须使用@TestConnectivty进行注释以启用测试连接功能，并且`@TestConnectivity(active=false)`将其禁用。
+
+新增 - 添加@TestConnectivity以启用：
+
+
+[source,java, linenums]
+----
+@ConnectionManagement(configElementName = "config-type",
+  friendlyName = "Basic Auth type strategy")
+public class ConnectorConnectionStrategy
+{
+    ...
+    @Connect
+    @TestConnectivity
+    public void connect(@ConnectionKey String username,
+      @Password String password) throws ConnectionException {
+        ...
+    }
+    ...
+}
+----
+
+旧的 - 测试连接功能建立在@Connect中：
+
+
+[source,java, linenums]
+----
+@Connector(...)
+public class ConnectorConnectionStrategy
+{
+    ...
+    @Connect
+    public void connect(@ConnectionKey String username,
+      @Password String password) throws ConnectionException {
+        ...
+    }
+    ...
+}
+----
+
+
+==== 自定义标签
+
+在版本3.6和更高版本中，@TestConnectivity批注支持自定义标签，以便Studio可以稍后阅读以在UI中绘制不同的按钮。 +
+ +
+自定义按钮的代码：
+
+
+[source,java, linenums]
+----
+@ConnectionManagement(configElementName = "config-type",
+    friendlyName = "Basic Auth type strategy")
+public class ConnectorConnectionStrategy
+{
+    ...
+    @Connect
+    @TestConnectivity(label="My custom button")
+    public void connect(@ConnectionKey String username,
+      @Password String password) throws ConnectionException {
+        ...
+    }
+    ...
+}
+----
+
+image:36BasicAuthTypeStrategy.png[图片]
+
+=== 已弃用：@Connect和@Module注释中的connectivityTesting属性。
+
+如果连接器使用@Connector中的connectivityTesting属性来禁用测试连接功能，请删除该属性，并在@TestConnectivity中添加分配给*false*的{​​{0}}属性。
+
+新建 - 通过将@TestConnectivity设置为false来禁用测试连接：
+
+[source,java, linenums]
+----
+@Connector(name = "my", schemaVersion = "2.0", friendlyName = "MyConnector")
+@TestConnectivity(active=false)
+public class MyConnector{
+    ...
+    @Connect
+    public void connect(@ConnectionKey String accessKey, String secretKey)
+        throws ConnectionException
+    {...}
+...
+}
+----
+
+旧 - 使用`connectivityTesting = ConnectivityTesting.DISABLED`禁用：
+
+
+[source,java, linenums]
+----
+@Connector(name = "my", schemaVersion = "2.0", friendlyName = "MyConnector", minMuleVersion = "3.5", metaData = MetaDataSwitch.OFF,
+connectivityTesting = ConnectivityTesting.DISABLED //DEPRECATED)
+public class MyConnector{
+    ...
+    @Connect
+    public void connect(@ConnectionKey String accessKey,
+        String secretKey) throws ConnectionException
+    {...}
+...
+}
+----
+
+=== 在处理器中添加config-ref = ""属性
+
+在3.6及更高版本中，DevKit要求您为每个处理器指定连接器配置，否则Studio在通过架构强制执行应用程序启动应用程序时失败。此选择发生在Studio开始时，您从*File*> *Open*选择现有连接器项目，或者创建一个新项目。
+
+这也会影响连接器的测试，因为很容易从XML文件中省略以进行测试。
+
+新增 - 添加`config-ref="<connector_name>-config"`：
+
+[source, xml, linenums]
+----
+<mongo:config name="mongo-config" username="user" password="pass">
+<flow name="SaveObject">
+    <mongo:save-object config-ref="mongo-config"
+      collection="#[map-payload:aCollectionName]" element-ref="myDbObject"/>
+</flow>
+----
+
+Old  -  config-ref未使用：
+
+[source, xml, linenums]
+----
+<mongo:config name="mongo-config" username="user" password="pass">
+<flow name="SaveObject">
+    <mongo:save-object collection="#[map-payload:aCollectionName]"
+        element-ref="myDbObject"/>
+</flow>
+----
+
+=== 已弃用：@Connect和@Module注释中的元数据属性
+
+在3.6及更高版本中，DevKit支持使用Static DataSense或Dynamic DataSense构建连接器的两种方式。在以前的版本中，您可以通过更改metaData属性的值来创建混合。在3.6及更高版本中，默认值为静态DataSense，除非连接器实现@MetaDataCategory，然后连接器设置为Dynamic DataSense。
+
+新建 - 默认为静态DataSense：
+
+
+[source,java, linenums]
+----
+@Connector(name = "my", schemaVersion = "2.0", friendlyName = "MyConnector")
+public class MyConnector
+    ...
+{
+----
+旧 - 使用metaData属性更改DataSense设置：
+
+[source,java, linenums]
+----
+@Connector(name = "my", schemaVersion = "2.0", friendlyName = "MyConnector",
+minMuleVersion = "3.5",
+metaData = MetaDataSwitch.OFF //DEPRECATED)
+public class MyConnector
+    ...
+{
+----
+
+===  @仅断开引发RuntimeException
+
+在3.6及更高版本中，@Disconnect方法现在只支持RuntimeException，任何其他异常都会导致连接器编译失败。 +
+ +
+New  - 引发RunTimeException：
+
+
+[source,java, linenums]
+----
+@Connector(...)
+public myConnector(){
+    ...
+    @Disconnect
+    public void disconnect() throws RuntimeException{
+        ...
+    }
+    ...
+}
+----
+
+旧 - 抛出IOException：
+
+[source,java, linenums]
+----
+@Connector(...)
+public myConnector(){
+    ...
+    @Disconnect
+    public void disconnect() throws IOException{
+        ...
+    }
+    ...
+}
+----
+
+== 迁移到连接器策略
+
+在3.6及更高版本中，@Connector级别不再支持连接，但在另一个组件中定义连接，并通过@ConnectionStrategy注释字段将其注入@Connector。这为开发连接器提供了更好的环境，并为创建多种认证类型提供了最简单的方法。
+
+=== 使用连接管理迁移连接器
+
+具有连接管理的旧式3.5连接器。===== 
+
+以前，连接和域方法在同一个类中：
+
+[source,java, linenums]
+----
+@Connector(name="connector", schemaVersion="1.0", friendlyName="My Connector")
+public class MyConnectionManagementConnector
+{
+    @Connect
+    public void connect(@ConnectionKey String username, @Password String password)
+        throws ConnectionException {
+         service.connectService(username,password);
+    }
+
+    @Disconnect
+    public void disconnect() {
+        service.disconnectService();
+    }
+
+    @ValidateConnection
+    public boolean isConnected() {
+        return service.connectionStatus();
+    }
+
+    @ConnectionIdentifier
+    public String connectionId() {
+        return service.connectionId();
+    }
+
+    @Processor
+    public String getUser(String user)
+    {
+        //Processor Logic
+    }
+
+}
+----
+
+===== 版本3.6和更高版本的策略模型
+
+要更新到连接策略模型：
+
+. 为连接策略创建一个新的Java类。
+. 使用@ConnectionManagement批注对类进行批注。
+. 将旧的@Connector类的四种连接方法（@Connect，@Disconnect，@ValidateConnection和@ConnectionIdentifier）移动到新的Connection Strategy类中：
+
++
+[source,java, linenums]
+----
+@ConnectionManagement(friendlyName="ConnectionManagement", configElementName="config-name")
+public class ConnectionManagementStrategy
+{
+    @Connect
+    public void connect(@ConnectionKey String username, @Password String password)
+        throws ConnectionException {
+       return true;
+    }
+
+    @Disconnect
+    public void disconnect() {
+        service.disconnectService();
+    }
+
+    @ValidateConnection
+    public boolean isConnected() {
+        return service.connectionStatus();
+    }
+
+    @ConnectionIdentifier
+    public String connectionId() {
+        return "001";
+    }
+
+}
+----
+. 将连接方法移至Connection Strategy类后，将@Connector设置为通过创建@ConnectionStategy字段并引用新策略来引用连接策略类。 @Connector然后从与服务连接的方式分离：+
++
+
+[source,java, linenums]
+----
+@Connector(name="myconnector", schemaVersion="1.0", friendlyName="Connector")
+public class MyConnector
+{
+    @ConnectionStrategy
+    private ConnectionManagementStrategy strategy;
+
+    public void setMyProperty(ConnectionManagementStrategy strategy)
+    {
+        this.strategy = strategy;
+    }
+
+    public ConnectionManagementStrategy getStrategy()
+    {
+        return this.strategy;
+    }
+
+    @Processor
+    public String getUser(String user)
+    {
+        //Processor Logic
+    }
+}
+----
+
+===  @ OverrideAtProcessors注解 - 已弃用
+
+此注释仅用于兼容目的。
+
+现在在3.6 @Connect参数不能从@Processor调用覆盖。
+
+对于这种情况，只需在连接器DevKit的一个@ConnectionManagement组件中，通过使用@OverrideAtProcessors注释@ConnectionStrategy，您可以添加@Connect参数作为@Processor的可选参数。这样，您可以直接从@Processor调用覆盖属性。
+
+@OverrideAtProcessor已被弃用，并且将在DevKit 4.0.0中被删除（因为此注释仅用于向后兼容），因为从3.5.0开始，可能会在全局元素中使用MEL表达式，这意味着对于多租户，不再存在需要在你的Mule应用程序的每个处理器中指定连接属性。
+
+=== 使用OAuth2迁移连接器
+
+OAuth2身份验证也会发生同样的情况。现在，@ OAuth2注释应该放置在与@Connector类不同的另一个类中，例如@ConnectionStrategy。
+
+[source,java, linenums]
+----
+@OAuth2( configElementName = "config-oauth2", friendlyName="OAuth2 type Strategy",
+authorizationUrl = "https://api.myconnector.com/uas/oauth/authorize",
+accessTokenUrl = "https://api.myconnector.com/uas/oauth/accessToken")
+public class ConnectorOAuth2Strategy
+{
+    /**
+     * The OAuth2 access token
+     */
+    @OAuthAccessToken
+    private String accessToken;
+
+    /**
+     * The OAuth2 consumer key
+     */
+    @Configurable
+    @OAuthConsumerKey
+    private String consumerKey;
+
+    /**
+     * The OAuth2 consumer secret
+     */
+    @Configurable
+    @OAuthConsumerSecret
+    private String consumerSecret;
+
+    ...
+}
+----
+
+迁移到@ConnectionStrategy类后，如上所述，通过创建@ConnectionStategy字段并引用新策略，将@Connector设置为引用连接策略类。 +
+
+[TIP]
+====
+*About Connection Strategies* +
+
+连接策略支持@ConnectionManagement，@ OAuth2，@Configuration和@HttpBasicAuth组件。
+====
+
+=== 使用OAuth V1迁移连接器
+
+目前@OAuth不支持作为@ConnectionStrategy，必须按照3.5中的相同方式实现@OAuth认证。
+
+== 另请参阅
+
+[%header%autowidth.spread]
+|===
+| {文献{1}}说明
+| link:/mule-user-guide/v/3.7/anypoint-connectors[Anypoint连接器]  | MuleSoft连接器用户指南。
+| https://www.anypoint.mulesoft.com/exchange/?type=connector [连接器]  |可从MuleSoft或第三方来源获得的连接器。
+| link:/anypoint-connector-devkit/v/3.7[Anypoint连接器DevKit]  |连接器开发信息。
+| link:/anypoint-connector-devkit/v/3.7/annotation-reference[注释参考]  |描述以at符号（@）开头的DevKit元素，您可以在连接符中使用它来标识Anypoint功能的类和函数。
+|===

@@ -1,0 +1,434 @@
+
+= 将Mule ESB 2.2迁移到Mule ESB 3.0
+:keywords: release notes, esb
+
+[TIP]
+====
+*Did you know . . .*
+
+MuleSoft发布了Studio GA，这是一款强大的Mule ESB新界面，可将开发时间缩短一半或更多。您可以在丰富但灵活的Studio环境中对所有应用程序进行建模，调试和部署。
+
+Studio提供双向（即基于图形和基于代码的）编辑，这意味着开发人员不再需要将易用性与其开发项目的细粒度控制进行交易。您在一种模式下所做的任何更改都会立即出现在另一模式中
+
+Mule Enterprise和Mule ION（现在称为CloudHub）开发人员可以在高级Studio XML编辑器中调整其应用程序，然后将它们重新部署到最初开发这些应用程序的Mule版本。
+
+Studio安装几乎是即时的，一对教程可以在40分钟内启动并运行。
+
+让我们踢！
+
+http://www.mulesoft.org/download-mule-esb-community-edition[在这里下载Studio]。
+====
+
+Mule 3.0的主要变化之一是`MuleContext`不再可以从静态上下文中获得。这使得Mule实例能够被正确包含，并且更容易嵌入到OSGi等其他环境中。
+
+== 访问MuleContext
+
+我们删除了静态访问MuleContext或Registry的方法。因此，`MuleServer.getMuleContext()`不再是静态的，`org.mule.impl.RegistryContext`已被完全删除。您现在可以通过以下方式访问`MuleContext`：
+
+* 从组件类中实现`org.mule.api.MuleContextAware`，Mule会在初始化生命周期阶段之前为您注入实例。
+* 在变换器中，扩展`AbstractTransformer`或`AbstractMessageAwareTransformer`，并且'muleContext'变量在基类中可用。
+* 从JSP页面或Servlet中，使用`servletContext.getAttribute(MuleProperties.MULE_CONTEXT_PROPERTY)`可以在ServletContext中使用MuleContext。
+* 入站和出站路由器在基类中具有'muleContext'变量。
+* 通过配置生成器（例如XML或脚本）配置的任何其他对象，实现`org.mule.api.MuleContextAware`以注入当前实例。
+
+== 部署模型
+
+部署模型已从Mule 2.2.x更改为Mule 3.0。您可以在这里找到更多信息。
+
+==  MuleMessage
+
+如果您需要创建一个`org.mule.DefaultMuleMessage`实例（通常Mule会为您处理这个），您必须按照上一节所述传递当前的`MuleContext`。
+
+===  TransactionManagerFactory
+
+`org.mule.api.transaction.TransactionManagerFactory`上的`create()`方法现在接受一个`org.mule.MuleConfiguration`参数，该参数可用于在事务管理器上设置全局事务配置。
+
+基于Spring的`org.mule.config.spring.factories.MuleTransactionManagerFactoryBean`对象已被添加，可用于将当前的TransactionManager注入其他对象。这在配置需要访问TransactionManager实例的XA数据源时很有用。
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesource.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:jbossts="http://www.mulesource.org/schema/mule/jbossts"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
+       http://www.mulesource.org/schema/mule/core http://www.mulesource.org/schema/mule/core/3.0/mule.xsd
+       http://www.mulesource.org/schema/mule/jbossts http://www.mulesource.org/schema/mule/jbossts/3.0/mule-jbossts.xsd">
+
+    <jbossts:transaction-manager/>
+
+    <!-- grab the transaction manager that is configured in Mule, in this case Ajruna -->
+    <spring:bean id="muleTM" class="org.mule.config.spring.factories.MuleTransactionManagerFactoryBean"/>
+
+    <!-- Data Source -->
+    <spring:bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardXADataSource" destroy-method="shutdown">
+        <spring:property name="transactionManager" ref="muleTM"/>
+        <spring:property name="driverName" value="org.apache.derby.jdbc.EmbeddedDriver"/>
+        <spring:property name="url" value="#{database.connection}"/>
+    </spring:bean>
+<mule>
+----
+
+=== 对象序列化
+
+`DefaultMuleMessage`，`DefaultMuleSession`和`DefaultMuleEvent`等对象的序列化需要对`MuleContext`进行反序列化后才能访问。新的标记界面`org.mule.util.store.DeserializationPostInitialisable`提供了此访问权限。该接口的工作方式与Java `Cloneable`接口相同。这是一个标记，期望私有（或受保护的）方法出现在对象上。此接口的实现者必须将以下方法添加到其类中：
+
+[source, java, linenums]
+----
+private void initAfterDeserialization(MuleContext muleContext) throws MuleException
+----
+在Mule中使用以下任何序列化机制时，在对象已被反序列化传递到当前\ {\ {MuleContext}中之后，将调用此方法：
+
+*  `org.mule.transformer.wire.SerializationWireFormat`
+*  `org.mule.transformer.wire.SerializedMuleMessageWireFormat`
+*  `org.mule.xml.transformer.wire.XStreamWireFormat`
+*  `org.mule.transformer.simple.ByteArrayToSerializable`变压器
+*  `org.mule.xml.transformer.XmlToObject` XStream转换器
+
+这样做而不是常规接口方法的原因不是使用公共方法混淆对象接口，只有在对象序列化时才需要公共方法，特别是因为这些对象是面向公众的API的一部分。
+
+===  AbstractMuleTestCase
+
+已向`org.mule.tck.AbstractMuleTestCase`（因此`org.mule.tck.functional.FunctionalTestCase`）添加了一些新方法来帮助通过Mule Registry注册对象。这意味着当创建或传入对象时，它们将被添加到注册表中，并且将注入任何必需的对象并执行对象生命周期。
+
+[source,java,linenums]
+----
+protected <T extends Object> T createObject(Class<T> clazz, Object... args) throws Exception
+----
+
+创建实例`clazz`的对象。然后它将在注册表中注册该对象，以便注入任何依赖关系，然后该对象将被初始化。请注意，如果需要将对象配置为无法传递给构造函数的其他状态，则应先创建一个实例，在该对象上设置任何其他数据，然后调用`initialiseObject(Object)`。
+
+还有一个方便的方法`createObject(Class)`，它将空参数传递给上面的方法。
+
+[source,java,linenums]
+----
+
+protected void initialiseObject(Object o) throws RegistrationException
+----
+
+`initialiseObject`是一种方便的方法，它将使用其哈希码作为关键字在注册表中注册一个对象。这将导致对象注入任何对象并调用生命周期方法。请注意，对象生命周期将被调用到相同的当前。
+
+==  CXF迁移
+
+CXF不再是骡子内部的运输工具。相反，它是一系列的消息处理器。您需要在配置中使用正常端点（非CXF），并在Mule 3中使用这些消息处理器。有关更多信息，请参阅从Mule 2升级CXF
+
+== 一致地使用Mule的表达式语言
+
+Mule现在使用文件和FTP传输中的_moveToPattern_，_workFileNamePattern_和_outputPattern_属性的表达式语言。之前的模式将不再被识别。有关转换模式的说明，请参阅 http://www.mulesource.org/display/MULE2USER/File+Transport#FileTransport-ExpressionFilenameParser[ExpressionFilenameParser文档]。
+
+== 在VM连接器中排队
+
+VM传输中的排队行为发生了变化，因此异步终端始终使用排队和同步终端永远不会执行此操作，因此可以提供合适的默认行为，无需显式配置排队，因为此问题表明，通过不需要配置排队。 3.0中的queueEvents属性已被删除。
+
+== 入站变压器
+
+入站转换器不再在组件调用时调用，而是作为安全过滤器之后的入站消息处理管道的一部分。这有几个后果：
+
+* 不再有可能通过使用不调用`context.transformMessage()`的自定义组件来跳过转换。
+* 入站转换总是发生在任何`SelectiveConsumer`入站路由器之前。这是2.2中的默认值，所以唯一的区别是现在不可能做相当于"transformFirst=false"
+* 入站转换总是发生在任何入口点解析器之前。这是2.2中的默认值，所以唯一的区别是，现在不可能做相当于"transformFirst=false"的
+* 此更改的确会影响*LegacyEntryPointResolverSet*的行为，尽管仍然遵循Mule 1.x中使用的解析器的类型和顺序，但在转换之前不再解析。
+
+== 默认传输变换器
+
+在Mule 2.x中，如果在端点上设置变换器，它将替换缺省的传输特定变换器（例如JMS端点中的JMSMessageToObject / ObjectToJMSMessage）。在3.x中，它将不会替换默认转换器，而是默认将在您指定的任何转换器之前应用_before_。如果您希望禁用默认转换器，则可以在端点上设置新属性`disableTransportTransformer=true`。
+
+==  MessageDispatchers
+
+分派器不再负责转换消息。任何呼叫如`Object data = event.transformMessage();`应替换为：`Object data = event.getMessage().getPayload();` +
+ 如果调度程序在将变量应用于消息之前需要特殊功能，则可以覆盖方法`AbstractMessageDispatcher.applyOutboundTransformers(MuleEvent event)`
+
+== 型号/服务
+
+直接/管道服务实现已被删除。* 这些没有通过配置暴露出来，从来没有真正使用过。
+
+== 入站路由器
+
+* 现在，入站路由器以流水线的方式一个接一个地调用，并将路由器用作下一个入站路由器的输入。
+* 由于"matchAll"在2.x中默认为"true"，因此不再有意义并且已被删除。
+这种方法的另一个结果是，通过在需要的地方添加过滤器以及现有的入站路由器（除了现在简单地实现为消息过滤器的选择性消费者）不再接受子过滤器元素。
+*  catchAllStrategy已被保存，但被调用时已被更改;而不是在没有入站路由器匹配时被调用，如果管道中的任何过滤器不匹配，它将被调用。
+*  ForwardingConsumer和SelectiveConsumer入站路由器仍受支持，但已被弃用。您不能再使用ForwardingConsumer选择跳过该组件，您应该使用 link:/mule-user-guide/v/3.7/using-interceptors[组件拦截器]来完成此操作。
+
+== 出站路由器
+
+*  TemplateEndpointRouter已被删除。通过启用useTemplates，几乎所有其他路由器（扩展FilteringOutboundRouter）都可以使用此功能。
+*  FilteringOutboundRouter（和所有子类）的useTemplates值已经在配置中公开ii）它的默认值从false更改为true。
+
+=== 响应路由器
+
+*  ResponseRouter不再存在于代码中，因为它们现在与入站路由器没有区别。
+**  CollectionAggregator对入站和响应很常见
+**  SingleResponseAggregator现在是多余的，不需要配置。
+*  xml配置仍支持Mule 2.x响应特定元素
+* 在实现自己的ResponseAggregators时，您现在需要扩展org.mule.routing.AbstractCorrelationAggregator而不是org.mule.routing.response.AbstractResponseAggregator
+
+== 消息信息映射
+
+现在直接在服务上配置，而不必在路由器上配置。简化配置，但不必在出站和异步回复中指定它。
+
+== 端点配置
+
+端点上的同步属性已被交换模式属性取代。根据经验
+
+在之前将同步设置为false的情况下，* 使用单向
+* 在之前同步的端点上使用请求响应
+
+请注意，某些传输不允许在传输特定的端点上配置交换模式。在这种情况下，传输仅支持单个交换模式，该模式被假定为所有端点的默认模式。
+
+== 例外策略
+
+异常策略已经修改为3.0。 link:/mule-user-guide/v/3.7/error-handling[请参阅文档]
+
+== 重新连接策略（前重试策略）
+
+重试策略已更名为重新连接策略3.1以避免误解。 link:/mule-user-guide/v/3.7/configuring-reconnection-strategies[请参阅文档]
+
+== 表达式评估器
+
+包括`#[headers:]`，`#[headers-list:]`，`#[attachments:]`和`#[attachments-list:]`的表达式可以检索给定作用域中的所有标题或附件。骡2.2中的记号是`#[headers:all]`。 IN Mule 3.0符号使用“**' instead of 'all'** `#[headers:` `]`或`#[headers:INBOUND:*]`。
+
+==  jBPM Transport
+
+jBPM传输已经过3.0版的大修，包括升级到最新的主要版本的jBPM（4.3），简化了配置，并且从流程定义中更清晰地与Mule集成，包括自定义流程元素。
+
+== 连接器性能调整
+
+从Mule 3.1开始，连接器的属性maxDispatchersActive不能配置为弹簧属性。应该使用以下元素：<default-threading-profile>，<default-receiver-threading-profile>，<default-dispatcher-threading-profile>和<default-service-threading-profile>。
+
+有关 link:/mule-user-guide/v/3.7/tuning-performance[调整性能]文档的更多详细信息。
+
+==  API变更摘要
+
+[%header,cols="3*a"]
+|===
+|  Mule 2.2
+| 骡3.0
+| 注意事项
+
+|  MuleMessage.get /的setProperty（）
+| 已弃用，替换为范围感知方法
+|
+
+|  MuleMessage.getPropertyNames（）
+| 已弃用，替换为范围感知方法
+|
+
+|  MuleMessage.getStringProperty（）
+| 已弃用，替换为范围感知方法
+|
+
+|  DefaultMuleMessage（对象）
+|  DefaultMuleMessage（Object，MuleContext）
+|
+
+|  DefaultMuleMessage（Object，MuleMessageAdatper）
+|  DefaultMuleMessage（Object，MuleMessageAdapter，MuleContext）
+|
+
+|  DefaultMuleMessage（对象消息，地图属性）
+|
+|  DefaultMuleMessage（Object消息，Map属性，MuleContext muleContext）
+
+|  TransactionManagerFactory.create（）
+|  TransactionManagerFactory.create（MuleConfiguration）
+|
+
+| 交易（）
+| 交易（MuleContext）
+|
+
+|  MuleEndpointURI（字符串）
+|  MuleEndpointURI（String，MuleContext）
+|
+
+|  FutureMessageResult（Callable callable）
+|  FutureMessageResult（Callable callable，MuleContext muleContext）
+|
+
+|  MessagingException（消息消息，对象有效内容）
+| 移除
+|
+
+|  MessagingException（消息消息，Object payload，Throwable cause）
+| 移除
+|
+
+| 加
+|  EndpointURI.getMuleContext（）
+| 实现MuleContextAware
+
+|  EndpointURIBuilder.build（URI）
+|  EndpointURIBuilder.build（URI，MuleContext）
+|
+
+| 加
+|  URIBuilder（MuleContext）
+|
+
+| 加
+|  RetryContext.getMuleContext（）
+|
+
+|  RouterResultsHandler.aggregateResults（列表<MuleMessage>，MuleMessage）
+|  RouterResultsHandler.aggregateResults（列表<MuleMessage>，MuleMessage，MuleContext）
+|
+
+| 加
+|  Transformer.transform（Object，String）
+| 已添加，因此可以显式传入编码
+
+|  ExceptionMessage.getEndpoint（）
+| 返回一个字符串表示，而不是EndpointURI实例
+|
+
+| 加
+|  DeserializationPostInitialisable
+| 用于后期反序列化初始化的标记接口
+
+|  RegistryContext
+| 移除
+用于访问注册表的|  Singleton类
+
+| 静态MuleServer.getMuleContext（）
+|  MuleServer.getMuleContext（）
+| 不再是一个静态方法
+
+|  MuleServer.setMuleContext（）
+| 移除
+| 到MuleContext没有更多的单身引用，你现在可以有使用MuleContextAware接口MuleContext注射或通过使用javax.inject.Inject注释（如骡子3.0.0-M3的）。
+
+|  AbstractEntryPointResolver.setTransformFirst（）
+| 移除
+| 转换现在总是作为入站端点的一部分发生
+
+|  AbstractEntryPointResolver.isTransformFirst（）
+| 移除
+| 转换现在总是作为入站端点的一部分发生
+
+|  SelectiveConsumer.setTransformFirst（）
+| 移除
+| 转换现在总是作为入站端点的一部分发生
+
+|  SelectiveConsumer.isTransformFirst（）
+| 移除
+| 转换现在总是作为入站端点的一部分发生
+
+|  ServiceCatchAllStrategy
+| 移除
+|
+
+|  DirectService / DirectModel
+| 移除
+|
+
+|  DirectService / DirectModel
+| 移除
+|
+
+|  PipelineService / PipelineModel
+| 移除
+|
+
+|  BridgeComponent
+| 移除
+| 这在2.x中已被弃用，现在已被删除。对于桥接，根本不要在您的服务中指定一个组件。
+
+|  AbstractMessageReceiver
+| 签名更新为使用FlowConstruct而不是Service
+|
+
+|  LifecycleAdapterFactory DefaultComponentLifecycleAdapterFactory DefaultComponentLifecycleAdapter
+| 更新签名以获取额外的FlowConstruct参数
+|
+
+|  MuleEvent / MuleSession / MuleEventContext
+| 用getFlowConstruct（）替换getService（）
+|
+
+| 组织/骡/运输/文件/ SimpleFilenameParser
+| 使用ExpressionFilenameParser
+| 请参阅MULE-4479
+
+|  AbstractMessageDispatcher.returnResponse（MuleEvent事件）
+| 弃用
+|
+
+|  org.mule.routing.response.AbstractResponseRouter
+| 响应特定路由器不再存在，入站路由器不用于异步回复
+|
+
+|  org.mule.routing.response.AbstractResponseAggregator
+| 不再存在，此处的逻辑现在作为异步回复的一部分完成
+|
+
+|  org.mule.routing.response.ResponseCorrelationAggregator
+| 响应特定路由器不再存在，入站路由器现在用于异步回复，扩展org.mule.routing.AbstractCorrelationAggregator以实现自定义入站/响应聚合器
+|
+
+|  org.mule.routing.response.DefaultResponseRouterCollection
+| 响应路由器集合不再存在，则入站路由器集合用于异步回复
+|
+
+|  org.mule.routing.response.SimpleCollectionResponseAggregator
+|  org.mule.routing.SimpleCollectionAggregator
+|
+
+|  org.mule.routing.response.SingleResponseRouter
+| 移除。不再需要async-reply现在可以回复聚合。
+|
+|===
+
+架构名称空间更改== 
+
+我们将公司名称从MuleSource更改为MuleSoft，因此我们也更改了我们的域名。 Mule 3的新命名空间反映了这一点，并且已经被简化了一些。在用于XML配置文件的Mule 2.x命名空间看起来像这样 - 
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesource.org/schema/mule/core/2.2"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:cxf="http://www.mulesource.org/schema/mule/cxf/2.2"
+  xsi:schemaLocation="
+    http://www.mulesource.org/schema/mule/core/2.2 http://www.mulesource.org/schema/mule/core/2.2/mule.xsd
+    http://www.mulesource.org/schema/mule/cxf/2.2 http://www.mulesource.org/schema/mule/cxf/2.2/mule-cxf.xsd">
+
+</mule>
+----
+下面是Mule 3中的等价物。请注意，该版本已从名称空间中删除，现在仅存在于实际的模式位置，这使得从一个Mule版本移动到另一个版本变得更容易，因为只更新了模式位置。
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+  xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+    http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/3.0/mule-cxf.xsd">
+
+</mule>
+----
+=== 核心Mule模式更改
+
+[%header,cols="34,33,33"]
+|===
+| {影响{1}}更改 |说明
+|已删除所有入口点解析器元素 | `transformFirst`属性 |转换现在始终作为入站端点的一部分发生
+|已删除所有选择性消费者入站路由器元素 | `transformFirst`属性 |现在，转换始终作为入站端点的一部分
+| <bridge-component>  |已删除 |这已在2.x中弃用，现在已被删除。对于桥接，根本不要在您的服务中指定一个组件。
+| <transformers>封装器，用于在端点上设置变换器 |删除 |只需列出端点上没有<transformers>封装器的任何变换器元素。
+用于在端点上设置响应转换器的| <responseTransformers>包装器 |重命名为<response>  |此元素已重命名，因为将来您可以添加其他消息处理器除了变压器。
+| <no-action-transformer>  |移动到测试模块（mule-tests-functional.jar） |使用新的disableTransportTransformer属性明确禁用端点的默认转换器。
+|===
+
+=== 脚本
+
+[%header,cols="34,33,33"]
+|===
+| {影响{1}}更改 |说明
+|脚本化变换器和组件 |消息属性不再被绑定为脚本的全局变量。 |使用message.get <Scope> Property（）来访问所需的属性。
+|===
+
+=== 测试
+
+对于变压器测试，添加：transformer.setMuleContext（muleContext）;到方法getTransformer（）

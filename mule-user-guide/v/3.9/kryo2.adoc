@@ -1,0 +1,182 @@
+= 使用Kryo串行器提高性能
+:keywords:kryo, performance, serialization, clusters, object storing, serializer, deploy
+
+Kryo序列化器和Community Edition Serialization API可让您将对象序列化或反序列化为字节数组。这些序列化程序将Mule及其扩展与实际的序列化机制分离开来，从而使配置机制可以使用或创建自定义序列化程序。 Kryo序列化程序取代了原有的Java序列化，其中Java类实现`java.io.Serializable`或`java.io.Externalizable`以将对象存储在文件中，或者通过Mule群集复制类。
+
+Community Edition Serialization API  - 开放源代码序列化API可在 link:https://github.com/mulesoft/mule/blob/mule-3.x/core/src/main/java/org/mule/api/serialization/ObjectSerializer.java[ObjectSerializer.java接口中的GitHub]中找到。
+
+当应用程序读取或写入持久对象存储，VM或JMS队列或文件中的对象时，Mule依赖序列化。当一个对象通过一个Mule集群分发时，序列化也会发生。使用Kryo和Community Edition序列化器可以极大地提高普通Java序列化的功能和性能。
+
+*Note*：批处理模块需要Kryo序列化。
+
+Kryo提供：
+
+*  Kryo比Java序列化要快得多：
+** 持久或集群对象存储
+** 持久性或分布式VM队列
+JMS传输** 
+* 支持更广泛的Java类型。 Kryo不受限于Java序列化所要求的大部分限制，例如需要实现Serializable接口，具有默认构造函数等。
+* 支持压缩，以便压缩或使用GZip压缩算法。
+
+=== 关于串行器任务
+
+您可以使用Kryo和Community Edition序列化程序开发项目，以便：
+
+* 使用序列化API（CE）创建自定义序列化程序。
+* 配置Kryo串行器（仅限EE）。
+
+Kryo序列化器和社区版序列化API：
+
+* 线程安全。
+* 在序列化和流式传输时传递一个OutputStream。
+* 允许InputStream作为输入源。
+* 您可以指定要使用哪个类加载器，缺省值是当前类加载器。
+* 反序列化时，如果获得的对象实现DeserializationPostInitialisable接口，则序列化程序负责在返回对象之前正确初始化对象。
+
+=== 关于Kryo如何提高性能
+
+以下来自MuleSoft性能团队的插图使用普通Java Java序列化器与各种Kryo设置比较了持久性和分布式VM队列和ObjectStore的每秒事务数（TPS）。
+
+image:PersistentVMQueues.png[PersistentVMQueues]
+
+image:PersistentObjectStores.png[PersistentObjectStores]
+
+image:HA_VMSerializationTPS.png[HA_VMSerializationTPS]
+
+image:HA_PersistentObjectStoreTPS.png[HA_PersistentObjectStoreTPS]
+
+以前的图表表明，在所有情况下，没有压缩的Kryo比普通的旧Java序列化器都快得多。但是，压缩模式仅提供高可用性（HA）情况下的实际改进。
+
+为了压缩是值得的，CPU花费在压缩和解压缩上的时间量必须显着低于通过减少有效负载大小节省的I / O时间量。由于网络操作通常比磁盘操作慢，并且由于HA群集需要节点复制（这会转换为更多流量），因此只有在HA情况下才能实现压缩。
+
+这不是一个普遍的常数。您可能在磁盘速度较慢的机器上运行Mule，或者在任何情况下压缩都值得的I / O需求较高。此外，这些测试是在1 MB有效负载下执行的，但数据流越大，压缩就越有价值。
+
+== 关于效果结果
+
+以下是性能结果：
+
+[%header%autowidth.spread]
+|===
+|测试 | VM持久性 |操作系统持久性 | VM HA  |操作系统HA
+| KRYO  | *64.71%*  | 6.64％ | 21.09％ | 24.79％
+| Kryo + Deflate  | 11.84％ |  -  11.01％ | *63.77%*  | *77.13%*
+| Kryo + GZip  | 8.53％ |  -  8.69％ | 13.93％ | 23.96％
+|===
+
+从表中得出的结论是：
+
+* 使用分布式ObjectStore时性能提高77.13％，使用分布式虚拟机队列时性能提高63.77％，使用本地持久性虚拟机队列时性能提高64.71％。
+* 虽然本地对象商店没有显示出很大的改进。使用压缩时实际上速度较慢。没有使用Kryo时没有获得某种程度收益的用例。
+
+绩效结果是指导而非绝对事实。根据您的应用程序，环境，有效负载大小等，实际输出可能会有所不同。
+
+== 配置串行器
+
+Mule配置标签允许您为Mule应用程序配置默认的ObjectSerializer：
+
+[source, xml, linenums]
+----
+<mule>
+  <spring:beans>
+    <spring:bean id = "customSerializer" class = "com.my.CustomSerializer" />
+  </spring:beans>
+  <configuration defaultObjectSerializer-ref = "customSerializer" />
+</mule>
+----
+
+如果没有配置defaultObjectSerializer，那么默认实现使用普通的旧Java序列化。从用户角度来看，除非设置不同的序列化程序，否则不会有任何变化。
+
+== 配置Kryo序列化
+
+在Enterprise Edition中，Mule提供了一个依赖于Kryo框架的ObjectSerializer的实现。
+
+Kryo命名空间可让您在Mule应用程序内部配置此序列化程序，而无需定义自定义Spring bean。此配置示例将默认序列化程序设置为基于Kryo的序列化程序：
+
+[source, xml, linenums]
+----
+<mule>
+    <kryo:serializer name = "kryo" />
+    <configuration defaultObjectSerializer-ref = "kryo" />
+</mule>
+----
+
+另外，您还可以包含`compressionMode` XML属性来配置压缩：
+
+[source, xml, linenums]
+----
+<kryo:serializer name = "noCompression" compressionMode = "NONE" />
+<kryo:serializer name = "deflate" compressionMode = "DEFLATE" />
+<kryo:serializer name = "gzip" compressionMode = "GZIP" />
+----
+
+== 配置自定义序列化
+
+您可以通过依赖注入获得Java代码中的ObjectSerializer。
+
+以下代码示例显示如何获取当前配置的默认ObjectSerializer：
+
+[source, java, linenums]
+----
+public class MyClass {
+   @Inject
+   @DefaultObjectSerializer
+   private  ObjectSerializer objectSerializer;
+}
+----
+
+如果你想要一个特定的命名序列化器（不管它是否是默认的），你可以通过名字访问序列化器：
+
+[source, java, linenums]
+----
+public class MyClass {
+    @Inject
+    @Named ("mySerializer")
+  private ObjectSerializer objectSerializer;
+}
+----
+
+最后，尽管依赖注入是首选，但您始终可以从`muleContext`查找序列化程序：
+
+[source, java, linenums]
+----
+// Returns the default object serializer
+muleContext.getObjectSerializer();
+ 
+// Returns a named object serializer
+muleContext.getRegistry().get("mySerializer");
+----
+
+== 关于限制和注意事项
+
+* 清理平板更新
++
+串行器不可互操作也不可互换。这意味着如果您决定更改应用程序使用的序列化程序，则需要确保VM和JMS队列中的所有消息都已被使用，并且在新序列化程序启动时这些队列为空。这是因为Kryo序列化程序将无法读取由Java串行器写入的数据报，反之亦然。同样的事情适用于持久ObjectStores。读取使用不同序列化器生成的条目不起作用。
++
+共享VM连接器更新* 
++
+Mule将域名视为在应用程序之间共享资源的一种方式。例如，您可以在域上定义VM连接器，以允许通过VM消息队列进行应用程序间通信。但是，序列化程序只能在应用程序级别配置，不能在域中配置。如果两个应用程序A和B通过定义在两个应用程序所属的域上的VM连接器相互通信，则Mule允许应用程序A使用Java和应用程序B使用Kryo进行序列化。每当应用程序写入使用共享连接器的端点时，消息不会与应用程序的序列化器串行化，而是与VM连接器使用的序列化程序串行化。这可能意味着Kryo不被使用。
++
+* 本地持久ObjectStore
++
+本地持久ObjectStore显示较少的改进，因为对ObjectStore实现的高争用吸收了所有的收益。
++
+* 无JMS改进图表
++
+根据JMS API，队列不适用于原始有效内容对象。相反，你必须提供一个javax.jms.Message类的实例。经纪人客户端然后负责序列化它，而不是Mule。因此，Kryo在这种情况下的影响是最小的。使用Kryo与JMS唯一的性能增益是Mule序列化Mule会话并将其作为Base64格式的头部。使用Kryo序列化Mule会话可以提供高达10％的性能速度，但这仅仅是一个示例用例，因为序列化的很大一部分取决于JMS代理而不是Mule。
++
+*  Kryo作为默认序列化程序
++
+虽然Kryo能够序列化不实现可序列化接口的对象，但将Kryo设置为默认序列化程序并不意味着诸如VM传输，ObjectSerializer或集群的组件能够处理不实现此类的对象一个界面。这是因为即使Kryo可以处理这些对象，这些组件的Java API仍然期望在其方法签名中可序列化的实例。
++
+*  POJO序列化失败
++
+简单的旧Java序列化会失败，实现Serializable接口的对象会失败。但是，如果序列化包含另一个未实现Serializable接口的对象，则Kryo可能（但不能保证）成功。一个典型的例子是包含NetSuite和Microsoft Dynamics连接器中使用的`org.apache.xerces.jaxp.datatype.XMLGregorianCalendarImpl`的POJO。
+
+== 另请参阅
+
+*  link:http://blogs.mulesoft.com/dev/mule-dev/xpath-performance-boost/[XPath使用Mule 3.6提升性能]
+*  link:http://blogs.mulesoft.com/dev/mule-dev/when-performance-matters/[调音骡：当性能问题时]
+*  link:http://blogs.mulesoft.com/dev/mule-dev/performance-choke/[批处理性能在云中]
+*  link:http://blogs.mulesoft.com/performance-choke/[MuleSoft性能和电线中的扼流圈]
+*  link:https://github.com/EsotericSoftware/kryo[Kryo信息]
+*  link:/mule-user-guide/v/3.9/object-store-module-reference[对象存储模块参考]

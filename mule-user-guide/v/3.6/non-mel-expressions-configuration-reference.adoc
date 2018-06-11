@@ -1,0 +1,147 @@
+= 非MEL表达式配置参考
+:keywords: expressions
+
+[WARNING]
+*Mule Expression Language (MEL)*不需要在Mule中使用旧表达式。有关如何使用MEL的详细信息，请参阅 link:/mule-user-guide/v/3.6/mule-expression-language-mel[Mule表达语言MEL]。
+此页面提供了有关配置**pre-Mule 3.3 style expressions**的参考信息。
+
+
+表达式属性。== 
+
+Mule中支持表达式的XML配置元素具有三个常用属性，它们定义要执行的表达式，要使用的评估程序以及定义自定义评估程序的选项。
+
+[%header,cols="2*"]
+|===
+| {属性{1}}说明
+| `expression`  |要评估的表达式。该属性的语法将根据使用的评估程序而改变。
+| `evaluator` a |
+表达评估者使用。表达评估者在使用前必须注册以下内容：
+
+http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/api/expression/ExpressionManager.html[ExpressionEvaluatorManager]
+
+使用自定义评估程序可以让您通过`custom-evaluator`属性定义自定义评估程序。请注意，某些评估程序（如Xpath，Groovy和Bean）分别从其他Mule模块（ link:/mule-user-guide/v/3.6/xml-module-reference[XML]和 link:/mule-user-guide/v/3.6/scripting-module-reference[脚本]）加载。这些模块必须位于您的类路径中，然后才能使用它们的评估程序。
+
+| `custom-evaluator`  |要使用的自定义评估程序的名称。在使用之前，此评估者必须在本地注册表中注册。
+|===
+
+表达式可以用于许多其他场景，例如过滤器，路由和端点。
+
+表达式语法。== 
+
+根据表达式的使用位置，有两种指定表达式的方法。通常，基于表达式的元素（如表达式转换器，表达式过滤器和基于表达式的路由器（如表达式消息拆分器））将具有`expression`，`evaluator`和`custom-evaluator`的特定属性。例如：
+
+[source, xml, linenums]
+----
+<expression-filter evaluator="header" expression="my-header!=null"/>
+----
+
+对于这些元素，您只能为元素设置单个表达式。在定义属性值等表达式时，可以使用以下语法设置多个表达式：
+
+[source, code, linenums]
+----
+#[<evaluator>:<expression>]
+----
+
+语法要求您在表达式前加`#[`，然后定义评估程序，后跟冒号（:)和要执行的表达式。最后，您用`]`终止表达式。您可以将多个表达式定义为一个字符串。例如：
+
+[source, xml, linenums]
+----
+<message-properties-transformer>
+    <add-message-property name="GUID" value="#[string:#[xpath:/msg/header/ID]-#[xpath:/msg/body/@ref]]"/>
+</message-properties-transformer>
+----
+
+有关可用评估程序的列表，请参阅下面的<<Expression Evaluator Reference>>。
+
+=== 可选值
+
+从Mule 2.2开始，可以使用星号来表示表达式中的可选属性。例如，下面的表达式表示foo和car必须存在，但bar是可选的：
+
+[source, code, linenums]
+----
+#[headers:foo,bar*,car]
+----
+
+==  Spring属性占位符和表达式
+
+Spring和Mule长期以来一直支持属性占位符，允许开发人员在应用程序启动时将静态属性注入其配置中。属性值是在启动时传递到框架中的Java属性文件中定义的。以下示例显示了一个定义Mule端点使用的配置信息的属性文件：
+
+*MyApplication.properties*
+
+[source, code, linenums]
+----
+web.proxy.host=192.168.2.2
+web.proxy.port=8081
+----
+
+Mule配置文件可以将这些属性作为占位符嵌入。
+
+[source, xml, linenums]
+----
+<mule ...>
+    <http:request-config name="request-config" host="${web.proxy.host}"
+port="${web.proxy.port}"/>
+</mule>
+----
+
+这些属性占位符在应用程序的启动阶段已解决。对于收到或发送的每条消息都会连续评估Mule表达式。
+
+== 表达式计算器参考
+
+以下是在运行时加载的默认表达式评估程序。并非所有表达式评估器都受到每种基于表达式的对象的支持。例如，附件评估程序可用于路由器，但不适用于过滤器。
+
+[%header,cols="34,33,33"]
+|===========
+| {名称{1}}示例 |评论
+|附件 | `#[attachment:supporting-docs]`  |不受表达式过滤器支持。
+|附件 | `#[attachments:attach1,attach2]`  |返回附件的`java.util.Map`。不受表达式过滤器支持。
+|附件列表 | `#[attachments-list:attach1,attach2]`  |返回附件对象的`java.util.List`。不受表达式过滤器支持。您可以指定`*`检索所有附件或通配符模式，以按名称选择附件。
+| bean  | `#[bean:fruit.isWashed]`  | bean属性表达式。使用"."或"/"作为元素分隔符。
+|端点 | `#[endpoint:myEP.address]`  |使用`endpointName.property`。不受表达式过滤器支持。
+|异常类型 | `#[exception-type:java.lang.RuntimeException]`  |匹配异常类型。仅由表达式过滤器支持。
+|函数 | `#[function:datestamp:dd-MM-yyyy]`  |执行函数：now，date，datestamp，systime，uuid，hostname，ip或count。不受表达式过滤器支持。
+| groovy  | `#[groovy:payload.fruit.washed]`  |使用Groovy语言评估表达式。
+|标题 | `#[header:Content-Type]`  |评估消息标题的指定部分。
+|标题 | `#[headers:Content-Type,Content-Length]`  |返回标题的`java.util.Map`。不受表达式过滤器支持。您可以指定`#[headers:*]`来获取所有标题。
+|标题列表 | `#[headers-list:Content-Type,Content-Length]`  |返回标题值的`java.util.List`。不受表达式过滤器支持。
+| json  | `#[json://fruit]` a |
+有关表达式语法，请参阅：
+
+http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/module/json/JsonExpressionEvaluator.html[JsonExpressionEvaluator]
+
+| json-node  | `#[json-node://fruit]` a |
+从Mule 3.1开始，按原样从json表达式返回节点对象。有关表达式语法，请参阅：
+
+http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/module/json/JsonExpressionEvaluator.html[JsonExpressionEvaluator]
+
+| jxpath  | `#[jxpath:/fruit]`  |适用于XML / DOM和Beans的JXPath表达式。
+| map-payload  | `#[map-payload:key]`  |返回`java.util.Map`有效内容中的值。不受表达式过滤器支持。
+|信息 | `#[message:correlationId]`  |可用表达式为`id`，`correlationId`，`correlationSequence`，`correlationGroupSize`，{{ 5}}，`payload`，`encoding`和`exception`。不受表达式过滤器支持。
+| ognl  | `#[ognl:[MULE:0].equals(42)]`  |指定OGNL过滤器时，将`<expression-filter>`元素上的`evaluator`属性设置为`ognl`。 *Note*：OGNL在Mule 3.6中已弃用，并将在Mule 4.0中删除。
+|有效载荷 | `#[payload:com.foo.RequiredType]` a |
+如果提供了表达式，那么它就是一个被类加载的类。该类是有效负载的期望返回类型。请参阅`getPayload(Class)`：
+
+http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/api/MuleMessage.html[MuleMessage]
+
+不受表达式过滤器支持。
+
+|有效载荷类型 | `#[payload:java.lang.String]`  |匹配有效载荷的类型。仅由表达式过滤器支持。
+|过程 | `#[process:processorName:valueToProcess]`  |从Mule 3.1.0开始，在表达式中调用消息处理器。该处理器可以是任何组件，变压器，定制处理器，处理器链或流程。与嵌套表达式一起使用时，此评估程序最有用，该表达式确定将由参考消息处理器处理的值。
+|正则表达式 | `#[regex:the quick brown (.*)]`  |仅受表达式过滤器支持。
+|字符串 | `#[string:Value is #[xpath://foo] other value is #[header:foo].]`  |计算字符串中的表达式。
+|变量 | `#[variable:variableName]`  |用于检索流变量的值。
+|通配符 | `#[wildcard:*.txt]`  |仅受表达式过滤器支持。
+| xpath  | `#[xpath://fruit]`  |表达式是 http://www.zvon.org/xxl/XPathTutorial/Output/example1.html[XPath表达式]。
+| xpath-node  | `#[xpath-node://fruit]`  |从Mule 2.2开始，按原样从XPath表达式返回节点对象。
+|===========
+
+== 表达式Enricher参考
+
+从Mule 3.1.0开始，以下是在运行时加载的默认表达式。
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}示例 |评论
+|变量 | `#[variable:variableName]`  |用于在流中存储变量值。
+|标题 | `#[header:Content-Type]`  |添加/覆盖指定的消息标题。
+|===

@@ -1,0 +1,247 @@
+= 关于JMS连接器
+:keywords: jms, connector, jms_1.0.2b, jms_1.1, jms_2.0
+
+JMS连接器使您的应用程序能够使用您选择的JMS实现进行消息传递。其主要特点包括：
+
+任何给定目标上的*  Pub / Sub模式支持。
+* 任何给定目的地的收听/回复模式支持。
+* 任何给定目标上的发布 - 消费模式支持，具有固定或临时回复队列。
+* 完全符合JMS 2.0,1.1和1.0.2规范。
+
+[[configuration_settings]]
+== 配置连接器
+
+开箱即用，JMS连接器带有一组精细的默认值，用于发布和使用消息。这意味着唯一的要求是您要配置应该使用哪个连接。
+
+此示例设置与内存中的ActiveMQ代理JMS连接器的最小连接：
+
+[source, xml, linenums]
+----
+<jms:config name="JMS_Config">
+  <jms:active-mq-connection/>
+</jms:config>
+----
+
+=== 定义全局默认值
+
+JMS `config`允许您定义多个参数，这些参数在使用或发布消息时将用作默认参数。这样，您可以为与配置关联的所有操作定义全局默认行为，然后仅在需要自定义行为的操作中覆盖每个参数。
+
+例如，我们可以在与此配置关联的任何操作中使用消息时定义默认的`selector`行为，也可以使用默认值
+
+[source, xml, linenums]
+----
+<jms:config name="JMS_Config">
+  <jms:active-mq-connection/>
+  <jms:consumer-config selector="JMSType = `INVOICE`"/>
+  <jms:producer-config timeToLive="60000"/>
+</jms:config>
+----
+
+在这种情况下，默认情况下，与此配置关联的每个操作`consume`或`listener`都会使用此`selector`，而每次我们执行`publish`或{{4}外发消息将具有60秒的TTL。
+
+如果需要，所有这些属性都可以在操作级别被覆盖。让`s say we need to `用更短的TTL发布消息，我们可以使用此配置并覆盖参数：
+
+[source, xml, linenums]
+----
+<jms:publish config-ref="JMS_Config" timeToLive="10000"/>
+----
+
+
+[[connection_settings]]
+== 连接到代理
+JMS连接由一组适用于任何连接的常规参数定义，以及与将要使用的实际代理实现相关的特定配置。
+
+=== 选择JMS规范
+
+提示：主要常见参数是JMS `specification`，用于在所有受支持的规范`2.0`，`1.1`和`1.0.2b`之间进行选择。此`specification`必须由与此连接关联的代理实施支持，否则连接将失败。
+
+警告：仅在JMS `2.0`中可用的功能赢得`t work with any other `规范。
+
+
+=== 提供身份验证的凭证
+
+为了建立经过身份验证的连接，您需要配置`connection`元素中的`username`和`password`：
+
+[source, xml, linenums]
+----
+<jms:config name="JMS_Config">
+  <jms:active-mq-connection username="${env.user}" password="${env.pass}"/>
+</jms:config>
+----
+
+
+=== 配置连接缓存
+
+为了连接代理并执行所需的操作，JMS连接器创建了多个会话，消费者和生产者，可以缓存和重用，以提高应用程序的性能。由于此功能，JMS连接器允许您配置创建新连接时要使用的`caching-strategy`，默认情况下将消费者和生产者缓存，并同时在内存中保留尽可能多的实例。
+
+自定义缓存配置可以直接在连接声明中完成：
+
+[source, xml, linenums]
+----
+<jms:config name="JMS_Config">
+  <jms:active-mq-connection>
+    <jms:caching-strategy>
+      <jms:default-caching sessionCacheSize="100" consumersCache="false" producersCache="true"/>
+    </jms:caching-strategy>
+  </jms:active-mq-connection>
+</jms:config>
+----
+
+同样，您可以使用`no-caching`选项完全禁用Connections的缓存：
+
+[source, xml, linenums]
+----
+<jms:config name="JMS_Config">
+  <jms:generic-connection connectionFactory="customConnectionFactory">
+    <jms:caching-strategy>
+        <jms:no-caching/>
+    </jms:caching-strategy>
+  </jms:generic-connection>
+</jms:config>
+----
+
+提示：使用`no-caching`配置禁用会话缓存受到极大的阻碍，并且用于使用自定义ConnectionFactory并已经处理它自己的缓存的情况。
+
+=== 识别连接客户端
+
+客户端标识符的用途是将连接及其对象与由提供者代表客户端维护的状态相关联，并且用于标识非共享的持久订阅的*mandatory*。
+
+[source, xml, linenums]
+----
+<jms:config name="JMS_Config">
+  <jms:active-mq-connection clientId="${env.clientId}"/>
+</jms:config>
+----
+
+警告：根据定义，由`clientId`标识的客户端状态一次只能由一个Connection创建"in use"。
+
+
+== 连接到ActiveMQ
+
+ActiveMQ 5的支持由连接器使用`active-mq-connection`提供。通过此连接，您可以同时使用JMS 1.1（默认）或JMS 1.0.2b规范，并配置JMS的所有常规连接参数以及仅存在于ActiveMQ中的自定义参数。
+
+一旦我们声明`active-mq-connection`，所有`s left to do is set up the connection factory with our custom configuration. Every parameter in the connection comes with a default value, meaning that you are required to configure only the parameters relevant for your use case. Also, the ActiveMQ connection exposes parameters that are exclusive of ActiveMQ implementation, like ` initialRedeliveryDelay`。
+
+一个简单的ActiveMQ连接配置的例子是：
+
+[source, xml, linenums]
+----
+<jms:config name="JMS_Config">
+  <jms:active-mq-connection initialRedeliveryDelay="2000" brokerUrl="tcp://localhost:61616"/>
+</jms:config>
+----
+
+== 使用不同的代理商
+
+在ActiveMQ 5不是所选代理的情况下，我们可以使用`generic-connection`声明与任何代理实施的连接。开箱即用，连接器提供了一个基于JNDI的连接工厂构建器，它允许在应用程序上下文中使用JNDI配置连接。
+
+例如，如果我们想连接Artemis来使用JMS 2.0规范，我们可以用这种方式定义我们的连接工厂：
+
+[source, xml, linenums]
+----
+<jms:config name="JMS_Config">
+    <jms:generic-connection specification="JMS_2_0">
+        <jms:connection-factory>
+            <jms:jndi-connection-factory connectionFactoryJndiName="ConnectionFactory" lookupDestination="ALWAYS">
+                <jms:name-resolver-builder
+                        jndiInitialContextFactory="org.apache.activemq.artemis.ActiveMQInitialContextFactory"
+                        jndiProviderUrl="tcp://localhost:61616?broker.persistent=false&amp;broker.useJmx=false">
+                    <jms:provider-properties>
+                        <jms:provider-property key="queue.jndi-queue-in" value="in.queue"/>
+                        <jms:provider-property key="topic.jndi-topic-in" value="in.topic"/>
+                    </jms:provider-properties>
+                </jms:name-resolver-builder>
+            </jms:jndi-connection-factory>
+        </jms:connection-factory>
+    </jms:generic-connection>
+</jms:config>
+----
+
+如果您已在连接器上配置JNDI上下文，则还可以使用提供三种不同配置的`lookupDestination`属性通过JNDI查找目标：
+
+永远不会：查找完成，并且使用现有的JMS会话创建目标
+*  TRY_ALWAYS：首先尝试使用JNDI查找目标，如果不存在，请使用当前的JMS会话创建它。
+总是* ：如果无法通过JNDI找到队列/主题，则发生`JMS:DESTINATION_NOT_FOUND`错误
+
+有关`generic-connection`或`jndi-connection-factory`的更多信息，请参阅连接器参考文档。
+
+== 设置连接所需的库
+
+注意：不管你使用的是什么连接，你总是需要配置一个包含*JMS client implementation*的库，因为连接器没有绑定到任何特定的实现。
+
+===  ActiveMQ外部库
+
+对于ActiveMQ连接，有三种可能的库需要根据连接设置进行配置：
+
+*  ActiveMQ JMS客户端库：
+
+你的chice的`activemq-client`提供了一个有效的`org.apache.activemq.ActiveMQConnectionFactory`实现。
+
+警告：始终需要此依赖项
+
+例如，您可以使用：
+
+[source, xml, linenums]
+----
+<dependency>
+     <groupId>org.apache.activemq</groupId>
+     <artifactId>activemq-client</artifactId>
+     <version>5.14.5</version>
+ </dependency>
+----
+
+*  ActiveMQ代理库：
+
+基于VM传输（这是默认配置的传输），`activemq-broker`是*only required when using an in-memory broker*。此依赖关系应提供有效的`org.apache.activemq.broker.Broker`实现。
+
+例如，您可以使用：
+
+[source, xml, linenums]
+----
+<dependency>
+    <groupId>org.apache.activemq</groupId>
+    <artifactId>activemq-broker</artifactId>
+    <version>5.14.5</version>
+</dependency>
+----
+
+*  ActiveMQ KahaDB库：
+
+`activemq-kahadb-store`是基于VM传输的*only required when using an _persistent_ in-memory broker*（即`vm://localhost?broker.persistent=true`）。这种依赖性应该提供有效的`org.apache.activemq.store.kahadb.KahaDBPersistenceAdapter`实现。
+
+例如，您可以使用：
+
+[source, xml, linenums]
+----
+<dependency>
+    <groupId>org.apache.activemq</groupId>
+    <artifactId>activemq-kahadb-store</artifactId>
+    <version>5.14.5</version>
+</dependency>
+----
+
+=== 通用外部库
+
+使用`jms:generic-connection`时，您还需要提供所有需要的ConnectionFactory和选择配置的库。这将总是取决于你选择的实现是什么，所以要小心把所有的依赖添加到应用程序中。
+
+对此的常见用例是使用JMS 2.0规范，因此您需要与其他客户端库（如Apache Artemis）进行通用连接：
+
+[source, xml, linenums]
+----
+<dependency>
+    <groupId>org.apache.activemq</groupId>
+    <artifactId>activemq-kahadb-store</artifactId>
+    <version>5.14.5</version>
+</dependency>
+----
+
+== 另请参阅
+
+*  link:jms-consume[如何消费信息]
+*  link:jms-publish[如何发布消息]
+*  link:jms-listener[如何听新消息]
+*  link:jms-publish-consume[如何听取答复]
+*  link:jms-ack[处理消息确认]
+*  link:jms-transactions[处理JMS中的事务]
+*  link:jms-performance[JMS调优以提高性能]
+*  link:jms-documentation[JMS连接器技术参考]

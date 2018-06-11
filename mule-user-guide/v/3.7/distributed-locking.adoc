@@ -1,0 +1,81 @@
+= 分布式锁定
+:keywords: distributed locking, cluster
+
+Mule提供了创建用于同步对Mule组件内资源的访问的锁定功能。为了管理服务器集群内资源的并发访问，Mule提供了一个*lock factory*自定义组件（如自定义转换器和DevKit构建组件）可以以编程方式访问。
+
+通过将您的代码与Mule提供的锁定同步，您可以同步访问群集环境中的共享资源。因此，您使用Mule的锁工厂创建的任何锁都可以在使用单个服务器或一组服务器的部署模型上无缝工作。使用锁定后，您可以将代码部署到单个mule服务器或Mule群集中，而不会导致任何资源同步问题。此外，Mule的锁定系统提供了一个访问共享锁的简单API。
+
+== 创建一个锁
+
+. 要创建锁定，您首先需要访问*LockFactory*。要访问Mule提供的LockFactory，请使用对应用程序的`MuleContext `的引用。 Mule可以通过使组件实现`MuleContextAware`来在每个自定义组件上注入`MuleContext`实例。在下面的示例代码中，Mule通过调用`setMuleContext`方法自动将`MuleContext`注入`MyCustomComponent`。您可以将上下文存储在变量中供以后使用。
++
+[source, java, linenums]
+----
+public class MyCustomComponent implements MuleContextAware
+{
+    private MuleContext muleContext;
+    public void setMuleContext(MuleContext context)
+    {
+        this.muleContext = context;
+    }
+}
+----
+
+. 通过访问`MuleContext`，您可以访问LockFactory以开始创建锁定。请参阅下面的代码示例。为您创建的每个锁使用一个标识符。该标识符允许您从不同组件中访问相同的锁，而无需在组件之间显式共享同一个锁实例。
++
+[source, java, linenums]
+----
+public class MyCustomComponent implements MessageProcessor
+{
+    public MuleEvent process(MuleEvent event)
+    {
+        Lock lock = muleContext.getLockFactory().createLock("lockId");
+        lock.lock();
+        try
+        {
+           //critical section
+        }
+        finally
+        {
+           lock.unlock();
+        }
+    }
+}
+----
+
+== 共享组件之间的锁定
+
+为组件创建锁定时，请为每个组件使用相同的锁定ID。由于这两个组件都使用相同的ID创建锁，因此它们可以访问相同的锁。下面的代码示例描述了使用相同的锁ID `sharedResourceId`创建锁的两个自定义组件。
+
+[source, java, linenums]
+----
+public class MyCustomComponentA implements MessageProcessor
+{
+    public MuleEvent process(MuleEvent event)
+    {
+        Lock lock = muleContext.getLockFactory().createLock("sharedResourceId");
+        ...
+    }
+}
+public class MyCustomComponentB implements MessageProcessor
+{
+    public MuleEvent process(MuleEvent event)
+    {
+        Lock lock = muleContext.getLockFactory().createLock("sharedResourceId");
+        ...
+    }
+}
+----
+
+[WARNING]
+====
+*LockFactory*创建*`java.util.concurrent.Lock`*，但不支持方法`newCondition()`。使用`newCondition()`会导致Mule抛出`UnsupportedOperationException`。 Mule确实支持其他与锁对接的方法，如`lockInterruptibly()`和`tryLock()`。
+====
+
+== 另请参阅
+
+* 访问 link:/mule-user-guide/v/3.7/mule-high-availability-ha-clusters[Mule高可用性（HA）群集]进行概述。
+
+* 了解如何 link:/mule-user-guide/v/3.7/creating-and-managing-a-cluster-manually[手动创建和管理群集，]访问其他选项。
+
+* 了解如何启用 link:/mule-user-guide/v/3.7/distributed-file-polling[分布式文件轮询]。

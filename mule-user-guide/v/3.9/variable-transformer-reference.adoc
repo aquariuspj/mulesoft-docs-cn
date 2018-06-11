@@ -1,0 +1,147 @@
+= 流量变量变换器参考
+:keywords: anypoint studio, studio, mule, variable transformer, variables, set variable, edit variable, remove variable
+
+image:variable-transformer-reference-bf224.png[]
+
+使用*variable transformer*设置或删除消息上的变量。此"flow variable"的范围仅限于设置它的*flow*，并以标识符`flowVars`在Mule表达式语言中进行访问。例如，使用`#[flowVars.myInt]`访问整数`myInt`。
+
+== 流程范围与会话范围
+
+当消息离开流程时，由此处讨论的*Variable Transformer*设置的_flow_变量不会转到下一个流程或应用程序。
+
+相比之下，只要消息继续在您的Mule应用程序中处理，无论流量如何，使用 link:/mule-user-guide/v/3.9/session-variable-transformer-reference[会话变量变换器]指定的_session_变量都会持续存在。要详细了解消息范围，请参阅 link:/mule-user-guide/v/3.9/mule-concepts[骡子概念]。
+
+<<Complete Code Example, Complete Code Example>>
+
+变量变量与_session_变量变量和属性变量不同。请参阅下表以比较这三台变压器。
+
+[%header,cols="33a,33a,34a"]
+|===
+|变量变换器 |会话变量变换器 |属性变换器
+| *Use:*设置或删除与当前流相关的消息变量。 | *Use:*设置或删除与当前消息绑定的整个变量生命周期，跨多个流，应用程序甚至服务器。 | *Use:*设置，删除或复制消息出站范围的属性。
+| *Persistence:*使用变量变量设置的变量仅在当前流程中保留，并且不能跨越传输障碍。 | *Persistence:*使用会话变量变量设置的会话变量持续存在整个消息生命周期，无论是否存在传输障碍。 | *Persistence:*一旦消息遇到出站连接器，出站作用域中的所有属性都将与消息一起以特定于传输的元数据（HTTP例如，HTTP出站连接器的标头）。
+|===
+
+设置变量后，您可以使用Mule表达式中的`flowVars`地图来调用它。例如，如果您已设置名称为"`FVname`"且值为"`FVvalue`"的变量，则可以稍后使用表达式`#[flowVars['FVname']]`调用该变量，该表达式的计算结果为`FVvalue`。
+
+== 配置变量变换器
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:variable_transformer.png[variable_transformer]
+
+[%header,cols="15a,15a,70a"]
+|===
+|Field |Value |Description
+|*Display Name* |Variable |Customize to display a unique name for the transformer in your application.
+
+*XML:* `doc:name="Variable`
+.2+|*Operation* |Set Variable |Select to set a new variable on your message (as shown in example screenshot above).
+
+*XML:* `<set-variable>`
+|Remove Variable |Select to delete an existing variable from your message.
+
+*XML:* `<remove-variable>`
+|*Name* |String or Mule Expression |Specify the name for the variable that you are creating or identify the name of the variable that you are removing. If you are removing variables, this field accepts a wildcard "*" character.
+
+*XML:* `variableName="MyNewVariableName"`
+|*Value* |String or Mule Expression |This field displays only if you are setting a new variable. Specify the value using either a string or a Mule expression.
+
+*XML:* `value="MyNewVariableValue"`
+|*MIME Encoding* |Drop-down menu |(Optional) Indicates the MIME encoding language. Only appears when setting a variable.
+
+*XML:* `encoding="language"`
+|*MIME Type* |Drop-down menu |(Optional) Indicates the MIME type. Only appears when setting a variable.
+
+*XML:* `mimeType="value"`
+|===
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, code, linenums]
+----
+#Set Variable
+
+<set-variable variableName="MyNewVariableName" value="MyNewVariableValue" doc:name="Variable"/>
+
+#Remove Variable
+
+<remove-variable variableName="NameofVariabletoRemove" doc:name="Variable"/>
+----
+
+[%header,cols="30a,70a"]
+|===
+|Element |Description
+|*set-variable* |Set a new variable on your message (as shown in example above).
+|*remove-variable* |Delete an existing variable from your message.
+|===
+
+[%header,cols="30a,70a"]
+|===
+|Element Attribute |Description
+|*doc:name* |
+Customize to display a unique name for the transformer in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+
+|*variableName* |
+The name of the variable that you are setting or removing. Can be a string or a Mule expression.
+
+Note: If you are using the remove-variable element, you may use a wildcard "*" character. For example, a remove-variable transformer with a variable name "http.*" removes all variables with a name that begins with "http." from the message.
+
+|*value* |The value of the variable that you are setting. This attribute is only relevant for the set-variable element. Can be a string or a Mule expression.
+|===
+....
+------
+
+== 示例 - 在异常策略中存储变量，输出
+
+在许多情况下，在处理消息之前保留消息的原始有效负载是有用的，以便稍后在流程中使用或在异常策略中使用它。为此，可以将整个或部分消息的有效内容存储在一个变量中（在下面的示例中命名为"originalRequest"），如果需要，可以稍后检索它。在此示例中，如果HTTP连接器或groovy组件（此处为空）未能处理消息，则流程异常策略中的记录器通过从`originalRequest`变量中检索失败的请求来记录失败的请求。
+
+=== 创建示例应用程序
+
+. 将可变转换器处理器放置在流的入站连接器之后，然后再对消息进行其他处理。
++
+image:variable+transformer+example.png[可变变压器+ +示例]
++
+. 配置变量转换器，将变量设置为存储请求中可能传递的查询参数的消息`inboundProperties`：+
+*Display Name:* `Save Request` +
+*Name:* `originalRequest` +
+*Value:* `\#[message.inboundProperties]`或整个有效载荷`#[message.payload]`与`#[payload]`相同
++
+image:variable-transformer-reference-0ee31.png[集+可变]
++
+. 使用记录器配置流的异常策略，该记录器在发生异常时检索此变量：+
+*Name:* `Log Request` +
+*Message:* `Error processing #[flowVars['originalRequest']]`
++
+image:Studio_FlowVars_Logger.png[Studio_FlowVars_Logger] +
+. 这是在使用一些查询参数`http://localhost:8084/?name=aaron&age=32`对配置的HTTP端点进行访问后，Studio控制台输出异常的示例：
+[source,code,linenums]
+----
+INFO  2016-09-30 20:03:03,121 [[variable-transformer-test].listener-config.worker.01] org.mule.api.processor.LoggerMessageProcessor: Error processing {connection=keep-alive, http.scheme=http, host=localhost:8084, accept-language=en-US,en;q=0.8,es;q=0.6, accept=text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8, http.method=GET, http.relative.path=/, user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36, http.request.path=/, http.uri.params=ParameterMap{[]}, upgrade-insecure-requests=1, http.query.string=name=aaron&age=32, http.remote.address=/127.0.0.1:56483, http.request.uri=/?name=aaron&age=32, http.version=HTTP/1.1, http.query.params=ParameterMap{[name=[aaron], age=[32]]}, http.listener.path=/, accept-encoding=gzip, deflate, sdch}
+----
+
+
+
+
+== 完整的示例应用程序代码 - 存储变量，输出到异常策略中
+
+image:variable-transformer-flow.png[可变变压器流]
+
+[source,xml, linenums]
+----
+include::_sources/variable-transformer-reference.xml[]
+----
+
+== 另请参阅
+
+* 请参阅 link:/mule-user-guide/v/3.9/mule-concepts[骡子概念]以了解有关消息范围的更多信息。
+* 阅读相关转换器 link:/mule-user-guide/v/3.9/session-variable-transformer-reference[会话变量变换器]和 link:/mule-user-guide/v/3.9/property-transformer-reference[属性变压器]，您可以使用它们为不同范围设置属性和变量。
+* 了解如何使用Mule表达式语言使用`flowVars`地图读取流变量。
+
+
+
+

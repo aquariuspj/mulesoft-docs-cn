@@ -1,0 +1,62 @@
+= 针对性能的JMS调优
+:keywords: jms, connector, consume, message, source, listener
+：TOC：
+：TOC标题：
+
+
+性能可能是处理消息负载的一个重要因素，这意味着您可能需要检查以下配置以确保充分利用JMS连接器。
+
+== 不要禁用连接重用
+
+创建连接的代价很高，因此尽可能重用它们非常重要。
+
+尽可能多地重复使用消费者和制作者的*By default, the JMS Connector uses an aggressive* `caching-strategy`。建议保持此配置不变，因为任何修改都可能会降低应用程序的性能。
+
+警告：禁用连接缓存会降低应用程序的性能。
+
+
+== 增加并发邮件处理
+
+提高应用程序性能的一个好方法是增加从同一个目标接收消息的并发使用者数量。这可以通过配置`numberOfConsumers`参数在JMS连接器中轻松完成。
+
+开箱即用，`listener`将在同一个目的地上同时使用*four consumers*，但您可以将此数字增加到更符合您需要的数字：
+
+[source, xml, linenums]
+----
+<jms:listener config-ref="config" destination="#[vars.destination]" numberOfConsumers="20"/>
+----
+
+提示：增加`numberOfConsumers`是提高侦听器吞吐量的最简单方法。
+
+== 优化您的群集配置
+
+对于在群集中运行的应用程序，您必须牢记*primary node*的概念以及连接器的行为方式。在集群中运行时，无论您从哪种目的地消费，JMS `listener` *default behavior will be to receive messages only in the _primary node_*。
+
+如果使用来自*Queue*的消息，则需要群集*change this configuration to receive messages in all the nodes*，而不仅仅是主要群集。这可以使用`primaryNodeOnly`参数完成：
+
+[source, xml, linenums]
+----
+<jms:listener config-ref="config" destination="${inputQueue}" primaryNodeOnly="false"/>
+----
+
+从*Topic*消费消息有点不同，因为*receiving messages only in the primary node is the most common use case*的默认行为避免了在群集中多次处理相同的消息。
+
+如果您使用的是JMS 2.0 *shared subscriptions*机制，那么您需要*change the cluster configuration to consume from all the nodes*，再次将`primaryNodeOnly`设置为`false`：
+
+[source, xml, linenums]
+----
+<jms:listener config-ref="JMS_20_config" destination="${inputTopic}" primaryNodeOnly="false">
+     <jms:consumer-type>
+         <jms:topic-consumer shared="true" subscriptionName="clusteredEventListener"/>
+     </jms:consumer-type>
+ </jms:listener>
+----
+
+提示：从群集中的*Queue*进行收听时，请将`primaryNodeOnly`配置更改为`false`。
+
+警告：从群集中的*Topic*进行侦听时，如果不使用`primaryNodeOnly`配置，将导致群集多次处理相同的消息，除非使用共享订阅。
+
+== 另请参阅
+
+*  link:jms-consume[消费消息]
+*  link:jms-topic-subscription[使用主题订阅]

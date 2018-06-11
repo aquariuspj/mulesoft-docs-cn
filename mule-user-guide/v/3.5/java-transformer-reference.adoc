@@ -1,0 +1,169 @@
+=  Java变压器参考
+
+当Mule没有提供开箱即用的转换器来满足您的应用程序集成需求时，Java转换器使您能够打包当转换器处理消息时触发的自定义编码的Java逻辑（即Java类）。在大多数情况下，这个Mule构建模块将消息从原始格式转换为新的修改格式。
+
+要配置Java转换器，您需要指定以下内容：
+
+* 您的变压器将调用的Java类
+* 转换器应用于消息的编码格式
+* 您的数据的MIME类型
+
+Java转换器将这些配置设置应用于每条消息，然后将转换后的消息发送到流中的下一个构建块。此外，如果您需要在Java类中的特定属性上执行逻辑，则Java转换器允许您配置Spring bean，它们是包含开发人员定义的逻辑的容器，这些逻辑可在Java类中的特定*property*上执行。修改后的Spring数据可以保存在持久存储器中，然后在流程中稍后重新调用。如果您选择将属性添加到类中，则可以通过配置属性*sub-elements*将其他值注入到Spring属性中。这允许您在定义的bean工厂（类）或外部bean工厂内引用数组，映射，bean等。
+
+一般来说，如果您的转换逻辑非常复杂或者消息转换需要使用多个开箱即用的转换器，MuleSoft建议您使用Java转换器。例如，当您需要创建一个返回所有可接受支付方法的应用程序时，客户可以在收到订单时申请，您可以使用自定义Java转换器托管执行应用程序的脚本并将信息返回给客户端（下面）。
+
+image:JavaExampleFlow.png[JavaExampleFlow]
+
+[TIP]
+如果不是仅仅改变有效负载，而是想要触发一组更复杂的用Java编码的进程，那么最好使用[Java Component]而不是Java Transformer。
+
+常规选项卡== 
+
+通过*Properties pane*选项卡，您可以将默认显示名称*Java*更改为一个紧密描述正在实施的转换的名称。它还允许您配置变压器的类别设置，该类别显示变压器引用的属性，属性和方法的集合。 （至少，你必须选择一个变压器类）。最后，使用*General*选项卡为转换器配置Spring bean设置。
+
+image:java_transformer.png[java_transformer]
+
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+| *Display Name*  |该字段默认为通用转换器名称。将*Display Name*更改为字母数字，以反映变换者的特定角色，即`EnglishToMetric Transformer`。
+| *Transformer Class*  |要为此变换器实例选择Java类，请单击*Transformer Class*文本框右侧的省略号。出现弹出窗口后，键入类名的前几个字符，然后滚动以选择所需的类。这是一个强制性设置。
+|===
+
+要配置Spring bean设置，请单击*Add Property* image:add.png[加]按钮，然后输入名称及其关联的值或引用。 Spring bean配置数据可以保存在持久存储中并在以后恢复。
+
+image:java_trans_property.png[java_trans_property]
+
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+| *Name*  |输入Spring元素的属性名称。
+| *Value*  |输入一个字符串来指定一个Spring元素。
+| *Reference*  |输入一个字符串，用于指定要引用的Spring属性（即`ref="MyFooSpringBean" or src/reference/path`）。
+|===
+
+Spring bean子元素用于内联定义一个bean值，而不是引用在类中别处定义的bean。要配置Spring子元素，请完成以下步骤：
+
+* 点击*Add Property* image:add.png[加]按钮。
+* 选择*Advanced*选项卡。
+* 点击*Add Sub-elements* image:add.png[加]按钮。
+* 选择一个要配置的属性元素。
+
+== 高级选项卡
+
+通过此选项卡，您可以输入*Return Class*信息，并在消息有效负载通过Java变换器时指定*Encoding*和*MIME Type*。使用下拉菜单选择编码格式和要应用于变压器接收的所有消息的MIME类型。
+
+image:java_trans_advanced.png[java_trans_advanced]
+
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+| *Return Class*  |变换器生成的消息类。只要自动选择变压器来验证变压器返回正确的类别类型，就会使用它。
+| *Ignore Bad Input*  |如果此Java变换器是链中的一部分，并且Java变换器不支持消息类，则*Check*框会继续处理消息流。如果未选中，该链将在此时结束，并且该消息将被存储。
+| *Encoding*  |选择消息流出Java转换器时的字符编码格式。例如`UTF-8`是网页最常用的编码。
+| *MIME Type*  |为从Java转换器中出现的消息（即`text/plain or application/json`）选择文件格式。
+|===
+
+== 基本的Hello World Jave Transformer类
+
+要创建一个全新的Java变压器类，请按照下列步骤操作：
+
+. 在资源管理器中，右键单击您的项目并选择*New > Class*
+. 为您的班级命名并制作包`org.mule.transformers`
+. 使用下面提供的基本类框架构造一个简单的变换器：
+
+[source, java, linenums]
+----
+package org.mule.transformers;
+import org.mule.api.MuleMessage;
+import org.mule.api.transformer.TransformerException;
+import org.mule.transformer.AbstractMessageTransformer;
+ 
+public class helloWorldTransformer extends AbstractMessageTransformer{
+    /**
+     * @param args
+     */
+    public Object transformMessage(MuleMessage message, String outputEncoding) throws TransformerException {
+            
+        return "Hello World!";
+    }
+}
+----
+
+[TIP]
+请注意，返回参数将成为变压器的输出负载。
+
+. 在您的流程中添加新的Java Transformer，并将*Transformer Class*字段设置为引用您新创建的类。
+
+== 配置Java Transformer的HTTP连接器
+
+在HTTP客户机/服务器模型中，客户机从外部或内部服务器请求信息。除非发生错误，否则服务器会将请求的数据返回给用户的浏览器。发送回客户端的数据称为消息负载，包含一个标头，用于向客户端提供Web页面的某些数据以及消息负载。例如，假设您需要一个将HTTP数据转换为映射的转换过程，以便Java类可以：
+
+. 解析数据
+. 查找特定属性
+. 将该属性的值返回给客户端
+
+要在流程中实现此方案，请使用以下构建块：
+
+*  HTTP端点
+* 体对参数映射变换器
+*  Java转换器
+
+用于连接到Web资源的传输是HTTP连接器，它包含您在配置期间输入的特定参数。 *Body-to-Parameter-Map*转换器将HTTP请求数据转换为Java转换器可以解释的参数映射。
+
+最后，Java转换器通过调用*MapLookup*类和所有已定义的属性来修改消息，然后从映射中检索特定的参数。一旦这个转换过程完成，流程就会将数据返回给客户端。
+
+image:HTTPTransformerFlow.png[HTTPTransformerFlow]
+
+==  Java变压器配置
+
+在我们的示例流程中，在主体到参数映射转换发生后，将使用Java转换器来引用映射中的数据。请记住，我们的示例还希望使用*MapLookup*类引用参数并检索其值，然后将转换后的消息返回给客户端。在配置Java转换器之前，首先需要创建一个引用*MapLookup*类的新Java类或创建一个全局Java转换器，该转换器可用于将*MapLookup*类扩展到其他Mule环境。
+
+要选择Java转换器类，请双击该图标以打开*Properties Editor*。单击省略号按钮，然后键入类名的前几个字符以缩小搜索范围。选择课程后，您可以切换到*Configuration XML*编辑器以输入需要执行的任何其他代码。
+
+image:java_transform_class.png[java_transform_class]
+
+//折叠内容//
+
+点击这里查看XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core" xmlns:jdbc="http://www.mulesoft.org/schema/mule/jdbc" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="CE-3.2.1" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/jdbc http://www.mulesoft.org/schema/mule/jdbc/current/mule-jdbc.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd ">
+ 
+        <custom-transformer encoding="UTF-8" mimeType="text/html" class="org.mule.transformer.simple.MapLookup" doc:name="Java"/>
+        </custom-transformer>
+    </flow>
+</mule>
+...
+----
+
+===  Spring配置
+
+配置*Spring*属性以将值或引用分配给特定的属性，属性或元素。如果您需要为定义的属性分配值或引用，则可以通过配置特定的属性子元素来扩展该类。在我们的示例中，在将HTTP请求转换为映射后，在将响应消息返回给客户端之前，将值分配给*Spring*属性。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core" xmlns:jdbc="http://www.mulesoft.org/schema/mule/jdbc" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="CE-3.2.1" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/jdbc http://www.mulesoft.org/schema/mule/jdbc/current/mule-jdbc.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd ">
+ 
+        <custom-transformer encoding="UTF-8" mimeType="text/html" class="org.mule.transformer.simple.MapLookup" doc:name="Java"/>
+                 <spring:property name="homeLocation" value="SanFrancisco"/>
+        </custom-transformer>
+    </flow>
+</mule>
+...
+----

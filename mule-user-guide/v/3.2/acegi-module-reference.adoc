@@ -1,0 +1,251 @@
+=  Acegi模块参考
+
+[IMPORTANT]
+====
+*Note*：Acegi被Spring Security所取代，并被弃用。过去Mule 3.1没有得到支持。提供此配置参考信息的理解是，您是否正在使用Mule Acegi模块，从Acegi升级到Spring Security。
+
+*Note*：位于http://www.mulesoft.org/schema/mule/acegi/3.1/mule-acegi.xsd的3.1 XSD是此架构的最后一个版本。
+====
+
+== 介绍
+
+Acegi提供了许多认证和授权提供程序，如JAAS，LDAP，CAS（耶鲁中心认证服务）和DAO。 Mule Acegi安全经理实施委托Acegi提供授权和认证功能。
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source, xml]
+----
+xmlns: acegi "http://www.mulesoft.org/schema/mule/acegi"
+----
+
+XML模式位置：
+
+[source]
+----
+http://www.mulesoft.org/schema/mule/acegi
+----
+
+== 注意事项
+
+这个模块被记录以供参考和支持现有的实现，但不应该被使用。
+
+== 特点
+
+Mule Acegi模块使您可以将您的Mule实施挂钩至多种标准安全方案。这个Mule模块的设计目的是让您能够连接到安全提供程序，身份验证和授权服务，并且它强大到足以允许您在组件上配置方法级授权，这意味着具有不同角色的用户只能调用某些服务方法。
+
+== 用法
+
+Mule Acegi模块已被弃用。
+
+=== 保护服务组件
+
+为了保护MethodInvocations，开发人员必须将正确配置的`MethodSecurityInterceptor`添加到应用程序上下文中。需要安全的bean被链接到拦截器中。这个链接使用Spring的`ProxyFactoryBean`或`BeanNameAutoProxyCreator`完成。另外，Acegi安全提供了一个`MethodDefinitionSourceAdvisor`，您可以使用它`DefaultAdvisorAutoProxyCreator`将安全拦截器自动链接到针对`MethodSecurityInterceptor`定义的任何bean前面。
+
+除了`daoAuthenticationProvider`和`inMemoryDaoImpl` bean（请参阅 link:/mule-user-guide/v/3.2/configuring-security[配置安全性]），还必须配置以下bean：
+
+*  `MethodSecurityInterceptor`
+*  `AuthenticationManager`
+*  `AccessDecisionManager`
+*  `AutoProxyCreator`
+*  `RoleVoter`
+
+===  MethodSecurityInterceptor
+
+`MethodSecurityInterceptor`配置为对以下内容的引用：
+
+*  `AuthenticationManager`
+*  `AccessDecisionManager`
+
+以下是用于拦截对具有接口`myComponentIfc ❶`的组件方法的调用的安全拦截器，该接口定义了两种方法：`delete ❷`和`writeSomething ❸`。角色在这些方法上设置，如下面的属性`objectDefinitionSource`所示。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:acegi="http://www.mulesoft.org/schema/mule/acegi"
+      xmlns:https="http://www.mulesoft.org/schema/mule/https"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/acegi http://www.mulesoft.org/schema/mule/acegi/3.1/mule-acegi.xsd
+          http://www.mulesoft.org/schema/mule/https http://www.mulesoft.org/schema/mule/https/3.1/mule-https.xsd
+          http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.1/mule-http.xsd
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd">
+...
+  <bean id="myComponentSecurity" class="org.acegisecurity.intercept.method.aopalliance.MethodSecurityInterceptor">
+    <property name="authenticationManager" ref="authenticationManager"/>
+    <property name="accessDecisionManager" ref="accessDecisionManager"/>
+    <property name="objectDefinitionSource">
+          <value>
+        ❶       com.foo.myComponentIfc.delete=ROLE_ADMIN   ❷
+                com.foo.myComponentIfc.writeSomething=ROLE_ANONYMOUS   ❸
+          </value>
+    </property>
+  </bean>
+</mule>
+----
+
+===  AuthenticationManager
+
+AuthenticationManager负责通过一系列`AuthenticationProvider`对象传递请求。
+
+[source, xml, linenums]
+----
+<bean id="authenticationManager" class='org.acegisecurity.providers.ProviderManager'>
+      <property name= "providers">
+            <list>
+                 <ref local="daoAuthenticationProvider"/>
+            </list>
+      </property>
+</bean>
+----
+
+===  AccessDecisionManager
+
+该bean指定如果用户具有`objectDefinitionSource`中指定的任何一个角色，则可以访问受保护的方法。
+
+[source, xml, linenums]
+----
+<bean id="accessDecisionManager" class='org.acegisecurity.vote.AffirmativeBased'>
+      <property name="decisionVoters">
+            <list>
+                  <ref bean="roleVoter"/>
+            </list>
+      </property>
+</bean>
+----
+
+===  AutoProxyCreator
+
+这个bean为受保护的bean定义了一个代理。当一个应用程序向Spring询问`myComponent` bean时，它会取而代之。
+
+[source, xml, linenums]
+----
+<bean id="autoProxyCreator" class="org.springframework.aop.framework.autoproxy.BeanNameAutoProxyCreator">
+    <property name="interceptorNames">
+        <list>
+            <value>myComponentSecurity</value>
+        </list>
+    </property>
+    <property name="beanNames">
+        <list>
+            <value>myComponent</value>
+        </list>
+    </property>
+    <property name='proxyTargetClass' value="true"/>
+</bean>
+----
+
+使用`BeanNameAutoProxyCreator`为安全性创建所需的代理时，配置必须包含设置为`true`的属性`proxyTargetClass`。否则，传递给`MethodSecurityInterceptor.invoke`的方法是代理的调用者，而不是代理的目标。
+
+===  RoleVoter
+
+如果`ConfigAttribute`以`ROLE_`开头，则`RoleVoter`类将投票。 `RoleVoter`在比较以及`ROLE_`前缀时区分大小写。
+
+* 如果`GrantedAuthority`返回字符串表示形式（通过`getAuthority()`方法），它将投票授予访问权限，该表达式完全等于一个或多个`ConfigAttributes`，以{ {4}}。
+* 如果任何以`ROLE_`开头的`ConfigAttribute`都没有完全匹配，`RoleVoter`将投票拒绝访问。
+* 如果`ConfigAttribute`没有以`ROLE_`开头，则投票者将弃权。
+
+[source, xml]
+----
+<bean id="roleVoter" class="org.acegisecurity.vote.RoleVoter"/>
+----
+
+=== 设置安全提供程序的安全属性
+
+您可以在`securityProperties`地图中向安全提供商添加任何其他属性。例如，可以使用此映射将Aegi的默认安全策略更改为以下之一：
+
+*  `MODE_THREADLOCAL`，它允许在当前线程上设置身份验证（这是Acegi使用的默认策略）
+*  `MODE_INHERITABLETHREADLOCAL`，它允许从父线程继承身份验证。
+*  `MORE_GLOBAL`，它允许在所有线程上设置身份验证。
+
+== 保护异步系统中的组件
+
+Acegi安全策略对于异步系统特别有用，因为我们必须在安全提供程序上添加一个属性，以便在多个线程上设置身份验证。
+
+在这种情况下，我们将使用`MODE_GLOBAL`，如下例所示：
+
+[source, xml, linenums]
+----
+<acegi:security-manager>
+    <acegi:delegate-security-provider name="memory-dao" delegate-ref="daoAuthenticationProvider">
+        <acegi:security-property name="securityMode" value="MODE_GLOBAL"/>
+    </acegi:delegate-security-provider>
+</acegi:security-manager>
+----
+
+=== 配置参考
+
+==  Acegi模块
+
+Acegi提供了许多认证和授权提供，如JAAS，LDAP，CAS（耶鲁中心认证服务）和DAO。 Mule Acegi安全管理器实现委托Acegi提供授权和认证功能。
+
+=== 安全经理
+
+。<security-manager...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|委托安全提供者 | 0..1  |一个基于Acegi的安全提供者，将授权委托给其他提供者。
+|===
+
+=== 委派安全提供者
+
+一家基于Acegi的安全提供商，将授权委托给其他提供商。
+
+。<delegate-security-provider...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|委托-REF  | {串{2}}是 |  |
+|===
+
+。<delegate-security-provider...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|安全属性 | 0 .. *  |
+|===
+
+===  HTTP安全筛选器
+
+这似乎通过标准HTTP标头中的信息来验证用户。
+
+。<http-security-filter...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| {境界{1}} {串{2}}是 |  |
+| securityProviders  |字符串 |否 |  |用于认证的代理安全提供程序。如果您在配置中定义了多个安全管理器，请使用此元素。
+|===
+
+== 架构
+
+* 架构：http://www.mulesoft.org/schema/mule/acegi/3.1/mule-acegi.xsd
+
+== 的Maven
+
+Acegi模块可以包含以下依赖项：
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-module-acegi</artifactId>
+</dependency>
+----
+
+== 扩展此模块或传输
+
+不适用。
+
+== 最佳实践
+
+见下面的注释。
+
+== 注意事项
+
+[IMPORTANT]
+*Note*：Acegi被Spring Security所取代，并被弃用。它不支持过去3.1版本的Mule。提供此配置参考信息的理解是，如果您正在使用Mule Acegi模块，请从Acegi升级到Spring Security。

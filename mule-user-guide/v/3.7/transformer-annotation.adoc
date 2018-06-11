@@ -1,0 +1,128 @@
+=  @ Transformer注释
+:keywords: annotations, custom java code
+
+*  <<Creating Transformers>>
+*  <<Working with XML and JSON>>
+*  <<Accessing Message Information>>
+*  <<Explicitly invoking your @Transformer>>
+*  <<Making Mule aware of your @Transformer>>
+*  <<Transformer Rules>>
+
+Mule中的变形金刚用于将消息从一种数据类型转换为另一种数据类型。与内置的 link:/mule-user-guide/v/3.7/using-transformers[骡变压器]一样，现在可以使用`@Transformer`注释创建自定义转换器。
+
+== 创建变形金刚
+
+以最简单的形式，变换器在不同的Java类型之间进行转换。您可以通过使用`@Transformer`批注注释的方法执行转换来创建转换器：
+
+[source, java, linenums]
+----
+@ContainsTransformerMethods // since Mule 3.0.1
+public class MyTransformers
+{
+  @Transformer
+  public URL stringToURL(String string) throws MalformedURLException
+  {
+      return new java.net.URL(string);
+  }
+}
+----
+
+在运行时，这个方法将被发现并注册到Mule。然后，只要Mule需要将字符串转换为URL，就会使用该变换器。
+
+这里我们接受`java.lang.String`的输入，这被称为_source type_并将其转换为`java.net.URL`，这被称为_return type_。
+
+[TIP]
+如果您使用与Mule一起提供的标准变压器之一创建具有相同电源和返回类型的变压器，则您的自定义变压器将被赋予优先权并用于替代。注意不要使用相同的源和返回类型创建多个变换器，否则将由于多个变换器匹配完全相同的源和返回类型而抛出异常。
+
+请注意，该方法会引发{{0}​​}，这是创建URL对象的特定异常。重新抛出在变换器方法中引发的异常并让容器处理它们是一种很好的做法。
+
+=== 使用集合
+
+Mule转换系统支持泛型和集合，这意味着转换可以与特定类型对象的集合进行匹配。为了扩展上面的例子，我们可以使用一个转换器，它使用逗号分隔的URL字符串列表创建一个URL对象列表。
+
+[source, java, linenums]
+----
+@Transformer
+public List<URL> stringsToURLs(String string) throws MalformedURLException
+{
+    List<URL urls = new ArrayList<URL>();
+    for (StringTokenizer tokenizer = new StringTokenizer(string); tokenizer.hasMoreTokens();)
+    {
+        urls.add(new URL(tokenizer.nextToken()));
+    }
+    return urls;
+}
+----
+
+[TIP]
+总是为处理集合的任何转换提供类型是一种很好的做法。这样做可以为Mule提供更准确的信息，帮助他们了解如何匹配变换器，并在代码中提供更好的类型检查。
+
+=== 多种来源类型
+
+变形金刚只能有一个返回类型，但我们可以定义多个_source类型_。例如，假设我们可能会收到URL字符串s `java.lang.String`或`java.io.InputStream`，我们可以将其他源类型添加到`@Transformer annotation`。请注意，您可以添加逗号分隔的源类型类列表。
+
+[source, java, linenums]
+----
+@Transformer(sourceTypes = {InputStream.class})
+public URL transformStringToURL(String string) throws MalformedURLException
+{
+    return new URL(string);
+}
+----
+
+现在，如果请求将`java.io.InputStream`转换为`java.net.URL`，则在调用该方法之前，Mule会尝试将`java.io.InputStream`转换为String，并在幕后发现此转换器。请注意，需要注册一个将`java.io.InputStream`转换为`java.lang.String`的变压器。 Mule提供了用于处理JDK类型（如字符串，字节数组，InputStreams，Xml文档等）的默认转换器选择。如果您需要一个不存在的转换，则可以创建一个新的转换方法。
+
+== 使用XML和JSON
+
+大多数Web服务处理使用XML或JSON格式化的数据（JavaScript Object Notation）。 Mule使用JAXB（用于XML绑定的Java API）将绑定对象绑定到XML，反之亦然.JAXB是JDK 6中的标准组件.JSON使用名为 link:https://github.com/codehaus/jackson[杰克逊]的JSON解析框架封送到对象并再次返回。这些框架由Mule自动支持。
+
+== 访问消息信息
+
+Mule中的所有消息都有标题。如果您需要访问标题，请将参数添加到使用 link:/mule-user-guide/v/3.7/inboundheaders-annotation[@InboundHeaders]或 link:/mule-user-guide/v/3.7/outboundheaders-annotation[@OutboundHeaders]标注注释的变换器方法签名中。如果您需要访问邮件附件，请使用 link:/mule-user-guide/v/3.7/inboundattachments-annotation[@InboundAttachments]或 link:/mule-user-guide/v/3.7/outboundattachments-annotation[@OutboundHAttachments]批注。
+
+[source, java, linenums]
+----
+@Transformer
+public Person xmlToPerson(InputStream data, @InboundHeaders("*") Map headers,
+                   @OutboundAttachments Map<String, DataHandler> attachments)
+----
+
+'*'表示应该返回所有标题。 OutboundAttachments Map允许用户将附件写入传出消息。
+
+== 明确地调用您的@Transformer
+
+在Mule 3.x中没有任何机制来实际调用正在使用注释方法构造的变换器。
+
+如果您尝试转换的数据类型是自定义对象而不是Java数据类型，则可以使用*<auto-transform>*元素。
+
+[source, xml, linenums]
+----
+<auto-transformer returnClass="Person.class"/>
+----
+
+auto-transform元素将使用变换器发现服务并搜索将当前消息负载类型转换为指定的returnClass的变换器。正如你所看到的，你并不是直接调用你的变压器，而是使用Mule内置的发现机制来实现。
+
+== 让骡知道你的@Transformer
+
+出于性能方面的原因，Mule不会执行课程路径扫描。这意味着即使您使用@ContainsTransformerMethods注释您的类，它也不会通过在类路径中添加类自动识别。
+
+您需要以某种方式在Mule注册表中注册该类，这将有效地（因为它注释@ContainedTransformerMethods）在其中注册每个变压器方法。
+
+有几种方法可以这样做，一种方法是将你的Mule配置中的Spring bean声明为：
+
+[source, xml, linenums]
+----
+<spring:bean id="xxx" class="MyTransfomer.class"/>
+----
+
+另一种方法是将该类添加到registry-bootstrap.properties文件中。点击 link:/mule-user-guide/v/3.7/bootstrapping-the-registry[这里]获取更多关于一些示例的信息。
+
+== 变形规则
+
+* 自从Mule 3.0.1以来，这个类必须用@ContainsTransformerMethods注解
+* 如果变压器有状态，则该类中定义的所有变压器将共享该状态。
+* 原语类型不能用于变量方法返回类型。只能使用对象。
+* 对于集合使用列表或集合，而不是数组。泛型支持，应尽可能使用，因为泛型类型也用于匹配变压器。
+* 变换器方法必须是公共和具体的实现，`@Transformer`注释不能在接口上使用。
+* 转换方法必须至少有一个参数和一个非void返回类型。
+*  `java.lang.Object`不能用于参数类型或返回类型。

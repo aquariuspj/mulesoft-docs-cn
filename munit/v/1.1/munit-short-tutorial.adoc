@@ -1,0 +1,625 @@
+=  MUnit简短教程
+：version-info：3.7.0及更高版本
+:keywords: munit, testing, unit testing, tutorial
+
+== 概述
+
+这个简单，简短的教程将引导您完成创建一系列MUnit测试的过程，这些测试旨在验证简单代码示例的行为。
+
+本教程仅使用Mule ESB的核心组件。没有使用Anypoint连接器;但是，您可以轻松地将您在此学到的内容应用到Anypoint连接器。
+
+== 示例生产代码
+
+本教程的示例代码非常简单，但它使用了一些Mule最常用的消息处理器。它实现了一个基本的用例：
+
+. 它收到一个HTTP请求。
+. 它从请求中提取数据以通过应用程序路由消息。
+. 它决定如何创建响应。
+
+[source, xml, linenums]
+。产品代码 -  doc.xml
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.7.3"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="9090" doc:name="HTTP Listener Configuration"/>
+
+    <flow name="exampleFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" allowedMethods="GET" doc:name="HTTP"/>
+        <set-payload value="#[message.inboundProperties['http.query.params']['url_key']]" doc:name="Set Original Payload"/>
+
+        <flow-ref name="exampleFlow2" doc:name="exampleFlow2"/>
+
+
+        <choice doc:name="Choice">
+            <when expression="#[flowVars['my_variable'].equals('var_value_1')]">
+                <set-payload value="#['response_payload_1']" doc:name="Set Response Payload"/>
+            </when>
+            <otherwise>
+                <set-payload value="#['response_payload_2']" doc:name="Set Response Payload"/>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <flow name="exampleFlow2">
+        <choice doc:name="Choice">
+            <when expression="#['payload_1'.equals(payload)]">
+                <flow-ref name="exampleSub_Flow1" doc:name="exampleSub_Flow1"/>
+            </when>
+            <otherwise>
+                <flow-ref name="exampleSub_Flow2" doc:name="exampleSub_Flow2"/>
+            </otherwise>
+        </choice>
+	</flow>
+
+    <sub-flow name="exampleSub_Flow1">
+        <set-variable variableName="my_variable" value="#['var_value_1']" doc:name="my_variable"/>
+    </sub-flow>
+
+    <sub-flow name="exampleSub_Flow2">
+        <set-variable variableName="my_variable" value="#['var_value_2']" doc:name="my_variable"/>
+    </sub-flow>
+</mule>
+----
+
+我们将上面的代码分解成几部分来分析。第一部分是应用程序的入口点，其中包含`exampleFlow`中的HTTP侦听器。
+
+[source, xml, linenums]
+.exampleFlow
+----
+<flow name="exampleFlow">                                                                                                 //<1>
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" allowedMethods="GET" doc:name="HTTP"/>
+
+    <set-payload value="#[message.inboundProperties['http.query.params']['url_key']]" doc:name="Set Original Payload"/>   //<2>
+
+    <flow-ref name="exampleFlow2" doc:name="exampleFlow2"/>                                                               //<3>
+
+    <choice doc:name="Choice">                                                                                            //<4>
+        <when expression="#[flowVars['my_variable'].equals('var_value_1')]">
+            <set-payload value="#['response_payload_1']" doc:name="Set Response Payload"/>                                //<5>
+        </when>
+        <otherwise>
+            <set-payload value="#['response_payload_2']" doc:name="Set Response Payload"/>                                //<6>
+        </otherwise>
+    </choice>
+</flow>
+----
+<1>主流，`exampleFlow`。
+<2>从HTTP请求获取数据。
+<3>拨打`exampleFlow2`进行进一步处理。
+<4>根据由`exampleFlow2`设置的调用变量`my_variable`的值作出决定。
+<5>创建`response payload 1`。
+<6>创建`response payload 2`。
+
+应用程序的第二部分`exampleFlow2`基本上用于路由。它不会对消息或其有效负载执行任何实际操作。相反，它会根据接收到的有效负载作为输入将其委托给其他两个子流。
+
+[source, xml, linenums]
+.exampleFlow2
+----
+<flow name="exampleFlow2">
+    <choice doc:name="Choice">
+        <when expression="#['payload_1'.equals(payload)]">                                          //<1>
+            <flow-ref name="exampleSub_Flow1" doc:name="exampleSub_Flow1"/>                         //<2>
+        </when>
+        <otherwise>
+            <flow-ref name="exampleSub_Flow2" doc:name="exampleSub_Flow2"/>                         //<3>
+        </otherwise>
+    </choice>
+</flow>
+----
+<1>评估进入流的有效负载。
+<2>拨打`exampleSub_Flow1`。
+<3>拨打`exampleSub_Flow2`。
+
+最后，我们有各种子流程`exampleSub_Flow<number>`，其唯一的任务是为名为`my_variable`的_invocation_变量设置一个值。
+
+[source, xml, linenums]
+.exampleSub_Flow（S）
+----
+<sub-flow name="exampleSub_Flow1">
+    <set-variable variableName="my_variable" value="#['var_value_1']" doc:name="my_variable"/>    //<1>
+</sub-flow>
+
+<sub-flow name="exampleSub_Flow2">
+    <set-variable variableName="my_variable" value="#['var_value_2']" doc:name="my_variable"/>    //<2>
+</sub-flow>
+----
+<1>将`my_variable`设为`var_value_1`。
+<2>将`my_variable`设为`var_value_2`。
+
+== 创建测试
+
+以下是MUnit测试套件文件：
+
+[[testfile]]
+[source, xml, linenums]
+.MUnit测试套件文件 -  doc-test.xml
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:mock="http://www.mulesoft.org/schema/mule/mock"
+	xmlns:munit="http://www.mulesoft.org/schema/mule/munit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core"
+	version="EE-3.7.3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/mock http://www.mulesoft.org/schema/mule/mock/current/mule-mock.xsd
+http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <munit:config name="munit" doc:name="Munit configuration"/>
+
+    <spring:beans>
+        <spring:import resource="classpath:demo.xml"/>
+    </spring:beans>
+
+    <!-- exampleFlow2 Tests -->
+    <munit:test name="doc-test-exampleFlow2Test1" description="Validate calls to sub flows are being done properly ">
+        <munit:set payload="#['payload_1']" doc:name="Set Message payload == payload_1"/>
+        <flow-ref name="exampleFlow2" doc:name="Flow-ref to exampleFlow2"/>
+        <mock:verify-call messageProcessor="mule:sub-flow" doc:name="Verify Call" times="1">
+            <mock:with-attributes>
+                <mock:with-attribute whereValue="#[matchContains('exampleSub_Flow1')]" name="name"/>
+            </mock:with-attributes>
+        </mock:verify-call>
+    </munit:test>
+
+     <munit:test name="doc-test-exampleFlow2Test2" description="Validate calls to sub flows are being done properly ">
+        <munit:set payload="#['payload_2']" doc:name="Set Message payload == payload_2"/>
+        <flow-ref name="exampleFlow2" doc:name="Flow-ref to exampleFlow2"/>
+        <mock:verify-call messageProcessor="mule:sub-flow" doc:name="Verify Call" times="1">
+            <mock:with-attributes>
+                <mock:with-attribute whereValue="#[matchContains('exampleSub_Flow2')]" name="name"/>
+            </mock:with-attributes>
+        </mock:verify-call>
+    </munit:test>
+
+    <!-- exampleFlow Tests -->
+    <munit:test name="doc-test-exampleFlow-unit-Test_1" description="Unit Test case asserting scenario 1">
+        <mock:when messageProcessor="mule:set-payload" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute whereValue="#['Set Original Payload']" name="doc:name"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]"/>
+        </mock:when>
+        <mock:when messageProcessor="mule:flow" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute whereValue="#['exampleFlow2']" name="name"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]">
+                <mock:invocation-properties>
+                    <mock:invocation-property key="my_variable" value="#['var_value_1']"/>
+                </mock:invocation-properties>
+            </mock:then-return>
+        </mock:when>
+        <flow-ref name="exampleFlow" doc:name="Flow-ref to exampleFlow"/>
+        <munit:assert-payload-equals message="oops, wrong payload!" expectedValue="#['response_payload_1']" doc:name="Assert Payload"/>
+    </munit:test>
+
+    <munit:test name="doc-test-exampleFlow-unit-Test_2" description="Unit Test case asserting scenario 2">
+        <mock:when messageProcessor="mule:set-payload" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute whereValue="#['Set Original Payload']" name="doc:name"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]"/>
+        </mock:when>
+        <mock:when messageProcessor="mule:flow" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute whereValue="#['exampleFlow2']" name="name"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]">
+                <mock:invocation-properties>
+                    <mock:invocation-property key="my_variable" value="#['var_value_2']"/>
+                </mock:invocation-properties>
+            </mock:then-return>
+        </mock:when>
+        <flow-ref name="exampleFlow" doc:name="Flow-ref to exampleFlow"/>
+        <munit:assert-payload-equals message="oops, wrong payload!" expectedValue="#['response_payload_2']" doc:name="Assert Payload"/>
+    </munit:test>
+
+    <!-- exampleFlow Functional Tests -->
+    <munit:test name="doc-test-exampleFlow-functionalTest_1" description="Funtional Test case asserting scenario 1">
+        <munit:set payload="#['']" doc:name="Set Message url_key:payload_1">
+            <munit:inbound-properties>
+                <munit:inbound-property key="http.query.params" value="#[['url_key':'payload_1']]"/>
+            </munit:inbound-properties>
+        </munit:set>
+        <flow-ref name="exampleFlow" doc:name="Flow-ref to exampleFlow"/>
+        <munit:assert-payload-equals message="oops, wrong payload!" expectedValue="#['response_payload_1']" doc:name="Assert Payload"/>
+    </munit:test>
+
+    <munit:test name="doc-test-exampleFlow-functionalTest_2" description="Funtional Test case asserting scenario 2">
+        <munit:set payload="#['']" doc:name="Set Message url_key:payload_1">
+            <munit:inbound-properties>
+                <munit:inbound-property key="http.query.params" value="#[['url_key':'payload_2']]"/>
+            </munit:inbound-properties>
+        </munit:set>
+        <flow-ref name="exampleFlow" doc:name="Flow-ref to exampleFlow"/>
+        <munit:assert-payload-equals message="oops, wrong payload!" expectedValue="#['response_payload_2']" doc:name="Assert Payload"/>
+    </munit:test>
+
+</mule>
+----
+
+在下面的章节中，我们分解并分析测试套件文件。在进行单元测试时，最好先采取一种从头开始的方法，首先测试代码的构建块。
+
+提示：请务必首先测试代码的构建块，然后测试更复杂的代码。
+
+你可以比较这个设置支柱，并确保他们举行之前，建设其余的桥梁。
+
+我们从测试`exampleFlow2`开始。
+
+理想情况下，您应该测试应用程序中的每个流程和子流程，以验证其中每个流程和预期行为。由于我们稍微复杂一点以便向您展示更多场景，因此我们会跳过测试子流`exampleSub_Flow1`和`exampleSub_Flow2`）。在实际应用中，我们应该从测试这两个流程开始。
+
+提示：理想情况下，您应该测试应用程序中的每个流程和子流程。
+
+===  MUnit测试套装"Musts"
+
+每个MUnit测试文件_must_包含以下三个bean：
+
+*  `MUnit config`
+*  _import section_
+
+这些显示在下面的代码片段中：
+
+[source, xml, linenums]
+单位必须
+----
+<munit:config name="munit" doc:name="Munit configuration"/>
+
+<spring:beans>
+    <spring:import resource="classpath:doc.xml"/>
+</spring:beans>
+----
+
+在_import section_中，我们定义了测试运行所需的文件。本节通常包含包含我们想要测试的流的文件以及第一个文件工作所需的附加文件。
+
+警告：没有MUnit配置，MUnit测试套件文件无法运行。
+
+=== 测试：`exampleFlow2`
+
+我们首先分析应用程序中最简单的流程`exampleFlow2`。
+
+该流程包含一个`choice`路由器，它提供了代码可以遵循的两条不同路径。这里我们测试他们两个。
+
+注意：在实际的应用程序中，请始终测试所有可能的路径。
+
+[source, xml, linenums]
+.exampleFlow2
+----
+<flow name="exampleFlow2">
+  <choice doc:name="Choice">
+    <when expression="#['payload_1'.equals(payload)]">
+      <flow-ref name="exampleSub_Flow1" doc:name="exampleSub_Flow1"/>
+    </when>
+    <otherwise>
+      <flow-ref name="exampleSub_Flow2" doc:name="exampleSub_Flow2"/>
+    </otherwise>
+  </choice>
+</flow>
+----
+
+我们从第一条路开始。
+
+[source, xml, linenums]
+.exampleFlow2  - 第一个测试用例
+----
+<munit:test name="doc-test-exampleFlow2Test1" description="Validate calls to sub flows are being done properly ">
+  <munit:set payload="#['payload_1']" doc:name="Set Message payload == payload_1"/>                         //<1>
+
+  <flow-ref name="exampleFlow2" doc:name="Flow-ref to exampleFlow2"/>                                           //<2>
+
+  <mock:verify-call messageProcessor="mule:sub-flow" doc:name="Verify Call" times="1">    //<3>
+    <mock:with-attributes>
+      <mock:with-attribute whereValue="#[matchContains('exampleSub_Flow1')]" name="name"/>
+    </mock:with-attributes>
+  </mock:verify-call>
+</munit:test>
+----
+
+<1>定义要发送到生产流程`exampleFlow2`的输入消息。
+<2>拨打产品代码。
+<3>使用验证验证测试的成功。
+
+这个测试看起来相当简单，但有几点需要强调。
+
+我们做的第一件事是创建一个输入消息。这是一种非常常见的情况。您可能必须为您测试的流创建输入消息。在这个例子中，只需要定义一个有效载荷，但是在本教程中，我们将看到如何创建更复杂的消息。
+
+为了这个测试的目的，我们可以确信只要确保正确的消息处理器被调用，代码就能正常工作。我们也可以在应该设置的变量上添加一个断言。
+
+[[flow-ref]]
+最后，请注意要调用的消息处理器是`flow-ref`。在MUnit中，您不会模拟或验证`flow-ref`，而是`flow-ref`所调用的流或子流。如果仔细检查，您会发现我们没有验证`flow-ref`消息处理器，但是正在对`mule:sub-flow`消息处理器执行验证。
+
+警告：在MUnit中，您不会模拟或验证`flow-ref`，您可以模拟或验证`flow`和`sub-flow`。
+
+提示：使用`flow-ref`是触发生产代码的最常见方式。即使
+您正在测试的流程不是私有流程，通常使用的方式是调用它
+`flow-ref`，而不是调用流的入站端点，例如HTTP，VM，JSM等。
+
+另外需要注意的是我们如何定义子流的名称。代替
+只需输入子流的名称，我们正在使用MUnit匹配器`matchContains`：
+
+[source, xml, linenums]
+----
+#[matchContains('exampleSub_Flow1')]
+----
+
+在验证或模拟流程时不需要，仅适用于子流程。
+
+注：当模拟或验证子流并使用`name`属性时，请始终使用
+MUnit匹配器`matchContains`。
+
+到目前为止，我们只测试了`exampleFlow2`的一个分支;我们需要测试另一个。为此，我们添加另一个测试。
+
+[source, xml, linenums]
+.exampleFlow2  - 第二个测试用例
+----
+<munit:test name="doc-test-exampleFlow2Test2" description="Validate calls to sub flows are being done properly ">
+  <munit:set payload="#['payload_2']" doc:name="Set Message payload == payload_2"/>
+
+  <flow-ref name="exampleFlow2" doc:name="Flow-ref to exampleFlow2"/>
+
+  <mock:verify-call messageProcessor="mule:sub-flow" doc:name="Verify Call" times="1">
+    <mock:with-attributes>
+      <mock:with-attribute whereValue="#[matchContains('exampleSub_Flow2')]" name="name"/>
+    </mock:with-attributes>
+  </mock:verify-call>
+</munit:test>
+----
+
+正如你所看到的，这个测试与第一个非常相似，除了一个重要的变化：
+
+[source, xml, linenums]
+----
+<munit:set payload="#['payload_2']" doc:name="Set Message payload == payload_2"/>
+----
+
+当我们定义要发送到生产代码的消息时，我们正在更改有效负载以便与代码的其他分支进行交互。对于有经验的开发人员来说，这看起来很明显，但这是一个常见的错
+
+提示：如果您的生产代码根据负载的不同值或变量的内容采取不同的操作，则应该为该生产流程设计更多的测试。
+
+=== 测试：exampleFlow
+
+此应用程序中最复杂的流程是最后一个流程`exampleFlow`。
+
+该流程包含一个`choice`路由器，它提供了代码可以遵循的两条不同路径。和之前的情况一样，我们测试他们两个。
+
+[source, xml, linenums]
+.exampleFlow
+----
+<flow name="exampleFlow">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/" allowedMethods="GET" doc:name="HTTP"/>
+  <set-payload value="#[message.inboundProperties['http.query.params']['url_key']]" doc:name="Set Original Payload"/>
+
+  <flow-ref name="exampleFlow2" doc:name="exampleFlow2"/>
+
+  <choice doc:name="Choice">
+    <when expression="#[flowVars['my_variable'].equals('var_value_1')]">
+      <set-payload value="#['response_payload_1']" doc:name="Set Response Payload"/>
+    </when>
+    <otherwise>
+      <set-payload value="#['response_payload_2']" doc:name="Set Response Payload"/>
+    </otherwise>
+    </choice>
+</flow>
+----
+
+该流程包含一个`http-listener`，但为了向您展示不同的场景，我们不打算调用它。由于我们没有调用HTTP侦听器，因此我们需要采取其他一些操作来使此测试正常工作。
+
+与我们的第一个流程一样，这里我们从流程中包含的第一个路径开始。
+
+[source, xml, linenums]
+.exampleFlow  - 第一个测试用例
+----
+<munit:test name="doc-test-exampleFlow-unit-Test_1"
+  description="Unit Test case asserting scenario 1">
+
+  <mock:when messageProcessor="mule:set-payload" doc:name="Mock"> //<1>
+    <mock:with-attributes>
+      <mock:with-attribute whereValue="#['Set Original Payload']" name="doc:name"/>
+    </mock:with-attributes>
+    <mock:then-return payload="#[]"/>
+  </mock:when>
+
+  <mock:when messageProcessor="mule:flow" doc:name="Mock"> //<2>
+    <mock:with-attributes>
+      <mock:with-attribute whereValue="#['exampleFlow2']" name="name"/>
+      </mock:with-attributes>
+    <mock:then-return payload="#[]">
+      <mock:invocation-properties>
+        <mock:invocation-property key="my_variable" value="#['var_value_1']"/>
+      </mock:invocation-properties>
+    </mock:then-return>
+  </mock:when>
+
+  <flow-ref name="exampleFlow" doc:name="Flow-ref to exampleFlow"/>                                //<3>
+
+  <munit:assert-payload-equals message="oops, wrong payload!" expectedValue="#['response_payload_1']" doc:name="Assert Payload"/> //<4>
+</munit:test>
+----
+<1>为`exampleFlow`中的集合有效负载消息处理器定义模拟。
+<2>为`exampleFlow2`调用定义模拟。
+<3>拨打产品代码。
+<4>通过声明返回的有效负载来验证测试的成功。
+
+在这个测试中首先要注意的是我们正在定义_mocks_。嘲笑是什么让你隔离你的流量，区别于第三方系统和应用程序中的任何其他流量。
+
+我们定义的第一个模拟是针对`set-payload`消息处理器。我们这样做是因为这个消息处理器期望一组入站变量，但是我们不会在这个测试中发送它们 - 因此，为了代码成功，我们需要嘲笑`set-payload`消息处理器的行为。
+
+[source, xml, linenums]
+。模拟集有效载荷
+----
+<mock:when messageProcessor="mule:set-payload" doc:name="Mock">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#['Set Original Payload']" name="doc:name"/>
+  </mock:with-attributes>
+  <mock:then-return payload="#[]"/>
+</mock:when>
+----
+
+请注意，我们实际上并没有返回有效载荷。 `exampleFlow2`需要`set-payload`消息处理器中的有效载荷。在这个单元测试中，我们相信`exampleFlow2`能够按预期工作，并且也可以嘲笑它。
+
+提示：进行单元测试时，将流量与第三方系统和其他流量隔离开来，并相信它们按预期工作。反过来，您必须使用自己的特定测试来测试每个第三方系统或流程。
+
+[source, xml, linenums]
+模拟示例流程2
+----
+<mock:when messageProcessor="mule:flow" doc:name="Mock">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#['exampleFlow2']" name="name"/>
+    </mock:with-attributes>
+  <mock:then-return payload="#[]">
+    <mock:invocation-properties>
+      <mock:invocation-property key="my_variable" value="#['var_value_1']"/>
+    </mock:invocation-properties>
+  </mock:then-return>
+</mock:when>
+----
+
+如果您从一开始就阅读本教程，您已经知道在MUnit中不会模拟`flow-ref`消息处理器，您可以模拟将由它们调用的流（请参阅<<flow-ref,above>>）。这就是我们在这里所做的，嘲笑从`exampleFlow`调用的`exampleFlow2`。
+
+`exampleFlow2`的用途是设置调用变量`my_var`的值。如果仔细观察这个模拟，您会看到我们正在告诉模拟流返回包含名为`my_var`的值为`var_value_1`的调用变量的消息。这是第一个测试场景中应该发生的情况。
+
+现在我们的两个嘲笑已经到位，我们运行生产代码：
+
+[source,xml,linenums]
+----
+<flow-ref name="exampleFlow" doc:name="Flow-ref to exampleFlow"/>
+----
+
+唯一需要完成的测试是确定其成功标准。为了本示例的目的，我们基于流所返回的有效负载来确定它是否成功。
+
+[source, xml, linenums]
+----
+<munit:assert-payload-equals message="oops, wrong payload!"
+ expectedValue="#['response_payload_1']"
+ doc:name="Assert Payload"/> //<4>
+----
+
+如您所见，我们正在验证返回的有效负载等于生产代码中选择的第一个分支（即`response_payload_1`）所设置的有效负载。
+
+现在我们测试另一个分支。
+
+[source, xml, linenums]
+.exampleFlow  - 第二个测试用例
+----
+<munit:test name="doc-test-exampleFlow-unit-Test_2"
+  description="Unit Test case asserting scenario 2">
+    <mock:when messageProcessor="mule:set-payload" doc:name="Mock">
+        <mock:with-attributes>
+            <mock:with-attribute whereValue="#['Set Original Payload']" name="doc:name"/>
+        </mock:with-attributes>
+        <mock:then-return payload="#[]"/>
+    </mock:when>
+
+    <mock:when messageProcessor="mule:flow" doc:name="Mock">
+        <mock:with-attributes>
+            <mock:with-attribute whereValue="#['exampleFlow2']" name="name"/>
+        </mock:with-attributes>
+        <mock:then-return payload="#[]">
+            <mock:invocation-properties>
+                <mock:invocation-property key="my_variable"
+                  value="#['var_value_2']"/> //<1>
+            </mock:invocation-properties>
+        </mock:then-return>
+    </mock:when>
+
+    <flow-ref name="exampleFlow" doc:name="Flow-ref to exampleFlow"/>
+    <munit:assert-payload-equals message="oops, wrong payload!"
+		expectedValue="#['response_payload_2']" doc:name="Assert Payload"/> //<2>
+</munit:test>
+----
+<1>与第一个分支的第一个区别。
+<2>与第一个分支的第二个区别。
+
+这个测试看起来非常相似，但是你可以看到有两个关键的区别，下面解释。
+
+第一个区别：
+
+[source,xml,linenums]
+----
+<mock:invocation-property key="my_variable" value="#['var_value_2']"/>
+----
+
+当嘲笑`exampleFlow2`时，我们告诉它返回具有不同值的变量：`var_value_2`。这应该触发选择的第二个分支。
+
+第二个区别：
+
+[source, xml, linenums]
+----
+<munit:assert-payload-equals message="oops, wrong payload!"
+  expectedValue="#['response_payload_2']" doc:name="Assert Payload"/>
+----
+
+我们也在改变断言，因为返回的有效载荷之前的模拟已经改变。因此需要修改我们的成功标准。
+
+=== 功能测试
+
+到目前为止所解释的所有测试都是单元测试，它尽可能地将每个流程与其他流程隔离开来。
+
+你也可能想做一个_功能测试_，也就是一个端到端的测试。在我们的例子中，这意味着我们不会嘲笑任何消息处理器。要以这种方式实施测试，我们需要正确定义我们发送给生产代码的消息。
+
+在之前的测试中，我们嘲笑了`exampleFlow`的第一个消息处理器，因为它需要消息包含特定的值。既然我们现在不嘲笑任何东西，我们必须创造这个信息。
+
+[source, xml, linenums]
+.exampleFlow  - 功能测试
+----
+<munit:test name="doc-test-exampleFlow-functionalTest_1"
+  description="Functional Test case asserting scenario 1">
+    <munit:set payload="#['']" doc:name="Set Message url_key:payload_1">
+        <munit:inbound-properties>
+            <munit:inbound-property key="http.query.params"
+              value="#[['url_key':'payload_1']]"/>
+        </munit:inbound-properties>
+    </munit:set>
+    <flow-ref name="exampleFlow" doc:name="Flow-ref to exampleFlow"/>
+    <munit:assert-payload-equals message="oops, wrong payload!"
+      expectedValue="#['response_payload_1']" doc:name="Assert Payload"/>
+</munit:test>
+----
+
+这个测试与`exampleFlow`中的其他测试非常相似，没有模拟。
+
+让我们再次检查`exampleFlow`的实现，特别是`set-payload`：
+
+[source, xml, linenums]
+----
+<set-payload value="#[message.inboundProperties['http.query.params']['url_key']]"
+  doc:name="Set Original Payload"/>
+----
+
+`set-payload`消息处理器希望消息具有名为`http.query.params`的入站属性，该属性应该是地图。地图应该包含密钥`url_key`。
+
+下面的代码显示了如何创建这样的消息：
+
+[source, xml, linenums]
+----
+<munit:set payload="#['']" doc:name="Set Message url_key:payload_1">
+    <munit:inbound-properties>
+        <munit:inbound-property key="http.query.params"
+          value="#[['url_key':'payload_1']]"/>
+    </munit:inbound-properties>
+</munit:set>
+----
+
+== 结论
+
+在本教程中，我们已经看到：
+
+* 如何创建MUnit测试
+* 如何创建Mule消息
+* 如何创建模拟
+* 如何运行验证和断言
+
+总之，我们已经介绍了大量的MUnit功能。
+
+在您编写代码时，您的测试可能会像生产代码一样庞大而复杂。 MUnit提供的工具可以帮助您在保持代码质量的同时创建出色的测试。
+

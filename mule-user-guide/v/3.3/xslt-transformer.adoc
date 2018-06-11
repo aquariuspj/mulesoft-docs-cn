@@ -1,0 +1,180 @@
+=  XSLT变换器
+
+== 示例
+
+以下示例演示如何配置内联XSLT变换器从当前消息中提取参数。
+
+要使用XSLT转换器，请将其添加到Mule XML配置中，如下所示：
+
+[source, xml, linenums]
+----
+<mulexml:xslt-transformer name="xslt">
+  <mulexml:xslt-text>
+    <xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+      <xsl:output method="xml"/>
+      <xsl:param name="title"/>
+      <xsl:param name="rating"/>
+      <xsl:template match="catalog">
+      <xsl:element name="cd-listings">
+        <xsl:attribute name="title">
+          <xsl:value-of select="$title"/>
+        </xsl:attribute>
+        <xsl:attribute name="rating">
+          <xsl:value-of select="$rating"/>
+        </xsl:attribute>
+        <xsl:apply-templates/>
+      </xsl:element>
+      </xsl:template>
+ 
+      <xsl:template match="cd">
+      <xsl:element name="cd-title">
+        <xsl:value-of select = "title" />
+      </xsl:element>
+      </xsl:template>
+    </xsl:stylesheet>
+  </mulexml:xslt-text>
+  <mulexml:context-property key="title" value="#[header:ListTitle]"/>
+  <mulexml:context-property key="rating" value="#[header:ListRating]"/>
+----
+
+本示例使用内联XSLT表达式配置转换器。它还定义了两个上下文参数：
+
+[source, xml, linenums]
+----
+<mulexml:context-property key="title" value="#[header:ListTitle]"/>
+<mulexml:context-property key="rating" value="#[header:ListRating]"/>
+----
+
+这些参数从当前消息中提取并在XSLT上下文中可用，以便它们可以在XSLT语句中引用。您可以使用任何有效的表达式。在这个例子中，标题评估器用于从当前消息中提取标题。
+
+您配置的XSLT转换器可以由端点引用。在以下示例中，结果写入`System.out`。测试数据如下所示：
+
+[source, xml, linenums]
+----
+<catalog>
+    <cd>
+        <title>Empire Burlesque</title>
+        <artist>Bob Dylan</artist>
+        <country>USA</country>
+        <company>Columbia</company>
+        <price>10.90</price>
+        <year>1985</year>
+    </cd>
+    <cd>
+        <title>Hide your heart</title>
+        <artist>Bonnie Tyler</artist>
+        <country>UK</country>
+        <company>CBS Records</company>
+        <price>9.90</price>
+        <year>1988</year>
+    </cd>
+----
+
+写入`System.out`的结果如下所示：
+
+[source, xml, linenums]
+----
+<cd-listings title="MyList" rating="6">
+    <cd-title>Empire Burlesque</cd-title>
+    <cd-title>Hide your heart</cd-title>
+    <!-- ... </cd-listings> -->
+----
+
+这个例子的完整配置如下所示。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:stdio="http://www.mulesoft.org/schema/mule/stdio"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.0/mule-vm.xsd
+       http://www.mulesoft.org/schema/mule/stdio http://www.mulesoft.org/schema/mule/stdio/3.0/mule-stdio.xsd
+       http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/3.0/mule-xml.xsd
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd">
+ 
+    <mulexml:xslt-transformer name="xslt">
+        <mulexml:xslt-text>
+            <xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+                        <xsl:output method="xml"/>
+                        <xsl:param name="title"/>
+                        <xsl:param name="rating"/>
+                        <xsl:template match="catalog">
+                        <xsl:element name="cd-listings">
+                            <xsl:attribute name="title">
+                                <xsl:value-of select="$title"/>
+                            </xsl:attribute>
+                            <xsl:attribute name="rating">
+                                <xsl:value-of select="$rating"/>
+                            </xsl:attribute>
+                            <xsl:apply-templates/>
+                        </xsl:element>
+                        </xsl:template>
+ 
+                        <xsl:template match="cd">
+                        <xsl:element name="cd-title">
+                            <xsl:value-of select = "title" />
+                        </xsl:element>
+                        </xsl:template>
+                    </xsl:stylesheet>
+        </mulexml:xslt-text>
+        <mulexml:context-property key="title" value="#[header:ListTitle]"/>
+        <mulexml:context-property key="rating" value="#[header:ListRating]"/>
+    </mulexml:xslt-transformer>
+ 
+<flow name="echoFlow">
+   <vm:inbound-endpoint exchange-pattern="one-way" path="test.in" transformer-refs="XSLT"/>
+   <echo-component/>
+</flow>
+</mule>
+----
+
+== 测试变压器
+
+该变压器可以使用以下功能测试进行测试。请注意，它使用`FunctionalTestCase`，这是Mule的 link:/mule-user-guide/v/3.4/functional-testing[测试支持]的一部分。
+
+[source, java, linenums]
+----
+public class XSLTWikiDocsTestCase extends FunctionalTestCase
+{
+    protected String getConfigResources()
+    {
+        return "org/mule/test/integration/xml/xslt-functional-test.xml";
+    }
+ 
+    public void testMessageTransform() throws Exception
+        {
+            //We're using Xml Unit to compare results
+            //Ignore whitespace and comments
+            XMLUnit.setIgnoreWhitespace(true);
+            XMLUnit.setIgnoreComments(true);
+ 
+            //Read in src and result data
+            String srcData = IOUtils.getResourceAsString(
+                    "org/mule/test/integration/xml/cd-catalog.xml", getClass());
+            String resultData = IOUtils.getResourceAsString(
+                    "org/mule/test/integration/xml/cd-catalog-result-with-params.xml", getClass());
+ 
+            //Create a new Mule Client
+            MuleClient client = new MuleClient(muleContext);
+ 
+            //These are the message roperties that will get passed into the XQuery context
+            Map<String, Object> props = new HashMap<String, Object>();
+            props.put("ListTitle", "MyList");
+            props.put("ListRating", new Integer(6));
+ 
+            //Invoke the flow
+            MuleMessage message = client.send("vm://test.in", srcData, props);
+            assertNotNull(message);
+            assertNull(message.getExceptionPayload());
+            //Compare results
+            assertTrue(XMLUnit.compareXML(message.getPayloadAsString(), resultData).similar());
+        }
+    }
+----

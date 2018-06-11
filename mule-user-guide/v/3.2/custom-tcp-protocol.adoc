@@ -1,0 +1,93 @@
+= 自定义TCP协议
+
+当使用TCP与外部程序进行通信时，可能需要编写一个自定义的Mule协议。第一步是获得外部程序如何在TCP流内分隔消息的完整描述。接下来是将协议实现为Java类。
+
+* 所有协议都必须实现接口`org.mule.transport.tcp.TcpProtocol`，其中包含三种方法：
+**  `Object read(InputStream is)`从TCP套接字读取消息
+**  `write(OutputStream os, Object data)`将消息写入TCP套接字
+**  `ResponseOutputStream createResponse(Socket socket)`创建一个可以写入响应的流。
+
+* 处理字节流而不是序列化Mule消息的协议可以通过继承`org.mule.transport.tcp.protocols.AbstractByteProtocol`继承许多有用的基础结构此类
+** 实现`createResponse`
+** 处理将消息转换为字节数组，允许子类仅实现更简单的方法`writeByteArray(OutputStream os, byte[] data)`
+** 提供了方法`safeRead(InputStream is, byte[] buffer)`和`safeRead(InputStream is, byte[] buffer, int size)`，用于处理当从TCP套接字进行非阻塞读取时数据当前不可用的情况
+
+假设我们要与具有简单协议的服务器进行通信：所有消息都由*>>>*终止。协议类看起来像这样：
+
+[source, java, linenums]
+----
+package org.mule.transport.tcp.integration;
+
+import org.mule.transport.tcp.protocols.AbstractByteProtocol;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+
+public class CustomByteProtocol extends AbstractByteProtocol
+{
+
+    /**
+     * Create a CustomByteProtocol object.
+     */
+    public CustomByteProtocol()
+    {
+        super(false); // This protocol does not support streaming.
+    }
+
+    /**
+     * Write the message's bytes to the socket,
+     * then terminate each message with '>>>'.
+     */
+    @Override
+    protected void writeByteArray(OutputStream os, byte[] data) throws IOException
+    {
+        super.writeByteArray(os, data);
+        os.write('>');
+        os.write('>');
+        os.write('>');
+    }
+
+    /**
+     * Read bytes until we see '>>>', which ends the message
+     */
+    public Object read(InputStream is) throws IOException
+    {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        int count = 0;
+        byte read[] = new byte[1];
+
+        while (true)
+        {
+            // if no bytes are currently avalable, safeRead()
+            // will wait until some arrive
+            if (safeRead(is, read) < 0)
+            {
+                // We've reached EOF.  Return null, so that our
+                // caller will know there are no
+                // remaining messages
+                return null;
+            }
+            byte b = read[0];
+            if (b == '>')
+            {
+                count++;
+                if (count == 3)
+                {
+                    return baos.toByteArray();
+                }
+            }
+            else
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    baos.write('>');
+                }
+                count = 0;
+                baos.write(b);
+            }
+        }
+    }
+}
+----

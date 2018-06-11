@@ -1,0 +1,51 @@
+= 将Mule部署到JBoss
+:keywords: deploy, deploying, jboss
+
+与部署在JBoss中的企业应用程序集成的推荐方法是将Mule作为独立应用程序部署，然后使用Mule link:/mule-user-guide/v/3.7/ejb-transport-reference[EJB传输参考]（或使用 link:http://docs.spring.io/spring/docs/4.1.6.RELEASE/spring-framework-reference/html/ejb.html[Spring EJB代理]配置的组件）与您的EJB在JBoss中集成。如果因为其他原因（例如使用JBoss集群）需要在JBoss应用程序服务器中部署Mule，请使用此页面上的说明。请注意，如果您使用的是JBoss集群，则无法使用有状态路由器。
+
+注意：从Mule 3.7开始，支持Spring 4.1.6。
+
+您可以采取两种主要方法将Mule部署到JBoss：
+
+. 简单的WAR部署 - 在这种方法中，您只需 link:/mule-user-guide/v/3.7/embedding-mule-in-a-java-application-or-webapp[在你的应用程序中嵌入Mule]并构建WAR。您的自定义实现类是WAR的一部分。
+.  EAR应用程序 - 您可以将WAR嵌入到EAR文件中，并包含其他文件（如EJB）。
+
+== 类加载器隔离
+
+当JBoss进行类加载时，除非指定了类加载器隔离，JBoss首先会尝试使用它自己的类进行部署，只有当这些类未找到时，才会在部署文件的库中查找它们。由于用于加载Mule的库的版本与JBoss使用的版本不同，因此可能会出现诸如ClassCastExceptions之类的各种错误，因此类加载隔离非常重要。因此，为了获得最佳结果，您应该在JBoss配置中使用类加载器隔离。有关更多信息，请参阅 link:https://community.jboss.org/wiki/ClassLoadingConfiguration[ClassLoadingConfiguration]。
+
+==  JBoss MQ配置
+
+有关配置JBoss JMS连接器的信息，请参阅 link:/mule-user-guide/v/3.3/jboss-jms-integration[JBoss JMS集成]和<<Using JBoss with AS 7>>。
+
+== 在JBoss中使用Mule设置您的用户应用程序
+
+对于这种情况，部署非常简单：只需将自己的JAR和WAR存档添加到您的EAR文件。因为所有部署在同一个EAR中，用户应用程序和Mule都需要的所有类共享同一个类加载器。但是有时可能需要其他类不在您的EAR中部署。
+
+=== 解决交叉依赖关系
+
+当您想在独立的EAR文件中部署依赖Mule的代码时（例如，您有一个自定义转换器来扩展Mule的`AbstractTransformer`类），情况会变得更加复杂。用户EAR依赖于要加载的Mule库来加载自定义转换器库，而Mule期望加载用户EAR以能够使用在用户EAR中找到的转换器类。要解决这些交叉依赖性问题，可以创建一个共享库（也许在另一个EAR文件中），并在Mule EAR和用户EAR中的`jboss-app.xml`文件的`<loader-repository>`元素中指定库。 Mule Enterprise Edition用户可以在知识库文章"Embedding in JBoss: How to Share Classes Between Your Mule EE EAR and Another Application"中看到这个示例。
+
+== 与AS 7一起使用JBoss
+
+JBoss应用服务器（AS）7提供了连接到JBoss JMS的新方法，
+以下是可与JBoss AS 7一起使用的示例配置：
+
+[source,xml,linenums]
+----
+<spring:bean id="jndiProps" class="org.springframework.beans.factory.config.MapFactoryBean">
+<spring:property name="sourceMap">
+<spring:map>
+<spring:entry key="java.naming.security.principal" value="jmsuser"/>
+<spring:entry key="java.naming.security.credentials" value="jmspassword"/>
+</spring:map>
+</spring:property>
+</spring:bean>
+<jms:connector name="jms-connector" jndiInitialFactory="org.jboss.naming.remote.client.InitialContextFactory"
+jndiProviderUrl="remote://localhost:4447"
+connectionFactoryJndiName="jms/RemoteConnectionFactory" jndiDestinations="false"
+forceJndiDestinations="false" createMultipleTransactedReceivers="true" username="jmsuser" password="jmspassword"
+numberOfConcurrentTransactedReceivers="10" disableTemporaryReplyToDestinations="true" jndiProviderProperties-ref="jndiProps">
+</jms:connector>
+----
+

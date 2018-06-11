@@ -1,0 +1,127 @@
+= 构建HTTPS服务
+:keywords: runtime manager, arm, https, cloudhub
+
+// image:logo-cloud-active.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+// image:logo-hybrid-disabled.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+// image:logo-server-disabled.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+// image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+CloudHub支持构建基于HTTPS / SSL的服务，以确保您的数据机密性。
+
+[NOTE]
+--
+本文档中显示的配置步骤适用于将您的应用部署到CloudHub。如果您打算在本地部署应用，请参阅 link:/mule-user-guide/v/3.8/tls-configuration[TLS配置]。 +
+link:/runtime-manager/deployment-strategies[部署策略]文档详细介绍了每种部署方案之间的配置应该如何不同。
+--
+
+本教程建立在现有教程的基础上，因此开始时使用 link:/getting-started/deploy-to-cloudhub[部署到CloudHub教程]构建服务。
+
+您现在可以修改您的现有服务以使用HTTPS，如以下步骤中所述。
+
+. 如果您还没有密钥库，请生成一个密钥库。
+::您可以使用命令行和JDK中的keytool实用程序执行此操作。
++
+[IMPORTANT]
+--
+要立即生成自签名证书，您必须在您的命令中指定主机名，属性“SAN = DNS：localhost，IP：127.0.0.1”是下例中的关键
+--
++
+[source, code, linenums]
+----
+keytool -genkeypair -keystore keystore.jks   -dname "CN=localhost, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=Unknown"  -keypass password  -storepass password  -keyalg RSA  -sigalg SHA1withRSA  -keysize 2048  -alias mule  -ext SAN=DNS:localhost,IP:127.0.0.1 -validity 9999
+----
++
+该命令将创建一个名为`keystore.jks`的文件。在继续之前，请验证此文件是否存在并出现在文件夹`src/main/resources`中。
+
+. 在Mule配置中配置HTTPS连接器：
++
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:https="http://www.mulesoft.org/schema/mule/https" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/https http://www.mulesoft.org/schema/mule/https/current/mule-https.xsd">
+    <http:listener-config name="HTTPS_Listener_Configuration" protocol="HTTPS" host="0.0.0.0" port="${https.port}" doc:name="HTTP Listener Configuration">
+        <tls:context>
+            <tls:key-store path="keystore.jks" password="password" keyPassword="${keystore.password}"/>
+        </tls:context>
+    </http:listener-config>
+...
+----
++
+
+. 使用HTTPS方案和端口的*`${https.port}`*变量配置要使用HTTPS的任何主机IP地址。
+::确保包含对HTTPS全局连接器配置的引用。例如：
++
+[source,xml, linenums]
+----
+<http:listener config-ref="HTTPS_Listener_Configuration" path="hello" doc:name="HTTP"/>
+----
+
+要向外部地址发出HTTPS请求，请使用所需的TLS配置配置HTTP请求者：
+
+[source,xml, linenums]
+----
+ <http:request-config name="https.request" protocol="HTTPS" host="0.0.0.0" port="${https.port}" doc:name="HTTP Request Configuration">
+        <tls:context>
+            <tls:key-store path="keystore.jks" password="password" keyPassword="${keystore.password}"/>
+        </tls:context>
+    </http:listener-config>
+
+...
+
+  <http:request config-ref="https.request" path="some-path" doc:name="HTTPs out" method="GET" followRedirects="true" parseResponse="false"/>
+...
+----
+
+这些相同的配置都可以通过Anypoint Studio UI轻松实现。有关如何完成的说明以及更深入的配置详细信息，请参阅 link:/mule-user-guide/v/3.8/http-connector[HTTP连接器]文档。
+
+您的应用程序现在已准备好部署在CloudHub上。您可以通过正常的HTTPS地址访问您的端点，例如：`+https://yourdomain.cloudhub.io+`。
+
+API Manager代理中的== 服务
+
+如果系统提示您从API Manager下载代理并需要将其配置为HTTPS，则可以执行上述步骤，但HTTP侦听器的配置已为您制定模板。
+
+. 在Studio中导入代理项目后，为您的代理流选择配置选项卡。
+::请注意，解析器检测到错误。该流程引用了一个HTTPS连接器，该连接器因为需要进行一些调整而被评论。
++
+. 取消注释http：listener-config块。
+. 填写有关密钥库：路径，密码和密钥的信息。
+::你可以使用外部属性。还要记住，路径不应该包含src / main / resources。
++
+您的配置应该与以下内容类似：
++
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:api-platform-gw="http://www.mulesoft.org/schema/mule/api-platform-gw"
+      xmlns:expression-language="http://www.mulesoft.org/schema/mule/expression-language-gw"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/api-platform-gw http://www.mulesoft.org/schema/mule/api-platform-gw/current/mule-api-platform-gw.xsd
+http://www.mulesoft.org/schema/mule/expression-language-gw http://www.mulesoft.org/schema/mule/expression-language-gw/current/mule-expression-language-gw.xsd">
+
+    <configuration defaultProcessingStrategy="non-blocking" />
+
+    <expression-language:property-placeholder location="config.properties" />
+
+    <api-platform-gw:api apiName="![p['api.name']]" version="![p['api.version']]" flowRef="proxy">
+    </api-platform-gw:api>
+
+    <{{0}}]" protocol="HTTPS">
+        <tls:context name="tls-context-config">
+            <tls:key-store path="keystore.jks" password="password"
+                           keyPassword="${keystore.password}"/>
+        </tls:context>
+     </http:listener-config>
+...
+----
+
+除了这些警告外，配置与上述通用步骤相同。

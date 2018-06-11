@@ -1,0 +1,270 @@
+= 配置端点
+
+*  <<Basic Configuration>>
+*  <<Dynamic Endpoints>>
+*  <<Message Processors>>
+*  <<Global Endpoints>>
+
+端点用于连接流。端点是流可以发送消息的特定通道，并且其他流或外部服务可以从该通道接收消息。例如，购买组件可能会通过HTTP接收订单请求。一旦组件处理了订单，可以通过主题发送JMS消息以通知审核系统，并且可以通过HTTP发回响应。
+
+本页介绍如何配置端点。有关您可以在端点上配置的各种属性和元素的详细信息，请参阅 link:/mule-user-guide/v/3.4/endpoint-configuration-reference[端点配置参考]。
+
+== 基本配置
+
+在其最基本的形式中，一个端点由一个 link:/mule-user-guide/v/3.4/connecting-using-transports[运输]和一个特定传输通道/目标/资源组成，用于标识两个流可以交换信息的通道和位置。例如：
+
+*URI-style Endpoints*
+
+[source,xml,linenums]
+----
+<inbound-endpoint address="udp://localhost:65432"/>
+ 
+<jetty:inbound-endpoint address="http://localhost:60211/mycomponent1" exchange-pattern="request-response" />
+ 
+<outbound-endpoint address="smtp://user:secret@smtp.host"/>
+ 
+<inbound-endpoint address="jms://test.queue"/>
+----
+
+传统上，Mule ESB中的端点已被指定为 link:/mule-user-guide/v/3.4/mule-endpoint-uris[URI]，如上面的示例。这种形式仍然受到支持，并且实际上可能会根据您的应用程序而更加实际。但是，从Mule 2.0开始，指定端点的推荐方法是通过特定于传输的名称空间，如以下示例所示。
+
+*Transport-specific Endpoints*
+
+[source,xml,linenums]
+----
+<file:inbound-endpoint path="./.mule/in"
+comparator="org.mule.transport.file.comparator.OlderFirstComparator" reverseOrder="true"/>
+ 
+<ssl:endpoint name="clientEndpoint" host="localhost" port="60198"/>
+ 
+<jetty:endpoint name="serverEndpoint" host="localhost" port="60203" path="services/Foo" />
+ 
+<imaps:endpoint name="global1s" host="localhost" password="secret" port="123" user="bob"/>
+ 
+<rmi:endpoint name="BadType" host="localhost" port="1099" object="MatchingUMO" method="reverseString"/>
+ 
+<quartz:endpoint name="qEP6" repeatCount="10" repeatInterval="1000" jobName="job"/>
+ 
+<jms:inbound-endpoint queue="test.queue"/>
+----
+
+== 动态端点
+
+从Mule 3开始，出站端点也可以是动态的。这意味着端点的URI是 link:/mule-user-guide/v/3.4/mule-expression-language-mel[表达]的值，在发送消息之前对其进行评估。这允许消息的目标由其内容或任何消息属性的值确定。动态端点可以使用上述任何一种端点格式。
+
+*Dynamic Endpoints*
+
+[source,xml,linenums]
+----
+<outbound-endpoint address="smtp://user:secret@#[message.outboundProperties['host']]"/>
+ 
+<{{0}}]" path="orderService"/>
+ 
+<jms:outbound-endpoint host="localhost" queue="#[app.registry['defaultJmsQueue']]"/>
+----
+
+不能动态的端点URI的唯一部分是该方案。不要这样做：
+
+*Illegal Dynamic Endpoint*
+
+[source,xml]
+----
+<outbound-endpoint address="#[message.inboundProperties['endpointType']]//localhost:8080/service"/>
+----
+
+=== 连接器
+
+在很多情况下，与端点关联的连接器可以简单地假设为基于传输并隐式创建。但是，如果存在多个具有相同传输方式的连接器，或者如果连接器使用了非默认设置，则必须使用`connector-ref`属性引用端点中的连接器。
+
+*Specifying a connector*
+
+[source,xml,linenums]
+----
+<inbound-endpoint address="tcp://localhost:65432" connector-ref="tcpConnector1"/>
+<tcp:inbound-endpoint host="localhost" port="65433" connector-ref="tcpConnector2"/>
+----
+
+=== 属性
+
+端点上的属性可用于自定义行为。可以使用端点上设置的任何属性来覆盖关联传输器连接器上的默认属性。例如，SMTP出站端点可能会将`fromAddress`属性设置为`workflow1`以覆盖`sysadmin`的默认连接器值。如果使用特定于传输的端点，则端点的任何标准属性都可用作XML模式中的属性。也可以指定一个非标准属性。例如：
+
+*Setting properties*
+
+[source,xml,linenums]
+----
+<!-- Standard properties -->
+<quartz:endpoint name="qEP6" repeatCount="10" repeatInterval="1000" jobName="job"/>
+ 
+<!-- Non-standard properties -->
+<quartz:endpoint name="qEP7" jobName="job2">
+    <property key="actionOnTimeout" value="self-destruct"/>
+    <property key="precision" value="2.5"/>
+</quartz:endpoint>
+----
+
+=== 交换模式
+
+默认情况下，端点是单向的;也就是说，他们接受（或发送）消息，但不会返回（或接收）对这些消息的响应。要设置端点等待响应，请设置`exchange-pattern="request-response"`。 HTTP / S，SSL，TCP和Servlet端点（默认情况下为请求 - 响应）不需要此设置。
+
+=== 事务
+
+事件可以在通过端点接收或发送事件时开始或提交。端点必须是同步的，并且交易支持在很大程度上取决于所使用的特定传输。有关更多信息，请参阅 link:/mule-user-guide/v/3.4/transaction-management[交易管理]。
+
+*Transaction example*
+
+[source,xml,linenums]
+----
+<jms:inbound-endpoint queue="in">
+    <jms:transaction action="BEGIN_OR_JOIN"/>
+</jms:inbound-endpoint>
+----
+
+=== 编码
+
+这是用于转换邮件内容的端点编码。对于入站端点，它用于将接收到的字节转换为字符。对于出站端点，它用于将要发送的字符转换为字节。如果端点上未设置编码，则使用Mule配置的默认编码。这是默认为UTF-8。
+
+*Encoding example*
+
+[source,xml]
+----
+<inbound-endpoint address="tcp://localhost:65432" encoding="iso-8859-1"/>
+----
+
+===  Mime类型
+
+这是与端点消息关联的MIME类型。在入站端点上设置时，它指示传入消息的预期消息类型。接收具有不同MIME类型的消息会导致异常。在出站端点上设置时，结果是在所有传出消息上设置该MIME类型。
+
+*MimeType example*
+
+[source,xml]
+----
+<inbound-endpoint address="tcp://localhost:65432" mimeType="text/xml"/>
+----
+
+=== 重新送货政策
+
+可以在入站端点上定义重新传送策略。它类似于可以在JMS代理上设置的最大重新传递计数，并且解决了类似的问题：如果异常导致消息的读取反复回滚，如何避免无限循环？这是一个例子：
+
+*Redelivery Policy example*
+
+[source,xml,linenums]
+----
+<flow name ="syncFlow" processing-strategy="synchronous">
+    <file:inbound-endpoint path="/tmp/file2ftp/ftp-home/dirk">
+        <idempotent-redelivery-policy maxRedeliveryCount="3">
+            <dead-letter-queue>
+                <vm:outbound-endpoint path="error-queue" />
+            </dead-letter-queue>
+        </idempotent-redelivery-policy>
+    </file:inbound-endpoint>
+    ...
+----
+
+如果流程后面的某个内容抛出异常，则该文件将不会被使用，并且会被重新处理。 `idempotent-redelivery-policy`确保它不会再处理3次以上;之后，它被发送到`vm:error-queue`，在那里作为错误情况处理。
+
+== 消息处理器
+
+什么是消息处理器？这是一个非常简单的接口，用于接收Mule消息并执行某些操作（对其进行转换，过滤，拆分等）。实现这个简单接口的一切优点之一是消息处理器可以以任何顺序链接在一起，可以有任意数量的消息处理器，并且它们可以很容易地交换。这种事情在骡子3之前完全不可能。
+
+对于端点，允许使用以下消息处理器：
+
+* 变压器
+* 过滤器
+* 安全筛选器
+* 聚合器
+* 分配器
+* 自定义消息处理器
+
+您可以将任意数量的这些消息处理器作为子端点上的子元素（入站或出站），并按照它们列出的消息顺序应用于通过该端点的任何消息。
+
+在同步出站端点的情况下，涉及响应消息，因此任何数量的消息处理器也可以放入响应包装器中，并按照列出的顺序应用于响应消息。
+
+请注意，可以在本地声明任何这些元素（即在端点中内联）或全局声明（并通过ref = "foo"属性进行引用）。
+
+=== 变压器
+
+可以在端点上配置 link:/mule-user-guide/v/3.4/using-transformers[变形金刚]，在端点上封装转换逻辑，然后根据需要重新使用它。
+
+使用子消息处理器元素在端点上配置变形金刚。在入站端点上进行配置时，它们用于转换端点接收到的消息，并且在出站端点上配置时，它们将用于在发送消息之前转换消息。
+
+响应转换器可以在嵌套的`<response>`元素中进行配置。在入站端点上配置这些变换器时，这些变换器将在通过传输器发回之前应用于该消息，并且在出站端点上配置时，它们将应用于从出站端点的调用接收到的消息（如果有）。
+
+与在端点上配置的所有消息处理器一样，它们的配置顺序也是它们的执行顺序。
+
+[source,xml,linenums]
+----
+<inbound-endpoint address="file://./test-data/in">
+  <xml-to-object-transformer/>
+  <expression-filter expression=""/>
+  <transformer ref="ExceptionBeanToErrorMessage"/>
+  <response>
+    <custom-transformer class=""/>   
+  </response>
+</inbound-endpoint>
+----
+
+在上面的示例中，您可以看到配置了两个请求转换器，其中一个在表达式过滤器之前执行，另一个在后面执行。在`<response>`元素中配置的自定义转换器将应用于响应消息。
+
+*Global Endpoints*
+
+ 尽管全局定义的变换器可以使用\ {{<transformer ref=""/>元素从端点引用，如上例所示，端点也支持快捷方式通知。
+
+  [源，XML，linenums]
+  ----
+  <入站端点地址= "file://./test-data/in"
+ 变压器参= "globalTransformer1 globalTransformer2"
+  responseTransformer-参= "globalTransformer2" />
+  ----
+
+`transformer-refs`和`responseTransformer-refs`属性可用于快速轻松地引用全局端点。
+
+以这种方式引用的任何变换器都会添加到配置了子元素的消息处理器列表的末尾，因此最后执行。如果您需要在执行某项过滤之前执行它们，或者需要将全局端点与本地定义的端点按照特定顺序一起使用，那么您需要改用`<transformer>`个元素。
+
+=== 过滤
+
+一个端点可以包含一个过滤器来选择性地忽略某些消息过滤器可以是传输特定的，如JMS选择器或文件过滤器，也可以是通用过滤器，如JXPath。所有传输都不支持筛选，并且使用某些传输在端点上设置筛选会导致UnsupportedOperationException。有关更多信息，请参阅 link:/mule-user-guide/v/3.4/using-filters[使用过滤器]。
+
+*Filter example*
+
+[source,xml,linenums]
+----
+<jms:endpoint queue="in.queue">
+    <jms:selector expression="JMSPriority > 5"/>
+</jms:endpoint>
+ 
+<vm:endpoint name="fruitBowlEndpoint" path="fruitBowlPublishQ">
+    <message-property-filter pattern="foo=bar"/>
+</vm:endpoint>
+----
+
+=== 其他消息处理器
+
+尽管过滤器和变换器是端点内最常用的消息处理器，但您可以轻松配置其他消息处理器。在 link:/mule-user-guide/v/3.4/message-sources[消息来源]页面上查看有关可用消息处理器的更多信息。
+
+== 全球终端
+
+全局端点虽然不是必需的，但对于组织良好的配置文件而言，建议使用最佳实践。全局端点可以被认为是共享端点配置的模板。全局端点可以按全局定义使用，也可以通过添加更多配置属性或元素进行扩展。
+
+要引用全局端点，请使用通常的`<inbound-endpoint>`和`<outbound-endpoint>`元素，并使用`ref`属性指定全局端点名称。
+
+*Global endpoint example*
+
+[source,xml,linenums]
+----
+<file:endpoint name="fileReader" reverseOrder="true" comparator="org.mule.transport.file.comparator.OlderFirstComparator"/>
+...cut...
+ 
+ <flow name="Priority1">
+        <file:inbound-endpoint ref="fileReader" path="/var/prio1"/>
+        ...cut...
+  </flow>
+ 
+  <flow name="Priority2">
+        <file:inbound-endpoint ref="fileReader" path="/var/prio2"/>
+        ...cut...
+  </flow>
+----
+
+在上例中，`"fileReader"`端点用作入站端点的模板。属性`reverseOrder`和`comparator`只需要声明一次，并且每个入站端点的属性`path`都会更改。
+
+

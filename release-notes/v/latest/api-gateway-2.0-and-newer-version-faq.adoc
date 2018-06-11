@@ -1,0 +1,66 @@
+=  API网关2.0和更新版本常见问题
+:keywords: api gateway, proxy
+
+=== 为什么这是一个主要版本，而不是次要版本的API网关？
+
+MuleSoft使用主要版本来引入更大的改进和更改以及影响向后兼容性的更改。 API网关的这个版本已经改变了它的基础HTTP堆栈，以便与ESB 3.7堆栈保持一致，并提供定制策略。有了这两个重大变化，发布版本被设置为主要版本。
+
+===  API网关2.0中有哪些新功能？
+
+以下功能仅适用于API网关的2.0（和更新版本）：
+
+* 外部AES OAuth 2.0和相关策略。
+*  HTTP NIO策略和关联的生成代理。
+* 基于Java 8的运行时。
+
+===  API网关2.0中的新功能与以前的版本不兼容？
+
+在此版本的API网关中，这些重要区域已更改：
+
+.  *API proxies and applications*  - 在API网关2.0中，我们升级了HTTP传输以匹配ESB 3.7运行时使用的HTTP传输。这种传输具有我们在代理生成中使用的纯粹的NIO策略支持。新的传输在API网关用例中带来了两个重要优势：
+*  *Connections*  - 到单个网关实例的连接数可能会大得多。
+*  *Threads*  - 调整性能时调整执行线程数量的需求消失，因为只有少数线程可以处理所有代理服务器流量，因为它们具有非阻塞性质。
++
+
+此更改表示您需要先迁移先前生成的所有代理和应用程序，然后再运行新的API Gateway 2.0运行时（如果其API保持管理状态）。请参阅 link:/release-notes/migration-guide-to-api-gateway-2.0.0-or-later[API Gateway 2.0.0或更高版本的迁移指南]了解如何执行迁移。
+
+. 策略定义和处理 - 策略定义已被修改为包含一个新的ID和policyName字段，如下例所示：
++
+
+[source, xml, linenums]
+----
+<policy xmlns="http://www.mulesoft.org/schema/mule/policy" ...
+  online="true" id="8298" policyName="Rate Limiting SLA Based">
+</policy>
+----
+
+这些信息是必要的，以便策略可以在完全本地配置中工作，以便将丰富的分析数据发送到第三方目标。
+
+这一变化的影响如下：
+
+*  *Out-of-the-box policies*  - 所有策略都已根据发行版进行了相应修改，并继续以完全容量（除了新的外部AES令牌验证策略除外）处理1.x版和2.0版网关只能与2.0版本的API网关一起使用）。
+
+*   *Custom policies*  - 自定义策略像以前一样继续工作，但有一个例外：当API网关升级到版本2.0时，应用的自定义策略无法向Google Analytics系统报告策略违规事件。要解决此问题，请按照以下示例使用policyName字段修改自定义策略：
++
+
+[source, xml, linenums]
+----
+<policy xmlns="http://www.mulesoft.org/schema/mule/policy" ...
+  online="true" id="{{policyId}}" policyName="My custom policy name">
+</policy>
+----
+
+在使用policyName字段扩展自定义策略之后，它仅适用于API Gateway 2.0。使用分阶段方法并注册自定义策略的新实例。如果API使用旧版本的网关，则策略的旧版本可以保持活动状态。
+
+=== 为什么生成的代理在API Gateway 2.0与1.3.x及更高版本中有所不同？
+
+为API Gateway 2.0生成的代理使用Mule 3.6 link:/mule-user-guide/v/3.7/http-listener-connector[HTTP侦听器连接器]和NIO策略来提供最佳性能。使用侦听器连接器意味着代理使用的实际端口号未在代理配置时配置，而是在网关层设置。这是“API代理生成”屏幕中显示的信息说明背后的原因：
+
+API Gateway 2.0发行版默认具有两个基于HTTP侦听器连接器的共享域 - 一个用于HTTP，端口设置为8081，另一个用于端口设置为443的HTTPS。
+
+=== 如何将现有API代理或应用程序从以前的版本迁移到API Gateway 2.0？
+
+现有托管API有两种迁移路径：
+
+.  **API uses an unmodified, generated proxy**  - 使用 link:/release-notes/migration-guide-to-api-gateway-2.0.0-or-later[API Gateway 2.0分发提供的迁移工具]将所有现有代理迁移至符合API Gateway 2.0的版本。
+.  **API uses a custom built Mule application or a modified, generated proxy**  - 更改您的Mule应用程序或自定义代理，并将HTTP入站端点更改为使用 link:/mule-user-guide/v/3.7/http-listener-connector[HTTP侦听器连接器]。

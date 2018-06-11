@@ -1,0 +1,81 @@
+= 请求 - 应答范围
+:keywords: request reply, asynchronous
+
+**Request-Reply **范围使您能够在Mule流中嵌入"pocket"异步处理。此功能使您能够接收来自异步流程的响应，而无需对响应的目标进行硬编码。例如，您可以使用request-reply将**one-way** VM或JMS流转换为**request-response**流，而无需更改其配置。换句话说，请求 - 回复将同步进程的一部分转换为异步进程。
+
+== 假设
+
+本文档假定您了解同步和异步流程之间的区别，并熟悉Scopes。
+
+== 基本解剖学
+
+请求 - 回复由两部分组成：
+
+*  *request*部分包装提交异步请求到另一个流或外部资源的连接器或出站连接器
+*  *response*部分包装接收来自另一个流或外部资源的异步响应的连接器或入站连接器
+
+image:request+reply+scope+1.png[图片]
+
+请求 - 回复消除了明确地相互引用出站和入站连接器的需要。当Mule通过Request-Reply范围中的VM出站连接器异步发送请求时，它会将消息的出站属性`MULE_REPLYTO`隐式设置为其相应入站连接器的URL。换句话说，在上面的例子中，您不需要在回复部分的虚拟机中包含引用来引用提交请求的请求部分中的虚拟机。
+
+设置为*transactional*的VM或JMS连接器无法在请求回复范围内使用。 VM和JMS连接器都允许您执行多种不同类型的事务，但这些事务与请求 - 应答范围的工作方式都不兼容。这是因为请求 - 响应发出的请求在事务提交之前不会被发送 - 但是在整个流程被执行之前，事务并不会被提交（包括执行请求 - 响应范围）。这导致两种进程相互阻塞的情况：流程未完全执行，因为它仍在等待请求回复作用域上的响应，但由于请求尚未发送，所以此响应将永远不会到达（如前所述，只有在提交事务后才会发送此消息）。
+
+== 配置请求 - 应答
+
+. 为您的流程添加*Request-Reply*范围，然后根据下表配置属性。 +
+
++
+[%header,cols="4*"]
+|===
+| {字段{1}}值 | {职位月薪{3}}说明
+| *Display Name*  | string  | x  |为应用程序中的元素定义唯一值。
+| *Prefix of the Object Store*  |字符串 |   |定义Mule应存储请求 - 回复消息的对象库名称前缀。
+| *Timeout (ms)*  |整数 |   |定义异步进程在超时之前保持活动的时间。 （即，定义入站连接器等待响应的时间）
+|===
+
+. 添加或连接器（出站连接器）到示波器的*Request*部分，然后将连接器（入站连接器）添加到示波器的*Response*部分。配置每个连接器分别提交请求和接收响应。该范围确保其中发生的活动相对于其余流程异步进行。
+
+
+===  XML编辑器或独立
+
+
+. 为您的流添加一个*request-reply*元素，然后根据下表配置属性。
++
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+
+    <flow name="request-replyFlow1" doc:name="request-replyFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <request-reply doc:name="Request-Reply">
+            <vm:outbound-endpoint exchange-pattern="one-way" path="request" doc:name="VM"/>
+            <vm:inbound-endpoint exchange-pattern="one-way" path="reply" doc:name="VM"/>
+        </request-reply>
+    </flow>
+</mule>
+----
++
+[%header%autowidth.spread]
+|===
+|元素 | {属性{2}}值 | {职位月薪{4}}说明
+| *`request-reply`*  | `doc:name`  |字符串 | x  |为应用程序中的元素定义唯一值。
+定义Mule应存储请求回复的对象存储区名称前缀。| *`request-reply`*  | `storePrefix`  | string  |   {{6}消息。
+定义超时之前异步进程保持活动的毫秒数。{} （即，定义入站连接器等待响应的时间）
+|===
+. 作为request-reply元素的子元素，添加一个*outbound connector*或连接器来定义Mule如何向外部源提交请求。
+. 作为request-reply元素的子元素，添加一个*inbound connector*或连接器来定义Mule如何接收对外部源的响应。该范围确保其中发生的活动相对于其余流程异步进行。
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.6/flows-and-subflows[同步和异步流程]
+*  link:/mule-user-guide/v/3.6/scopes[领域]

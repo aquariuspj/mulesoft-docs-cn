@@ -1,0 +1,585 @@
+=  X12 EDI连接器
+：imagesdir：./_images
+
+_Premium_
+
+X12 EDI连接器可让您将X12消息转换为和转换
+使用列表和地图的DataWeave兼容表示。 X12版本003010,003020,003030,003040,003050,003060,003070,004010,004020,004030,004040,004050,004060,005010,005020,005030,005040,005050和006020通过提供的所有标准事务的模式定义来支持集。
+
+== 先决条件
+
+本文档假定您熟悉X12，Mule，Anypoint
+连接器，Anypoint Studio，Mule流和Mule全局元素。
+
+有关兼容性信息，请参阅发行说明。链接到
+发布说明列在本文档的另请参见部分。
+
+要在生产环境中使用X12 EDI连接器，您必须
+已经为Anypoint B2B购买了MuleSoft许可证。
+
+== 此连接器的新增功能
+
+X12 EDI连接器2.x对通过X12 EDI连接器1.x实现的配置和处理进行了一些更改。
+
+*  X12 EDI连接器1.x仅支持使用单一版本标准的事务集。 Mule 4 X12 EDI连接器2.x支持使用多个标准版本的交易集。包含在组（GS片段）数据中的版本信息用于标识标准版本，并且事务集标识符确定特定模式。
+
+* 为标准X12与HIPAA的使用提供了更清晰的配置选项。 formValidation参数选择您是使用标准X12，带有SNIP类型1验证的HIPAA还是使用SNIP类型2验证的HIPAA（其他SNIP验证类型未在连接器级别实现，但可以在应用程序代码中实现）。选择X12时，只能使用标准X12架构;当选择HIPAA选项时，只能使用HIPAA模式。
+
+* 默认字符编码取自Mule平台，但可以更改为配置中的标准X12字符编码之一。
+
+* 识别参数不再用于读取和写入操作。您可以配置传递给写操作的实际消息数据中的所有参数值。
+
+*  X12 EDI Connector 1.x提供了一个validateBeforeWrite配置选项
+在写入输出流之前检查数据中的任何错误。在X12 EDI连接器2.x中，这种行为是唯一的操作模式
+配置参数不再受支持。
+
+== 在Anypoint Studio 7中安装此连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+您必须更改默认的Anypoint配置才能使用X12 EDI连接器2.0.0。
+
+Anypoint Studio 7.1.0及更高版本可能需要比标准内存更多的内存
+配置使用X12 EDI连接器4.0.0。改变记忆
+设置Studio，编辑Anypoint Studio中的Anypoint.ini文件
+安装目录并将以`-Xms`和`-Xmx`开头的两行更改为：
+
+[source,code,linenums]
+----
+-Xms4096m
+-Xmx4096m
+----
+
+这将Anypoint Studio内存设置为4 GB，这已足够
+对于这个连接器的大部分用法。
+
+== 创建模式
+
+根据您的实施创建模式来描述您的消息。
+
+=== 关于EDI模式语言
+
+X12 EDI模块使用名为ESL（用于EDI模式语言）的YAML格式来表示EDI模式。基本ESL根据结构（X12术语中的事务集），组（X12中的循环），段，组合和元素定义EDI消息的结构。包括用于X12版本003010,003020,003030,003040,003050,003060,003070,004010,004020,004030,004040,004050,004060,005010,005020,005030,005040,005050和006020的ESL。还包括一组基于X12交易集的HIPAA变体。
+//请参阅单独的HIPAA文档页面，以获取本文档的另请参见部分中列出的更多详细信息。
+
+您可以通过定义覆盖模式来自定义X12模式定义以适合您的数据。覆盖模式是一种特殊的ESL形式，允许您使用特定的约定修改基本模式，如X12 4010 850模式。如果您使用的是标准定义的结构，则不需要覆盖模式，但大多数EDI交换都会修改实现约定中的基础定义。
+
+您也可以从头开始定义自己的模式，或复制和编辑基本X12模式定义以适合您的数据。有关更多详细信息，请参阅EDI架构语言参考。
+//列在本文档的另请参见部分。
+
+[NOTE]
+====
+YAML使用列表和一组键值对。的顺序
+只要所需物品存在，价值并不重要。行情
+（单引号或双引号）用于可能包含的值
+的数字，但意味着被解释为字符串（因为否则的
+YAML解析器将这些值视为数字）。缩进用于显示列表的嵌套。
+
+为了便于阅读，这里显示的ESL结构定义了所有简单的键值
+在属于相同定义的任何列表之前配对。
+====
+
+=== 用覆盖架构来定义您的实施公约
+
+要根据您的实施惯例指定模式，您可以按照以下流程进行操作：
+
+. 创建一个覆盖架构，用于导入要自定义的基础架构 - 例如X12 005010 850。
+. 自定义细分使用情况，职位，群组和计数的总体结构。
+. 自定义细分，包括使用情况和计数。
+
+覆盖架构在结构上与 link:/anypoint-b2b/edi-schema-language-reference[完整的模式定义]非常相似，但不提供架构结构的所有细节，而只是列出更改。覆盖模式指定如何使用与特定贸易伙伴的实施约定来扩展和自定义标准。
+
+以下示例提供了修改基本X12 005010 850事务集定义的示例重叠架构的开始。此示例定制CUR段并指定它未被使用，从而确保它对Anypoint Studio中的映射结构隐藏。
+
+[source,yaml, linenums]
+----
+form: X12
+version: '005010'
+imports: [ '/x12/005010/850.esl' ]
+structures:
+- idRef: '850'
+  name: Purchase Order
+  class: PO
+  heading:
+  - { idRef: 'CUR', position: '0400', usage: U }
+----
+
+=== 结构覆盖
+
+结构覆盖详细说明对X12事务集的基本模式定义的修改。大多数情况下，这些修改采用将基本定义中的片段或组标记为未使用的形式，但允许使用或重复计数更改。
+
+以下是结构覆盖所采用的形式：
+
+[source,yaml, linenums]
+----
+- idRef: '850'
+  heading:
+  - { idRef: 'CUR', position: '0400', usage: U }
+  - { idRef: 'PER', position: '0600', usage: U }
+  - groupIdRef: 'N9_Loop'
+    position: '2950'
+    items:
+    - { idRef: 'DTM', position: '2970', usage: U }
+    - { idRef: 'PWK', position: '3050', usage: U }
+    - { idRef: 'EFI', position: '3080', usage: U }
+----
+
+此示例中的修改指定标准850标题的CUR和PER段未被使用，以及N9循环中的段。
+
+结构级别的键值对是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| idRef  |正在修改的事务集的ID。
+|名称 |事务集名称（可选）。
+|标题，明细，摘要 |结构每个部分中的分段和分组修改列表。这些是可选的，只有在对该部分进行了修改时才使用。
+|===
+
+结构不同部分（标题，细节，摘要）的分段修改列表都使用相同的结构。列表中的每个项目都是段引用或组定义。段引用使用紧凑的YAML语法显示，其中每个引用的值都以逗号分隔的键值对的形式给出，并用大括号括起来。这些值是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| idRef  |引用的段ID。这是可选的，如果提供了验证，但是被忽略。位置值用于唯一标识段中的段。
+|位置 |事务集部分中的段位置。
+|用法 |使用代码，可能是M代表强制性，O代表可选，C代表条件或U代表未使用。
+| count  |最大重复计数值，可能是一个数字或特殊值`>1`，表示任意数量的重复。计数值是可选的，如果未指定值，则使用基本定义值。
+|===
+
+组覆盖图以展开的形式显示，键值对位于不同的行上。组定义中的值是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| groupIdRef  |引用的组ID。这个密钥是可选的，并且如果提供，则被验证，否则被忽略位置值用于唯一标识某个部分中的一个组。
+|位置 |事务集部分中的段位置。
+|用法 |使用代码，可能是M代表强制性，O代表可选，C代表条件或U代表未使用。
+| count  |最大重复计数值，可能是一个数字或特殊值`>1`，表示任意数量的重复。计数值是可选的，如果未指定值，则使用基本定义值。
+|项目 |构成循环的分段列表（以及潜在的嵌套循环）。
+|===
+
+=== 分段覆盖图
+
+段重叠再次详述对基本模式定义的修改。大多数情况下，这些修改的形式是将基本定义中的元素或组合标记为未使用，但允许使用或重复计数更改。以下是一些示例分段覆盖图：
+
+[source,yaml, linenums]
+----
+segments:
+- { idRef: AMT, trim: 3 }
+- idRef: BEG
+  items:
+  - { position: 4, usage: U }
+- { idRef: DTM, trim: 3 }
+- idRef: ITD
+  items:
+  - { position: 4, usage: U }
+  - { position: 6, usage: U }
+----
+
+上面的示例使用紧凑形式进行只包含截断的段修改，而对各个值进行更改的修改则以展开形式表示。与所有其他YAML示例一样，这两种形式实际上是等效的，可以互换使用。
+
+段叠加中的键值对是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| idRef  |分段标识符。
+| trim  |修剪段中的位置，表示此时所有值都被标记为未使用（可选）。
+|项目 |个别值修改列表。
+|===
+
+项目列表按照位置引用段中的值。这些参考值是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+|位置 |段中的值位置。
+|名称 |段中的值的名称（如果未指定，则使用可选的基本定义值）。
+|用法 |使用代码，可能是M代表强制性，O代表可选，C代表条件或U代表未使用。
+|计数 |最大重复计数值，可以是任何数字或特殊值`>1`，表示任意数量的重复。计数值是可选的，如果未指定值，则使用基本定义值。
+|===
+
+=== 确定X12架构位置
+
+要使用连接器，您需要知道模式的位置
+在你的项目中。如果您使用的是开箱即​​用的X12架构和
+没有定制任何东西，架构位置跟在
+`/x12/{version}/{transaction set}.esl`模式。例如，如果您使用的是005010版本和850事务集，那么您的模式位置是`/x12/005010/850.esl`。
+
+如果您使用一个或多个自定义模式，则应将其置于下方
+`src/main/app`中的目录，并使用`${app.home}`引用该位置。
+例如，如果您已将850架构（overlay或full）放在src / main / app / mypartner / 850.esl下，
+您的架构位置是`${app.home}/mypartner/850.esl`。
+
+Mule Runtime自动检查任何位置的`src/main/app`
+包含`${app.home}`值。
+
+== 在Anypoint Studio 7中创建一个Mule项目
+
+在安装连接器并自定义模式（如果需要）后，可以开始使用连接器。为每个实施约定创建单独的配置。
+
+. 单击画布底部的全局元素选项卡，然后单击创建。
+. 在Choose Global Type向导中，找到并选择X12 EDI：Configuration，然后单击OK。
+. 单击确定以保存全局连接器配置。
+. 返回到Studio中的消息流选项卡。
+
+按照以下部分所述设置全局元素属性中的每个选项卡。
+
+=== 关于常规选项卡
+
+image:x12-edi-general.jpg[常规选项卡属性]
+
+常规选项卡允许您配置读取和写入X12消息的设置：
+
+*  X12格式和验证（标准X12，HIPAA SNIP类型1或HIPAA SNIP类型2）。
+* 手动创建或编辑要使用的消息结构的模式定义列表（它必须使用相同的格式，X12或HIPAA）。
+*  X12字符编码，用于发送和接收消息。
+* 允许在字符串数据中使用X12字符集（BASIC，EXTENDED或UNRESTRICTED）。
+* 字符串替换字符，用于替换字符串数据中的无效字符。
+* 版本标识码后缀，在GS08版本/发布/行业标识码字段中指定附加到基本模式版本的值。
+
+=== 关于“身份”选项卡
+
+image:x12-edi-identity.jpg[标识选项卡属性]
+
+“标识”选项卡允许您在X12 EDI连接器配置中为您和贸易伙伴配置交换控制标题（ISA）和功能组标题（GS）标识符值。所有这些值都是可选的。如果配置了任何值，则在读取输入消息时验证值，并在输出数据中未指定值时写入输出消息时用作默认值。
+
+可以设置的值是Mule应用程序和合作伙伴的交换ID限定符和交换ID，以及Mule和合作伙伴的应用程序代码。 Mule值指定接收消息中的接收方字段（ISA07 / ISA08，GS03），并填充发送消息中的发送方字段（ISA05 / ISA06，GS02）字段。
+
+=== 关于解析器选项卡
+
+image:x12-edi-parser.jpg[解析器选项卡属性]
+
+如果需要，您可以设置以下选项来控制接收消息的解析器验证：
+
+* 强制接收值的最小和最大长度。
+* 强制允许字符集。
+* 强制接收值的重复次数限制。
+* 允许事务集中的未知段。
+* 在事务集中强化分段订单。
+* 允许在事务集中标记为“未使用”的段。
+* 在事务集中强化分段重复次数限制。
+
+请注意，将这些选项从其默认设置改为true会干扰HIPAA SNIP类型1和类型2消息验证。只能将这些选项与标准X12数据一起使用，而不能与HIPAA一起使用。
+
+其他解析器选项可让您：
+
+* 要求唯一的ISA交换控制号码（ISA13）。
+* 为接收的功能组强制实施全球唯一的组控制号码（GS06）。
+* 为接收到的交易集强制执行全球唯一的交易集控制号码（ST02）。
+* 设置存储交换，组和交易集编号以检查唯一性的最小天数。
+* 为每个收到的事务集包含一个单独的AK2 / AK5（997）或AK2 / IK5（999）确认（而不是使用事务集没有错误的隐式确认）。
+* 生成999个实现确认，而不是默认生成的997个功能确认。请注意，对999实现确认的支持不包括CTX段生成。
+* 在生成的997/999确认中向发件人报告段错误详细信息。
+* 自动包含一个标准的997或999架构，该架构与接收消息的配置中生成的确认相匹配。
+
+=== 关于Writer选项卡
+
+image:x12-edi-writer.jpg[编写器选项卡属性]
+
+编写器选项允许您指定编写消息时使用的分隔符字符，以及：
+
+* 在段之间写入的行结束，用于使输出更具可读性。
+* 是否跨越交换生成独特的GS组控制号码。
+* 是否跨组和交换生成唯一的ST事务集控制编号。
+* 实现约定参考（ST03）值。
+* 起始交换控制号（仅在对象库中未找到当前值时使用）。
+* 起始组控制编号（仅在对象库中未找到当前值时使用）。
+* 起始事务集控制号（仅在对象库中未找到当前值时使用）。
+* 是否请求交换确认（ISA14）。
+* 缺省交换使用指示符（ISA15），在消息数据中不存在任何值时使用。
+
+== 示例：X12 Studio
+
+以下流程可以加载到项目的XML中。
+
+image:x12-edi-mapping-flow.jpg[映射流程图]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" 
+xmlns:x12="http://www.mulesoft.org/schema/mule/x12"
+xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns="http://www.mulesoft.org/schema/mule/core" 
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core 
+http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http 
+http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/x12 
+http://www.mulesoft.org/schema/mule/x12/current/mule-x12.xsd
+http://www.mulesoft.org/schema/mule/ee/core 
+http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config">
+		<http:listener-connection host="localhost" port="8081" />
+	</http:listener-config>
+	<x12:config name="X12_EDI_Config" doc:name="X12 EDI Config">
+	    <x12:schemas>
+	        <x12:schema value="/x12/005010/850.esl"/>
+	    </x12:schemas>
+	</x12:config>
+	<flow name="x12mappingFlow">
+		<http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/x12"/>
+		<x12:read doc:name="Read" config-ref="X12_EDI_Config"/>
+		<ee:transform doc:name="Transform Message">
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+    TransactionSets: {
+        v005010: {
+            "850": payload.TransactionSets.v005010."850"
+        }
+    }
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<x12:write doc:name="Write" config-ref="X12_EDI_Config"/>
+	</flow>
+</mule>
+----
+
+XML中的=== 配置选项
+
+Studio配置中列出的所有值都可以直接以XML格式设置。
+
+常规参数控制发送和接收文档处理（全部是可选的，具有默认值，如图所示）：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| formValidation = "X12" / "HIPAA_SNIP1" / "HIPAA_SNIP2"  |模式表单和验证级别，默认为"X12"。配置中使用的模式必须匹配选定的格式，X12或HIPAA。
+|架构=值列表 |连接器要使用的架构的路径列表。路径可以是文件系统或类路径。
+| characterEncoding = "PLATFORM" / "ASCII" / "ISO8859_1" / "IBM1047" / "UTF8"  |消息的字符编码默认为{ 5}}，这意味着Mule平台的默认编码。此字符编码始终用于发送和接收消息。
+| stringCharacterSet = "BASIC" / "EXTENDED" / "UNRESTRICTED"  |字符串数据允许的字符，默认为"EXTENDED"。如果使用了替换字符，则无效字符会被替换字符替换;如果在解析器选项中未设置或未启用接收消息，则将无效字符替换为错误。
+| stringSubstitutionChar = "?"  |替换字符用于替换字符串值中的无效字符。缺省值是none。
+| versionIdentifierSuffix = "XYZ"  |组（GS）的版本标识码后缀。如果设置了该值，则会影响发送和接收消息处理。在接收端，GS08版本代码必须由X12模式版本（004010,005010等）和后缀组成。如果未设置此值，则接收仅验证GS版本标识码是否从配置的模式版本开始。在发送端，X12模式版本和此后缀的组合用作GS08值。
+|===
+
+自我识别参数可选择识别您的贸易伙伴关系方：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| exchangeIdQualifierSelf = "ZZ"  | Exchange中的Mule的ID限定符（ISA段）。此值与Interchange ID值结合使用，如果设置了其他值，则还必须设置其他值。
+| exchangeIdSelf = "mule"  | ID为交换（ISA段）中的Mule。此值与Interchange ID限定符值结合使用，如果设置了其他值，则还必须设置其他值。
+| groupIdSelf = "muleapp"  |组中的Mule应用程序代码（GS段）。
+|===
+
+合作伙伴识别参数可选择识别您的合作伙伴
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| exchangeIdQualifierSelf = "ZZ"  | Exchange中合作伙伴的ID限定符（ISA段）。此值与Interchange ID值结合使用，如果设置了其他值，则还必须设置其他值。
+Exchange（ISA段）中的合作伙伴的| interchangeIdSelf = "partner"  | ID。此值与Interchange ID限定符值结合使用，如果设置了其他值，则还必须设置其他值。
+| groupIdSelf = "partnerapp"  |应用程序代码适用于组中的合作伙伴（GS细分）。
+|===
+
+解析器参数控制解析器操作以及导致接收事务集被拒绝的错误条件类型（全部为可选项，所示为默认值）：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| enforceLengthLimits = "true"  |强制接收值的最小和最大长度。
+| enforceCharacterSet = "true"  |强制允许字符集。
+| enforceValueRepeats = "true"  |为接收值强制执行重复次数限制。
+| allowUnknownSegments = "false"  |允许交易设置中的未知细分。
+| enforceSegmentOrder = "true"  |在事务集中强化分段顺序。
+| allowUnusedSegments = "false"  |允许在事务集中标记为“未使用”的段。
+| enforceSegmentRepeats = "true"  |在事务集中强化分段重复次数限制。
+| requireUniqueInterchanges = "true"  |要求唯一的ISA交换控制号码（ISA13）。默认行为是记录先前处理的交换号码，并拒绝来自同一伙伴的任何重复交换号码（由交换发送者和接收者标识确定）。如果为false，则允许继续处理接收到的交换并将其留给应用程序流以跟踪数字并进行适当处理。
+| requireUniqueGroups = "false"  |“为接收到的功能组强制实施全局唯一的组控制号码（GS06）。默认情况下，组号码只需要在交换时唯一。而是要求组号在来自同一伙伴和应用的所有交换中是唯一的（由交换发送者和接收者标识确定，并结合功能组发送者和接收者应用代码）。
+| requireUniqueTransactionSets = "false"  |为接收到的交易集强制执行全局唯一的交易集控制号（ST02）。默认情况下，交易集控制编号只需要与特定的功能组保持一致。如果属实，则需要事务集编号在从同一伙伴和应用程序接收的所有功能组中唯一（由交换发送方和接收方标识以及功能组发送方和接收方应用程序代码确定）。
+| daysToStore = "30"  |用于检查唯一性的存储交换，组和交易集编号的最少天数。
+| ackAllSets = "false"  |为每个收到的交易集包含一个单独的AK2 / AK5（997）或AK2 / IK5（999）确认。默认情况下，只有包含错误的事务集包含在确认中，事务集不包含隐式确认。更改此标志会导致每个收到的事务集都被明确确认。
+| generate999Acks = "false"  |生成999个实现确认，而不是997个功能确认。默认情况下，为每个接收到的交换生成997个功能确认事务集。更改此标志会导致生成999实现确认。请注意，对999实现确认的支持不包括CTX段生成。
+| reportSegmentErrors = "true"  |向997/999标志中的发件人报告段错误详情。如果为true，则任何段错误的详细信息将包含在生成的997/999中。如果为false，则不包含详细信息。
+| includeFASchema = "true"  |期望997或999个功能确认并包含997/999架构。默认情况下，997/999确认事务集的模式将自动包含在X12 EDI模块使用的模式集中。如果为false，则需要直接指定997和/或999架构，如果要将它们作为输入进行处理。用于生成997或999功能确认的模式是硬编码的，不能修改。
+|===
+
+写入器参数控制写入器操作（全部都是可选的，使用默认值，如下所示）：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| dataSeparator = "*"  |数据元素分隔符。所有输出消息默认使用配置的值，但可以在消息级别覆盖。
+| componentSeparator = ">"  |组件分隔符。所有输出消息默认使用配置的值，但可以在消息级别覆盖。
+| repeatitionSeparator = "U"  |重复分隔符。所有输出消息默认使用配置的值，但可以在消息级别覆盖。值U表示不使用重复。
+| segmentTerminator = "~"  |段结束符。所有输出消息默认使用配置的值，但可以在消息级别覆盖。
+| lineEnding = "NONE" / "LF" / "CRLF" / "CR"  |在片段之间添加的行结束，默认为NONE。这使您可以在段之间添加行尾，以提高输出消息文本的可读性。
+| sendUniqueGroupNumbers = "false"  |发送唯一的组控制号码。默认情况下，功能组控制编号在每个交换内顺序分配，并在不同的交换中重复使用。如果属实，则会在发送到同一伙伴和应用程序的所有交换处（由交换发送方和接收方标识以及功能组发送方和接收方应用程序代码确定）中分配唯一的组编号。
+| sendUniqueTransactionNumbers = "false"  |发送唯一的交易集控制号。默认情况下，交易集控制编号在每个功能组内按顺序分配，并在不同的组中重复使用。如果属实，则这将在发送到相同合作伙伴和应用程序的所有交换处（由交换发送方和接收方标识以及功能组发送方和接收方应用程序代码确定）中分配唯一的交易集编号。
+| implementationConventionReference = ""  |交易实施公约参考（ST段）。如果设置了该值，则将其用作ST实现约定参考，除非在消息参数中被覆盖。
+| initialInterchangeNumber = "1"  |用于传出消息的初始交换控制号码。
+| initialGroupNumber = "1"  |用于传出消息的初始组控制号。
+| initialSetNumber = "1"  |用于传出消息的初始事务集控制号。
+| ackRequested = "false"  |请求确认发送的交易标志。如果为true，则对所有发送的事务请求997/999确认。
+| defaultUsageIndicator = "P"  |默认ISA15交换用法指标（信息为"I"，生产数据为"P"，测试数据为"T"）。
+|===
+
+== 设置您的架构位置
+
+您可以在Anypoint Studio XML视图中配置架构位置。
+
+在Anypoint Studio中，通过单击配置XML切换到XML视图，并通过为每种文档类型添加一个`+<{{0}}>+`元素来修改您的X12 EDI配置，以包含您希望包含的所有模式的列表：
+
+[source, xml, linenums]
+----
+<x12-edi:config name="X12_EDI__Configuration" identKeys="true" doc:name="X12 EDI: Configuration">
+  <x12-edi:schemas>
+    <x12:schema value="/x12/005010/850.esl"/>
+  </x12-edi:schemas>
+</x12-edi:config>
+----
+
+为X12 EDI创建全局元素后，配置任何模式和操作。
+
+== 关于X12消息结构
+
+该连接器可以将X12文档读入或写入规范的EDI消息结构。此结构表示为Java地图和列表的层次结构，可以使用DataWeave或代码进行操作。如上所述，每个事务都有自己的架构，如架构中所定义的。
+
+该消息本身包含以下键（其中一些仅适用于读操作或写操作，如所示）：
+
+[%header%autowidth.spread]
+|===
+|密钥名称 |说明
+|分隔符（可选） |用于消息的分隔符（基于读取操作处理的最后一个交换进行设置）。如果设置为写入操作，则会覆盖模块配置中的值。字符串中的字符根据位置进行解释，顺序如下：（数据分隔符），（子元素分隔符），（重复分隔符或'U'，如果没有），（段终止符）。
+|错误（只读） |与整个输入关联的错误列表，或与没有有效事务集的交换关联的错误列表。请参阅下面的“读取和验证X12 EDI消息”部分中的X12Error结构描述。
+| FunctionalAcksGenerated（只读） |读取操作期间由模块生成的997或999个确认（如配置）的列表。要发送确认，请参阅下面的发送确认部分。
+|组（仅写入） |编写组时，GS组页眉段值的映射用作默认值。
+|交换（只写） |编写交换时用作默认值的ISA交换标题段值的映射。
+| InterchangeAcksGenerated（只读） |模块在​​读取操作期间生成的TA1确认列表。
+| InterchangeAcksReceived（只读） |读取操作期间模块接收到的TA1确认的列表。
+| InterchangeAcksToSend（只写） |模块在​​写操作期间发送的TA1确认列表。
+| Transactions  |事务集的层次结构，在读取操作期间由模块读取，或者在写入操作期间由模块发送。此顶级密钥的值是以标准版本为密钥的映射，格式为"v005010"（例如）。例如，如果您使用的是版本号为005010 850和855的交易集，则交易将包含一个包含一个密钥"v005010"的地图。这个键的值将是另一个映射，这个映射有两个键"850"和"855"。其中每一个都会包含您可以处理的单个850和855个事务集的列表。如果您使用997个功能确认"997"是997个事务集列表的关键。
+|===
+
+个人交易集有他们自己的地图，具有以下关键字：
+
+[%header%autowidth.spread]
+|===
+|键 |说明
+|详细信息 |事务集的详细信息部分中的段或循环的映射。值是针对最多发生一次的段或循环的映射，可以重复的值的映射列表。
+|错误（只读） |与事务集关联的错误列表。 （请参阅下面的阅读和验证EDI消息部分中的X12Error类描述。）
+|组 | GS组标题段值的映射。读取消息时，此映射是封闭组中的实际数据（从该组中的所有事务集链接的单个映射）。编写消息时，这些值用于创建封闭组。此映射中未填充的值默认为消息级别的组映射中的值。
+|标题 |事务集标题部分中的段或循环的映射。值是针对最多发生一次的段或循环的映射，可以重复的值的映射列表。
+| Id  |交易ID，它必须与包含交易列表的密钥相匹配。
+|交换 | ISA交换标题段值的映射。读取消息时，此地图是封闭交换中的实际数据（从交换中的所有交易集链接的单个地图）。编写消息时，这些值用于创建封闭交换（将具有相同交换值的交易收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值默认为消息级别的交换映射中的值。
+|名称 |交易集名称。
+| SetHeader  | ST事务设置标题段值的映射。这给出了读取操作的实际标题数据，并允许您为写入操作提供配置设置的覆盖。
+|摘要 |事务集摘要部分中的段或循环的映射。值是针对最多发生一次的段或循环的映射，可以重复的值的映射列表。
+|===
+
+生成的997/999功能确认事务与处理交换信息时收到的消息不同：
+
+[%header%autowidth.spread]
+|===
+|密钥名称 |说明
+|交换 | ISA交换标题段值的映射。对于由接收处理生成的功能性确认，此映射是与发送方和接收方标识组件（ISA05 / ISA06和ISA07 / ISA08）互换的包含交换数据的副本。编写消息时，这些值用于创建封闭交换（将具有相同交换值的交易收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值默认为消息级别的交换映射中的值。
+|===
+
+TA1交换确认以表示TA1分段数据的地图形式出现，并与相应交换处的数据相关联：
+
+[%header%autowidth.spread]
+|===
+|密钥名称 |说明
+|交换 | ISA交换标题段值的映射。对于由接收处理生成的TA1确认，此映射是交换数据的副本，它将TA1与发送方和接收方标识组件（ISA05 / ISA06和ISA07 / ISA08）互换。编写消息时，这些值用于创建封闭交换（将具有相同交换值的交易收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值默认为消息级别的交换映射中的值。
+|===
+
+关于时间字段== 
+
+所有X12时间字段均以毫秒为单位的整数值表示。
+例如，如果消息的值为`024020`，则为其DataWeave映射
+显示为`9620000`毫秒。
+
+值`024020`的格式为"HHMMSS"，因此如果我们将其转换为毫秒，请使用以下公式：
+
+[source]
+----
+(02*3600000) + (40*60000) + (20*1000) = 9620000
+----
+
+== 读取和验证X12 EDI消息
+
+. 要读取X12消息，请在调色板中搜索X12 EDI，并将X12读取操作拖入流中。
+. 转到属性视图，选择您在上面创建的连接器配置并选择读取操作。该操作将任何字节流读入由X12架构描述的结构。
+
+消息验证包括检查信封段ISA，GS，GE和IEA的语法和内容以及消息中的实际事务集。在TA1技术确认段或997确认事务集中，通常会记录并累计和报告错误，并将所有接受的事务集（无错误或非致命错误）作为输出消息Map的一部分传递进行处理。读取输入数据时出错导致抛出异常。
+
+在接收数据映射中输入的错误数据使用X12Error类，它是具有以下属性的只读JavaBean：
+
+[%header%autowidth.spread]
+|===
+|属性 |说明
+|段 |导致错误的段的输入内的从零开始的索引。
+| segTag  |导致错误的段的标记。
+|致命 |标记致命错误，意味着相关联的事务集，组或交换被错误拒绝。
+| errorType  |列举由X12标准定义的不同类型的错误：INTERCHANGE_NOTE，GROUP_SYNTAX，TRANSACTION_SYNTAX，SEGMENT_SYNTAX或ELEMENT_SYNTAX。
+| errorCode  |错误代码，由X12标准针对指定类型的错误定义。
+| errorText  |错误的文本描述。
+| errorLevel  |枚举不同级别的错误：ROOT_LEVEL，INTERCHANGE_LEVEL，GROUP_LEVEL或TRANSACTION_LEVEL。
+| interchangeId  |交换标识符，如果errorLevel为INTERCHANGE_LEVEL或更高。
+| groupId  |组标识符，如果errorLevel为GROUP_LEVEL或TRANSACTION_LEVEL。
+| transactionId  |交换标识符，如果errorLevel为TRANSACTION_LEVEL。
+|===
+
+读操作将错误数据作为可选列表在数据结构的每个级别使用"Errors"键返回。在事务集级别，此列表包含解析该事务集期间遇到的非致命错误。在交换级别，此列表包含具有致命错误的事务集的错误（包括致命错误和非致命错误）。在读取的根级别，此列表包含交换错误和任何嵌套级别报告的所有其他错误。
+
+== 编写X12 EDI消息
+
+要编写传出消息，请在X12 EDI的调色板中搜索并将X12写入操作拖入流中。根据上面定义的结构构建输出X12 EDI消息，以输入写入操作。如果在写操作中没有发现错误，则正常流程继续。否则，将抛出一个异常，其中包含一个X12Error实例数组，与Read操作返回的相同（上述文档）。
+
+== 发送功能性确认
+
+发送生成的功能确认（997或999个事务集）与编写任何其他EDI消息相同，只是您将事务设置为在读取操作期间生成的确认。
+
+例如：
+
+image:x12-edi-ack-flow.jpg[Ack流程图]
+
+[source, xml, linenums]
+----
+<x12-edi:read config-ref="X12_EDI__Configuration" doc:name="Read EDI Doc"/>
+  ...
+<dw:transform-message doc:name="Create Outgoing Acks Message">
+    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	TransactionSets: {
+		v005010: {
+			'997' : payload.FunctionalAcksGenerated
+		}
+	}
+}]]></dw:set-payload>
+</dw:transform-message>
+<x12-edi:write config-ref="X12_EDI__Configuration" doc:name="Send Acks"/>
+----
+
+生成的功能确认具有交换数据，用于发回原始消息的发件人，因此您无需在交易中更改任何内容以进行发送。
+
+如果您使用999个确认，则将自己所需的CTX段自己添加到由X12模块生成的基本结构。 X12连接器不会跟踪基本事务集结构的实现约定更改。
+
+== 发送交换确认
+
+要发送交换确认（TA1分段），请将消息映射中的InterchangeAcksToSend键值设置为要发送的TA1分段映射列表。生成的TA1段具有交换数据，用于发送回原始消息的发件人，因此您不需要更改段数据中的任何内容以进行发送。
+
+== 另请参阅
+
+*  link:/release-notes/x12-edi-connector-release-notes-mule-4[X12 EDI连接器发行说明]。
+*  http://www.x12.org/x12-work-products/x12-transaction-sets.cfm[ASC X12事务集]
+*  https://en.wikipedia.org/wiki/X12_Document_List [X12文档列表]。
+*  link:/anypoint-b2b/edi-schema-language-reference[EDI模式语言参考]。
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。

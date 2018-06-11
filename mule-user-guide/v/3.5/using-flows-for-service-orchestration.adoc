@@ -1,0 +1,114 @@
+= 使用流进行服务协调
+
+:keywords: anypoint studio, studio, mule esb, orchestration
+
+
+== 介绍
+
+*Flow*是一种简单但非常灵活的机制，它可以使用Mule ESB的复杂消息流功能来协调服务。使用Flow，您可以通过从Mule提供的 link:/mule-user-guide/v/3.7/anypoint-connectors[连接器]中构建复杂的集成解决方案，并自动构建复杂的集成解决方案。由于Flow的灵活性，创建更加符合您需求的解决方案变得更加容易。 Flow在Mule 3中是新的。
+
+== 何时使用流程
+
+[TIP]
+*A flow is the most versatile and powerful integration mechanism available in Mule.*
+
+流量在许多情况下都很有价值，其中包括：
+
+* 简单的集成任务
+* 计划的数据处理
+* 连接云和内部部署应用程序
+* 需要组合多个服务的事件处理
+
+在创建流程之前，请务必查看即用型 link:/mule-user-guide/v/3.5/configuration-patterns[配置模式]。它们可以为您节省大量常见用例的配置工作量。
+
+== 流的剖析
+
+流程本质上只是一个消息处理器链。将每个消息处理器视为一个Lego块，其中Flow是您用它们构建的东西。流还具有消息源，消息处理器链处理的消息的来源。
+
+image:flow-1.jpeg[流1]
+
+== 流程配置
+
+使用<flow>元素以XML配置流。每个流都有一个名称属性，一个消息源（除非它是一个私有流），一个或多个消息处理器和一个可选的异常策略。
+
+*Basic Structure*
+
+[source,xml, linenums]
+----
+<flow name="">
+    - 0..1 MessageSource
+    - 1..n MessageProcessor(s)
+    - 0..1 ExceptionStrategy
+</flow>
+----
+
+流程看起来很简单，但可能非常强大。特别是，当与Mule中的表达式结合使用时，它们可以对消息内容进行非常复杂的处理。有很多利用表达式的元素，包括：
+
+*  link:/mule-user-guide/v/3.6/using-transformers[变形金刚]
+* 过滤器
+*  link:/mule-user-guide/v/3.6/routers[路由]
+*  link:/mule-user-guide/v/3.6/message-enricher[消息Enricher]
+
+== 示例
+
+*Simple Book Order Processing Flow*
+
+[source,xml, linenums]
+----
+<flow>
+    <file:inbound-endpoint path="/myDirectory">
+        <file:filename-filter name="*.xml"/>
+    </file:inbound-endpoint>
+    <xml:xslt-transformer xsl-file="bookOrderTransformation.xsl"/>
+    <splitter expression="xpath://order"/>
+    <!-- The following message processors will be invoked for each order in the xml file -->
+    <expression-filter expression="xpath://order[@type='book']"/>
+    <component class="org.my.BookOrderProcessor"/>
+    <smtp:outbound-endpoint subject="Order Confirmation" address=""/>
+    <jdbc:outbound-endpoint />
+    <default-exception-strategy>
+        <jms:outbound-endpoint queue="failedOrders"/>
+    </default-exception-strategy>
+</flow>
+----
+
+== 流行为
+
+当消息源接收或生成消息时，将启动流程并按照配置的顺序在链中调用已组态的消息处理器。一些消息处理器接受子消息处理器元素，在这种情况下这些处理器元素在返回并继续处理主列表之前被处理。
+
+以上描述了流程为_one-way_时的行为。如果流是_request-response_，因为入站端点被定义为_request-response_交换模式，那么流执行的结果将返回到入站端点，然后又返回到被调用者。如果流中没有_ <response> _块，并且没有配置的消息处理器执行任何响应处理，则所使用的响应只是流中最后一个消息处理器的结果。如果使用_ <response> _块，则使用此元素中配置的任何消息处理器来处理响应消息。一些消息处理器（如CXF）将响应消息的处理作为其默认配置的一部分。
+
+*Note*：当流配置中的最后一个元素是_one-way_ _ <outbound-endpoint> _时，不会执行任何结果，因此消息的返回负载将为NullPayload。如果_one_ way_ _ <outbound-endpoint> _后面跟着另一个处理器，它将接收输出端点接收到的相同消息而不是NullPayload。
+
+image:flowrr.jpeg[flowrr]
+
+== 私有流
+
+私有流是指无法通过 link:/mule-user-guide/v/3.6/endpoint-configuration-reference[骡子端点]从JVM外部访问的流，因为它没有定义消息源。
+
+因此只有在从相同Mule实例中运行的其他构造引用它们时才使用私有流。使用XML配置Mule时，使用_ <flow-ref> _元素将一个流包含在另一个流中。
+
+私有流与使用"Processor Chain"的不同之处在于，流具有自己的上下文和异常策略，当处理器链被引用时，它在引用它的流的上下文中执行。
+
+*Private Flow Example*
+
+[source,xml, linenums]
+----
+<flow name="privateFlow">
+  <append-string-transformer message="b"/>
+</flow>
+ 
+<flow name="publicFlow">
+  <http:inbound-endpoint address="http://localhost:8080"/>
+  <append-string-transformer message="a"/>
+  <flow-ref name="privateFlow"/>
+  <append-string-transformer message="c"/>
+</flow>
+----
+
+== 进一步阅读
+
+您可以阅读更多关于我们在以下博客文章中添加Flow for Mule 3的原因：
+
+*  link:https://blogs.mulesoft.com/dev/mule-dev/mule-3-architecture-part-1-back-to-basics/[Mule 3架构，第1部分：回归基础]
+*  link:https://blogs.mulesoft.com/dev/mule-dev/mule-3-architecture-part-2-introducing-the-message-processor/[Mule 3架构，第2部分：介绍消息处理器]

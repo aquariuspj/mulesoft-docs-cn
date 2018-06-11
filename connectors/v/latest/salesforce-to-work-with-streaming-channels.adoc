@@ -1,0 +1,146 @@
+= 处理流式通道（Salesforce连接器）
+:keywords: salesforce connector, inbound, outbound, streaming, poll, dataweave, datasense
+：imagesdir：_images
+：图标：字体
+
+流媒体频道向订阅者提供不限于基于记录的事件的通知。您可以使用Salesforce Connector来使用Salesforce流式渠道。
+
+关于频道入站属性== 
+// TODO我们想包括这个吗？
+
+作为入站属性传递的信息：
+
+[%header,cols="3*a"]
+|===
+|属性名称 |范围 |映射到
+|频道 | INBOUND  |频道JSON属性
+|类型 | INBOUND  |在数据中键入JSON属性
+| createdDate  | INBOUND  |在数据中创建了日期JSON属性
+|===
+
+除`channel`外，_event_中的每个属性均可用作INBOUND属性。
+
+=== 从流媒体频道重播事件
+
+流式频道可以重播通知，就像话题重放一样。
+
+`replay-streaming-channel`就像一个入站端点，它可以这样使用：
+
+[source, xml, linenums]
+----
+<flow name="flowStreamingChannelReplay">
+    <!-- INBOUND ENDPOINT -->
+    <sfdc:replay-streaming-channel streamingChannel="/u/Notifications" replayId="1" replayOption="ALL"/>
+    <!-- REST OF YOUR FLOW -->
+    <logger level="INFO" message="Replayed events: #[payload]"/>
+</flow>
+----
+
+如果选择ALL或ONLY_NEW重播选项，则replayId值将被忽略。
+
+=== 将事件推送到流式频道
+
+Salesforce提供了通过REST API将自定义事件推送到特定流式通道的可能性。
+用户可以使用 link:https://workbench.developerforce.com/about.php[工作台]或使用此连接器来实​​现此目的。
+
+您可以使用`push-generic-event`操作，如下所示：
+
+[source, xml, linenums]
+----
+<flow name="flowPushGenericEvent">
+    <!-- INBOUND ENDPOINT -->
+    <sfdc:push-generic-event channelId="0M6j0000000KyjBCAS">
+    	<sfdc:events>
+            <sfdc:event payload="Notification message text"/>
+        </sfdc:events>
+	</sfdc:push-generic-event>
+    <logger level="INFO" message="Replayed events: #[payload]"/>
+</flow>
+----
+
+频道ID可以从*publish-streaming-channel*操作的响应地图中检索。
+另一种检索频道ID的方法是从Salesfroce页面获取，如下所示：
+
+. 登录到您的Developer Edition组织。
+. 在所有选项卡（+）下选择流式通道。
+
+如果频道列表上的频道ID字段不可见，则：
+
+. 点击创建新视图。
+. 在名称输入字段中输入视图的名称。
+. 在Available Fileds列表中，选择Streaming Channel ID，然后单击Add。
+. 添加您想要的任何其他字段。
+. 点击保存。
+
+现在您应该可以看到列表中每个流媒体频道的频道ID。
+
+作为推送事件操作的响应接收到的JSON看起来像这样：
+
+[source, xml, linenums]
+----
+[
+	{
+	"userOnlineStatus": {
+	},
+	"fanoutCount": 0
+	}
+]
+----
+
+== 在Salesforce中监控批次
+
+您可以在Salesforce中监视Bulk API批处理。
+
+要跟踪批量数据加载作业及其相关批次的状态，请单击__您的名称___>设置>监控>批量数据加载作业。单击作业ID查看作业详情页面。
+
+作业详情页面包含作业所有批次的相关列表。相关列表为每个批次提供查看请求和查看响应链接。如果该批次是CSV文件，则链接将以CSV格式返回请求或响应。如果批处理是XML文件，则链接将以XML格式返回请求或响应。这些链接可用于在Salesforce API版本19.0及更高版本中创建的批次。
+
+== 创建一个流媒体频道
+
+要创建一个流媒体频道：
+
+您必须在组织中启用适当的Streaming API权限。
+
+. 登录到您的Developer Edition组织。
+. 在所有选项卡（+）下选择流式通道。
+. 在流媒体频道选项卡上，选择新建以创建新的流媒体频道。
+. 在Streaming Channel Name中输入/ u / notifications / ExampleUserChannel，以及一个可选的描述。
++
+您的新流媒体频道页面应如下所示：
+
+您可以使用*create*操作或独占*publish-streaming-channel*操作，如下所示：
+
+[source, xml, linenums]
+----
+<sfdc:publish-streaming-channel name="/u/Notifications" description="General notifications"/>
+----
+
+== 订阅流媒体频道
+
+创建流媒体频道后，您可以通过订阅频道开始接收活动。 `subscribe-streaming-channel`表现为入站端点，可以这样使用：
+
+[source, xml, linenums]
+----
+<flow name="notificationsChannelSubscription">
+	<!-- INBOUND ENDPOINT -->
+	<sfdc:subscribe-streaming-channel streamingChannel="/u/TestStreaming"/>
+	<!-- REST OF YOUR FLOW -->
+	<logger level="INFO" message="Received an event: #[payload]"/>
+</flow>
+----
+
+骡子流被分成两部分。它的第一部分通常是入站端点（或HTTP连接器）和消息源。 Mule流是一个接收和生成事件的实体，稍后由其余流处理。另一部分是消息处理器的集合，用于处理由入站端点接收和生成的消息（也称为事件）。
+
+每当我们对`/u/TestStreaming`的订阅收到一个事件时，它都会执行其余的流程。在这个例子的情况下，它在INFO级别向日志打印一条消息。
+
+== 另请参阅
+
+link:/connectors/salesforce-to-receive-custom-events[处理流式频道]
+
+link:/connectors/salesforce-about[关于Salesforce连接器]
+
+link:/connectors/salesforce-connector-tech-ref[Salesforce连接器技术参考]
+
+////
+访问 link:https://developer.salesforce.com/docs[Salesforce开发人员文档]
+////

@@ -1,0 +1,287 @@
+= 发布一个SOAP API
+:keywords: cxf
+
+Mule运行时利用Apache开放源代码 link:http://cxf.apache.org/docs/a-simple-jax-ws-service.html[CXF框架]来构建API。您可以在Studio中创建CXF API，方法是在您的Mule流中配置*CXF component*，以执行与发布SOAP API相关的以下任何CXF操作：
+
+* 发布一个简单的服务
+* 发布JAX-WS服务
+* 代理已发布的服务
+
+使用Mule link:/mule-user-guide/v/3.8/cxf-module-reference[CXF组件]，您还可以 link:/mule-user-guide/v/3.8/securing-a-soap-api[启用WS安全]，指定数据绑定，并将拦截器添加到您的CXF API。
+
+向外部Web服务发送请求时，建议使用 link:/mule-user-guide/v/3.8/web-service-consumer[Web服务使用者]而不是CXF模块。
+
+== 基本解剖学
+
+通过Mule应用程序公开SOAP API需要以下元素：
+
+* 接收请求并发送响应的*endpoint*
+* 引用和公开WSDL文件的*CXF Component*
+* 执行API支持的操作的*component*或组合组合，例如检索数据和更新数据库中的数据。
+
+image::publishing-a-soap-api-ecf2e.png[出版-A-SOAP的API，ecf2e]
+
+=== 端点元素
+
+端点接收请求并发送包含XML SOAP信封的响应。通常，端点是HTTP，HTTPS，JMS或VM。
+
+===  CXF组件
+
+SOAP API需要通过WSDL文件公开其合约。在执行请求时，通过向API的URL添加`?wsdl`来访问此文件的内容。
+
+通过CXF，您使用以下 link:https://en.wikipedia.org/wiki/Web_service#Automated_design_methodologies[方法]之一提交WSDL合同：
+
+*  *WSDL-first*：从您自己创建的WSDL文件开始，将其导入到您的Mule项目中，然后从CXF组件中引用其位置。
+*  *Code-first*：从带注释的Java类开始，然后让JAX-WS根据它编译WSDL文件。
+
+CXF组件是作为Java类的注释实现的。 WSDL结构和所需的Java注释之间存在直接关系。当您使用WSDL时，将使用正确的注释生成Java POJO。您还可以强制现有的Java POJO遵守WSDL规范。 Studio还可以创建流程以充当SOAP客户端。
+
+无论您使用哪种方法，都可以指示CXF组件验证传入请求对WSDL的有效性。
+
+通过CXF组件，您可以选择以下操作类型之一：
+
+*  *Proxy Service*：使用此服务，您可以直接在流程中处理XML。使用代理服务执行较少的转换并且响应速度比其他操作类型更快。在以下条件下使用它：+
+** 直接编辑XML。
+** 用于XSLT。
+** 使用DataMapper来映射字段。 +
+
+您单击CXF组件并在属性编辑器的操作下拉列表中选择代理服务。
+
+image::publishing-a-soap-api-7a05b.png[出版-A-SOAP的API，7a05b]
+
+*  *JAX-WS*：将有效负载转换为POJO。您可以在流程中访问POJO中的属性。在以下情况下使用它：
+** 您很乐意使用Java对象。
+** 您需要构建POJO或JSON输出。
+** 您正在使用社区运行时并且无法使用DataMapper。
+** 您希望通过代码优先方法呈现WSDL（代理服务仅使用WSDL优先）。
+
+image::publishing-a-soap-api-15690.png[出版-A-SOAP的API-15690]
+
+如果您使用的是此处未涉及的简单服务模式，则可以使用第三个选项*Simple service*。
+
+=== 一个或多个处理组件
+
+通过其他两个组件，流程已准备好处理请求并执行构成API的业务逻辑。 API可能适用于单个Java类，但更有可能包括使用多个元素，例如流控制，变换器和对Web服务的HTTP调用。
+
+== 构建WSDL优先代理服务API
+
+要构建WSDL-First代理服务API，您需要创建您打算用于SOAP API的WSDL。构建此服务涉及的一些步骤是：
+
+[tabs]
+------
+[tab,title="Studio"]
+....
+. Import a WSDL file into your project. +
+.. Select *File* > *Import*.
+.. Select *General* > File *System*.
+.. Select the WSDL file from your file system, then, in the *Into Folder* field, select `src/main/resources`.
+.. Click *Finish*.
+. Drag and drop an HTTP listener and a CXF component into a new flow on your canvas. +
+
++
+image::publishing-a-soap-api-ed81d.png[publishing-a-soap-api-ed81d]
++
++
++
+
+. In the HTTP Listener's properties, create a new configuration element for it. Accept the default port value **8081**, and set the host to *localhost*.
+. Configure the CXF component as per the image and table below.
+
++
+image::publishing-a-soap-api-3ea0e.png[publishing-a-soap-api-3ea0e]
++
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*Operation* |Proxy service
+|*Port* |Specify the port to which you wish to bind the WSDL
+|*Payload* |body
+|===
++
+The output of this component is a byte array. The array content depends upon the value you set in the *Payload* field.
++
+* If you select *envelope*, then the message remains wrapped within the envelope in which it was originally received
+* If you select *body*, then the message contains only the body, without its envelope
+. Configure the *Advanced* settings as per the image and table below.
++
+image::publishing-a-soap-api-5e239.png[publishing-a-soap-api-5e239]
++
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*WSDL Location* |Filepath of the WSDL in your Mule project
+|*Soap 1.1* +
+OR +
+*Soap 1.2* | http://www.w3.org/2003/06/soap11-soap12.html[Version of SOAP] you want to use
+|===
++
+
+. Drop a Flow Reference after your CXF component. This reference will redirect the requests to another flow, where the actual business logic of your API will be carried out. Keep in mind that whatever happens in this second flow, the returned output must match the output declared by the WSDL.
++
+image::publishing-a-soap-api-6105b.png[publishing-a-soap-api-6105b]
++
+As stated earlier, rather than fitting into a single Java class, your API's business logic may involve the use of several elements, such as flow controls, transformers, HTTP calls to Web services, and so on. If this is the case, you do not need to include a Java class; you can model, then configure your flow to perform the operations your SOAP API must support.
+
+. If you want direct access to the payload in your business logic flow, you must pass the message through an Dataweave (recommended) or **XML-to-DOM transformer**.  +
++
+image::publishing-a-soap-api-b58ec.png[publishing-a-soap-api-b58ec]
++
+Otherwise, you can use Xpath expressions to parse parts of the payload when needed. For example, suppose that you only want to alter the message when a condition is met, you can implement a choice router that evaluates the condition based on an Xpath expression.
++
+. Create a new flow: Drag the *Flow* component onto the canvas below the existing flow.
+. Configure the Flow Reference component in the flow above this flow, specifying a *Flow Name*  that matches the name of the new flow.
++
+image::publishing-a-soap-api-df761.png[publishing-a-soap-api-df761]
++
+. Use other Mule runtime components to build your business logic inside this flow.
++
+After adding business logic and running the API as a Mule application, you can access the API by sending requests to the HTTP listener. Include a SOAP envelope in the body.
++
+To make SOAP requests to send to your SOAP API, use a free service such as link:http://www.soapui.org/[SoapUI] which automatically provides the SOAP message structure you need for each kind of request to the API.
+
+Alternatively, you can use a browser extension such as Postman (Google Chrome), or the link:http://curl.haxx.se/[curl] command line utility to send SOAP requests. To use these, you must know the required structure of the requests.
+....
+[tab,title="Standalone XML"]
+....
+. Import a WSDL file into your project: +
+.. Select *File >* *Import*.
+.. Select *General* > *File System*.
+.. Select the WSDL File from your file system, then, in the *Into Folder* field, select  `src/main/resources.`
+.. Click *Finish*.
+. Create an` http:listener `in a new flow.
++
+
+[source, xml, linenums]
+----
+<http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+----
+
++
+[%header,cols="2*"]
+|===
+|Attribute |Value
+|*config-ref* a|`listener-config`
+|*path* a|/
+|*doc:name* a|`HTTP Connector`
+|===
+. Create a global configuration element for the HTTP listener, outside the flow
++
+
+[source, xml, linenums]
+----
+<http:listener-config name="listener-config" host="localhost" port="8081"/>
+----
+
++
+[%header,cols="2*"]
+|===
+|Attribute |Value
+|*name* a|`listener-config`
+|*host* a|`localhost`
+|*port* a|`8081`
+|===
+. Add a `cxf:proxy-service` element after the HTTP listener.
++
+
+[source, xml, linenums]
+----
+<cxf:proxy-service doc:name="SOAP" payload="body" port="myAPI" service="myAPI" wsdlLocation="myAPI.wsdl"/>
+----
+
++
+[%header,cols="2*"]
+|===
+|Attribute |Value
+|*wsdlLocation* |The filepath of your WSDL in the Mule project
+|*service* a|`myAPI`
+|*port* a|`myAPI`
+|*payload* a|`body`
+|===
+
++
+The output of this component is a byte array who's content depends upon the value you set for the `payload` attribute.       
++
+* If you select *envelope*, then the message remains wrapped within the envelope in which it was originally received
+* If you selected *body*, then the message contains only the body, without its envelope
+. Create a `flow-ref` after your CXF component. This reference redirects the requests to another flow, where the actual business logic of your API is carried out. Keep in mind that whatever happens in this second flow, the returned output must match the output declared by the WSDL.
++
+
+[source, xml, linenums]
+----
+<flow-ref name="business-logic_flow" doc:name="Flow Reference"/>
+----
+
++
+[%header,cols="2*"]
+|===
+|Attribute |Value
+|*name* a|`business-logic_flow`
+|*doc:name* a|`Flow Reference`
+|===
+
++
+As stated earlier, rather than fitting into a single Java class, your API business logic may involve the use of several elements, such as flow controls, transformers, HTTP calls to Web services, etc. Through these elements, you can model, then configure your flow to perform the operations your SOAP API must support.
++
+
+[source, xml, linenums]
+----
+<flow name="business-logic_flow" doc:name="business-logic_flow">
+     <!-- your business logic here -->
+</flow>
+----
+
+. Create a new flow and name it the same as the `flow-ref` attribute *Flow Name*. Then use other Mule components to build your business logic inside this flow.
+. If you want direct access to the payload in your business-logic flow, you must pass the message through a `mulexml:xml-to-dom-transformer`.
++
+
+[source, xml, linenums]
+----
+<mulexml:xml-to-dom-transformer doc:name="XML to DOM"/>
+----
+
++
+Otherwise, you can use Xpath expressions to parse parts of the payload when needed. For example, suppose that you only want to alter the message when a condition is met, you can implement a choice router that evaluates the condition based on an Xpath expression.
+. Run your Mule project. Access the API by sending requests to the HTTP listener. Include a SOAP envelope in the body.
++
+[TIP]
+====
+To make SOAP requests to send to your SOAP API, use a free service such as link:http://www.soapui.org/[SoapUI] which automatically provides the SOAP message structure you need for each kind of request to the API.
+
+Alternatively, you can use a browser extension such as Postman (Google Chrome), or the link:http://curl.haxx.se/[curl] command line utility to send SOAP requests. To use these, you must know the required structure of the requests.
+====
+....
+------
+
+
+=== 不完整的WSDL第一个示例
+
+要执行此代码，您必须包含：
+
+* 一个WSDL文件
+业务逻辑流程中的* 唯一业务逻辑
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd">
+    <http:listener-config name="listener-config" host="localhost" port="8081"/>
+    <flow name="SOAP_flow" doc:name="SOAP_flow">
+        <http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+        <cxf:proxy-service doc:name="SOAP" payload="body" port="myAPI" service="myAPI" wsdlLocation="myAPI.wsdl"/>
+        <mulexml:dom-to-xml-transformer doc:name="DOM to XML"/>
+        <flow-ref name="business-logic_flow" doc:name="Flow Reference"/>
+    </flow>
+    <flow name="business-logic_flow" doc:name="business-logic_flow">
+         <!-- your business logic here -->
+    </flow>
+</mule>
+----

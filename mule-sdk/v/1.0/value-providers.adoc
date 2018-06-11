@@ -1,0 +1,312 @@
+= 价值提供商
+:keywords: mule, sdk, value provider, dynamic values
+
+开发连接器时，可以让最终用户选择一个参数
+从一套价值观。这使得用户更容易知道要配置什么，并且可以确保配置的值是正确的。
+
+您可以使用<<java_enum, Java Enum>>作为参数为已知值提供此功能。 SDK自动获取Enum中的所有值，以便它们可以在UI中作为组合选择器提供。
+
+要包含未知的值（例如自定义值），应该使用<<value_providers, Value Providers>>。
+
+[[java_enum]]
+==  Java Enum
+
+假定您正在开发可以发布包含这些角色的内容的内容发布服务的连接器：
+
+*  `ADMIN`
+*  `READER`
+*  `WRITER`
+
+为了提供这些角色，您只需创建`UserRole` Enum并将其公开为`publishAs`操作的参数，例如：
+
+。示例：Java枚举定义已知角色
+[source, Java, linenums]
+----
+public enum UserRole {
+    ADMIN, READER, WRITER
+}
+----
+
+下一个示例中的操作允许用户使用特定的`UserRole`发布内容。
+
+[source, Java, linenums]
+----
+public void publishAs(@Content Object content, UserRole roleEnum){
+    System.out.println("Publishing " + content + " with Role: " + roleEnum);
+}
+----
+
+该解决方案简单而有效，但存在一些限制和问题：
+
+* 不支持自定义值：由于该参数基于Enum，因此无法定义自定义值。例如，如果您要连接的服务可以使用自定义角色进行配置，您将无法继续使用`UserRole` Enum，因为它会限制连接器的功能。
+* 这些值是静态定义的：您无法根据连接或配置更改值。
+*  Java枚举具有命名限制：您不能拥有以数字或特殊字符开头的Enum值。
+
+如果需要自定义角色但不想丢失已知用户角色的下拉列表，则可以使用<<value_providers, Value Providers>>作为动态值和已知值。
+
+[[value_providers]]
+== 价值提供商
+
+值提供程序是一种为连接器的任何组件中的任何参数（ link:operations[操作]， link:sources[来源]， link:configs[配置]， link:connections[连接提供商]，作用域，等等。
+
+[[StaticUserRoleValueProvider]]
+=== 实施价值提供商
+
+此示例产生与上面的Enum解决方案相同的行为，但它提供了一组打开的值的好处。它将支持自定义值。
+
+. 创建一个实现`ValueProvider`的Java类。
++
+在实现此接口时，您必须实现`resolve()`方法，该方法返回一组{{}}。
++
+[source, Java, linenums]
+----
+public class StaticUserRoleValueProvider implements ValueProvider {
+
+    @Override
+    public Set<Value> resolve() {
+        return ValueBuilder.getValuesFor("ADMIN", "READER", "WRITER");
+    }
+}
+----
++
+. 使用`@OfValues()`注释标记需要动态值的参数。
++
+`@OfValues`需要一个绑定到参数的`ValueProvider`实现，例如：
++
+[source, Java, linenums]
+----
+public void publishAs(@Content Object content,
+@OfValues(StaticUserRoleValueProvider.class) String userRole){ //<1>
+    System.out.println("Publishing " + content + " with Role: " + userRole);
+}
+----
++
+. 现在，您可以在Studio或Design Center中使用它来开始检索值。
++
+image:value_providers/value-provider-static.gif[ALIGN = “中心”]
+
+具有连接或配置的=== 价值提供商
+
+价值提供商可以接收连接和配置。这使得可以根据当前连接和配置来解析值。
+
+重要提示：您无法将连接和配置注入到值中
+位于连接和配置参数中的提供程序。
+
+==== 接收连接或配置
+
+您可以使用`@Connection`和`@Config`注释声明价值提供程序内连接和配置的使用。为了工作，使用这些注释的值提供程序取决于_valid_配置或连接。 SDK确保解析逻辑不会被执行，除非连接和配置有效。
+
+[source, Java, linenums]
+----
+public class ConnectedValueProvider implements ValueProvider {
+
+  @Connection
+  ServiceConnection connection;
+
+  @Config
+  ServiceConfig config;
+
+  @Override
+  public Set<Value> resolve() throws ValueResolvingException {
+    //Do whatever is required with the connection or config
+    List<String> result = connection.retrieveInfo();
+    return ValueBuilder.getValuesFor(result);
+  }
+}
+----
+
+警告：注入的连接和配置必须是与操作中定义的类型或值提供程序的源兼容的类型
+被引用。
+
+=== 示例2：连接的值提供程序用例
+
+// TODO：使用"communicate"？我们可以使用另一个词吗？有这个检查。
+
+在上面的角色示例中，该服务可以定义自定义角色，但连接器无法传达这些角色。
+
+一旦实现了值提供程序以通过工作连接解析值，就可以获取可用角色并通过值提供程序进行通信：
+
+[source, Java, linenums]
+----
+public class UserRoleValueProvider implements ValueProvider {
+
+  @Connection
+  ServiceConnection connection;
+
+  @Override
+  public Set<Value> resolve() throws ValueResolvingException {
+    return ValueBuilder.getValuesFor(connection.getAvailableRoles());
+  }
+}
+----
+
+取决于其他参数的=== 值提供程序
+
+除了注入连接和配置之外，值提供者还可以依赖_same context_的其他参数。 SDK确保值供应商解析逻辑在配置所需参数之前不会执行。
+
+单词"_same context_"表示如果在组件中使用值提供程序，则必须在该组件中存在必需的参数。例如，如果参数`dynamicParam`中具有值提供程序的配置`FancyConfig`需要参数`aConfigParam`的值，则`FancyConfig`配置中必须存在`aConfigParam` 。
+
+小心：在所需参数中使用表达式可能会禁用
+由于无法在没有活动事件的情况下解析表达式而执行价值提供者。
+
+==== 声明必需的参数
+
+与连接器和配置一样，您可以使用`@Parameter`注释来声明执行解析逻辑所需的参数。您在值提供程序的字段中使用*same type and name*作为必需参数的注释，例如以下示例中的`String requiredParam`：
+
+示例外部参数：声明两个参数的操作，其中一个参数为值提供程序
+[source, Java, linenums]
+----
+public void operationWithValueProvider(String requiredParam, @OfValues(ValueProviderWithRequiredParams.class) String dynamicParam){
+
+}
+----
+
+.Example外部参数：需要`requiredParam`参数的值提供程序。
+[source, Java, linenums]
+----
+public class ValueProviderWithRequiredParams implements ValueProvider {
+
+    @Parameter
+    String requiredParam;
+
+    @Override
+    public Set<Value> resolve() {
+      return ValuesBuilder.getValuesFor(param);
+    }
+}
+----
+=====  如果未配置必需的参数，会发生什么情况？
+
+如果该参数按组件中的要求定义但未配置
+由最终用户来看，价值供应商不会执行。但是，如果参数定义为可选，则将使用`Null`值执行值提供程序，因此您需要处理可空性。
+
+===== 示例3：具有上下文参数的值提供程序
+
+考虑你想在日期和月份有日期选择器的情况。
+你可以很容易地用两个枚举来表示它们，但并不是所有的月份都有相同的天数。所以表示可能允许用户配置无效
+日期。
+
+要解决这个问题：
+
+. 定义公开日期选择器的操作。
++
+该操作接收两个参数，一个`monthEnum`静态地传递所有可用的月份，另一个`day`用于传递月份的日期。
++
+发布日期操作
+[source, Java, linenums]
+----
+public void publishOnDate(Month monthEnum, @OfValues(DayValueProvider.class) String day) {
+}
+----
++
+. 定义`Month`枚举。
++
+`Month`包含所有可用的月份，并标识每个月的天数。
++
+.MonthEnum枚举
+[source, Java, linenums]
+----
+public enum Month {
+
+    JANUARY(31), FEBRUARY(28), MARCH(31), APRIL(30), MAY(31), JUNE(30),
+    JULY(31), AUGUST(31), SEPTEMBER(30), OCTOBER(31), NOVEMBER(30), DECEMBER(31);
+
+    private int dayCount;
+
+    MonthEnum(int i) {
+        dayCount = i;
+    }
+
+    public int getDayCount() {
+        return dayCount;
+    }
+}
+----
++
+. 创建一个使用选定月份的值提供程序。
++
+根据所选的月份，价值提供商将动态提供当月的所有可用日期。 `DayValueProvider`表示它需要参数`monthEnum`才能工作。
++
+[source, Java, linenums]
+----
+public class DayValueProvider implements ValueProvider {
+
+    @Parameter
+    Month monthEnum; //<1>
+
+    @Override
+    public Set<Value> resolve() {
+      return ValueBuilder.getValuesFor(getNumbersFrom(1, monthEnum.getDayCount())
+              .stream()
+              .map(num -> String.format("%02d", num)));
+    }
+
+    List<Integer> getNumbersFrom(int init, int end){
+        List<Integer> numbers = new ArrayList<>(end - init);
+        for (int i = init; i <= end; i++) {
+            numbers.add(i);
+        }
+        return numbers;
+    }
+}
+----
++
+. 的结果！
++
+如下面的动画所示，基于`Month enum`参数值动态填充`Day`选择器。
++
+image:value_providers/value-provider-months.gif[ALIGN = “中心”]
+
+[[value-structure]]
+==== 价值结构
+
+值提供程序返回一组值。 `Value`是一个由以下属性组成的简单结构：
+
+*  `id`：此值的唯一标识符。这是必需的。
+*  `displayName`：将在用户界面中显示的名称。这是可选的。默认情况下，该ID将用作显示名称。
+
+==== 如何创建一个值
+
+有一种使用`ValueBuilder`创建值的独特方法。
+
+[source, Java, linenums]
+----
+
+ValueBuilder adminValueBuilder = ValueBuilder.newValue("ADMIN_USR_ROLE"); //<1>
+adminValueBuilder.withDisplayName("Admin"); //<2>
+Value adminValue = newValue.build(); //<3>
+
+----
+
+<1>您必须使用`Value`的ID创建`ValueBuilder`。
+<2>或者，您可以使用显示名称来丰富该值。
+<3>构建构建器以返回`Value`实例。
+
+==  ValueBuilder Utils
+
+`ValueBuilder`提供的实用程序可以更容易地为其创建值
+某些情况下。
+
+如果您有需要转换为值的`List<String>`，`String[]`，`Stream<String>`或`Map<String, String>`，则最简单的方法是使用{{ 4}}。
+
+[source, Java, linenums]
+----
+// Array Case
+Set<Value> arrayCase = ValueBuilder.getValuesFor("Admin", "Writer");
+
+// List Case
+List<String> valueList = new ArrayList<>();
+valueList.add("Admin");
+valueList.add("Writer");
+Set<Value> listCase = ValueBuilder.getValuesFor(valueList);
+
+// Stream Case
+Set<Value> streamCase = ValueBuilder.getValuesFor(valueList.stream());
+
+// Map Case
+// The Key will be considered as ID and the Value as Display Name
+Map<String, String> valueMap = new HashMap<>();
+valueMap.put("ADMIN_USR_ROLE", "Admin");
+valueMap.put("WRITER_USR_ROLE") "Writer");
+Set<Value> mapCase = ValueBuilder.getValuesFor(futureValues);
+----

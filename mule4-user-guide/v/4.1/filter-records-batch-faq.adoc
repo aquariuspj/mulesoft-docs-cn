@@ -1,0 +1,74 @@
+= 常见问题解答：如何在批处理中筛选记录
+
+批处理步骤允许您使用两个属性来过滤它处理的记录。 +
+设想一个批量作业，它使用其第一批步骤来检查是否存在Salesforce联系人记录，而第二批步骤会使用新信息更新每个现有Salesforce联系人。您可以将过滤器应用于第二批步骤，以确保它仅处理在第一批步骤中未失败的记录。 +
+通过使批处理步骤只接受一些记录进行处理，可以简化批处理作业，以便运行时可以只针对特定批处理步骤的相关数据。
+
+批处理步骤使用两个属性来过滤记录：
+
+*  acceptExpression
+*  acceptPolicy
+
+过滤器在批处理步骤中应用。每个批处理步骤都可以接受一个acceptExpression和一个acceptPolicy属性来过滤记录。 +
+批次过滤器仅适用于批次步骤，而批次步骤只能在批次作业的批处理阶段使用。您无法在完成阶段应用过滤器。
+
+=== 关于acceptExpression属性
+
+使用acceptExpression属性仅处理评估为true的记录;如果记录的计算结果为false，批处理步骤将跳过记录并将其发送到下一个记录。换句话说，那些过滤表达式解析为false的记录是Mule过滤器_out_。
+
+以下示例将筛选年龄小于21岁的所有记录;该批处理步骤不会处理这些记录。
+
+[source, xml, linenums]
+----
+<batch:job jobName="batchJob">
+	<batch:process-records >
+		<batch:step name="adultsOnlyStep" acceptExpression="#[payload.age > 21]">
+			...
+		</batch:step>
+	</batch:process-records>
+ </batch:job>
+----
+
+=== 关于acceptPolicy属性
+
+使用批量步骤中的acceptPolicy属性仅处理相对于接受策略属性的值计算为true的记录。请参阅下表以获取接受策略的可用值列表。
+
+[%header,cols="25a,75a"]
+|===
+|接受政策 |评估为TRUE时
+| NO_FAILURES  | _ Default_ +
+批处理步骤仅处理在所有先前步骤中处理_succeeded_的记录
+| ONLY_FAILURES  |批处理步骤仅处理那些在之前的批处理步骤中进行了_failed_处理的记录
+|全部 |批处理步骤处理所有记录，无论它们是否在前面的批处理步骤中处理失败
+|===
+
+如果您不将过滤器应用于批处理步骤，则该批处理仅处理那些在所有前面的步骤中进行_succeeded_处理的记录。换句话说，应用于所有批次步骤的默认接受策略是NO_FAILURES。
+
+当批处理作业实例超出其`maxFailedRecords`值时，无论批处理步骤中设置了哪个筛选器，该步骤都不会处理任何记录，只需将失败的批处理作业实例推送到“完成”阶段。
+
+以下示例说明了批处理作业中的第二批处理步骤，该步骤仅处理在前一步骤中处理失败的那些记录。在第一批步骤中，运行时间检查每条记录以查看它是否具有现有的Salesforce联系人;第二个批处理步骤为每个记录创建一个联系人，仅处理失败的记录（即没有现有账户的记录）。
+
+[source, xml, linenums]
+----
+<batch:job jobName="batchJob">
+	<batch:process-records >
+		<batch:step name="batchStep1">
+			...
+		</batch:step>
+		<batch:step name="batchStep2" accept-policy="ONLY_FAILURES">
+			...
+		</batch:step>
+	</batch:process-records>
+ </batch:job>
+----
+
+
+在应用这两种过滤器的地方，Mule按以下顺序评估它们：
+
+. 接受政策
+. 接受表达式
+
+== 另请参阅
+
+*  link:batch-job-concept[关于批处理作业]
+*  link:batch-performance-faq[常见问题：了解批处理作业性能]

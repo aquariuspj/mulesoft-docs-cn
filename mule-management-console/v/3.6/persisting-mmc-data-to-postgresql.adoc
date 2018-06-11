@@ -1,0 +1,558 @@
+= 坚持MMC数据到PostgreSQL
+
+本文档介绍了如何将环境和事务数据保存到PostgreSQL数据库。按照<<PostgreSQL Installation>>的说明操作，然后按照<<Persisting Environment Data>>或<<Persisting Transaction Data>>持久性的具体说明设置用户，创建数据库并配置MMC实例以保存数据。
+
+[WARNING]
+请记住*environment data and transaction data must exist in two separate databases*（不管它们是在同一台服务器上还是在同一个平台上）。
+
+*Jump to:*
+
+*  <<Persisting Environment Data>>
+*  <<Persisting Transaction Data>>
+
+== 假设
+
+本文档假设您已了解 link:/mule-management-console/v/3.6/setting-up-mmc[数据持久性选项]的环境和交易数据，并且您熟悉基本的 link:/mule-management-console/v/3.6/architecture-of-the-mule-management-console[Mule管理控制台的架构]。它还假定您已经安装：
+
+*  *MMC Version 3.6.0*。如果您需要升级到此版本，请从 http://www.mulesoft.com/support-login[客户门户]下载。
+*  *a Web application server such as Tcat, Tomcat, or JBoss*。有关硬件要求和支持的应用程序服务器，Java运行时环境和浏览器的最新信息，请参阅 link:/mule-user-guide/v/3.6/hardware-and-software-requirements[硬件和软件要求]。
+
+为了实际的目的，本文提到Tomcat作为servlet容器;但是，这里包含的说明也适用于Tcat或JBoss。如果您使用的是Tcat或JBoss，请确保将Management Console .war文件解压到相应的目录中。有关其他信息，请参阅 link:/mule-management-console/v/3.6/installing-the-production-version-of-mmc[安装MMC的生产版本]。
+
+[NOTE]
+====
+在本文档中，`<MMC_HOME>`指的是安装MMC的目录。
+
+如果您使用的是试用版，则此目录位于运行MMC的嵌入式Tomcat服务器的根目录中。根据您放置捆绑安装的位置，路径类似于`<installation_root>/mmc-distribution-mule-console-bundle-3.6.0/mmc-3.6.0/apache-tomcat-7.0.52/webapps/mmc-3.6.0`。
+
+如果您在应用服务器（如Tomcat）中使用生产安装，则路径应与`<Tomcat root>/webapps/mmc-console-3.6.0.`相似，例如`/var/lib/tomcat6/webapps/mmc-console-3.6.0`。
+====
+
+==  PostgreSQL安装
+
+这里概述的PostgreSQL安装是基本的：数据库服务器安装在本地计算机上，并监听默认端口，同时禁用安全性（数据库所有者与数据库的不安全连接）。
+
+=== 工具
+
+*  PostgreSQL 9.1.3（ http://www.enterprisedb.com/products-services-training/pgdownload[下载]）
+*  pgAdmin III（安装Postgres时选择它）
+包含在MMC安装中的*  PostgresSQL驱动程序。有关详细信息，请参阅<<Database Driver>>部分
+
+=== 安装数据库
+
+安装数据库的最简单方法是使用Enterprise One-Click安装程序，该安装程序可以免费用于 link:http://www.enterprisedb.com/products-services-training/pgdownload[下载]。
+
+[NOTE]
+您需要管理员权限才能继续安装。
+
+[TIP]
+有关更多详细信息，请参阅 link:http://www.enterprisedb.com/resources-community/tutorials-quickstarts[适用于Linux，Mac OS X和Windows的快速Postgres教程]。
+
+版本9.1使用以下默认值进行安装：
+
+* 默认端口：`5432`
+* 默认管理员用户：`postgres`
+
+Mule建议安装Postgres的GUI管理实用程序之一，例如`phpPdAdmin`（基于Web）或`pgAdmin III`。这些可以在Postgres安装过程中选择安装。在本文中，我们将使用`pgAdmin III`。
+
+=== 设置数据库侦听器
+
+找到位于Postgres安装根目录下的文件`postgresql.conf`，例如在`/opt/PostgreSQL/9.1/data`或`/opt/PostgreSQL/9.1/main`中。
+
+打开`postgresql.conf`文件进行编辑，然后转到"Connections and Authentication"部分。找到以`listen_addresses =`开头的行。如果该行显示为：
+
+[source, code, linenums]
+----
+listen_addresses = 'localhost'
+----
+
+然后将其修改为如下所示。
+
+[source, code, linenums]
+----
+listen_addresses = '*'
+----
+
+这将使PostgreSQL监听所有可用的接口。
+
+找到应位于Postgres安装的相同数据目录中的文件`pg_hba.conf`。在此文件中，找到以` host all`开头的行。它可能看起来类似于以下内容。
+
+[source, code, linenums]
+----
+host    all             all             127.0.0.1/32            md5
+----
+
+按照以下方式修改它。
+
+[source, code, linenums]
+----
+host    all             all             0.0.0.0/0       trust
+----
+
+这可以确保Postgres接受来自任何主机的所有连接尝试，而无需询问加密密码。在测试数据库连接之后，您可能希望修改此文件以根据您网站的安全需求限制连接。
+
+（有关`pg_hba.conf`文件的详细说明，请参阅 link:http://developer.postgresql.org/pgdocs/postgres/auth-pg-hba-conf.html[在线文档]。）
+
+设置侦听器后，数据库必须重新启动。为此，请打开一个终端窗口（Unix终端或DOS提示符）并使用`pg_ctl`命令，如下所述。
+
+* 到*restart* PostgreSQL服务器运行：`pg_ctl restart`
+* 到PostgreSQL服务器的*verify the state*，运行：`pg_ctl status`
+
+[TIP]
+====
+*Run pg_ctl on Unix*
+
+`pg_ctl`命令通常可以由系统上的任何用户运行，但其位置不包含在用户的PATH环境变量中，因此试图运行它会导致shell返回`command not found`错误。要运行该命令，请采用以下两种方法之一进行操作：
+
+* 找到系统上的`pg_ctl`二进制文件，并通过指定完整路径来运行它。例如：
++
+* 将二进制文件的完整路径添加到PATH环境变量中，例如使用以下命令：
++
+然后运行`pg_ctl`。
+====
+
+运行`pg_ctl status`时，您可能会得到以下输出：
+
+[source, code, linenums]
+----
+pg_ctl: no database directory specified and environment variable PGDATA unset
+Try "pg_ctl --help" for more information.
+----
+
+在这种情况下，请使用以下选项发出该命令：`pg_ctl status -D <Postgres data directory>`，如下所示。
+
+[source, code, linenums]
+----
+pg_ctl status -D /opt/PostgreSQL/9.1/data
+----
+
+对于`pg_ctl`命令的`restart`选项也是一样的。例如，要重新启动PostgreSQL服务器：
+
+[source, code, linenums]
+----
+pg_ctl restart -D /opt/PostgreSQL/9.1/data
+----
+
+下一步是创建数据库用户。根据您是否为<<Persisting Environment Data>>或<<Persisting Transaction Data>>设置数据库，请按照下面的相关设置说明进行操作。
+
+== 坚持不懈的环境数据
+
+要设置PostgreSQL来保存您的MMC环境数据，您需要完成四个步骤：
+
+. 创建数据库用户
+. 创建数据库
+. 验证数据库
+. 设置MMC
+
+=== 创建数据库用户
+
+您可以使用以下参数创建新的数据库用户：
+
+* 角色名称：`mmc_status`
+* 密码：`mmc123`
+
+==== 使用pgAdmin III
+
+. 以角色`postgres`登录数据库服务器：
+.. 在pgAdmin III的对象浏览器（右侧窗格）中，右键单击*localhost*上的服务器*PostgreSQL*，然后选择*Connect*。
+. 在*Object Browser,*上点击右键*Login Roles*，然后选择*New Login Role*。
+. 在*New Login Role*对话框中，在*Role name*字段中键入`mmc_status`。
+. 转到对话框中的*Definition*标签，然后在*Password*字段中输入密码`mmc123`。
+. 点击*OK*关闭*New Login Role*对话框。
+
+=== 创建新数据库
+
+您可以创建名为`mmc_persistency_status`的数据库，由角色`mmc_status.`
+
+==== 使用pgAdmin III：
+
+. 使用对象浏览器，导航至*Databases*> *New Database*。
+. 在对话框中，在*Name*字段中键入`mmc_persistency_status`。
+. 在*Owner*字段中，选择`mmc_status.`
+. 在*Definition*标签中，确保*Encoding*设置为`UTF8`。
+. 单击*OK*关闭“新建数据库”对话框。
+
+=== 验证新数据库
+
+使用PostgreSQL的`psql`命令行实用程序以用户`mmc_status`登录数据库`mmc_persistency_status`。为此，请打开终端并运行：
+
+[source, code, linenums]
+----
+psql postgres -Ummc_status
+----
+
+运行此命令时，`psql`应提示输入用户的密码。输入后，你应该得到类似如下的提示：
+
+[source, code, linenums]
+----
+mmc_persistency_status=#
+----
+
+这表示您已成功以用户`mmc_status`连接到`mmc_persistency_status`数据库。
+
+[TIP]
+====
+*If you can't login using the psql command*
+
+根据您的PostgreSQL配置，尝试连接到数据库时可能会出现以下错误：
+
+这可能意味着PostgreSQL被配置为只有在操作系统首先认证该用户时才接受指定用户的连接。因此，例如，要以用户`mmc_status`进行连接，您必须创建一个名为`mmc_status`的Unix帐户，并从该帐户运行`psql`。
+
+如果您不希望使用此配置，请检查PostgreSQL配置文件`pg_hba.conf`中的以下行：
+
+如果该行存在，请按照以下方式进行修改。
+====
+
+完整登录命令和输出的示例：
+
+[source, code, linenums]
+----
+mitra:/opt/PostgreSQL/9.1/bin$ ./psql mmc_persistency_status -Ummc_status
+Password for user mmc_status:
+psql.bin (9.1.3)
+Type "help" for help.
+mmc_persistency_status=#
+----
+
+要退出psql，请键入`\q`，然后按*Enter*。
+
+==== 创建表格
+
+在第一次运行时，JCR自动创建存储持久MMC信息所需的所有表。但是，您必须手动创建一些存储Quartz作业信息的表;否则在某个时候发生以下错误：
+
+[source, code, linenums]
+----
+ERROR: relation "qrtz_locks" does not exist
+  Position: 15 [See nested exception: org.postgresql.util.PSQLException: ERROR: relation "qrtz_locks" does not exist
+  Position: 15]]
+----
+
+创建并插入表格：
+
+. 导航到目录`<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/classes/quartz`。
+. 在目标数据库`mmc_persistency_status`上执行`tables_postgres.sql`脚本。一种方法是运行以下命令：
+
+[source, code, linenums]
+----
+psql -d mmc_persistency_status -Ummc_status -f tables_postgres.sql
+----
+
+如有必要，请在上述命令中指定`<full path>/tables_postgres.sql`。
+
+此时，Postgres数据库应该完全定义，如下所示。
+
+image:postgres_db.png[postgres_db]
+
+=== 设置MMC以使用PostgreSQL保存环境数据
+
+==== 数据库驱动程序
+
+要检查您的MMC安装是否安装了PostgreSQL驱动程序，请转至目录`<MMC_HOME>/WEB-INF/lib`，然后查找名为`<postgresql-<version>.jdbc<version>.jar`的文件，例如`postgresql-9.1-901.jdbc3.jar`。
+
+如果你没有这样的文件，驱动程序没有安装，你需要安装它。如果你有这个文件，你可能希望检查它是否是最新版本，并在必要时进行更新。这两种行为都在下面解释。
+
+===== 安装或更新PostgreSQL JDBC驱动程序
+
+. 转到PostgresSQL驱动程序 http://jdbc.postgresql.org/download.html#current[下载网站]并下载最新版本的.jar文件。例如，`postgresql-9.3-1100.jdbc41.jar`。
+. 确保MMC未在运行。
+. 将.jar文件复制到目录`<MMC_HOME>/WEB-INF/lib`。
+. 如果目录包含驱动程序的先前版本，请将其删除。
+
+====  MMC配置
+
+配置MMC在PostgreSQL数据库中存储数据涉及两个基本任务：
+
+* 修改文件`web.xml`告诉MMC使用Postgres而不是默认数据库
+* 修改文件`mmc-postgres.properties`以设置连接到Postgres数据库的参数
+
+===== 修改`web.xml`
+
+. 在`<MMC_HOME>/WEB-INF`目录中找到文件`web.xml`，然后打开它进行编辑。
+. 找到`spring.profiles.active`部分，如下所示。
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-derby</param-value>
+</context-param>
+----
+
+. 删除字符串`env-derby`，然后将其替换为`env-postgres`，如下所示。
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-postgres</param-value>
+</context-param>
+----
+
+. 如果您还计划将<<Persisting Transaction Data>>迁移到PostgreSQL，请删除字符串`tracking-h2`并将其替换为`tracking-postgres`。
+
+[TIP]
+`web.xml`配置文件中的`spring.profiles.active`部分允许您定义用于存储环境和/或跟踪数据的外部数据库。有关所有支持的数据库服务器的快速说明，请参阅 link:/mule-management-console/v/3.6/configuring-mmc-for-external-databases-quick-reference[为外部数据库配置MMC  - 快速参考]。
+
+=====  {修改{1}}
+
+. 在`<MMC_HOME>/WEB-INF/classes/META-INF/databases`目录中找到文件`mmc-postgres.properties`，然后打开它进行编辑。
+. 下表列出了文件中包含的设置。根据需要修改值。一般而言，您需要修改的唯一值是`env.username`，`env.password`，`env.host`，`env.port`和`env.dbschema`。
+
+[%header,cols="3*a"]
+|===
+| {参数{1}}说明 |缺省
+| `env.driver`  |用于连接数据库的驱动程序 | `org.postgresql.Driver`
+| `env.script`  |用于在目标数据库中创建表的脚本 | `postgres`
+| `env.username`  |数据库用户 | `mmc_status`
+| `env.password`  |数据库用户的密码 | `mmc123`
+| `env.host`  |数据库服务器正在侦听的主机名或IP地址 | `localhost`
+| `env.port`  |数据库服务器正在侦听的端口 | `5432`
+连接到数据库的| `env.url`  |网址 | `jdbc:postgresql://${env.host}:${env.port}/${env.dbschema}`
+| `env.dbschema`  |连接到 | `mmc_persistency_status`的数据库
+|===
+. 将修改后的文件保存（如果有的话）。
+
+=== 删除本地数据库文件
+
+要使配置更改生效，在启动MMC之前，您需要删除MMC默认使用的本地数据库文件。
+
+在Web应用程序服务器的根目录中，找到`mmc-data`目录（例如，`/var/lib/tomcat6/mmc-data`），然后删除`mmc-data`目录。
+
+[NOTE]
+在删除`mmc-data`之前，请制作此目录的备份副本并将其保存在安全的位置。如果您的新数据库配置出现问题，您可以使用`mmc-data`在测试环境中排除新数据库配置时恢复旧数据库配置。
+
+此时，MMC将配置为将环境数据存储在您指定的外部Postgres数据库中。
+
+=== 环境数据的灾难恢复
+
+如果使用应用程序服务器，MMC会将持久状态数据存储在位于`<Mule install path>/.mule/mmc`（如果运行试用版）或`<MULE_HOME>/mmc-data`的文件夹`mmc-data`中。如果由于某些原因数据库文件损坏，您可能必须删除`mmc-data`并从头开始，除非您有`mmc-data`的备份副本。但是，拥有`mmc-data`的备份副本不会覆盖MMC主机本身完全丢失数据的灾难性故障，也不允许使用主动 - 被动配置进行即时恢复。
+
+一种可能的解决方案是将数据库备份到单个文件，然后将其复制到另一台机器。如果需要立即恢复，则可以使用此文件将数据库恢复到其原始状态。
+
+[IMPORTANT]
+====
+当您将MMC还原到以前的状态时，请注意以下事项：
+
+* 您正在还原MMC状态数据。这与Business Events的持久性无关，后者使用完全不同的机制来存储数据。
+* 备份时注册的服务器已恢复，这意味着可能会出现以下情况之一：
+** 服务器与另一个Mule实例配对。在这种情况下，通过MMC“取消配对”服务器，然后重新配对。这可能会影响部署和服务器组。
+** 服务器不再存在。取消配对服务器。
+** 另一台服务器使用与原始服务器相同的IP和端口。尝试识别原始服务器的当前IP和端口，然后重新配对。
+** 服务器连接正确，但在备份之后，已部署和/或未部署的应用程序未显示或显示不正确。根据需要取消部署/重新部署以消除未协调的状态。
+====
+
+==== 情景
+
+* 数据库服务器：`PostgreSQL 9.1`
+*  MMC连接到Postgres
+* 数据库已创建。对于这个例子，将使用以下参数：
+** 角色：`mmc_status`（具有与"postgres"角色相同的权限）
+** 数据库名称：`mmc.test`
+*** 编码：`UTF8`
+*** 拥有者：`mmc_status`
+* 访问数据库的工具：`pgAdmin III`
+
+==== 备份数据库
+
+要备份`mmc.test`数据库，请完成以下步骤：
+
+. 以管理员身份登录到pgAdmin III（角色`postgres`）。
+. 在左侧窗格中的对象浏览器上，转到*Server Groups*> **PostgreSQL 9.1**> *Databases*> **mmc.test**。
+. 右键点击`mmc.test`，然后导航至*Backup*> *File Options*。
+. 选择以下选项：
+* 格式：`Tar`
+* 编码：`UTF8`
+*  ROLENAME：`mmc_status`
+* 文件名：`<Suitable name and folder>`
+. 点击*Backup*，在您指定的位置创建数据库的tar存档。
+
+==== 恢复数据库
+
+要恢复`mmc.test`数据库，请完成以下步骤：
+
+. 转到mmc-data文件夹（`<Mule install path>/.mule/mmc/mmc-data`）并删除以下文件夹：
+*  `db`（如果存在）
+*  `repository`
+*  `tracking`（为避免生成与JCR相关的多个堆栈轨迹，这是必要的）
+* 您可能还需要删除`workspaces/<name of your workspace>/index`
+. 以管理员身份登录到pgAdmin III（角色`postgres`）。
+. 在对象浏览器上，确保定义了名为`mmc.test`的数据库。
+. 确保可以在数据库上定义的所有表都被删除。
+. 右键点击`mmc.test`，选择*Restore*。
+. 在*File Options*选项卡上，选择：+
+* 文件名：`<Database backup file>`
+* 格式：`Custom or tar`
+*  ROLENAME：`mmc_status`
+. 点击*Restore*。
+
+== 持久性交易数据
+
+要设置PostgreSQL来保存您的MMC交易数据，您需要完成三个步骤：
+
+. 创建数据库用户
+. 创建数据库
+. 验证数据库
+. 设置MMC
+
+=== 创建数据库用户
+
+您可以使用以下参数创建用户：
+
+* 角色名称：`tracker`
+* 密码：`tracker`
+
+==== 使用pgAdmin III
+
+. 以用户`postgres`登录到数据库服务器：
+.. 在pgAdmin III的对象浏览器（右侧窗格）中，右键单击*localhost*上的服务器*PostgreSQL*，然后选择*Connect*。
+. 在*Object Browser,*上点击右键*Login Roles*，然后选择*New Login Role*。
+. 在*New Login Role*对话框中，在*Role name*字段中键入`tracker`。
+. 转到对话框中的*Definition*标签，然后在*Password*字段中输入密码`tracker`。
+. 点击*OK*关闭*New Login Role*对话框。
+
+=== 创建新数据库
+
+您可以创建一个名为`mmc_persistency_tracking`的数据库，由用户`tracker.`拥有
+
+==== 使用pgAdmin III
+
+. 使用对象浏览器，导航至*Databases*> *New Database*。
+. 在对话框中，在*Name*字段中键入`mmc_persistency_tracking`。
+. 在*Owner*字段中，选择`tracker`
+. 在*Definition*标签中，确保*Encoding*设置为`UTF8`
+. 单击*OK*关闭“新建数据库”对话框。
+
+=== 验证新数据库
+
+使用PostgreSQL的`psql`命令行实用程序以用户`tracker`登录数据库`mmc_persistency_tracking`。为此，请打开终端并运行：
+
+[source, code, linenums]
+----
+psql postgres -Utracker
+----
+
+运行此命令时，`psql`应提示输入用户的密码。输入后，你应该得到类似如下的提示：
+
+[source, code, linenums]
+----
+mmc_persistency_tracking=#
+----
+
+这表示您已成功以用户`tracker`连接到`mmc_persistency_tracking`数据库。
+
+[TIP]
+====
+*If you can't login using the psql command*
+
+根据您的PostgreSQL配置，尝试连接到数据库时可能会出现以下错误：
+
+这可能意味着PostgreSQL被配置为只有在操作系统首先认证该用户时才接受指定用户的连接。因此，例如，要以用户`mmc_status`进行连接，您必须创建一个名为`mmc_status`的Unix帐户，并从该帐户运行`psql`。
+
+如果您不希望使用此配置，请检查PostgreSQL配置文件`pg_hba.conf`中的以下行：
+
+如果该行存在，请按照以下方式进行修改。
+====
+
+完整登录命令和输出的示例：
+
+[source, code, linenums]
+----
+mitra:/opt/PostgreSQL/9.1/bin$ ./psql mmc_persistency_tracking -Utracker
+Password for user tracker:
+psql.bin (9.1.3)
+Type "help" for help.
+mmc_persistency_tracking=#
+----
+
+要退出psql，请键入`\q`，然后按Enter键。
+
+=== 设置MMC以使用PostgreSQL保存交易数据
+
+请参阅本文档中的<<Database Driver>>部分，以安装或验证您安装的PostgreSQL数据库驱动程序。
+
+====  MMC配置
+
+配置MMC以将Business Events数据存储在PostgreSQL数据库中涉及两项基本任务：
+
+* 修改文件`web.xml`告诉MMC使用Postgres而不是默认数据库
+* 修改文件`tracking-persistence-postgres.properties`以设置连接到Postgres数据库的参数
+
+===== 修改`web.xml`
+
+. 在`<MMC_HOME>/WEB-INF`目录中找到文件`web.xml`，然后打开它进行编辑。
+. 找到`spring.profiles.active`部分，如下所示。
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-derby</param-value>
+</context-param>
+----
+
+. 删除字符串`tracking-h2`，然后将其替换为`tracking-postgres`，如下所示。
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-postgres,env-derby</param-value>
+</context-param>
+----
+
+. 如果您还计划将<<Persisting Environment Data>>迁移到PostgreSQL，请删除字符串`env-derby`并将其替换为`env-postgres`。
+
+[TIP]
+`web.xml`配置文件中的`spring.profiles.active`部分允许您定义用于存储环境和/或跟踪数据的外部数据库。有关所有支持的数据库服务器的快速说明，请参阅 link:/mule-management-console/v/3.6/configuring-mmc-for-external-databases-quick-reference[为外部数据库配置MMC  - 快速参考]。
+
+==== 修改`tracking-persistence-postgres.properties`
+
+. 在`<MMC_HOME>/WEB-INF/classes/META-INF/databases`目录中找到文件`tracking-persistence-postgres.properties`，然后打开它进行编辑。
+. 根据下表根据需要修改包含的设置。一般而言，您需要修改的唯一值是`mmc.tracking.db.username`，`mmc.tracking.db.password`，`mmc.tracking.db.host`，`mmc.tracking.db.port`和`mmc.tracking.db.dbname`。
+
+[%header,cols="3*a"]
+|===
+| {参数{1}}说明 |缺省
+| `mmc.tracking.db.platform`  |连接到 |的数据库服务器的类型`postgres`
+| `mmc.tracking.db.driver`  |用于连接数据库的驱动程序 | `org.postgresql.Driver`
+| `mmc.tracking.db.host`  |数据库服务器正在侦听的主机名或IP地址 | `localhost`
+| `mmc.tracking.db.port`  |数据库服务器正在侦听的端口 | `5432`
+连接到数据库的| `mmc.tracking.db.url`  |网址 | `jdbc:postgresql://${mmc.tracking.db.host}:${mmc.tracking.db.port}/${mmc.tracking.db.dbname}`
+| `mmc.tracking.db.username`  |数据库用户 | `tracker`
+| `mmc.tracking.db.password`  |数据库用户的密码 | `tracker`
+| `mmc.tracking.db.dbname`  |连接到 | `mmc_persistency_tracking`的数据库
+| `mmc.max.events.exception.details.length`  | Business Events异常中将存储在跟踪数据库中的字符数。允许的最大数量为261120。 | `8000`
+|===
+. 将修改后的文件保存（如果有的话）。
+
+=== 删除本地数据库文件
+
+要使配置更改生效，在启动MMC之前，您需要删除MMC默认使用的本地数据库文件。
+
+在Web应用程序服务器的根目录中，找到`mmc-data`目录（例如，`/var/lib/tomcat6/mmc-data`），然后删除`mmc-data`目录。
+
+[NOTE]
+在删除`mmc-data`之前，请制作此目录的备份副本并将其保存在安全的位置。如果您的新数据库配置出现问题，您可以使用`mmc-data`在测试环境中排除新数据库配置时恢复旧数据库配置。
+
+此时，MMC将配置为将跟踪数据存储在您指定的外部Postgres数据库中。
+
+==== 疑难解答提示
+
+如果您在远程主机上安装了数据库并遇到问题，请确保与数据库的网络连接正常。打开终端（Unix或DOS）并运行：`telnet <host> <port>`
+
+输出应该类似于以下内容。
+
+[source, code, linenums]
+----
+mitra:~$ telnet dbserver 5432
+Trying ::1...
+Connected to dbserver.
+Escape character is '^]'.
+----
+
+以上输出表示在端口5432上与主机`dbserver`成功连接。“连接被拒绝”错误表示没有任何内容正在侦听指定的主机和端口。任何其他输出通常表示连接问题，例如防火墙阻止对指定端口的请求。
+
+== 另请参阅
+
+* 详细了解 link:/mule-management-console/v/3.6/setting-up-mmc[MMC设置]。
+* 查看 link:/mule-management-console/v/3.6/architecture-of-the-mule-management-console[Mule管理控制台的架构]。

@@ -1,0 +1,121 @@
+DataWeave Streaming。= 
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping, streaming, weaveoutputhandler
+
+DataWeave支持文件处理，而不需要将整个内容加载到内存中。除XML之外，所有输入格式都支持。这在处理大文件时特别有用。无需额外配置即可支持此流媒体。只要文件输入是一个流，DataWeave就会这样处理它。所有输出类型都会自动作为流处理。
+
+== 输入流
+
+为了让DataWeave处理文件流，输入必须以流的形式输入DataWeave。例如，以 link:/mule-user-guide/v/3.7/file-transport-reference[文件传输入站端点]开头的流必须启用流式传输。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+The example below details a CSV file input that will be processed as a stream. Its output is then written to another file in JSON format.
+
+image:file_to_file_dw_stream.png[file_to_file]
+
+[TIP]
+===
+The File Connector automatically enables streaming.
+===
+
+....
+[tab,title="XML Editor"]
+....
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule
+  xmlns:file="http://www.mulesoft.org/schema/mule/file"
+  xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+  xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+      http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+
+  <file:connector name="File" autoDelete="true" streaming="true" validateConnections="true" doc:name="File" />
+
+  <flow name="file-to-file">
+    <file:inbound-endpoint path="C:\input" connector-ref="File" responseTimeout="10000" doc:name="Read CSV" />
+    <dw:transform-message doc:name="Transform Message">
+      <dw:set-payload>
+        <![CDATA[
+          %dw 1.0
+          %output application/json
+          ---
+          {
+            people: payload map ((payload01 , indexOfPayload01) -> {
+            id: payload01.id as :number,
+            firstName: payload01.firstName,
+            lastName: payload01.lastName
+          })
+        }]]>
+      </dw:set-payload>
+    </dw:transform-message>
+    <file:outbound-endpoint responseTimeout="10000" doc:name="Write as JSON" connector-ref="File" path="C:\output" />
+  </flow>
+
+</mule>
+----
+
+....
+------
+
+
+== 输出流和WeaveOutputHandler
+
+转换后，DataWeave返回一个`WeaveOutputHandler`。这个处理程序能够推迟写入Mule消息的有效负载，直到有可用的流写入它为止。这允许DataWeave输出在处理继续时保持在堆外部。
+
+请记住，在检查有效负载时，这种行为会使事情以不同的方式工作。获取消息的有效负载将返回一个`WeaveOutputHandler`对象而不是字符串表示。例如，考虑一个您希望记录有效载荷的记录器：
+
+image:file_to_file_dw_log.png[日志DW输出]
+
+此记录器的输出将显示为以下内容：
+
+[source, txt, linenums]
+----
+org.mule.transport.file.FileMessageReceiver: Lock obtained on file: /Users/mulesoft/inputCSV.csv
+org.mule.api.processor.LoggerMessageProcessor: Result was:
+com.mulesoft.weave.mule.WeaveMessageProcessor$WeaveOutputHandler@3528770d
+Initialising: 'File.dispatcher.657964187'. Object is: FileMessageDispatcher
+org.mule.lifecycle.AbstractLifecycleManager: Starting: 'File.dispatcher.657964187'. Object is: FileMessageDispatcher
+org.mule.transport.file.FileConnector: Writing file to: /Users/mulesoft/output/inputCSV.csv
+----
+
+如果您希望将有效负载记录为字符串表示形式，则需要以字符串表示形式请求有效内容。这可以通过使用表达式`#[message.payloadAs(java.lang.String)]`来实现。
+
+image:file_to_file_dw_log_string.png[将DW输出记录为字符串]
+
+[WARNING]
+该表达式等同于使用DataWeave输出并将其转换为String。即使在记录器的上下文中使用此表达式也是如此。有效载荷将作为字符串到达​​下一个处理器。同样重要的是要注意，一旦这样消费，整个有效载荷将存在于存储器中。
+
+这个记录器的输出将如下所示。
+
+[source, txt, linenums]
+----
+org.mule.transport.file.FileMessageReceiver: Lock obtained on file: /Users/josh/inputCSV.csv
+org.mule.api.processor.LoggerMessageProcessor: Result was:
+{
+  "people": [
+    {
+      "id": 1,
+      "firstName": "Max",
+      "lastName": "Mule"
+    },
+    {
+      "id": 2,
+      "firstName": "Sally",
+      "lastName": "Mule"
+    }
+  ]
+}
+org.mule.lifecycle.AbstractLifecycleManager: Initialising: 'File.dispatcher.2036619369'. Object is: FileMessageDispatcher
+org.mule.lifecycle.AbstractLifecycleManager: Starting: 'File.dispatcher.2036619369'. Object is: FileMessageDispatcher
+org.mule.transport.file.FileConnector: Writing file to: /Users/josh/output/inputCSV.csv
+----

@@ -1,0 +1,71 @@
+= 示例：使用对象存储设置水印
+:keywords: ObjectStore, watermark, synchronization
+：TOC：
+：TOC标题：
+
+TOC :: []
+
+水印是一种技术，用于存储和检索定点同步应在下次执行时恢复的点。水印是对象存储的常见用法。
+
+==  Mule 3用户的背景
+
+有关水印的解释以及MuleSoft在Mule 3中如何处理该问题，请参阅 link:https://blogs.mulesoft.com/dev/anypoint-platform-dev/data-synchronizing-made-easy-with-mule-watermarks/[这篇博文]。
+
+Mule 3方法的局限性：
+
+* 尽管Mule 3 `<watermark/>`组件允许设置自定义`ObjectStore`，但是没有简单的方法来创建它。骡4解决了这个问题。
+*  `<watermark/>`元素需要Mule 4）中的`<poll/>`元素（由{{3}替换）返回一个可迭代的有效载荷，并且您必须完全迭代该有效载荷才能获得新的水印值。不这样做导致价值被错误地更新或根本不更新。
+* 如果流程抛出错误，则无法使用意外值更新水印。价值如何以及何时更新尚不完全清楚。
+
+当我们坐下来想出如何改进这个用例时，我们意识到问题的真正根源在于，实际上根本不需要<watermark>。它的存在只是其他组件局限性的结果：
+
+* 水印的人工迭代只是补偿许多数据集只能迭代一次的一种方式，特别是在处理二进制流或连接器进行自动分页时。由于可重复的流媒体功能，Mule 4现在修复了这个问题
+* 组件对`ObjectStore`的自动处理仅用于补偿旧版`ObjectStore`支持中的用户体验问题。如果新连接器提供更简单的语义，则根本不需要。
+
+==  Mule 4示例
+
+这个例子展示了如何使用Mule 4来执行Mule 3博客中描述的用例。
+
+[source, xml, linenums]
+----
+<os:object-store name="watermarkStore" persistent="true"/>
+
+<flow name="watermark">
+    <os:retrieve key="watermark" objectStore="watermarkStore" target="watermark">
+        <os:default-value>2017-09-11T00:00:00.000Z</os:default-value>
+    </os:retrieve>
+    <sfdc:query config-ref="config">
+        <sfdc:salesforce-query>
+            <![CDATA[
+                #["Select Id, Name, BillingCity,Phone,Website,LastModifiedDate from account WHERE LastModifiedDate > " ++ vars.watermark]
+           ]]>
+       </sfdc:salesforce-query>
+    </sfdc:query>
+    <flow-ref name="doYourIntegrationLogic" />
+    <os:store key="watermark" failIfPresent="false"
+     failOnNullValue="false" objectStore="watermarkStore">
+        <os:value>#[max(payload map $.LastModifiedDate)]</os:value>
+    </os:store>
+</flow>
+----
+
+该示例是一个不需要特定类型的触发器的通用流程。尽管您可能会从另一个流中调用它，或者您可能使用`<scheduler/>`来触发流，但您可以在不强制任何类型的触发器的情况下生成水印语义。
+
+然后，该示例为水印定义了一个自定义`ObjectStore`，但也可以使用隐式提供给每个应用程序的`ObjectStore`。所以你不需要定义一个自定义的`ObjectStore`。
+
+流程从检索最后的水印值开始。 Retrieve操作（`<os:retrieve/>`）指定在计算第一个水印之前流程第一次运行时可用的默认值（`<os:default-value/>`）。这种配置避免了对`<choice> -> <contains>`类型的模式的需求。
+
+请注意，Retrieve操作将水印值存储在目标值（`target="watermark"`）中，以防止连接器覆盖消息负载。这使得流量可以重复使用并且更易于维护。您可以安全地在检索操作之前添加任何类型的操作。
+
+查询（`<sfdc:query/>`）使用水印（`vars.watermark`）过滤获得的结果。
+
+`<flow-ref />`指向另一个流程，它可以执行任何所需的处理，例如，将数据发送到另一个系统，执行转换或其他操作。
+
+最后一步（在`<os:store/>`中）是更新水印值：
+
+* 新的水印值应该是最大更新的时间戳。该示例使用`<os:value/>`提供获取该值的DataWeave表达式。
++
+请注意，可重复流式传输功能可防止您了解集成逻辑。即使查询操作自动分页，该功能仍然可以保证您仍可以重新迭代结果集。
++
+*  `failIfPresent`设置为`false`，以便该值在出现时进行更新。否则，该操作只会在第一次运行，如果水印已经存在于对象存储区中，则操作将失败。
+*  `failOnNullValue`设置为`false`，所以如果查询返回为空，则DataWeave表达式（查找最大值）将返回null。将其设置为`true`会使连接器跳过空值，从而防止需要使用`<choice/>`路由器来检查条件。

@@ -1,0 +1,152 @@
+= 开发DevKit连接器测试
+:keywords: devkit, connector, tests, data validation, api
+
+尽管DevKit不强制进行写入测试，但您应该为连接器开发单元和功能测试，作为开发过程的一部分。没有适当的测试套件，连接器不应被视为生产准备就绪。
+
+尽管根据您的具体需求，测试策略可能会有很大差异，但本文档介绍了Mule和DevKit可用于支持连接器测试方法的基础知识。
+
+== 先决条件
+
+本文件假定您：
+
+* 按 link:/anypoint-connector-devkit/v/3.7/creating-an-anypoint-connector-project[创建Anypoint连接器项目]所述安装了Anypoint Connector DevKit插件
+* 熟悉Anypoint Studio
+* 熟悉用于Java的Maven构建管理器
+* 熟悉JUnit  - 回归和烟雾测试脚手架调用JUnit
+
+要测试的== 代码区域
+
+将这些测试整合到您的测试套件中：
+
+*  *Input data validation:*
+** 如果您的连接器接受来自其他应用程序的用户参数或参数，请对输入运行一致性检查。云服务采取的参数可以是可选的，而其他参数必须遵循一定的规则。
+** 实施单元测试，为每个连接器的方法分配有效或无效的输入，并检查输入验证是否相应响应。
+*  *API Interaction:*
+** 如果您的连接器通过Internet与远程服务进行通信（通常是通过重试或抛出明确异常），则处理连接或通信错误。
+无论您选择哪种错误处理策略，{0}}都会测试错误处理。
+** 模拟测试Web服务。
+** 将连接器指向您的测试端点而不是生产目标，以便您可以更轻松地重现错误情况，如超时或连接丢失。
+*  *Mule ESB Integration:*
+** 覆盖连接器测试套件中的所有操作 - 至少测试一次操作和参数。
+** 为每项操作传入并接收所有合理的输入和输出。
+** 特别注意覆盖传入和接收来自XML操作的复杂数据类型，因为这些可能会非常棘手。
+** 测试XML中默认和可选参数值的使用，以确保它们的行为与预期相符。
+** 您期望连接器引发异常的测试案例。
+*  *Anypoint Studio Integration:*
+** 在Studio中测试连接器的外观和可用性。
+** 在属性对话框中包含行为和提示，从Javadoc注释中生成工具提示等。测试此方法的唯一方法是在Studio中手动使用连接器。
+
+== 生成测试脚手架
+
+测试脚手架是在使用Anypoint Studio生成测试之后出现在src / test / java下的一组Java文件。 Studio生成这些文件：
+
+=== 测试运行程序 - 运行测试用例集
+
+* 回归测试套件文件 - 您可以使用此代码通过将连接器的以前状态与当前状态进行比较来发现新的错误。如果这是第一次运行，它会发现新的错误。
+* 烟雾测试套件文件 - 显示诸如"does this feature run?"之类的简单问题，您可以使用它们确保连接器的基本行为按预期运行。
+
+=== 回归和理智测试级别
+
+* 测试用例自动化Java文件 - 脚手架测试连接器中的每种方法。
+* 可选测试数据文件 - 为连接器提供测试数据。
+
+=== 创建测试案例脚手架
+
+. 在包资源管理器中右键单击您的项目，然后点击*Anypoint Connector*> *Generate Tests*：
++
+image:GenerateTests.png[GenerateTests]
++
+. 单击要为其创建测试脚手架的方法，或者单击*Select All*。该向导显示应用程序中方法的选择，例如，该应用程序包含许多方法：
++
+image:TestScaffoldingGeneration.png[TestScaffoldingGeneration]
++
+. 点击*Generate Test Case Scaffolding*创建脚手架文件。
+. 如果您希望Studio创建可用于测试连接器的测试数据，请单击其他选项：
+**  *Generate Functional Test Data Files*
+**  *Generate Interop Test Data Files*
+. 点击*Finish*。 Studio创建出现在src / test / java下的Package Explorer中的文件。
+. 将您的代码添加到脚手架测试中。要运行测试，请参阅运行生成的测试。
+
+=== 示例脚手架文件
+
+测试例子：
+
+[source,java, linenums]
+----
+package org.mule.modules.automation.testcases;
+import org.junit.After;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
+public class EnterTimeOffTestCases
+    extends myTestFunctionalParent
+{
+    public void setup() {
+        //TODO: Add setup required to run test or simply remove method
+    }
+    @After
+    public void tearDown() {
+        //TODO: Add code to reset sandbox state to the one before the test was run or simply remove method
+    }
+    @Category({
+        RegressionTests.class,
+        SmokeTests.class
+    })
+    @Test
+    public void testEnterTimeOff(){
+        //getConnector() gives back an instance of the current connector
+        //Object result = getConnector().connectorMethod();
+    }
+}
+----
+
+您应该用代码替换您的测试的"TODO"语句。这个脚手架不会执行任何测试，也不会产生任何错误或失败的断言。
+
+== 测试程序
+
+DevKit测试程序提供以下功能。
+
+=== 目标
+
+集成到连接器的* 自动化测试套件。
+* 运行测试时使用真正的沙箱和Mule服务器。
+* 自动化测试套件维护应该尽可能少。
+* 过时的自动化套件不会影响开发。
+
+=== 测试创建标准
+
+* 为每个测试启动并完成一个Mule实例，确保与套件的其余部分隔离。
+* `setUp（）方法在运行实际测试之前创建测试夹具。实体是专门为测试操作而创建的。
+* 测试应足够灵活以支持所有可能的实体及其数量（如果适用），并且只应在操作上发生业务逻辑更改或修改操作本身时更新（例如，签名更改）。
+* 测试应该自行清理。运行测试之前，沙箱处于该状态。
+* 测试应该只测试一次。
+
+=== 覆盖类别
+
+*  Smoke套件确保回归运行符合测试前提条件。
+* 回归套件为每个操作至少包含一个测试用例。
+
+// ==测试框架
+//注意：此Github URL对非MS员工不可见
+//使用 link:https://github.com/mulesoft-labs/connector-testing-framework/tree/master/functional-test-framework[当前连接器测试框架]编写功能测试。
+
+== 套件实施
+
+=== 测试开发环境设置
+
+构建连接器后，将`target/generated-sources/mule`添加到项目构建路径中，可能需要根据连接器（如`target/generated-sources/cxf`）将其他生成的源添加到构建路径。
+
+此外，如果连接器为*Standard*，请记住将`muleLicenseKey.lic`文件添加到`src/test/resources`文件夹，并在提交更改之前将其移除。
+
+==== 包和文件
+
+*  `org.mule.modules.<connector-project>.automation`  - 包含<Connector> TestParent和SmokeTests和RegressionTests类别界面。
+*  `org.mule.modules.<connector-project>.automation.testrunners`  - 包含跑步者（`RegressionTestSuite`和`SmokeTestSuite`）。
+*  `org.mule.modules.<connector-project>.automation.testcases`  - 仅包含功能测试用例。
+*  `<connector-project>/src/test/resources`  - 包含凭据：
+**  `automation-credentials.properties`
+
+== 下一步
+
+如果在向连接器添加操作的同时开发单个单元测试，则应该返回到开发过程。使用Maven构建您的连接器项目;如果你的任何测试失败，那么你的Maven构建过程失败。
+
+完成测试套件后，您可以为连接器 link:/anypoint-connector-devkit/v/3.7/connector-reference-documentation[完整的文档和样本]。

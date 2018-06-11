@@ -1,0 +1,603 @@
+= 批处理
+:keywords: connectors, anypoint, studio, esb, batch, batch processing
+
+*_Enterprise, CloudHub_*
+
+Mule拥有分批处理消息的能力。在应用程序中，您可以启动一个批处理作业，该作业是将消息拆分为单个记录的代码块，对每条记录执行操作，然后报告结果并可能将处理后的输出推送到其他系统或队列。此功能在处理流式输入或在SaaS应用程序之间设计"near real-time"数据集成时特别有用。
+
+image:batch_main1.png[batch_main1]
+
+例如，批处理在处理以下情况时特别有用：
+
+* 整合数据集，无论是小型的还是大型的，或者不是，都可以并行处理记录。
+
+* 在业务应用程序之间同步数据集，例如在Netsuite和Salesforce之间同步联系人，实现数据集成。"near real-time"
+
+* 提取，转换和加载（ETL）信息到目标系统，例如将数据从平面文件（CSV）上传到Hadoop。
+
+* 将大量来自API的传入数据处理为遗留系统。
+
+[NOTE]
+====
+*Batch processing is exclusive to Mule Enterprise runtimes*
+
+要使用批处理作业构建应用程序并在测试或生产环境中运行它们，您必须使用Enterprise运行时构建应用程序。详细了解 link:/anypoint-studio/v/5/changing-runtimes-in-studio[在Studio中更改运行时]。
+====
+
+== 先决条件
+
+本文档假定您熟悉以下内容：
+
+*  Anypoint Studio。请参阅 link:/anypoint-studio/v/5/index[Anypoint Studio Essentials]一章，以了解有关使用Mule ESB的图形用户界面进行开发的更多信息。
+*  link:/mule-user-guide/v/3.7/anypoint-connectors[Anypoint连接器]。
+*  link:/anypoint-studio/v/5/datamapper-user-guide-and-reference[Anypoint DataMapper用户指南和参考]
+您可以在Studio中的应用程序中使用的变压器。注意：DataMapper已被替换为
+link:/mule-user-guide/v/3.7/dataweave[DataWeave]。
+*  link:/mule-user-guide/v/3.7/global-elements[全球元素]。
+*  link:/anypoint-studio/v/5/datasense[DataSense]。
+*  link:/mule-user-guide/v/3.7/poll-reference[民意调查]。
+
+== 概述
+
+在Mule应用程序中，批处理作为一个独立的代码块独立存在。从外部资源，批处理接收数据集 - 可能轮询输入 - 以块处理（见下文）。批处理优雅地处理在处理中可能发生的任何记录级别的故障，从而防止完成批处理作业的失败。此外，您可以设置或删除单个记录上的变量，以便在批处理过程中，Mule可根据记录变量路由或以其他方式处理批处理中的记录。
+
+image:batch_main3.png[batch_main3]
+
+== 基本解剖学
+
+本节探讨Mule批处理结构的基本解剖结构，以及它的各个部分如何一起处理应用程序中的批处理数据。
+
+<<Complete Code Example>>查看完整的示例应用程序。
+
+[TIP]
+====
+*Batch Processing at a Glance*
+
+*batch job*是Mule中的一个顶级元素，它存在于所有Mule流之外。批量作业将大量消息拆分成*records*，Mule在批处理作业中异步处理;就像流程处理消息一样，批处理作业处理记录。
+
+批处理作业包含一个或多个*batch steps*，而该*batch steps*又包含任意数量的消息处理器，这些消息处理器在移动批处理作业时对记录起作用。在批处理过程中，您可以使用*record-level variables*（`recordVars`）和MEL表达式来丰富，路由或以其他方式处理记录。
+
+批处理作业在由Mule流中的*batch executor*或批处理接受输入中的*message source*触发时执行;当被触发时，Mule会创建一个新的*batch job instance*。当所有记录都已通过所有批处理步骤时，批处理作业实例将结束，并在报告中汇总*batch job result*，以指示处理期间哪些记录成功，哪些失败。
+
+访问 link:/mule-user-guide/v/3.7/batch-processing-reference[批处理参考]了解更多信息。
+====
+
+Mule的批处理功能的核心在于*batch job*。在应用程序中，批处理作业元素存在于任何常规Mule流的上下文之外。它是一个包含一个或多个*batch steps*的代码块，正如标签所暗示的那样，它按顺序逐步处理项目。批处理步骤全部落在批处理的*Process Phase*范围内（详见下文<<Batch Processing Phases>>）。
+
+[source, xml, linenums]
+----
+<batch:job name="myBatchJob">
+        <batch:process-records>
+            <batch:step name="Step1"/>
+            <batch:step name="Step2"/>
+            <batch:step name="Step3"/>
+        </batch:process-records>
+    </batch:job>
+ 
+    <flow name="flowOne">
+        ...
+    </flow>
+----
+
+批量作业处理*records*，这些作品是Mule分割大型或流式消息的独立作品。在Mule流程处理消息的地方，Mule批处理作业处理记录。
+
+批处理作业中的每个批次步骤都包含消息处理器，这些消息处理器根据记录对其中的数据进行转换，路由，充实或以其他方式处理。通过利用现有Mule消息处理器的功能，批处理结构在批作业处理记录的方式方面提供了很大的灵活性;看下面的例子。 （请注意，代码段中的详细信息会缩写以突出显示批次元素。）
+
+[TIP]
+====
+*Are there any message processors that you cannot use in batch processing?* +
+
+您无法在批处理中使用的唯一元素是*request-response inbound connector.*否则，您可以利用任何和所有Mule消息处理器来构建批处理流程。
+====
+
+[source, xml, linenums]
+----
+<batch:job name="myBatchJob">
+        <batch:process-records>
+            <batch:step name="Step1">
+                <message processor/>
+                <message processor/>
+            </batch:step>
+            <batch:step name="Step2">
+                <message processor/>
+            </batch:step>
+            <batch:step name="Step3">
+                <message processor/>
+                <message processor/>
+            </batch:step>
+        </batch:process-records>
+    </batch:job>
+<flow name="flowOne">
+    ...
+</flow>
+----
+
+=== 批处理阶段
+
+Mule中的批量处理分四个阶段进行（见下表）。在Studio的可视化编辑器中，批处理作业显示为类似流的对象，根据批处理的阶段在视觉上划分对象。
+
+[%header%autowidth,width=60%]
+|===
+2 + | {阶段{1}}配置
+| 1  |输入 |可选
+| 2  |加载和发送 |隐式，未在Mule应用程序中公开
+|  |需要3  |过程
+| 4  |完成 |可选
+|===
+
+image:batch_phases.png[batch_phases]
+
+==== 输入
+
+第一阶段*Input*是批量作业配置的一部分，通过入站连接器设计为<<Triggering Batch Jobs>>，并/或在Mule开始处理之前适应对消息有效载荷的任何转换或调整作为批次。
+
+在这个阶段，Mule不会进行拆分或聚合，不会创建任何记录，也不会排队进行任何处理; Mule还没有将信息处理为记录集合，它只接收输入并准备处理消息有效载荷。在这个阶段，您使用消息处理器按照您在Mule应用程序中任何其他环境中的相同方式来处理消息。当它离开下一阶段的输入阶段时，数据可以是可序列化的（即以"splittable"格式，例如集合或数组）或不可序列化。
+
+`batch:input`子元素首先出现在`batch:job`元素内部;事实上，它不能存在于批处理作业的其他任何地方 - 它只能是第一个。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:input_phas.png[input_phas]
+....
+[tab,title="XML Editor"]
+....
+Note that details in code snippet are abbreviated so as to highlight batch phases, jobs and steps.
+See <<Complete Code Example>> for more detail.
+
+[source, xml, linenums]
+----
+<batch:job name="Batch3">
+    <batch:input>
+        <poll>
+            <sfdc:authorize/>
+        </poll>
+        <set-variable/>
+    </batch:input>
+    <batch:process-records>
+        <batch:step/>
+    <batch:process-records>
+</batch:job>
+----
+....
+------
+
+==== 加载和发送
+
+第二阶段*Load and Dispatch*是_implicit_并执行所有"behind the scenes"工作来创建批处理作业实例。实质上，这是Mule将序列化消息有效载荷转换为批处理记录集合的阶段。你不需要为这个活动发生任何配置，尽管理解Mule在这个阶段完成的任务是有用的。
+
+.  Mule通过收集分离器发送消息有效载荷。这第一步触发创建一个新的批处理作业实例。
+.  Mule创建一个与新批处理作业实例关联的持久队列。 *batch job instance*是在Mule流程中执行批处理作业时发生的一个Mule应用程序;只要需要处理批次中的每条记录，它就会存在。 （批处理作业和批处理作业实例之间有什么区别？）
+. 对于由分离器生成的每个项目，Mule创建一条记录并将其存储在队列中。 （这是一个"all or nothing"活动 -  Mule或者成功地为_every_项目生成和排队记录，或者整个消息在此阶段失败。）
+.  Mule将批处理作业实例及其所有排队记录提交到第一批处理步骤进行处理。
+
+==== 过程
+
+在第三阶段*Process*中，Mule开始批处理记录的异步处理。在这个_required_阶段中，每个记录在第一个批处理步骤中移动通过消息处理器，然后被发送回原始队列，同时等待第二个批处理步骤处理，直到每个记录已经通过每个批处理步骤。只有一个队列存在，并为每个批处理步骤选择记录，进行处理，然后发回给它;每个记录都会记录它在该队列中处理的阶段。请注意，批处理作业实例_does not_等待其所有排队的记录在将其中的任何记录推送到下一个批处理步骤之前在一个批处理步骤中完成处理。队列是持久的。
+
+Mule坚持所有记录的列表，因为它们成功或无法通过每个批处理步骤进行处理。如果消息处理器在批处理步骤中无法处理记录，Mule可以继续处理该批处理，在每个后续批处理步骤中跳过失败的记录。 （有关更多详细信息，请参阅<<Handling Failures During Batch Processing>>部分。）在此阶段结束时，批处理作业实例完成，因此不再存在。
+
+image:batch+diagram.jpeg[批次+图]
+
+除了简单的记录处理之外，还可以在批处理步骤中对记录执行以下几项操作：
+
+* 您可以在记录上设置*record variables*并将其从一步传递到另一个步骤（ link:/mule-user-guide/v/3.7/record-variable[阅读更多]）
+
+* 您可以通过在每个批次步骤中添加*accept expressions*来应用过滤器，以防止该步骤处理某些记录;例如，您可以设置一个过滤器，以防止一个步骤处理上一步中处理失败的任何记录（ link:/mule-user-guide/v/3.7/batch-filters-and-batch-commit[阅读更多]）
+
+* 您可以*commit*分组记录，将它们作为批量插入发送到外部来源或服务。 （ link:/mule-user-guide/v/3.7/batch-filters-and-batch-commit[阅读更多]）
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:process-phase.png[process-phase]
+....
+[tab,title="XML Editor"]
+....
+Note that details in code snippet are abbreviated so as to highlight batch phases, jobs and steps.
+See <<Complete Code Example>>  for more detail.
+
+[source, xml, linenums]
+----
+<batch:job name="Batch3">
+        <batch:input>
+            <poll doc:name="Poll">
+                <sfdc:authorize/>
+            </poll>
+            <set-variable/>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Step1">
+                <batch:record-variable-transformer/>
+                <data-mapper:transform/>
+            </batch:step>
+            <batch:step name="Step2">
+                <logger/>
+                <http:request/>
+            </batch:step>
+        </batch:process-records>
+</batch:job>
+----
+....
+------
+
+==== 完成
+
+在第四阶段*On Complete*中，您可以选择配置Mule来创建报告或为特定批处理作业实例处理的记录摘要。此阶段旨在为系统管理员和开发人员提供一些有关哪些记录失败的信息，以解决输入数据可能存在的任何问题。虽然`batch:input`只能作为`batch:job`元素中的第一个子元素存在，但`batch:on-complete`只能作为最后一个子元素存在。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:on-complete_phase.png[on-complete_phase]
+....
+[tab,title="XML Editor"]
+....
+Note that details in code snippet are abbreviated so as to highlight batch phases, jobs and steps. See <<Complete Code Example>> for more detail.
+
+[source, xml, linenums]
+----
+<batch:job name="Batch3">
+        <batch:input>
+            <poll doc:name="Poll">
+                <sfdc:authorize/>
+            </poll>
+            <set-variable/>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Step1">
+                <batch:record-variable-transformer/>
+                <data-mapper:transform/>
+            </batch:step>
+            <batch:step name="Step2">
+                <logger/>
+                <http:request/>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger/>
+        </batch:on-complete>
+</batch:job>
+----
+....
+------
+
+Mule执行整个批处理作业后，输出变为*batch job result object*（`BatchJobResult`）。由于Mule将批处理作业处理为异步单向流，因此批处理的结果不会反馈到可能触发它的流中，也不会将结果作为对调用者的响应返回（实际上，任何消息源将数据馈送到批处理作业必须是单向的，而不是请求 - 响应）。相反，你有两个选择来处理输出：
+
+在完成阶段*  *Create a report*，使用MEL表达式来捕获失败记录的数量并成功处理记录，并在哪个步骤中发生任何错误。
+
+在Mule应用程序中的其他位置使用*  *Reference the batch job result object*来捕获和使用批处理元数据，例如特定批处理作业实例中未能处理的记录数。
+
+如果将“完成”阶段保留为空（即，不在阶段中设置任何消息处理器），并且不在应用程序中的其他位置引用批处理作业结果对象，则批处理作业可以简单地完成，无论是失败还是成功。因此，良好做法规定您配置一些报告失败或成功记录的机制，以便在需要时采取进一步行动。有关批处理的可用MEL表达式列表，请参阅 link:/mule-user-guide/v/3.7/batch-processing-reference[批处理参考]。
+
+[NOTE]
+====
+*Batch Job vs. Batch Job Instance*
+
+尽管在上文中已经定义，但值得详细说明*batch job*和*batch job instance*这两个术语之间的关系。
+
+*  *batch job*是应用程序中的顶层元素，Mule将消息有效载荷处理为一批记录。术语批处理作业包括处理的所有四个阶段：输入，加载和分派，处理和完成。
+
+*  *batch job instance*是在Mule流程中执行批处理作业而产生的一个Mule应用程序中的一个事件; Mule在<<Load and Dispatch>>中创建批处理作业实例，并永久保存。
+====
+
+== 触发批量作业
+
+您可以通过以下两种方式之一触发或调用批处理作业：
+
+. 通过*batch reference message processor*在同一个应用程序中从Mule流中引用批处理作业。在Anypoint Studio中，此处理器是*Batch Execute*构建块。
++
+image:batch_main.png[batch_main]
++
+. 通过置于批处理作业开始处的*inbound, one-way message source*（不能是请求 - 响应入站消息源）
++
+image:batch_main3.png[batch_main3]
++
+在您的Mule流中使用*batch reference message processor*（`batch:execute`）来引用您在应用程序中定义的批处理作业。参考下面的例子。当流接收到消息时，批处理消息处理器指示Mule批量处理输入。每当Mule流程触发执行批处理作业时，Mule会运行一个新的批处理作业实例。该实例只要处理批处理中的每条记录所需的时间就会存在，并生成批处理作业结果对象。 Mule可以同时运行多个批处理作业实例，并且可以继续处理批处理，即使其中一个或多个记录有故障。这种"continue processing"功能可确保更少的批量作业成为单点故障的牺牲品。 （有关批处理过程中错误处理的更多详细信息，请参阅<<Handling Failures During Batch Processing>>;有关定制批处理作业实例名称的更多详细信息，请参阅下面的部分。）
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:trigger_ref1.png[trigger_ref1]
+....
+[tab,title="XML Editor"]
+....
+Note that details in code snippet are abbreviated so as to highlight batch phases, jobs and steps.
+See <<Complete Code Example>> for more detail.
+
+[source, xml, linenums]
+----
+<batch:job name="Batch2">
+        <batch:process-records>
+            <batch:step name="Step1">
+                <batch:record-variable-transformer/>
+                <data-mapper:transform/>
+            </batch:step>
+            <batch:step name="Step2">
+                <logger level="INFO" doc:name="Logger"/>
+                <http:request/>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger level="INFO" doc:name="Logger"/>
+        </batch:on-complete>
+</batch:job>
+<flow name="batchtest1Flow1">
+        <http:listener/>
+        <data-mapper:transform/>
+        <batch:execute name="Batch2"/>
+</flow>
+----
+....
+------
+
+使用放置在批处理作业输入阶段的*inbound, one-way message source*来触发批处理的开始。当它从外部源或服务接收数据时，消息源将启动批处理，从可能在输入阶段配置的任何准备开始。请参阅下面的示例，该示例利用 link:/mule-user-guide/v/3.7/poll-reference[轮询]功能定期从Salesforce获取数据。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:trigger_source.png[trigger_source]
+....
+[tab,title="XML Editor"]
+....
+Note that details in code snippet are abbreviated so as to highlight batch phases, jobs and steps.
+See <<Complete Code Example>> for more detail.
+
+[source, xml, linenums]
+----
+<batch:job  name="Batch1">
+        <batch:input>
+            <poll>
+                <sfdc:authorize/>
+            </poll>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Step1">
+                <batch:record-variable-transformer/>
+                <data-mapper:transform/>
+            </batch:step>
+            <batch:step name="Step2">
+                <logger/>
+                <http:request/>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger/>
+        </batch:on-complete>
+</batch:job>
+----
+....
+------
+
+== 在批处理过程中处理故障
+
+有时，在处理批处理作业时，批处理步骤中的Mule消息处理器可能会发现自己无法处理记录。发生这种情况时（可能是因为损坏或不完整的记录数据），Mule有三种处理记录级错误的选项：
+
+.  *Stop processing*整批，跳过任何剩余的批处理步骤，并将所有记录推送到完成阶段（理想情况下，您已设计了一份报告来通知您失败的记录）
+
+使用 link:/mule-user-guide/v/3.7/batch-filters-and-batch-commit[过滤器]指示后续批处理步骤如何处理失败的记录，而不考虑任何失败的记录.  *Continue processing*
+
+.  *Continue processing*批处理，而不管任何失败的记录（使用 link:/mule-user-guide/v/3.7/batch-filters-and-batch-commit[过滤器]指示后续批处理步骤如何处理失败的记录），直到批处理作业在该点累积*maximum number of failed records* Mule将所有记录推到“完成”阶段（理想情况下，您设计了一个报告来通知您失败的记录）
+
+默认情况下，Mule的批处理作业遵循第一个错误处理选项，只要Mule遇到单个记录级错误，该选项将暂停处理。但是，您可以使用*batch job attribute*和批处理*accept expression*根据上面列出的第二个或第三个选项显式配置批处理作业以处理故障。下表介绍了如何配置批处理作业属性以自定义错误处理。
+
+[%header%autowidth.spread]
+|===
+|记录处理​​失败选项2 + ^ |批处理作业
+|
+| *Attribute*  | *Value*
+|遇到第一个失败的记录时停止处理
+| `max-failed-records` | `0`
+无论失败记录的数量如何，|无限期地继续处理
+| `max-failed-records`  | `-1`
+|继续处理，直到达到最大失败记录数
+| `max-failed-records`  | `integer`
+|===
+
+[source, xml]
+----
+<batch:job name="Batch1" max-failed-records="0">
+----
+
+详细了解批量步骤中的 link:/mule-user-guide/v/3.7/batch-filters-and-batch-commit[微调滤波器]，以更细化的级别管理失败的记录。
+
+=== 跨越最大失败阈值
+
+当批处理作业累积足够的失败记录以跨越`max-failed-records`阈值时，Mule会中止所有剩余批处理步骤的处理，直接跳至“完成”阶段。
+
+例如，如果将`max-failed-records`的值设置为"10"，并且批量作业在三个批处理步骤中的第一个步骤中累计了10个失败记录，则Mule不会尝试通过剩余的两个批处理步骤处理批处理。相反，它将中止进一步处理并直接跳到On Complete以报告批作业失败。
+
+如果批处理作业_没有_累积足够的失败记录以跨越`max-failed-records`阈值，则_all_记录 - 成功和失败 - 继续从批步骤到批步骤;使用 link:/mule-user-guide/v/3.7/batch-filters-and-batch-commit[过滤器]来控制每个批次步骤处理的记录。
+
+== 完整的代码示例
+
+此示例使用批处理来处理用例，其中包含名称，生日和电子邮件地址的潜在客户逗号分隔值文件（CSV）的内容必须上传到Salesforce。为避免重复任何销售线索，批处理作业会在将数据上传到Salesforce之前检查是否存在潜在客户。下面的描述概述了批处理作业在每个处理阶段中所采取的步骤。
+
+link:_attachments/batch_example_app.zip[下载示例应用]
+
+[TIP]
+请注意，此示例介绍了本文档中未详细讨论的功能。请参阅 link:/mule-user-guide/v/3.7/batch-filters-and-batch-commit[批量过滤器和批量提交]和 link:/mule-user-guide/v/3.7/record-variable[记录变量]了解更多信息。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:example_batch.png[example_batch]
+....
+[tab,title="XML Editor"]
+....
+
+[TIP]
+====
+If you copy and paste the code into your instance of Studio, be sure to enter your own values
+for the *global Salesforce connector*:
+
+* Username
+* Password
+* Security token
+
+*How do I get a Salesforce security token?*
+
+. Log in to your Salesforce account. From your account menu (your account is labeled with your name), select *Setup*.
+. In the left navigation bar, under the *My Settings* heading, click to expand the *Personal* folder. 
+. Click *Reset My Security Token*. Salesforce resets the token and emails you the new one.
+. Access the email that Salesforce sent and copy the new token onto your local clipboard.
+. In the application in your instance of Anypoint Studio, click the *Global Elements* tab. 
+. Double-click the Salesforce global element to open its *Global Element Properties* panel. In the *Security Token* field, paste the new Salesforce token you copied from the email. Alternatively, configure the global element in the XML Editor.
+====
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.7.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd">
+    <sfdc:config name="Salesforce" username="username" password="password" securityToken="SpBdsf98af9tTR3m3YVcm4Y5q0y0R" doc:name="Salesforce">
+        <sfdc:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sfdc:config>
+ 
+    <data-mapper:config name="new_mapping_grf" transformationGraphPath="new_mapping.grf" doc:name="DataMapper"/>
+    <data-mapper:config name="new_mapping_1_grf" transformationGraphPath="new_mapping_1.grf" doc:name="DataMapper"/>
+    <data-mapper:config name="leads_grf" transformationGraphPath="leads.grf" doc:name="DataMapper"/>
+    <data-mapper:config name="csv_to_lead_grf" transformationGraphPath="csv-to-lead.grf" doc:name="DataMapper"/>
+ 
+    <batch:job max-failed-records="1000" name="Create Leads" doc:name="Create Leads">
+        <batch:threading-profile poolExhaustedAction="WAIT"/>
+        <batch:input>
+            <file:inbound-endpoint path="src/test/resources/input" moveToDirectory="src/test/resources/output" responseTimeout="10000" doc:name="File"/>
+            <data-mapper:transform config-ref="csv_to_lead_grf" doc:name="CSV to Lead"/>
+        </batch:input>
+ 
+        <batch:process-records>
+            <batch:step name="lead-check" doc:name="Lead Check">
+                <enricher source="#[payload.size() &gt; 0]" target="#[recordVars['exists']]" doc:name="Message Enricher">
+                    <sfdc:query config-ref="Salesforce" query="dsql:SELECT Id FROM Lead WHERE Email = '#[payload[&quot;Email&quot;]]'" doc:name="Find Lead"/>
+                </enricher>
+            </batch:step>
+            <batch:step name="insert-lead"  doc:name="Insert Lead" accept-expression="#[recordVars['exists']== false]">
+                <logger message="Got Record #[payload], it exists #[recordVars['exists']]" level="INFO" doc:name="Logger"/>
+                <batch:commit size="200" doc:name="Batch Commit">
+                    <sfdc:create config-ref="Salesforce" type="Lead" doc:name="Insert Lead">
+                        <sfdc:objects ref="#[payload]"/>
+                    </sfdc:create>
+                </batch:commit>
+            </batch:step>
+            <batch:step name="log-failures" accept-policy="ONLY_FAILURES" doc:name="Log Failures">
+                <logger message="Got Failure #[payload]" level="INFO" doc:name="Log Failure"/>
+            </batch:step>
+        </batch:process-records>
+ 
+        <batch:on-complete>
+            <logger message="#[payload.loadedRecords] Loaded Records #[payload.failedRecords] Failed Records" level="INFO" doc:name="Log Results"/>
+        </batch:on-complete>
+    </batch:job>
+</mule>
+----
+....
+------
+
+*INPUT PHASE*
+
+. 应用程序首先使用 link:/mule-user-guide/v/3.7/file-connector[文件连接器]上传CSV文件，然后使用 link:/anypoint-studio/v/5/datamapper-concepts[的DataMapper]将数据格式转换为集合（请参阅下面的映射）。集合中的每个项目都代表一个潜在客户。每个领导包含公司名称，名字，姓氏，生日和电子邮件地址。
++
+image:example_mapping.png[example_mapping]
+
+*LOAD AND DISPATCH PHASE (IMPLICIT)*
+
+[start=2]
+.  Mule创建一个批处理作业实例，将集合分解为记录（每个线索现在是一条记录），将记录排队等待处理，然后将现成的批处理作业实例呈现给第一批步骤。这些操作都不可配置，因此Mule不会在应用程序中公开任何这些活动。 +
+
+*PROCESS PHASE*
+
+[start=3]
+.  Mule开始处理每个潜在客户作为记录。第一批步骤`lead-check`使用包裹有 link:/mule-user-guide/v/3.7/message-enricher[消息Enricher]的*Salesforce Connector*：
+
+.. 查询Salesforce以确定潜在客户是否已经存在：由于该消息现在是记录，因此应用程序使用MEL表达式从有效内容中提取电子邮件地址，然后使用它来查询Salesforce以确定铅存在。
+.. 使用记录变量丰富邮件，以指示Salesforce帐户中已存在记录（即潜在客户）。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:example_query3.png[example_query3]
+....
+[tab,title="XML Editor"]
+....
+image:query4.png[query4]
+....
+------
+
+[start=4]
+. 第二批步骤`insert-lead`使用的过滤器只接受尚未存在潜在客户的记录。它在批处理步骤中使用了*Accept Expression*属性，表明任何已使用记录变量`exists`进行了充实的记录不应该排除在此批处理步骤之后。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:example_filter3.png[example_filter3]
+....
+[tab,title="XML Editor"]
+....
+image:batch-example-filter.png[batch-example-filter.png]
+....
+------
+
+[start=5]
+. 接下来，批处理步骤使用*Logger*简单记录所有记录，这些记录是用`'exists'`记录变量丰富的。此记录器生成的列表在审核应用程序以查明Salesforce中已存在CSV文件中的哪些销售线索时可能很有用。
+
+. 最后，批处理步骤使用包含*Batch Commit*的*Salesforce Connector*将所有新的销售线索插入Salesforce。批量提交会在队列中逐步进入批量提交"bucket"时积累记录。累计批量提交元素的`size`属性指定累积200时 - 批量提交将所有200条记录一次性插入到Salesforce中作为新索引。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:example_insert1.png[example_insert1]
+....
+[tab,title="XML Editor"]
+....
+image:example_insert2.png[example_insert2]
+....
+------
+
+[start=7]
+. 最后一个批次步骤`log-failures`使用*Logger*记录未能插入到Salesforce的所有记录。
+
+*ON COMPLETE PHASE*
+
+[start=8]
+. 应用程序还使用另一个*Logger*来创建一个简单摘要（请参阅下面的控制台输出），其中指示：
+* 成功加载到Salesforce的记录数
+* 加载失败的记录数
+
+[source, code, linenums]
+----
+INFO 2013-11-19 11:10:00,947 [[training-example-1].connector.file.mule.default.receiver.01] org.mule.api.processor.LoggerMessageProcessor: 2 Loaded Records 1 Failed Records
+----
+
+== 限制
+
+* 批处理不支持使用 link:/mule-user-guide/v/3.7/business-events[商业活动]。
+*  link:/runtime-manager/insight[眼光]不支持对批处理的可见性。
+*  link:/mule-management-console/v/3.7[Mule管理控制台（MMC）]不支持对批处理的可见性。
+* 批处理不支持作业实例范围的事务。您可以在批处理步骤中定义一个处理单独事务中的每个记录的事务。 （把它看作是一步之内的一步。）这样的事务必须在步骤的边界内开始和结束。
+
+== 另请参阅
+
+* 访问有关批处理的 link:/mule-user-guide/v/3.7/batch-processing-reference[参考细节]。
+* 检查您可以为批处理作业，步骤和消息处理器配置的 link:/mule-user-guide/v/3.7/batch-processing-reference[属性]。
+* 在批处理中了解关于 link:/mule-user-guide/v/3.7/batch-filters-and-batch-commit[过滤器]的更多信息。
+* 详细了解 link:/mule-user-guide/v/3.7/batch-filters-and-batch-commit[批量提交]。
+* 详细了解如何设置和删除 link:/mule-user-guide/v/3.7/record-variable[记录级变量]。
+* 详细了解您可以用来访问批处理数据的 link:/mule-user-guide/v/3.7/batch-processing-reference[MEL表达式]。
+* 详细了解 link:/runtime-manager/cloudhub-fabric[CloudHub支持批处理]。
+* 详细了解 link:/mule-user-guide/v/3.7/anypoint-connectors[Anypoint连接器]。
+* 详细了解 link:/mule-user-guide/v/3.7/poll-reference[轮询和水印]。
+* 详细了解 link:/anypoint-studio/v/5/datamapper-user-guide-and-reference[的DataMapper]。

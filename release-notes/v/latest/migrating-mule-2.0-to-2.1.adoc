@@ -1,0 +1,194 @@
+= 将Mule 2.0迁移到2.1
+:keywords: release notes, esb
+
+本页介绍Mule 2.1中的主要配置和代码更改，以帮助Mule 2.0用户理解发布之间的变化。如果您正在从早期的Mule ESB 1.x版本迁移，请首先阅读 link:/release-notes/migrating-mule-1.x-to-2.0[将Mule 1.x迁移到2.0]。
+
+== 属性占位符语法更改
+
+为了在使用`PropertyPlaceholderConfigurer`或`<context:property-placeholder>`（请参阅 http://www.mulesoft.org/jira/browse/MULE-3706[MULE-3706]）时更好地支持现有Spring配置的开箱即用兼容性，语法已从$ \ {}更改为＃[] 。 Spring和Mule占位符现在可以共存于相同的配置中，而无需启动例外。一个伟大的经验法则如下：
+
+[%header,cols="34,33,33"]
+|===
+|语法 |解析器 |配置/运行时
+| $ {foo}  | Spring  |配置，通常来自外部属性文件
+|＃[header：foo]  | Mule  |运行时，使用Mule中表达式的全部功能
+|===
+
+_注意：_目前某些全局HTTP端点定义需要根据URI要求将＃符号转义。所以，这个：
+
+----
+
+http://example.com/service=#[header:serviceName]
+----
+
+变成这样：
+
+----
+http://example.com/service=%23[header:serviceName]
+----
+
+
+我们可能会在将来改进此功能以自动执行此转义。
+
+== 架构更改
+
+下表列出了2.0以来的架构更改，并介绍了如何在应用程序中迁移此更改。
+
+[%header,cols="34,33,33"]
+|===
+|旧标记 |新标记 |笔记
+| `<inbound-pass-though-router>`  |已删除 |入站标签上的`<inbound-pass-though-router>`不添加任何值。这已从模式中删除。
+| `<outbound-pass-through-router>`  | `<pass-through-router>`  |该标签只能在`<outbound>`节中设置，因此不需要{ {3}}在路由器标签中。
+| `<default-component-threading-profile>`（在`<configuration>`元素中配置） | `<default-service-threading-profile>`  |更新为使用'service'，因为服务而不是组件穿线。
+| `<component-threading-profile>`（在`<service>`元素中配置） | `<threading-profile>`  |“组件”一词已从名称中删除。
+| `<*-catch-all-strategy>`  | same  |移至`<inbound>`和`<outbound>`元素中的最后一个元素位置。
+| `<xa-transaction>`  |相同 |此元素已移至“mule”命名空间（mule.xsd）
+|（在2.1中添加） | `<interceptor-stack>`  | Mule 1.x的一个附加功能，允许在组件上配置事件拦截器。
+|（在2.1中添加） | `<logging-interceptor>`，`<timer-interceptor>`和`<custom-interceptor>`  |这些可在`<component>`中找到。首先记录envet内容以及组件处理事件所用的时间。 `<custom-interceptor>`允许用户定义自己的拦截器。
+|（在2.1中添加） | `<rename-message-property>`  |该元素已被添加到消息属性变换器中，以便用户可以使用此变换器重命名当前消息的属性。
+| @ honorSynchronicity  |从消息分离器路由器配置中删除 |所有出站路由器现在都遵守出站端点上的同步标志（请参见下文）。
+|（在2.1中添加） | `<expression-message-splitter>`  |这是一个新的Message Splitter路由器，它将根据表达式拆分消息。表达式需要返回一个或多个消息部分才能生效。
+表达式收件人列表路由器可用于通过同一个端点将相同的消息发送给多个端点，或者实现路由 - 通过消息属性或有效载荷确定消息的下一个目的地的滑动行为。它使用使用表达式从消息中提取的收件人终结点列表。
+|（在2.1中添加） |添加到`<service-overrides>`元素 |的@ xaTransactedMessageReceiver属性允许用户覆盖使用XA事务接收消息时使用的传输消息接收器。
+| `<recoverJmsConnections>`  |在2.1.1中弃用 |此属性与新的重试策略实施不再相关。
+|===
+
+== 配置事件流
+
+在Mule 2.1中做出的重要改变之一是现在必须在每个端点上明确定义事件同步。在Mule的早期版本中，事件的同步性将从入站继承到出站。这已不再是这种情况。
+
+要求显式配置同步属性消除了配置新事件流程的许多不明确性，特别是对于初学者。在Mule中考虑事件同步的最好方法是`synchronous="true"`将返回调用的结果，而`synchronous="false"`将永远不会返回结果。
+
+在以下示例中，入站端点上的`synchronous`属性将传递到出站端点，因此来自VM端点`foo.bar`的响应将通过TCP端点路由回去。
+[source,xml, linenums]
+----
+<service name="fooService">
+    <inbound>
+       <tcp:inbound-endpoint host="localhost" port="32422" synchronous="true"/>
+    </inbound>
+    <component class="com.foo.MyComponent"/>
+    <outbound>
+        <pass-through-router>
+            <vm:outbound-endpoint path="foo.bar"/>
+        </pass-through-router>
+    </outbound>
+</service>
+----
+在Mule 2.1中，此配置将导致`com.foo.MyComponent`的响应被路由回调用方，并且结果也将在VM端点`foo.bar`上异步调度。
+
+要获得路由回调用方（TCP端点）的VM端点`foo.bar`的响应，您必须使端点同步。
+[source,xml, linenums]
+----
+<service name="fooService">
+    <inbound>
+       <tcp:inbound-endpoint host="localhost" port="32422" synchronous="true"/>
+    </inbound>
+    <component class="com.foo.MyComponent"/>
+    <outbound>
+        <pass-through-router>
+            <vm:outbound-endpoint path="foo.bar" synchronous="true"/>
+        </pass-through-router>
+    </outbound>
+</service>
+----
+请注意，Mule中端点的默认`synchronous`属性值为`false`。您可以通过将以下内容添加到您的配置文件来将此默认值更改为`true`：
+[source,xml, linenums]
+----
+<configuration defaultSynchronousEndpoints="true"/>
+----
+另请注意，`honourSynchronicity`路由器属性已被删除，因为Mule中的所有路由器现在都必须在分派事件时使用端点上的`synchronous`标志。
+
+=== 多播路由器
+
+默认情况下，多播路由器现在将这些响应汇总到列表中，然后再返回。您可以通过将任意路由器上的`synchronous`属性设置为`true`来覆盖此行为，该路由器的响应要作为单独的响应返回。例如：
+[source,xml, linenums]
+----
+<multicasting-router>
+  <vm:outbound-endpoint path="orders" synchronous="true"/>
+  <jms:outbound-endpoint queue="order.request" synchronous="false"/>
+</multicasting-router>
+----
+这个例子会将第一个路由器的响应作为单独的响应返回。
+
+== 消息集合
+
+如果出现以下情况，某些出站路由器（如List Message Splitter）可能会返回多个结果消息：
+
+* 路由器上配置了多个端点
+* 多个端点中的`synchronous`属性设置为`true`
+
+为了处理出现多个结果的情况，Mule引入了一种新的消息类型：
+
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/MuleMessageCollection.html[org.mule.api.MuleMessageCollection]
+
+这种类型的消息按其接收顺序包含所有消息结果。请注意，该类：
+
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/MuleMessage.html[org.mule.api.MuleMessageCollection]
+
+延伸：
+
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/MuleMessage.html[org.mule.api.MuleMessage]
+
+所以界面是相似的。如果有多个结果，则`MuleMessage.getPayload()`方法将返回包含每个返回消息的有效内容的`java.util.List`。
+
+如果您使用的是Mule客户端，则可以转换消息返回类型以访问所有消息。
+[source,xml, linenums]
+----
+MuleClient client = new MuleClient();
+MuleMessage result = client.send("myEndpoint", "some data", null);
+
+if(result instanceof MuleMessageCollection)
+{
+    MuleMessageCollection resultsCollection = (MuleMessageCollection)result;
+    System.out.println("Number of messages: " + resultsCollection.size());
+}
+----
+== 重试政策（原"Reconnection Strategies"）
+
+重新连接策略已重新设计并重命名为"retry policies"。
+
+如果您正在使用Mule Enterprise Edition，则可以使用几种标准重试策略，您可以使用新的重试模式进行配置。如果您使用的是Mule的Community Edition，则必须创建自己的策略并使用标准Spring语法而不是重试模式来配置它们。
+
+== 内部注册表更改
+
+从2.1开始，Mule拥有`Registry`的集合，在其前面有一个名为`RegistryBroker`的外观，所以当您拨打`muleContext.getRegistry().lookupObject("foo")`时，实际上会查找{{3} }在集合中的每个`Registry`中，直到找到它。
+
+为了支持热部署，这些内部更改是必要的。相关的API位于`org.mule.api.registry`中，实现类位于`org.mule.registry`中
+
+如果您在启动时将现有的Spring ApplicationContext传递给Mule，此更改可能会影响您。
+
+== 分配器路由器发生变化
+
+Splitter路由器API已被修改，以允许更好地控制拆分消息的路由方式。创建可以将特定部分路由到特定端点或执行循环分配的自定义分路器路由器非常简单。甚至有可能使循环法具有确定性。
+
+以前的Splitter路由器API定义了以下接口：
+
+[source,java, linenums]
+----
+protected abstract MuleMessage getMessagePart(MuleMessage message, ImmutableEndpoint endpoint);
+----
+
+问题在于为每个端点调用了此方法，并要求提前分割消息，在这种情况下，此方法只会返回正确的部分，或者在每次调用此方法时都必须分割消息分段。
+
+在Mule 2.1中，此方法已被替换为以下内容：
+
+[source,java, linenums]
+----
+protected abstract SplitMessage getMessageParts(MuleMessage message, List <OutboundEndpoint> endpoints);
+----
+
+每个消息都会调用一次该方法。它允许路由器拆分消息并可选地为每个部分分配特定的端点。新的
+
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/routing/outbound/SplitMessage.html[SplitMessage]
+
+类只维护`SplitMessage.MessagePart`对象的列表，每个对象都包含消息部分的消息片段和端点目标。
+
+除AbstractMessageSplitter类外：
+
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/routing/outbound/AbstractMessageSplitter.html[AbstractMessageSplitter]
+
+...现在有一个新的AbstractRoundRobinMessageSplitter类：
+
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/routing/outbound/AbstractRoundRobinMessageSplitter.html[AbstractRoundRobinMessageSplitter]
+
+这个基类应该用于想要使用循环来分发消息部分的分离器路由器。

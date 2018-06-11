@@ -1,0 +1,172 @@
+= 迁移到电子邮件连接器
+
+POP3，IMAP和SMTP传输已完全重写。他们从骡子3运输演变而来
+模型转换为基于单个操作的连接器。
+
+这启用了许多新功能：
+
+* 与旧IMAP和POP3传输不同，它能够按需列出电子邮件内容，而传统IMAP和POP3传输仅提供轮询入站端点。
+* 简化的发送电子邮件的体验。
+* 简化体验以获取传入电子邮件的数据。
+* 所有mule连接器之间的一致性。
+* 高级电子邮件匹配功能。
+
+他们合并为一个带来类似的经验，要么收到或发送和
+
+== 迁移IMAP，POP3或SMTP服务器配置
+
+在这里你可以看到如何迁移每个电子邮件传输配置的例子
+骡子3到新的mule 4电子邮件连接器。
+
+在下面的Mule 4配置示例中，您将看到大部分参数
+在`inbound-endpoint`或`outbound-endpoint`中声明，例如`user`，`password`，`host`，`port`
+已移至`connection`元素。
+
+=== 迁移POP3入站端点
+
+.Mule 3示例：使用轮询的POP3入站配置
+
+[source,xml, linenums]
+----
+<pop3:connector name="pop3"/>
+
+<flow name="list">
+    <pop3:inbound-endpoint checkFrequency="100" user="bob" password="password" host="pop.example.com" port="995"/>
+    ...
+</flow>
+----
+
+.Mule 4示例：POP3配置
+[source,xml, linenums]
+----
+<email:pop3-config name="pop3">
+  <email:pop3-connection connector-ref="pop3" host="pop.example.com" port="995" user="bob" password="password"/>
+</email:pop3-config>
+
+<flow name="list">
+  <scheduler>
+    <scheduling-strategy><fixed-frequency frequency="100"></scheduling-strategy>
+  </scheduler>
+  <email:list-pop3 config-ref="pop3"/>
+  ...
+</flow>
+----
+
+注：list-pop3操作不执行轮询，调度程序负责触发流程。
+
+=== 迁移IMAP入站端点
+
+.Mule 3示例：使用轮询的IMAP入站配置
+[source,xml, linenums]
+----
+<imap:connector name="imap" checkFrequency="100"/>
+
+<flow name="retrieve-emails">
+  <imap:inbound-endpoint user="bob" password="password" host="pop.example.com" port="995"/>
+  ...
+</flow>
+----
+
+.Mule 4示例：POP3配置
+[source,xml, linenums]
+----
+<email:imap-config name="imap">
+  <email:imap-connection connector-ref="imap" host="pop.example.com" port="995" user="bob" password="password"/>
+</email:imap-config>
+
+<flow name="list">
+  <scheduler>
+    <scheduling-strategy><fixed-frequency frequency="100"></scheduling-strategy>
+  </scheduler>
+  <email:list-imap config-ref="imap"/>
+  ...
+</flow>
+----
+
+注：list-imap操作不执行轮询，调度程序负责触发流程。
+
+=== 迁移SMTP出站端点
+
+.Mule 3示例：SMTP出站配置。
+[source,xml, linenums]
+----
+<smtp:connector name="smtp"/>
+
+<flow name="send-email">
+  ...
+  <smtp:outbound-endpoint connector-ref="smtp" host="smtp.example.com" user="bob" password="password"
+                          port="587" subject="Hello Ale!" from="bob@mulesoft.com" to="ale@mulesoft.com" />
+</flow>
+----
+
+.Mule 4示例：SMTP配置
+[source,xml, linenums]
+----
+<email:smtp-config name="smtp">
+    <email:smtp-connection host="smtp.example.com" port="587" user="bob" password="password"/>
+</email:smtp-config>
+
+<flow name="send">
+    <email:send config-ref="smtp" subject="Hello Ale!" from="bob@mulesoft.com">
+        <email:to-addresses>
+            <email:to-address value="ale@mulesoft.com"/>
+        </email:to-addresses>
+        <email:body>
+            <email:content>#[payload]</email:content>
+        </email:body>
+    </email:send>
+</flow>
+----
+
+=== 迁移SSL / TLS安全连接
+
+在骡子3中，每个运输/连接器都有自己的TLS元素，因为骡子4
+TLS上下文是跨模块配置TLS的通用元素。
+在下一个例子中，我们可以看到一个Mule 3例子，它如何被迁移到
+骡4。
+
+注意：该示例使用SMTP配置，但对于相同
+IMAP和POP3配置。
+
+.Mule 3示例
+[source,xml, linenums]
+----
+<smtps:connector name="tls">
+    <smtps:tls-client path="aKeystore" storePassword="password"/>
+    <smtps:tls-trust-store path="aTruststore" storePassword="changeit"/>
+</smtps:connector>
+----
+
+.Mule 4示例
+[source,xml, linenums]
+----
+<email:smtp-config name="tls">
+    <email:smtps-connection host="${port}" port="${port}">
+        <tls:context enabledProtocols="TLSv1.2,SSLv3">
+            <tls:key-store path="aKeystore" password="password"/>
+            <tls:trust-store path="aTruststore.jks" password="changeit"/>
+        </tls:context>
+    </email:smtps-connection>
+</email:smtp-config>
+----
+
+== 将Mule 4连接器添加到项目中
+
+现在交通工具不受骡子限制，您需要添加它
+使用Studio调色板添加到您的应用程序中，或在您的`pom.xml`文件中添加以下依赖项
+为了使用它
+
+[source,XML,linenums]
+----
+<dependency>
+    <groupId>org.mule.connectors</groupId>
+    <artifactId>mule-email-connector</artifactId>
+    <version>1.1.0</version> <!-- or newer -->
+    <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== 另请参阅
+
+*  link:/connectors/email-connector[电邮连接器]
+*  link:/connectors/email-gmail[在Mule中使用Gmail连接4使用电子邮件连接器]

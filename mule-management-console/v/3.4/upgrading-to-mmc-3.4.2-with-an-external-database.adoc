@@ -1,0 +1,176 @@
+= 使用外部数据库升级到MMC 3.4.2
+
+*_Enterprise_*
+
+*_MMC Version 3.4.2 and Later_*
+
+== 概述
+
+在Mule管理控制台的3.4.2版中， link:/mule-management-console/v/3.4/persisting-mmc-data-on-external-databases-in-mmc-3.4.2[坚持外部数据库上的MMC数据]的过程已经大大简化。用于数据持久性的配置文件已更改，因此，如果要从先前版本升级到MMC 3.4.2，则需要将数据持久性配置迁移到新的且更简单的配置文件。
+
+请注意，如果您使用MMC的缺省内部数据库进行数据持久化，则不需要迁移数据库配置。如果要保留MMC环境或将数据跟踪到外部数据库，只需要迁移数据库配置。
+
+[NOTE]
+如果您当前安装的MMC link:/mule-management-console/v/3.4/persisting-mmc-data-on-external-databases-in-mmc-3.4.2[通过LDAP管理用户]，则还需要迁移您的LDAP配置。有关详细信息，请参阅 link:/mule-management-console/v/3.4/upgrading-to-mmc-3.4.2-with-ldap[使用LDAP升级到MMC 3.4.2]。
+
+== 假设
+
+您已安装MMC 3.4.1或更早版本，并将其配置为将其环境和/或事务数据保存到外部数据库，并且即将 link:/mule-management-console/v/3.4/installing-or-upgrading-mule-management-console-3.4.2[将MMC升级到版本3.4.2]。
+
+== 坚持不懈的环境数据
+
+在MMC版本3.4.1和更低版本中，用于在外部数据库上保存环境数据的配置存储在以下文件中：
+
+*  `<MMC_HOME>/WEB-INF/classes/META-INF/mmc.properties`
+*  `<MMC_HOME>/WEB-INF/classes/META-INF/jackrabbit-repo.xml`
+
+这些文件将连接参数存储到外部数据库，例如用户名，密码等。您需要将这些参数调整为新的配置文件，因此请确保在删除当前的MMC安装前保留这些文件的副本。
+
+此外，为了安全起见，请备份当前MMC安装的`mmc-data`目录，该目录位于Web应用程序服务器的根目录下。
+
+在下载并扩展3.4.2的.war文件之后，输入您的MMC 3.4.2主目录（扩展.war的根目录）并找到以下目录：`<MMC_HOME>/WEB-INF/classes/META-INF/databases`。该目录存储数据库持久性的配置文件。这些文件的格式为：`<type of data>-<database name>.properties`，其中：
+
+用于环境数据的*  `type of data` = `mmc`，用于交易数据的`tracking-persistence`
+*  `database name` =要使用的数据库服务器的名称，例如`postgres`
+
+例如，文件`mmc-oracle.properties`存储用于连接到存储环境数据的Oracle数据库的属性;文件`tracking-persistence-postgres.properties`存储用于连接到存储跟踪数据的Postgres数据库的属性等。
+
+这些文件定义了连接到数据库的参数：驱动程序，用户，密码，主机，端口等。
+
+要迁移持久化环境数据的配置，请完成以下步骤：
+
+. 在MMC 3.4.2中，根据要连接的数据库找到相关的`mmc-<database>.properties`文件，然后打开它进行编辑。
+. 在MMC 3.4.1中，打开文件`mmc.properties`以提取相关参数和值。
+. 使用3.4.1中`mmc.properties`中的参数和值，修改3.4.2中相关的`mmc-<database>.properties`文件，根据下表将这些值迁移到新的配置格式。
++
+[%header%autowidth.spread]
+|===
+|旧MMC版本中的参数名称 | MMC中的参数名称3.4.2  |注释
+| `datasource.username`  | `env.username`  | 
+| `datasource.password`  | `env.password`  | 
+| `datasource.url`  | `env.host` a |
+从`datasource.url`的值中提取数据库服务器所在的主机，并将其分配为3.4.2中数据库配置文件中`env.host`的值。
+
+例如，如果您的数据库位于主机`dbserver`，则从`datasource.url=jdbc:mysql://dbserver/mmc_persistency_status`提取3.4.2配置文件中的`dbserver`到`env.host=dbserver`。
+| `datasource.url`  | `env.port` a |
+从`datasource.url`的值中提取数据库服务器正在侦听的端口，并将其分配为3.4.2中数据库配置文件中`env.port`的值。
+
+例如，如果您的数据库位于主机`dbserver`端口9155，则从`datasource.url=jdbc:mysql://dbserver:9155/mmc_persistency_status`将3.4.2配置文件中的`9155`提取到`env.port=9155`。
+
+请注意，如果端口号在URL中不存在，则可能意味着正在使用数据库服务器的默认端口，例如1521用于Oracle，3306用于MySQL等。
+| `datasource.url`  | `env.servicename`（仅限Oracle）。|
+从`datasource.url`的值中，为您的连接提取Oracle服务名称，并在3.4.2的数据库配置文件中将其分配为`env.servicename`的值。
+
+例如，如果3.4.1中`datasource.url`的值是`jdbc\:oracle\:thin\:MMC_STATUS/mmc123` `@dbserver` `\:` `1521` `\:xe`，那么服务名称是{{ 6}}。使用参数`env.servicename=xe`将其分配到新的配置文件中。
+|===
+
+. 在旧MMC安装的`jackrabbit-repo.xml`文件中，找到*workspace name*和*default workspace name*的定义。您可以在以下部分找到它们：
++
+[source, xml, linenums]
+----
+<Workspaces rootPath="${rep.home}/workspaces" defaultWorkspace="mmcworkspace"/>
+    <!--
+        workspace configuration template:
+        used to create the initial workspace if there's no workspace yet
+    -->
+    <Workspace name="mmcworkspace">
+----
++
+在上例中，工作区名称和默认工作区名称均为`mmcworskpace`。
+
+. 在MMC 3.4.2中，转到`<MMC_HOME>/WEB-INF/classes/META-INF/jackrabbit`目录，然后找到与您的数据库相关的jackrabbit-repo文件，例如`jackrabbit-repo-postgres.xml`，如果在Postgres上保留数据。打开文件进行编辑。
+. 在3.4.2 jackrabbit-repo文件中查找工作区名称声明，并确保MMC版本3.4.1和3.4.2之间的*workspace name*和*default workspace name*一致。保存并关闭jackrabbit-repo文件。
+. 在MMC 3.4.2中，找到文件`<MMC_HOME>/WEB-INF/web.xml`并将其打开进行编辑。
+. 在`web.xml`文件中找到下面显示的部分。
++
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-derby</param-value>
+</context-param>
+----
+
+. 将字符串`env-derby`替换为`env-<database_name>`。例如，如果在postgres上保留数据，请用`env-postgres`替换它。
+. 完成上述步骤后，您可以通过在Web应用程序服务器的根目录中删除其主目录来删除旧的MMC安装。但是，建议您保留旧数据库配置文件的备份副本，直到确保MMC 3.4.2正确连接到数据库。
+
+完成配置后，启动MMC 3.4.2。
+
+== 持久性交易数据
+
+在MMC版本3.4.1和更低版本中，用于在外部数据库上保存事务数据（Business Events）的配置存储在以下文件中：
+
+*  `<MMC_HOME>/WEB-INF/classes/META-INF/persistence.xml`
+*  `<MMC_HOME>/WEB-INF/classes/mmc-persistence.properties`（如果您的安装中存在）
+*  `<MMC_HOME>/WEB-INF/classes/META-INF/applicationContext-tracking.xml`
+
+这些文件将连接参数存储到外部数据库，例如用户名，密码等。您需要将这些参数调整为新的配置文件，因此请确保在删除当前的MMC安装前保留这些文件的副本。
+
+此外，为了安全起见，请备份当前MMC安装的`mmc-data`目录，该目录位于Web应用程序服务器的根目录下。
+
+在下载并扩展3.4.2的.war文件之后，输入您的MMC 3.4.2主目录并找到以下目录：`<MMC_HOME/WEB-INF/classes/META-INF/databases`。该目录存储数据库持久性的配置文件。这些文件的格式为：`<type of data>-<database name>.properties`，其中：
+
+用于环境数据的*  `type of data` = `mmc`，用于交易数据的`tracking-persistence`
+*  `database name` =要使用的数据库服务器的名称，例如`postgres`
+
+例如，文件`mmc-oracle.properties`存储用于连接到存储环境数据的Oracle数据库的属性;文件`tracking-persistence-postgres.properties`存储用于连接到存储跟踪数据的Postgres数据库的属性等。
+
+这些文件定义了连接到数据库的参数：驱动程序，用户，密码，主机，端口等。
+
+要迁移持久跟踪数据的配置，请完成以下步骤：
+
+. 在您的旧MMC安装中，打开文件`applicationContext-tracking.xml`，然后找到如下所示的bean `dataSource`。
++
+[source, xml, linenums]
+----
+<bean id="dataSource" class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+    <property name="driverClassName" value="oracle.jdbc.driver.OracleDriver" />
+    <property name="url" value="jdbc:oracle:thin:@127.0.0.1:1521:xe" />
+    <property name="username" value="TRACKER" />
+    <property name="password" value="tracker" />
+</bean>
+----
++
+您将把上述代码中的值迁移到MMC 3.4.2中的数据库配置文件中。
++
+[NOTE]
+根据旧MMC安装中的配置，上述代码中显示的一些值可能实际位于`persistence.xml`或`mmc-persistence.properties`中。
+
+. 在MMC 3.4.2中，根据要连接的数据库找到相关的`tracking-persistence-<database>.properties`文件，然后打开它进行编辑。
+. 使用MMC 3.4.1中的参数和值，修改3.4.2中相关的`mmc-<database>.properties`文件，根据下表将这些值迁移到新的配置格式。
++
+[%header%autowidth.spread]
+|===
+| 3.4.1中的参数名称 | 3.4.2中的参数名称 |注释
+| `username`  | `mmc.tracking.db.username`  | 
+| `password`  | `mmc.tracking.db.password`  | 
+| `url`  | `mmc.tracking.db.host` a |
+从`url`的值中提取数据库服务器所在的主机，并将其分配为3.4.2中数据库配置文件中`mmc.tracking.db.host`的值。
+
+例如，如果您的数据库位于主机`dbserver`，则从`datasource.url=jdbc:mysql://dbserver/mmc_persistency_status`提取3.4.2配置文件中的`dbserver`到`mmc.tracking.db.host=dbserver`。
+| `url`  | `mmc.tracking.db.port` a |
+从`url`的值中提取数据库服务器正在侦听的端口，并将其分配为3.4.2中数据库配置文件中`mmc.tracking.db.port`的值。
+
+例如，如果您的数据库位于主机`dbserver`端口9155，则从`datasource.url=jdbc:mysql://dbserver:9155/mmc_persistency_status`将3.4.2配置文件中的`9155`提取到`mmc.tracking.db.port=9155`。
+
+请注意，如果端口号在URL中不存在，则可能意味着正在使用数据库服务器的默认端口，例如1521用于Oracle，3306用于MySQL等。
+| `url`  | `mmc.tracking.db.servicename` a |
+从`url`的值中，为您的连接提取Oracle服务名称，并在3.4.2的数据库配置文件中将其分配为`mmc.tracking.db.servicename`的值。
+
+例如，如果3.4.1中`url`的值是`jdbc:oracle:thin:MMC_STATUS/mmc123` `@dbserver` `:` `1521` `:xe`，那么服务名称是{{ 6}}。使用参数`env.servicename=xe`将其分配到新的配置文件中。
+|===
+
+. 在MMC 3.4.2中，找到文件`<MMC_HOME>/WEB-INF/web.xml`并将其打开进行编辑。
+. 在`web.xml`文件中找到下面显示的部分。
+. 将字符串`tracking-h2`替换为`tracking-<database_name>`。例如，如果在postgres上保留数据，请用`tracking-postgres`替换它。
+. 完成上述步骤后，您可以通过在Web应用程序服务器的根目录中删除其主目录来删除旧的MMC安装。但是，建议您保留旧数据库配置文件的备份副本，直到确保MMC 3.4.2正确连接到数据库。
+
+[NOTE]
+旧MMC安装中的确切配置详细信息可能有所不同。在删除旧的MMC安装之前，请对所有相关的配置文件进行完整备份。请记住，除了此页面中列出的数据库连接参数外，自定义配置可能包含此处未列出的其他参数，您还需要迁移到新配置。
+
+完成配置后，启动MMC 3.4.2。
+
+== 另请参阅
+
+* 阅读 link:/mule-management-console/v/3.4/configuring-mmc-3.4.2-for-external-databases-quick-reference[为外部数据库配置MMC]的概述，其中包括指向每个支持的数据库服务器的详细说明的链接。
+* 了解如何 link:/mule-management-console/v/3.4/upgrading-to-mmc-3.4.2-with-ldap[使用LDAP升级到MMC 3.4.2]。

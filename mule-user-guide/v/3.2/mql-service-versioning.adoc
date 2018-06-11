@@ -1,0 +1,96 @@
+= 服务版本控制
+
+编写服务的一个难题是处理不同版本的服务。不可避免地，您需要更改数据的格式，但仍保持向后兼容性。在XML世界中，许多人已经放弃了XSLT方法，但其复杂性使其变得非常困难。它也不能很好地映射到基于JSON的RESTful服务。本示例将向您展示如何使用Mule内部的MQL轻松地对您的JAX-RS Web服务进行版本化。
+
+以下是两种不同数据格式的表格，版本1.0和版本2.0。在2.0版本中，我们正在改变数据格式以使地址成为它自己的单独对象。
+
+[%header,cols="2*"]
+|===
+|版本1.0  |版本2.0
+一个|
+
+[source, code, linenums]
+----
+{  "name":"Joe Schmoe",  "email":"joe@schmoe.com",  "address":"10 Foo",  "state":"NY",  "city":"New York"}
+----
+
+ 为|
+
+[source, code, linenums]
+----
+{  "name":"Joe Schmoe",  "email":"joe@schmoe.com",  "address" :  {    "address1" : "10 Foo",    "state":"NY",    "city":"New York"  }}
+----
+
+|===
+
+转换可以用两个简单的MQL表达式完成。从1.0版到2.0版：
+
+[source, code, linenums]
+----
+from payload as u     select new(com.mulesoft.mql.example.User) {       name = u.name,      email = u.email,      address = new(com.mulesoft.mql.example.Address) {         address = u.address,         city = u.city,         state = u.state      }    }
+----
+
+从2.0版到1.0版：
+
+[source, code, linenums]
+----
+from payload as u     select new {       name = u.name,      email = u.email,      address = u.address.address,      city = u.address.city,      state = u.address.state    }
+----
+
+让我们为我们的服务2.0版创建我们的JAX-RS资源：
+
+[source, code, linenums]
+----
+import java.util.Collection;import javax.ws.rs.*;@Path("/")@Produces("application/json")@Consumes("application/json")public class UserResource {    // a Map of Users keyed by their email    private UserManager userManager = new UserManager();       @GET    public Collection<User> getUsers() {        return userManager.getUsers();    }        @POST    public User addUser(User user) {        userManager.addUser(user);        return user;    }}
+----
+
+这只是返回用户列表，并在客户端执行POST请求时添加用户。然后可以将此服务的2.0版注册为Mule端点：
+
+[source, xml, linenums]
+----
+<flow name="v2">    <inbound-endpoint address="http://localhost:9002/api/v2/users" exchange-pattern="request-response"/>    <jersey:resources>        <component>            <singleton-object class="com.mulesoft.mql.example.UserResource"/>        </component>    </jersey:resources></flow>
+----
+
+我们现在可以基于MQL转换为我们服务的1.0版本创建端点。这是一个例子。首先，我们将在配置中声明我们的MQL变换器：
+
+[source, xml, linenums]
+----
+<!-- Converts the old User object to the new version --><mql:transform name="V1-to-V2" query="from payload as u ..." /><!-- Converts the new User object to the old version --><mql:transform name="V2-to-V1" query="from payload as u ..."/>
+----
+
+现在，我们将创建一个在/ api / v1 url上执行这些转换的流程：
+
+[source, xml, linenums]
+----
+<flow name="v1">    <inbound-endpoint address="http://localhost:9002/api/v1/users" exchange-pattern="request-response"/>        <!-- Transform from old version if there is a request payload -->    <processor-chain>        <expression-filter expression="message.getInboundProperty('http.method') == 'POST'                                        || message.getInboundProperty('http.method') == 'PUT'"                            evaluator="groovy"/>        <transformer ref="V1-to-V2"/>    </processor-chain>        <jersey:resources>        <component>            <singleton-object class="com.mulesoft.mql.example.UserResource"/>        </component>    </jersey:resources>        <!-- Transform to old version -->    <transformer ref="V2-to-V1"/></flow>
+----
+
+而且，presto，你有两个版本的服务只运行一个代码库！
+
+== 运行示例
+
+接下来，我们将配置并启动示例应用程序：
+
+*  http://www.mulesoft.org/download-mule-esb-community-edition[下载骡子]并提取分配
+*  link:/mule-user-guide/v/3.2/mql-download[下载MQL]并提取分配
+* 将examples / mql-examples-0.9.zip文件从MQL分发版复制到MULE_HOME / apps
+* 开始骡子：
+
+[source, code, linenums]
+----
+ $ cd mule-standalone-3.1.2/bin$ ./mule
+----
+
+* 对版本1.0服务执行查询：
+
+[source, code, linenums]
+----
+http://localhost:9002/api/v1/users/[{"address":"123 Main St","email":"dan@mulesoft.com","name":"Dan Diephouse","state":"CA","city":"San Francisco"}]
+----
+
+* 针对版本2.0服务执行查询：
+
+[source, code, linenums]
+----
+$ curl  http://localhost:9002/api/v2/users/[{"address":{"address":"123 Main St","state":"CA","country":"USA","city":"San Francisco"},"name":"Dan Diephouse","email":"dan@mulesoft.com"}]
+----

@@ -1,0 +1,1055 @@
+=  HTTP请求连接器
+:keywords: anypoint studio, connectors, http, https, http headers, query parameters, rest, raml
+
+HTTP请求连接器提供了最实用的方式来使用外部HTTP服务。发送HTTP请求时，您可以选择使用哪种方法（GET，POST等），并可能包含正文，标题，附件，查询参数，表单参数和URI参数。该响应然后由连接器接收并传递到流中的下一个元素。
+
+此连接器还可以实现HTTPS协议并通过 link:/mule-user-guide/v/3.9/tls-configuration[TLS]加密通信，它也可以通过基本身份验证，OAuth，NTLM或摘要实现 link:/mule-user-guide/v/3.9/authentication-in-http-requests[认证]。
+
+使用在 link:http://www.raml.org/[肾错构瘤]文件中描述的RESTful API时，请求连接器特别方便。如果您在连接器配置中引用API的RAML文件，它会主动为您提供RAML文件中包含的一组可用资源和操作，并强制实施文件中描述的策略。它还将API元数据公开给Studio，然后由其他元素（如DataWeave）使用它来自动填充字段并使配置更容易。
+
+连接器还可以将HTTP请求发送到与任何RAML文件无关的地址 - 您可以简单地分配一个地址，选择一个HTTP方法并可选地为请求添加其他参数。
+
+[NOTE]
+--
+Mule 3.7和更新版本为HTTP请求服务器名称指示（SNI）提供支持，该请求在HTTP连接器的后端处理。
+--
+
+== 基本用法
+
+在Studio中，要将此连接器用作HTTP _Request_连接器（而不是HTTP _Listener_连接器），请将其放置到流的*Process*部分（即除开头以外的任何位置）。
+
+image:http-connector-drag-to-process.png[拖动来处理]
+
+使用Studio可视化编辑器进行=== 最低配置
+
+以下示例显示了此连接器所需的最低配置：
+
+在连接器实例中，提供一个*Path*和一个*Method*：
+
+image:http-request-connector-59e01.png[]
+
+另外，你必须引用一个全局元素，下面解释。
+
+==== 创建全局元素
+
+与Studio中的大多数连接器一样，许多配置都封装在单独的可重用对象中，然后可以根据您的喜好使用多个连接器实例进行引用。
+
+[NOTE]
+--
+当具有多个必须使用相同设置的连接器时，拥有全局元素变得特别有用，以避免在每个请求中重复相同的配置。在Studio中，您还可以在此元素中引用RAML文件，然后提供元数据，使配置的其余部分更加容易。
+--
+
+image:connector-configuration.png[在哪里添加全局元素]
+
+==== 全局元素的最小配置
+
+您至少需要提供*host*和*port*
+
+image:http-request-connector-d6ec4.png[http请求的全局元素]
+
+上述配置对`+http://www.example.com/test+`执行GET请求。
+
+使用XML编辑器的=== 最低配置
+
+Mule流中的连接器实例中引用的示例全局元素表示形式。
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081"/>
+ 
+<flow name="example1">
+    ...
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="POST"/>
+</flow>
+----
+
+==== 全局元素的最小配置
+
+与Studio中的大多数连接器一样，许多配置封装在一个独立的可重用对象中，该对象位于流之外，然后可以根据需要随多个连接器实例一起引用。此元素定义到特定网络接口和端口的服务器连接，并处理对其的出站请求及其响应。至少，您需要在您的全局元素中提供*Host*和*Port*。
+
+==== 连接器实例的最低配置
+
+在定义了request-config之后，要实际发送HTTP请求，您需要使用`<http:request>`元素配置流。在连接器实例中，提供*Path*和*Method*，以及对全局元素的引用
+
+上述配置对`+http://www.example.com/test+`执行GET请求。
+
+
+使用Studio可视化编辑器===  HTTP连接器基本配置
+
+您需要为您的请求提供*path*和*method*，并引用*Connector Configuration*全局元素。请注意，路径字段未定义完整路径，而是定义主机内的子路径，以及可在“连接器配置”全局元素中指定的可选基本路径之后。
+
+您还可以根据需要添加任意数量的参数，这些参数可以是标题，查询参数或URI参数。
+
+image:http-request-connector-73236.png[路径和方法参数]
+
+[%header,cols="2*"]
+|===
+|属性 |说明
+|显示名称 |流中元素的名称。
+|请求配置 |对全局元素的引用。这是必填栏。
+|路径 |发送请求的路径（不包括可选的*base path*）在全局元素中配置。
+|方法 |要发送的HTTP请求的类型（GET，POST，DELETE等）。可选，默认为GET。
+|参数a |
+您可以通过单击顶部的绿色加号在请求中包含其他参数，例如标题和查询参数。 +
+
+如果全局元素引用了RAML文件，则相关参数将根据所选资源和方法进行显示。
+|===
+
+[TIP]
+如果您在全局元素中引用了RAML文件，则根据RAML描述的内容，路径和方法字段都会显示可用选项的下拉列表。请注意，您也可以自由地在这些字段中编写自己的值。
+
+=== 全局元素基本配置
+
+image:http-request-connector-a5650.png[]
+
+[%header%autowidth.spread]
+|===
+|属性 |说明
+| 名称 |配置元素从连接器实例引用的名称。
+|协议 |在HTTP和HTTPS之间选择
+|主持人 |主持人发送请求。这是必填栏。
+|端口 |发送请求的端口。这是必填栏。
+|基本路径 |主机中的基本路径。连接器的实例可以在此路径中指定一个子路径。
+| RAML位置 |您的连接器可以指向一个RAML文件，这使得配置变得更加容易，因为Studio可以主动提供基于RAML文件中定义的元数据的智能建议。您可以在本地磁盘上引用RAML文件，也可以在外部URI上引用该文件，也可以通过单击*Search RAML in Exchange*选择Exchange中可用的一个。
+|启用数据集 | *Enable DataSense*复选框允许Studio使用 link:/anypoint-studio/v/6/datasense[DataSense]从RAML文件中公开元数据，并在Studio中的其他元素上与其交互。
+|===
+
+[TIP]
+如果您先完成RAML位置字段，则所有其他字段将根据RAML中指定的内容自动填充。
+
+[WARNING]
+====
+每当您在Studio中打开项目时，都会获取RAML的元数据，然后保存在缓存中，直到您关闭并重新打开该项目。
+
+如果修改了RAML文件，则可以通过单击*Reload RAML*按钮来刷新它的缓存。
+
+连接器暴露给您的流的元数据可能不会立即更新。在这种情况下，请点击元数据资源管理器中的*Refresh Metadata*按钮。
+====
+
+使用XML编辑器的===  HTTP连接器基本配置
+
+您需要为您的请求提供*path*和*method*，并引用*Connector Configuration*全局元素。请注意，路径字段未定义完整路径，而是定义主机内的子路径，以及可在“连接器配置”全局元素中指定的可选基本路径之后。
+
+作为此连接器的子元素，您可以根据需要添加任意数量的参数，这些参数可能是标题，查询参数或URI参数。
+
+[source, xml, linenums]
+----
+<http:request config-ref="HTTP_Request_Configuration" path="test" method="POST" doc:name="HTTP"/>
+----
+
+[%header%autowidth.spread]
+|===
+|属性 |说明
+| `doc:name`  | Studio中流中元素的名称。
+| `config-ref`  |对包含多个配置参数的可重用Global Element的引用。此属性是必需的。
+| `path`  |发送请求的路径（不包括*base path*）在全局元素中配置。
+| `method`  |发送的HTTP请求的类型（GET，POST，DELETE等）。可选，默认为GET。
+|===
+
+默认情况下，GET，HEAD和OPTIONS方法不会在请求中发送有效载荷（HTTP请求的主体为空）。其余的方法将消息有效载荷作为请求的主体发送。
+
+=== 全局元素基本配置
+
+每个HTTP连接器必须引用位于项目中任何流程之外的全局配置元素。这个元素封装了许多可以被项目中的其他连接器重用的通用配置参数，并且可以被连接器的多个实例引用。至少，您需要提供*host*和*port*：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP Request Configuration"/>
+----
+
+[%header,cols="34,33,33"]
+|===
+|属性 |描述 | XML示例
+| `name`  |全局元素的名称，用于在连接器实例中引用。一个| `name="HTTP_Request_Configuration"`
+| `protocol`  |在HTTP和HTTPS  | `protocol="HTTPS"`之间进行选择
+| `host`  |主机将被引用此配置的所有请求元素使用。一个| `host="example.com"`
+| `port`  |端口被引用该配置的所有请求元素使用。一个| `port="8081"`
+| `basePath`  |发送请求的路径。然后，您可以在连接器实例内的此路径下指定子文件夹。一个|
+`basePath="/api/v2"`
+|===
+
+[%autowidth.spread]
+|===
+| *Child Element*  | *Description*  | *XML Sample*
+| RAML位置 |如果您有权访问描述您要连接的API的RAML文件，请在此处指明其位置。 | `<http:raml-api-configuration location="t-shirt.raml"/>`
+|===
+
+上述配置对`+http://www.example.com/test+`执行GET请求。
+
+以下是两个共享相同连接器配置的连接器：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="80" basePath="/api/v2" />
+ 
+<flow name="test_flow">
+    ...
+    <http:request config-ref="HTTP_Request_Configuration" path="customer" method="GET" />
+    ...
+    <http:request config-ref="HTTP_Request_Configuration" path="item" method="POST" />
+    ...
+</flow>
+----
+
+示例中的第一个连接器向`+http://www.example.com/api/v2/customer+`发送GET请求。第二个连接器向`+http://www.example.com/api/v2/item+`发送POST请求。
+
+
+Mule消息和HTTP请求之间的映射== 
+
+当执行HTTP请求连接器时，转换到达它的Mule消息以生成HTTP请求。下面解释了Mule消息的每个部分如何有助于生成HTTP请求。
+
+===  HTTP请求正文
+
+Mule消息有效载荷被转换为字节数组并作为HTTP请求的主体发送。除了以下情况外，此行为始终执行：
+
+*  Mule消息的Payload是一个键和值的映射
+* 邮件具有出站附件
+
+=== 使用Content-Type生成请求正文：application / x-form-urlencoded
+
+只要消息有效负载是Map，连接器就会自动生成一个标头为`Content-Type:application/x-www-form-urlencoded`的HTTP请求。有效载荷中映射的键和值将转换为HTTP请求正文中的*form parameter*键和值。
+
+=== 使用Content-Type生成请求正文：multipart / form-data
+
+只要消息包含出站附件，连接器就会自动生成一个标头为`Content-Type:multipart/form-data`的HTTP请求。 Mule消息的有效载荷被忽略，而消息中的每个附件都被转换成HTTP请求体的一部分。如果您要创建不同的多部分请求，则可以通过添加<<Adding Custom Parameters>>将Content-Type标头设置为不同的值。
+
+===  HTTP标头
+
+如果Mule消息中有*outbound properties*到达HTTP请求连接器，它们会自动添加为HTTP请求标头。也可以通过HTTP请求连接器的配置明确添加标头。见下面的文档。
+
+[NOTE]
+--
+默认情况下，HTTP连接器使用的Grizzly库将HTTP请求标头段大小（请求行+标头）限制在8192字节以下。虽然建议您将HTTP请求标题部分保留在此限制以下，但可以通过将`mule.http.headerSectionSize`设置为更大的值（以字节为单位）来覆盖此限制。您可以在wrapper.conf文件中设置此JVM参数，也可以在启动Mule运行时时从命令行传递它。
+
+例如，要将HTTP标题部分大小设置为16,000字节，可以使用命令`./mule -M-Dmule.http.headerSectionSize=16000`启动Mule运行时。
+--
+
+== 使用Studio Visual Editor添加自定义参数
+
+HTTP请求连接器允许您包含以下类型的参数：
+
+* 查询参数
+* 多个查询参数的映射
+*  URI参数
+* 多个URI参数的映射
+* 集管
+* 多个标题的地图
+
+另外，您还可以发送包含在Mule消息有效内容中的请求的表单参数。您还可以在您的请求中添加附件处理程序到您的流程中。
+
+[TIP]
+请记住，在使用Studio时，如果要访问的API具有*RAML*文件，则在全局元素中引用此RAML文件会公开API的元数据，并且Studio会主动显示API中每个操作的所有可用属性。
+
+=== 查询参数
+
+通过点击*Add Parameter*按钮，您可以将参数添加到您的请求中。如果您保留默认*query-param*作为参数类型，则可以添加新的查询参数并为其分配名称和值。
+
+image:http-request-connector-a59db.png[在http常规选项卡中添加参数]
+
+上述配置对`+http://www.example.com/test?k1=v1&k2=v2+`执行GET请求。
+
+[TIP]
+名称和值字段都允许使用MEL表达式。
+
+如果查询参数应该动态设置（例如，在设计时您不知道请求中需要多少个查询参数），那么可以将参数类型更改为接受数组的*query-params*，并且可以为其分配一个MEL表达式，该表达式返回参数映射：
+
+image:http-request-connector-da83e.png[query_params_2]
+
+对于此示例，您必须先将 link:/mule-user-guide/v/3.9/variable-transformer-reference[生成一个变量]命名为`customMap`。如果您通过以下MEL表达式为该变量赋值：
+
+`#[{'k1':'v1', 'k2':'v2'}]`
+
+它会产生与前一个示例相同的请求，即对`+http://www.example.com/test?k1=v1&k2=v2+`的GET请求
+
+`query-param`和`query-params`元素可以在一个连接器内组合。每个请求的参数都会解析（评估当前消息上下文中的所有MEL表达式），并按照它们在请求生成器内指定的顺序。这可以在必要时覆盖参数。如果多次定义相同的参数，则使用最新的值。
+
+===  URI参数
+
+参数应该是路径的一部分时，可以将占位符添加到"path"属性中，并为每个属性指定一个名称，然后它们必须由`uri-parameter`引用：
+
+image:http-request-connector-0ac45.png[占位符添加到路径]
+
+如果您首先在"path"字段中输入占位符，Studio会自动在参数部分中添加以下相应的`uri-param`，从而为您节省一些麻烦。
+
+这会对`+http://www.example.com/customer/20+`执行GET请求。
+
+[TIP]
+名称和值字段都允许使用MEL表达式。
+
+=== 动态设置URI参数
+
+如果应该动态设置URI参数，可以通过MEL表达式来设置URI参数，该表达式返回要设置的参数映射：
+
+image:http-request-connector-a7f0c.png[params设置动态]
+
+[IMPORTANT]
+如果在路径字段中键入值时自动添加任何其他`uri-param`参数，请删除这些参数，因为它们是由动态`uri-params`字段处理的。
+
+对于此示例，您需要 link:/mule-user-guide/v/3.9/variable-transformer-reference[创建一个变量]命名为`customMap`。如果您将该变量设置为MEL表达式`#[{'p1':'v1', 'p2':'v2'}]`，它会生成一个GET请求到`+http://www.example.com/test/v1/v2+`。
+
+与查询参数一样，`uri-param`和`uri-params`元素可以在连接器内组合。它们针对每个请求进行解析（评估当前消息上下文中的所有MEL表达式），并按照它们在请求生成器内指定的顺序进行解析。这样可以在必要时覆盖参数。如果多次定义相同的参数，则使用最新的值。
+
+[INFO]
+在每种情况下，引用URI参数路径中使用的所有占位符应与请求生成器内部的URI参数名称相匹配（在所有MEL表达式被评估之后）。
+
+=== 集管
+
+您可以像查询参数一样轻松地将HTTP标头添加到请求中：
+
+image:http-request-connector-b1186.png[设置头部参数]
+
+这会对`+http://www.example.com/test+`执行GET请求，添加以下标题：
+
+[source,code,linenums]
+----
+HeaderName1: HeaderValue1
+HeaderName2: HeaderValue2
+----
+
+[TIP]
+名称和值字段都允许使用MEL表达式。
+
+这完全等同于通过属性变换器在Mule消息中设置出站属性。出站属性映射为请求中的HTTP标头。因此，您可以通过在HTTP请求连接器之前添加两个属性转换器来达到同样的效果，一个用于需要设置的每个新标题：
+
+image:http-request-connector-1a527.png[物业变压器的效果相同]
+
+在这两种情况下，处理响应后，响应映射的标题都会作为Mule消息的入站属性。
+
+=== 动态设置标题
+
+如果标题必须动态设置（例如，您在设计时不知道请求中需要多少额外的标题），则可以通过返回标题图的MEL表达式来设置它们：
+
+image:http-request-connector-b459c.png[动态设置标题]
+
+要使上述示例正常工作，首先需要生成一个名为`customMap`的变量。如果您将该变量设置为以下MEL表达式：
+
+[source,code]
+----
+#[{'TestHeader':'TestValue'}]
+----
+
+它生成一个GET请求到`+http://www.example.com/test+`，添加以下标题：
+
+[source,code]
+----
+TestHeader: TestValue
+----
+
+与查询参数一样，标题和标题元素可以在连接器中组合。它们针对每个请求进行解析（评估当前消息上下文中的所有MEL表达式），并按照它们在请求生成器内指定的顺序进行解析。这可以在必要时覆盖参数。如果多次定义相同的参数，则使用最新的值。
+
+=== 在POST请求中发送表单参数
+
+为了在POST请求中发送参数，Mule消息的有效载荷应该是具有要发送的参数名称和值的映射。因此，在请求中发送表单参数的一种方式是在HTTP请求连接器之前添加一个*Set Payload*元素，以将消息的有效负载设置为要发送的表单参数：
+
+image:http-request-connector-d03c0.png[set_payload]
+
+例如，如果您使用*Set Payload*元素来设置您的有效负载：
+
+`#[{'key1':'value1', 'key2':'value2'}]`
+
+POST请求发送到`+http://www.example.com/test+`，`Content-Type: application/x-www-form-urlencoded`，正文为"`key1=value1&key2=value2`";就好像浏览器在用户提交具有这两个值的表单后发送请求一样。
+
+== 使用Studio XML编辑器添加自定义参数
+
+HTTP请求连接器允许您包含以下类型的参数：
+
+* 查询参数
+* 多个查询参数的映射
+*  URI参数
+* 多个URI参数的映射
+* 集管
+* 多个标题的地图
+
+另外，您还可以发送包含在Mule消息有效内容中的请求的表单参数。您还可以在您的请求中添加附件处理程序到您的流程中。
+
+=== 查询参数
+
+您可以使用请求中的`request-builder`元素添加查询参数：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET">
+        <http:request-builder>
+            <http:query-param paramName="k1" value="v1" />
+            <http:query-param paramName="k2" value="v2" />
+        </http:request-builder>
+    </http:request>
+</flow>
+----
+
+这会对`+http://www.example.com/test?k1=v1&k2=v2+`执行GET请求。
+
+[TIP]
+名称和值字段都允许使用MEL表达式。
+
+=== 动态设置查询参数
+
+如果应该动态设置查询参数（例如，您在设计时不知道请求中需要多少查询参数），则可以通过返回参数映射的MEL表达式来设置查询参数：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <set-variable variableName="customMap" value="#[{'k1':'v1', 'k2':'v2'}]" />
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET">
+        <http:request-builder>
+            <{{0}}" />
+        </http:request-builder>
+    </http:request>
+</flow>
+----
+
+此示例生成与上一个请求相同的请求，即对`+http://www.example.com/test?k1=v1&k2=v2+`的GET请求。
+
+`query-param`和`query-params`元素可以在请求生成器中组合。每个请求的参数都会解析（评估当前消息上下文中的所有MEL表达式），并按照它们在请求生成器内指定的顺序。这样可以在必要时覆盖参数。如果多次定义相同的参数，则使用最新的值。
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <set-variable variableName="customMap" value="#[{'k2':'new', 'k3':'v3'}]" />
+ 
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET">
+        <http:request-builder>
+            <http:query-param paramName="k1" value="v1" />
+            <http:query-param paramName="k2" value="v2" />
+            <{{0}}" />
+        </http:request-builder>
+    </http:request>
+ 
+</flow>
+----
+
+在这个例子中，映射中定义的参数k2覆盖了先前定义的k2查询参数。结果是对`+http://www.example.com/test?k1=v1&k2=new&k3=v3+`的GET请求。
+
+===  URI参数
+
+当参数应该是路径的一部分时，可以在path属性中为每个参数添加占位符，然后必须使用`uri-param`元素从请求生成器中引用它们以提供值：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <http:request config-ref="HTTP_Request_Configuration"  path="/customer/{customerId}" method="GET"> 
+        <http:request-builder>
+            <http:uri-param paramName="customerId" value="20" />
+        </http:request-builder>
+    </http:request>
+ 
+</flow>
+----
+
+这会对`+http://www.example.com/customer/20+`执行GET请求。
+
+[TIP]
+名称和值字段都允许使用MEL表达式。
+
+=== 动态设置URI参数
+
+如果应该动态设置URI参数，可以通过MEL表达式设置它们，该表达式返回要设置的参数映射：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <set-variable variableName="customMap" value="#[{'p1':'v1', 'p2':'v2'}]" />
+ 
+    <http:request config-ref="HTTP_Request_Configuration"  path="test/{p1}/{p2}" method="GET"> 
+        <http:request-builder>
+            <{{0}}" />
+        </http:request-builder>
+    </http:request>
+</flow>
+----
+
+本示例生成一个GET请求到`+http://www.example.com/test/v1/v2+`。
+
+正如查询参数一样，`uri-param`和`uri-params`元素可以在请求构建器中进行组合。它们针对每个请求进行解析（评估当前消息上下文中的所有MEL表达式），并按照它们在请求生成器内指定的顺序进行解析。这可以在必要时覆盖参数。如果多次定义相同的参数，则使用最新的值。
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <set-variable variableName="customMap" value="#[{'p1':'new'}]" />
+ 
+    <http:request config-ref="HTTP_Request_Configuration"  path="test/{p1}/{p2}" method="GET">
+        <http:request-builder>
+            <http:query-param paramName="p1" value="v1" />
+            <http:query-param paramName="p2" value="v2" />
+            <{{0}}" />
+        </http:request-builder>
+    </http:request>
+</flow>
+----
+
+在这个例子中，映射中定义的参数p1覆盖了先前定义的p1 uri-param。结果是对`+http://www.example.com/test?p1=new&p2=v2+`的GET请求。
+
+[WARNING]
+在每种情况下，引用URI参数路径中使用的所有占位符应与请求生成器内部的URI参数名称相匹配（在所有MEL表达式被评估之后）。
+
+=== 集管
+
+可以使用请求构建器中的"header"元素将HTTP标头添加到请求中：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET">
+        <http:request-builder>
+            <http:header headerName="HeaderName1" value="HeaderValue1" />
+            <http:header headerName="HeaderName2" value="HeaderValue2" />
+        </http:request-builder>
+    </http:request>
+</flow>
+----
+
+这会对`+http://www.example.com/test+`执行GET请求，并添加以下标题：+
+  `HeaderName1: HeaderValue1` +
+  `HeaderName2: HeaderValue2`
+
+[TIP]
+名称和值字段都允许使用MEL表达式。
+
+发送标题的另一种方式是通过在Mule消息中设置出站属性（HTTP传输的当前行为）。出站属性映射为请求中的HTTP标头。因此，下面的例子等同于前一个例子：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <set-property propertyName="HeaderName1" value="HeaderValue1" />
+    <set-property propertyName="HeaderName2" value="HeaderValue2" />
+ 
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET"/>
+</flow>
+----
+
+在这两种情况下，处理响应后，响应映射的标题都会作为Mule消息的入站属性。
+
+=== 动态设置标题
+
+如果标题必须动态设置（例如，您在设计时不知道请求中需要多少额外的标题），则可以通过返回标题图的MEL表达式来设置它们：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <set-variable variableName="customMap" value="#[{'TestHeader':'TestValue'}]" />
+ 
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET">
+        <http:request-builder>
+            <{{0}}" />
+        </http:request-builder>
+    </http:request>
+</flow>
+----
+
+本示例生成一个GET请求到`+http://www.example.com/test+`，添加以下标题：+
+
+[source,code]
+----
+TestHeader: TestValue
+----
+
+正如查询参数一样，`<http:header>`和`<http:headers>`元素可以在请求构建器（`<http:request-builder>`）内进行组合。它们针对每个请求进行解析（评估当前消息上下文中的所有MEL表达式），并按照它们在请求生成器内指定的顺序进行解析。这样可以在必要时覆盖参数。如果多次定义相同的参数，则使用最新的值。
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <set-variable variableName="customMap"
+      value="#[{'TestHeader2':'TestValueNew', 'TestHeader3':'TestValue3'}]" />
+ 
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET">
+        <http:request-builder>
+            <http:header paramName="TestHeader1" paramValue="TestValue1" />
+            <http:header paramName="TestHeader2" paramValue="TestValue2" />
+            <{{0}}" />
+        </http:request-builder>
+    </http:request>
+</flow>
+----
+
+在此示例中，映射中定义的头文件TestHeader2将覆盖请求生成器中先前定义的头文件。结果是使用以下标题对`+http://www.example.com/test+`进行GET请求：+
+TestHeader1：TestValue1 +
+TestHeader2：TestValueNew +
+TestHeader3：TestValue3
+
+=== 在POST请求中发送表单参数
+
+为了在POST请求中发送参数，Mule消息的有效载荷应该是具有要发送的参数名称和值的Map。因此，在请求中发送表单参数的一种方法是在HTTP请求连接器之前添加一个设置有效负载元素，以使消息的有效负载等于您必须发送的表单参数：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <set-payload value="#[{'key1':'value1', 'key2':'value2'}]" />
+     
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="POST"/>
+</flow>
+----
+
+在此示例中，POST请求发送到`+http://www.example.com/test+`，`Content-Type: application/x-www-form-urlencoded`，正文为`"key1=value1&key2=value2"`;就好像浏览器在用户使用这两个值提交表单后发送了请求一样。
+
+HTTP响应和Mule消息之间的映射== 
+
+将HTTP响应映射到Mule消息的方式与HTTP请求映射到HTTP侦听器连接器中的Mule消息的方式完全相同，但以下元素不适用于HTTP响应：
+
+* 查询参数
+*  URI参数
+* 与HTTP请求URI +相关的所有入站属性
+
+另外，HTTP请求连接器在收到响应时将以下入站属性添加到Mule消息：+
+
+*  `http.status`：HTTP响应的状态码
+*  `http.reason`：HTTP响应的原因词组
+
+=== 禁用HTTP响应正文解析
+
+与HTTP侦听器连接器一样，当HTTP响应的内容类型为`application/x-www-form-urlencoded`或`multipart/form-data`时，HTTP请求连接器会自动执行邮件解析。如果您愿意，可以通过执行以下操作来禁用此分析功能：+
+
+*  *XML Editor*：将`parseResponse`属性设置为false
+*  *Studio UI*：取消HTTP请求连接器高级选项卡中的*Parse Response*复选框
+
+
+== 循环请求
+
+由于Mule 3.8，_HTTP请求connector_使用*Round Robin DNS*连接到其配置的主机。 Mule Runtime可解析与指定主机关联的所有IP地址，并将请求分发到所有返回的IP，从而改善主机的负载平衡。
+
+当连接到需要验证的资源时，外部服务需要在服务主机下的所有IP地址之间复制会话信息。否则，您的请求可能会被`unauthorized`邮件拒绝。
+
+当您的外部资源不处理_sticky sessions_时，您需要在启动Mule运行时时将该服务的主机名添加到`mule.http.disableRoundRobin`系统属性：
+
+[source]
+----
+./mule -M-Dmule.http.disableRoundRobin=serverhostname.com
+----
+
+这会导致_HTTP请求connector_在连接到系统属性中配置的主机时不使用DNS循环。
+
+[TIP]
+从`mule.http.disableRoundRobin`系统属性可用，因为Mule 3.8.4。确保你是最新的udpate网站。
+
+使用Studio Visual Editor进行==  HTTP响应验证
+
+当HTTP请求连接器收到HTTP响应时，它会通过状态码验证响应。默认情况下，当状态码大于或等于400时会引发错误。这表示如果服务器返回404（资源未找到）或500（内部服务器错误），HTTP请求连接器将失败，并且异常策略为它被调用的流程被触发。
+
+您可以通过设置以下两种行为之一来更改有效的HTTP响应代码集合：
+
+*  *Success Status Code Validator: *在此元素中定义的所有状态代码均被视为有效;该请求会引发任何其他状态代码的异常。
+*  *Failure* *Status Code Validator: *在此元素中定义的所有状态代码均被视为无效，并引发异常;该请求被认为对任何其他状态码都有效。
+
+要设置被接受为成功响应的状态代码列表，请执行以下操作：
+
+. 选择HTTP请求连接器的*advanced tab*
+. 选择*Success Status Code Validator*单选按钮
+. 用`200,201`填写下面的*Values*字段
+
+使用Studio XML编辑器进行==  HTTP响应验证
+
+当HTTP请求连接器收到HTTP响应时，它会通过状态码验证响应。默认情况下，当状态码大于或等于400时会引发错误。这表示如果服务器返回404（资源未找到）或500（内部服务器错误），HTTP请求连接器将失败，并且异常策略为它被调用的流程被触发。
+
+您可以通过设置以下两种行为之一来更改有效的HTTP响应代码集合：
+
+*  *Success Status Code Validator: *在此元素中定义的所有状态代码均被视为有效;该请求会引发任何其他状态代码的异常。
+*  *Failure* *Status Code Validator: *在此元素中定义的所有状态代码均被视为无效，并引发异常;该请求被认为对任何其他状态码都有效。
+
+要设置被接受为成功响应的状态代码列表，请执行以下操作。
+
+例如：
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+  
+<flow name="test_flow">
+ 
+    ...
+ 
+    <http:request config-ref="HTTP_Request_Configuration"  path="/" method="GET"> 
+         <http:success-status-code-validator values="200,201"/>
+    </http:request>
+</flow>
+----
+
+完整的XML代码：
+
+[source, xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+     
+     <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+  
+    <flow name="test_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <http:request config-ref="HTTP_Request_Configuration"  path="/" method="GET">
+            <http:success-status-code-validator values="200,201"/>
+        </http:request>
+</flow>
+ 
+</mule>
+----
+
+在上面的例子中，被接受的状态码列表被定义为逗号，所以只有200和201被认为是有效的响应。如果HTTP响应具有任何其他状态值，则认为它是失败并引发异常。
+
+=== 使用Studio Visual Editor设置失败状态代码验证器
+
+. 选择HTTP请求连接器的高级选项卡
+. 选择失败状态码验证器单选按钮
+. 使用`500..599 `填写下面的值字段
+
+=== 以XML格式设置失败状态码验证器
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+  
+<flow name="test_flow"> 
+    ... 
+    <http:request config-ref="HTTP_Request_Configuration"  path="/" method="GET"> 
+         <http:failure-status-code-validator values="500..599"/>
+    </http:request>
+</flow>
+----
+
+完整的XML代码：
+
+[source, xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+     
+     <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+  
+    <flow name="test_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <http:request config-ref="HTTP_Request_Configuration"  path="/" method="GET"> 
+            <http:failure-status-code-validator values="500..599"/>
+        </http:request>
+    </flow>
+ 
+</mule>
+----
+
+一系列故障状态代码由两个点*..*定义，因此在上例中，500到599之间的任何值都被认为是故障并引发异常。如果HTTP响应具有任何其他状态值，则认为它是成功的。
+
+== 更改何时向请求添加正文的默认行为
+
+默认情况下，方法GET，HEAD和OPTIONS发送一个空的正文的HTTP请求，并且Mule消息的负载根本不会被使用。其余的方法发送消息有效载荷作为请求的主体。如果您需要更改此默认行为，则可以使用以下某个可能的值指定请求中的`sendBodyMode`属性：
+
+*  AUTO（默认）：行为取决于方法。 Body不会发送GET，OPTIONS和HEAD，否则发送。
+* 始终：身体总是被发送。
+永远不会：身体永远不会被发送。
+
+Studio Visual Editor：
+
+例如，GET请求通常不包含正文，但有些API要求它们有一个。在这些情况下，请进入*Advanced*设置面板，并将*Send Body*字段设置为*ALWAYS*。
+
+XML编辑器：
+
+例如，GET请求通常不包含正文，但有些API要求它们有一个。在这些情况下，应指定`sendBodyMode`属性强制执行此行为：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    ...
+    <set-payload value="Hello world" />
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET" sendBodyMode="ALWAYS"  />
+</flow>
+----
+
+这会以"Hello world"为主体向`+http://www.example.com/test+`发送GET请求。
+
+
+== 配置源和目标
+
+默认情况下，请求的主体来自传入的Mule消息的`\#[payload]`，并且响应以输出Mule消息的`#[payload]`的形式向前发送，您可以通过{ {2}}和`target`属性。
+
+Studio Visual Editor：
+
+[%header%autowidth.spread]
+|===
+| {属性{1}}说明
+| *source*  |从哪里获取请求的正文。默认情况下，这是`#[payload]`
+| *target*  |在哪里放置响应主体。默认值：`#[payload]`  - 使用此属性为输出数据指定一个非有效负载的替代位置，例如变量或属性。
+|===
+
+例如：
+
+image:http-request-connector-3ed25.png[覆盖设置源和目标的默认行为]
+
+这将从名为"foo"的入站属性获取请求的主体，并将请求的响应放入名为"bar"的出站附件中。
+
+XML编辑器：
+
+[%header%autowidth.spread]
+|===
+| {属性{1}}说明
+| *source*  |从哪里获取请求的正文。默认值：`#[payload]`
+| *target*  |在哪里放置响应主体。默认值：`#[payload]`  - 使用此属性可指定输出数据的有效负载之外的替代位置，例如变量或属性。
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test">
+    ...
+    <{{0}}" target="#[message.outboundAttachments.bar]" />
+</flow>
+----
+
+这将从名为"foo"的入站属性获取请求的主体，并将请求的响应放入名为"bar"的出站附件中。
+
+== 配置流式传输
+
+默认情况下，如果有效负载的类型是流，则使用流发送请求。您可以通过设置属性`requestStreamingMode`来更改此默认行为，该属性允许使用以下值：
+
+*  *AUTO*（默认）：行为取决于有效载荷类型：如果有效载荷是InputStream，则启用流式传输;否则它被禁用。
+*  *ALWAYS*：无论有效载荷类型如何，始终启用流式传输。
+*  *NEVER*：即使有效载荷是流，也不要流式传输。
+
+流式传输时，请求不包含`Content-Length`标题。相反，它包含`Transfer-Encoding`标头：它以块的形式发送正文，直到流完全消耗完为止。
+
+=== 在Anypoint Studio上配置流媒体
+
+例如，如果您的输入是一个文件入站端点，它将流设置为Mule消息的有效内容，但您想禁用流式传输，请进入*Advanced*设置面板并将*Enable Streaming*字段设置为{{ 2}}。
+
+=== 在XML上配置流式传输
+
+以下示例向`+http://www.example.com/test+`发出POST请求，从"input"目录读取文件，并将其内容作为请求的主体发送。在这种情况下，流被使用，因为文件入站端点将流设置为生成的Mule消息的有效载荷。生成的HTTP请求使用`Transfer-Encoding: chunked`发送。
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test">
+    <file:inbound-endpoint path="input" responseTimeout="10000" />
+    <http:request config-ref="HTTP_Request_Configuration"   path="test" method="POST" />
+</flow>
+----
+
+在这种情况下，为了禁止流式传输，我们需要明确设置`requestStreamingMode`等于`"NEVER"`：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test">
+    <file:inbound-endpoint path="input" responseTimeout="10000" />
+     <http:request config-ref="HTTP_Request_Configuration"   path="test" method="POST" requestStreamingMode="NEVER"/>
+</flow>
+----
+
+在这种情况下，请求不会流式传输。
+
+== 流式传输响应
+
+请求较大的有效负载时，可以通过在HTTP请求配置中设置"streamResponse"和"responseBufferSize"属性来选择流式传输响应。
+
+[source,xml]
+----
+<http:request-config streamResponse="true" responseBufferSize="5"/>
+----
+
+默认情况下，streamResponse属性设置为false。 +
+将此属性设置为true时，您可以启用Mule将响应作为流保存到内存缓冲区中。 +
+缓冲区大小可以使用`responseBufferSize`属性进行配置，但其默认大小为10Kb。
+
+在传输响应时，工作线程将响应写入内存缓冲区。如果缓冲区已满，线程将阻止其执行，等待缓冲区释放空间以继续写入响应。为了避免这个问题，在流式传输时消耗响应是非常重要的。
+
+== 发送多部分请求
+
+要发送多部分请求（例如，在POST请求中上传文件），应在Mule消息中设置出站附件。当邮件具有附件时，会发送多部分请求，其中每个部分都是附件。在这种情况下，有效载荷被忽略。
+
+Studio Visual Editor：
+
+您可以使用附件转换器将附件添加到您的消息中：
+
+image:http-request-connector-99015.png[使用附件变压器]
+
+这会发送带有`ContentType: multipart/form-data`的POST请求，并带有两个部分：一个带有第一个附件，另一个带有第二个附件。
+
+XML编辑器：
+
+例如：
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    <set-attachment attachmentName="key1" value="value1" contentType="text/plain" />
+    <set-attachment attachmentName="key2" value="value2" contentType="text/plain" />
+    <http:request path="test" method="POST" config-ref="HTTP_Request_Configuration" />
+</flow>
+----
+
+这会向`+http://www.example.com/test+`发送POST请求，其中`ContentType: text/plain`和两个部分：一个名称为key1和content1，另一个名称为key2和content2。
+
+[NOTE]
+--
+如果响应是多部分响应，则部件映射为Mule消息中的入站附件，并且净荷为空。
+--
+
+==  HTTPS协议配置
+
+您只需将协议属性设置为HTTPS即可通过HTTPS协议发送您的请求。这使得HTTP请求连接器为HTTPS连接使用默认的JVM值，该连接可能已经包括一个信任存储，其中包含所有主要证书颁发机构的证书。
+
+有关更多详情，请参阅 link:/mule-user-guide/v/3.9/tls-configuration[TLS配置]。
+
+Studio Visual Editor：
+
+在连接器的全局配置元素中的*General*选项卡上，选择*HTTPS*单选按钮以选择协议。
+
+XML编辑器：
+
+例如：
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" protocol="HTTPS" doc:name="HTTP_Request_Configuration"/>
+ 
+<flow name="test_flow">
+    ...
+    <http:request path="test" method="POST"  config-ref="HTTP_Request_Configuration" />
+</flow>
+----
+这会向使用默认JVM证书加密的`+http://www.example.com/test+`发送POST请求。
+
+如果您想使用不同的HTTPS证书集，可以通过在HTTP请求连接器的全局配置元素中设置 link:/mule-user-guide/v/3.9/tls-configuration[TLS配置]来对其进行自定义。您还可以创建单独的TLS全局元素并通过HTTP连接器引用它。 +
+
+*Studio Visual Editor:*
+
+. 在连接器的全局配置元素*General*选项卡中，选择*HTTPS*单选按钮以选择协议。
+. 选择*TLS/SSL tab*
+. 或者：
+
+** 选择*Use TLS Config*选项并在可用字段中提供您的凭据。
+** 或者选择*Use Global TLS Config*选项，然后通过单击选择框旁边的绿色加号来选择现有配置或创建一个新配置。
+
+[NOTE]
+--
+如果您需要暂时禁用证书验证，则可以选择_Insecure_选项。这会使您的Mule应用程序接受来自SSL端点的所有证书，而无需在流中验证它们。
+
+请记住在最终部署应用程序时取消选中它。
+--
+
+*XML Editor:*
+
+您可以将 link:/mule-user-guide/v/3.9/tls-configuration[TLS]凭证添加为`http:request-config`元素的子元素：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" protocol="HTTPS" doc:name="HTTP_Request_Configuration"/>
+        <tls:context>
+            <tls:trust-store path="your_truststore_path" password="your_truststore_password"/>
+            <tls:key-store path="your_keystore_path" password="your_keystore_path" keyPassword="your_keystore_keypass"/>
+        </tls:context>
+</http:request-config>
+ 
+<flow name="test_flow">
+    ...
+    <http:request path="test" method="POST"  config-ref="HTTP_Request_Configuration" />
+</flow>
+----
+
+以上示例将POST请求发送到`+http://www.example.com/test+`，并使用提供的HTTPS设置进行加密。
+
+您还可以将 link:/mule-user-guide/v/3.9/tls-configuration[TLS]凭证添加到您的`http:request-config`元素之外的单独结构中。在这种情况下，您必须为您的`tls:context`命名并在您的`http:request-config`中添加`tlsContext-ref`属性。
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" tlsContext-ref="My-TLS_Context" protocol="HTTPS" doc:name="HTTP_Request_Configuration"/>
+         
+<tls:context name="My-TLS_Context" doc:name="My-TLS_Context">
+        <tls:trust-store path="your_truststore_path" password="your_truststore_password"/>
+        <tls:key-store path="your_keystore_path" password="your_keystore_path" keyPassword="your_keystore_keypass"/>
+</tls:context>
+ 
+<flow name="test_flow">
+    ...
+    <http:request path="test" method="POST"  config-ref="HTTP_Request_Configuration" />
+</flow>
+----
+
+[NOTE]
+--
+如果您需要暂时停用证书验证，则可以在`<tls:context>`标签内设置`<tls:trust-store insecure="true"/>`。这会使您的Mule应用程序接受来自SSL端点的所有证书，而无需在流中验证它们。
+
+请记住，在部署应用程序之前将此值设置为_false_，或者直接删除标记，因为false是其默认值。
+--
+
+
+== 其他属性
+
+此连接器中的其他属性允许您设置更高级的功能：响应超时，是否遵循重定向以及是否解析响应。
+
+*Studio Visual Editor:*
+
+这些属性可在连接器属性编辑器的*Advanced*选项卡中找到。
+
+[%header,cols="2*"]
+|===
+| {属性{1}}说明
+|响应超时 |指定以毫秒为单位的时间，如果未收到响应，则不再尝试请求。最小值是500毫秒。较低的值可能导致随机行为。
+|解析响应 |如果为true，则会在收到多部分响应时解析响应。如果设置为false，则不进行解析，并将响应的原始内容放入有效负载中。默认情况下它被设置为true。
+|关注重定向 |定义是否遵循重定向。默认设置为true
+|使用Cookie  | 选中时，收集每个收到的响应中的Cookie，然后在随后的请求中发送它们。
+|===
+
+*XML Editor:*
+
+[%header,cols="2*"]
+|===
+| {属性{1}}说明
+| responseTimeout  |指定以毫秒为单位的时间，如果未收到响应，则不再尝试请求。最小值是500毫秒。较低的值可能导致随机行为。
+| parseResponse  |如果为true，则在收到多部分响应时分析响应。如果设置为false，则不进行解析，并将响应的原始内容放入有效负载中。默认设置为true。
+|关注重定向 |定义是否遵循重定向。默认设置为true。
+| enableCookies  |当设置为`true`时，此属性从它收到的每个响应中收集Cookie，然后在随后的请求中发送它们。
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP_Request_Configuration"/>
+  
+<flow name="test_flow">
+     ...
+     <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET" 
+      followRedirects="true" parseResponse="false" enableCookies="true" responseTimeout="10000" />
+</flow>
+----
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.9/authentication-in-http-requests[HTTP请求中的身份验证]
+*  link:/mule-user-guide/v/3.9/http-listener-connector[HTTP侦听器连接器]
+* 查看此连接器中可用XML配置选项的 link:/mule-user-guide/v/3.9/http-connector-reference[充分参考]
+* 请参阅对此元素的弃用前任的引用，HTTP端点 link:/mule-user-guide/v/3.9/http-request-connector[HTTP传输参考]

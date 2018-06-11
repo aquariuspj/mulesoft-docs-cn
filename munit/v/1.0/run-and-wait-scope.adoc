@@ -1,0 +1,90 @@
+= 运行并等待范围
+：版本信息：3.7.0和更新
+:keywords: munit, testing, unit testing
+
+== 功能
+
+由MUnit提供的运行和等待范围允许您指示MUnit等待所有异步执行完成。因此，直到由生产代码打开的所有线程都已完成处理，才开始执行测试。
+
+== 定义运行和等待
+
+在某些情况下，您的生产代码可能会启动产生关键结果的线程。通常，这些是您想要验证的结果。但是，如果这些结果正在一个单独的线程中处理，那么您的测试将在单独的线程完成之前运行并完成，也就是说，在您要验证的结果可用之前。为避免此问题，您可以使用`run-and-wait`范围。
+
+为了本文的目的，我们假设我们正在测试以下Mule代码：
+
+[source, xml, linenums]
+。测试代码
+----
+<flow name="exampleFlow">
+  <async>
+      <expression-component>
+          Thread.sleep(3000);
+      </expression-component>
+  </async>
+</flow>
+----
+
+目标是让您的测试等到`exampleFlow`完成。为此，请按下图所示执行测试。
+
+[source, xml, linenums]
+----
+<flow name="testFlow">
+    <synchronize:run-and-wait timeout="16000"> //<1>
+        <flow-ref name="exampleFlow"/> //<2>
+    </synchronize:run-and-wait>
+</flow>
+----
+<1>定义`run-and-wait`范围。
+<2>调用实际生产代码进行测试。
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `timeout`
+|定义等待所有线程完成的时间（以毫秒为单位）。
+
+|===
+
+提示：使用此工具是对Mule批处理作业运行MUnit测试的唯一方法。
+
+使用Java代码定义运行和等待== 
+
+[[java-api-usage]]
+===  Java API的用法
+
+要在Java中定义`run-and-wait`作用域，您需要实现`Synchronizer`抽象类：
+
+[source,java,linenums]
+----
+import org.mule.construct.Flow;
+import org.mule.Synchronizer;
+import org.mule.api.MuleEvent;
+
+public class TheTest extends FunctionalMunitSuite {
+
+  @Test
+  public void test() throws Exception{
+    final Flow flow = (Flow) muleContext.getRegistry().
+      lookupFlowConstruct("testFlow");   //<1>
+
+    Synchronizer synchronizer =
+      new Synchronizer(muleContext, 12000){  //<2>
+
+        @Override
+        protected MuleEvent process(MuleEvent event) throws Exception{
+
+            return flow.process(event);  //<3>
+        }
+    };
+
+    MuleEvent event = testEvent("payload");
+    synchronizer.runAndWait(event);   //<4>
+  }
+}
+----
+<1>获取要测试的流程。
+<2>创建一个新的`Synchronizer`并实现抽象方法`process`。
+<3>通常你想要做的是运行一个流程。
+<4>调用注释＃2中定义的`Synchronizer`实现。
+

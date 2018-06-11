@@ -1,0 +1,135 @@
+=  XML模块参考
+
+XML模块包含几个工具来帮助您读取，转换和编写XML。
+
+除了此页面上介绍的功能外，您还可以使用启用高效XPath XML路由的 link:/mule-user-guide/v/3.4/sxc-module-reference[SXC模块参考]。
+
+==  XML格式
+
+Mule理解各种各样的XML Java表示形式：
+
+*  org.w3c.dom.Document，org.w3c.dom.Element
+*  org.dom4j.Document
+*  javax.xml.transform.Source
+*  InputStream，String，byte []
+*  OutputHandler
+*  XMLStreamReader的
+*  org.mule.module.xml.transformer.DelayedResult
+
+任何接受XML作为输入的转换器也将理解这些类型。
+
+== 变压器
+
+有几个标准的转换器在Mule内处理XML。
+
+[%header,cols="2*"]
+|===
+| {变压器{1}}说明
+| link:/mule-user-guide/v/3.4/xmlobject-transformers[XmlToObject < - > ObjectToXml]  |使用 link:http://x-stream.github.io/[XStream的]将XML转换为Java对象。
+| link:/mule-user-guide/v/3.4/jaxb-transformers[JAXB XmlToObject < - > JAXB ObjectToXml]  |将XML转换为Java对象，然后使用 http://java.sun.com/developer/technicalArticles/WebServices/jaxb/[JAXB]绑定框架（随JDK6提供）
+| link:/mule-user-guide/v/3.4/xslt-transformer[XSLT]  |使用XSLT转换XML有效负载。
+| link:/mule-user-guide/v/3.4/xquery-transformer[XQuery的]  |使用 http://en.wikipedia.org/wiki/XQuery[XQuery的]转换XML有效负载。
+| link:/mule-user-guide/v/3.4/domtoxml-transformer[DomToXml < - > XmlToDom]  |将DOM对象转换为XML并返回。
+| link:/mule-user-guide/v/3.4/xmltoxmlstreamreader-transformer[XmlToXMLStreamReader]  |将XML从消息负载转换为StAX XMLStreamReader。
+| link:/mule-user-guide/v/3.4/xpath-extractor-transformer[XPath提取器]  |使用JAXP使用XPath表达式查询和提取对象图。
+| link:/mule-user-guide/v/3.4/jxpath-extractor-transformer[JXPath提取器]  |使用JXPath使用XPath表达式查询和提取对象图。
+| link:/mule-user-guide/v/3.4/xmlprettyprinter-transformer[XmlPrettyPrinter]  |允许您使用受控格式输出XML，包括修剪空白和指定缩进。
+|===
+
+=== 带有DelayedResult的高效转换
+
+Mule包含一种称为DelayedResult的特殊XML输出格式。通过延迟任何XML序列化，直到OutputStream可用，此格式允许非常有效的XML转换。
+
+例如，下面是一个设置为使用DelayedResult的XSLT变换器：
+
+[source, xml, linenums]
+----
+<mxml:xslt-transformer name="transform-in"
+                       xsl-file="xslt/transform.xslt"
+                       returnClass="org.mule.module.xml.transformer.DelayedResult"/>
+----
+
+如果这个转换的结果被发送到HTTP客户端，HTTP客户端会向Mule询问OutputHandler并将OutputStream传递给它。只有这样Mule才能执行转换，将输出直接写入OutputStream。
+
+如果没有使用DelayedResult，则XML结果在写入OutputStream之前将首先写入内存缓冲区。这会导致您的XML处理速度变慢。
+
+== 过滤器
+
+XML模块包含各种XPath过滤器。有关如何使用过滤器的一般详情，请参阅 link:/mule-user-guide/v/3.4/filters[过滤器]。
+
+===  XPath筛选器
+
+XPath过滤器使用JAXP库来过滤XPath表达式。此过滤器可从Mule 2.2获得。
+
+当"/e:purchaseOrder/e:shipTo/@country"的值为"US"时，以下配置将消息路由到"vm://echo"端点。
+
+[source, xml, linenums]
+----
+<outbound>
+  <filtering-router>
+    <outbound-endpoint address="vm://echo" synchronous="true"/>
+    <mule-xml:xpath-filter pattern="/e:purchaseOrder/e:shipTo/@country" expectedValue="US">
+      <mule-xml:namespace prefix="e" uri="http://www.example.com"/>
+    </mule-xml:xpath-filter>
+  </filtering-router>
+....
+</outbound>
+----
+
+=== 模式验证过滤器
+
+模式验证筛选器使用JAXP库针对模式验证消息。
+
+以下配置将针对名为`schema.xsd`的架构和名为`anotherSchema.xsd`的架构验证您的消息。
+
+[source, xml, linenums]
+----
+<mule-xml:schema-validation-filter schemaLocations="com/myapp/schemas/schema.xsd, com/myapp/schemas/anotherSchema.xsd"/>
+----
+
+===  Jaxen过滤器
+
+Jaxen过滤器使用Jaxen库来基于XPath表达式过滤消息。
+
+当"/e:purchaseOrder/e:shipTo/@country"的值为"US"时，以下配置将消息路由到"vm://echo"端点。
+
+[source, xml, linenums]
+----
+<outbound>
+  <filtering-router>
+    <outbound-endpoint address="vm://echo" synchronous="true"/>
+    <mule-xml:jaxen-filter pattern="/e:purchaseOrder/e:shipTo/@country" expectedValue="US">
+      <mule-xml:namespace prefix="e" uri="http://www.example.com"/>
+    </mule-xml:jaxen-filter>
+  </filtering-router>
+....
+</outbound>
+----
+
+===  JXPath筛选器
+
+JXPath过滤器与Jaxen过滤器非常相似。它仍然用于历史目的（它存在于Jaxen过滤器之前）。
+
+[source, xml, linenums]
+----
+<outbound>
+    <filtering-router>
+        <outbound-endpoint address="vm://echo" synchronous="true"/>
+        <mule-xml:jxpath-filter pattern="/e:purchaseOrder/e:shipTo/@country"
+                            expectedValue="US">
+            <mule-xml:namespace prefix="e" uri="http://www.example.com"/>
+        </mule-xml:jxpath-filter>
+    </filtering-router>
+....
+</outbound>
+----
+
+== 分配器
+
+XML模块包含两个分离器，一个基于过滤器的分离器和一个循环分离器。
+
+==  XML解析器
+
+在大多数情况下， link:http://www.saxproject.org/about.html[SAX]用于解析您的XML。如果您使用CXF或XmlToXMLStreamReader，则使用 link:https://web.archive.org/web/20150526105309/http://stax.codehaus.org/Home[斯塔克斯]。
+
+如果您使用SAX，则SAX XML解析器由您的JVM确定。如果您想更改SAX实施，请参阅http://www.saxproject.org/quickstart.html。

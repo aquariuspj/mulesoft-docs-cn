@@ -1,0 +1,146 @@
+= 转换消息组件XML参考
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+
+除了使用Studio UI在Mule项目中包含DataWeave语言外，您还可以完全通过XML创建和配置'Transform Message'组件，无论是从Studio的XML选项卡还是外部编辑器。
+
+请注意，如果您使用UI创建和配置元素，则会在XML编辑器中自动创建相应的XML配置。
+
+=== 名称空间和架构位置
+
+在您的Mule项目开始时，您必须包含以下依赖项：
+
+[source,xml,linenums]
+----
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      ...
+      xsi:schemaLocation="
+      ...
+      http://www.mulesoft.org/schema/mule/ee/core
+      http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+</mule>
+----
+
+请注意，当您将变换组件拖放到画布时，Studio会自动添加这些依赖项。
+
+==  <EE：变换/>
+
+`<ee:transform>`元素是Transform组件的顶级XML标记。
+
+[%header,cols="30a,70a"]
+|===
+|  `<ee:transform>`属性 | 描述
+|  `doc:name`  | 定义元素在Studio画布中显示的名称。
+|  `mode`  | 引用 link:dataweave-memory-management#deferred-execution[延期执行]。接受的值：`immediate`或`deferred`。请参阅 link:dataweave-memory-management[DataWeave内存管理]。
+|===
+
+== 将DataWeave脚本添加到变换组件
+
+您可以使用<<transformation, Transformation>>元素中的`CDATA`将DataWeave代码输入到XML中，也可以引用外部`.dwl`文件。
+
+本示例在`<dw:set-payload>`转换元素内嵌入一个DataWeave脚本：
+
+[source,xml,linenums]
+----
+<ee:transform doc:id="747f74d4-cb66-4f8e-8222-24784e6863ae"
+  doc:name="Transform" doc:timestamp="1510861248434">
+    <ee:message>
+        <ee:set-payload>
+          <![CDATA[%dw 2.0
+            output application/json
+            ---
+            {
+              // YOUR DW SCRIPT
+            }
+          ]]>
+       </ee:set-payload>
+</ee:transform>
+----
+
+以下是调用外部`.dwl`文件的相同示例：
+
+[source,xml,linenums]
+----
+<ee:transform doc:id="747f74d4-cb66-4f8e-8222-24784e6863ae"
+  doc:name="Transform" doc:timestamp="1510861248434" doc:mode="immediate">
+    <ee:message>
+      <ee:set-payload resource="transform.dwl" />
+    </ee:message>
+</ee:transform>
+----
+
+这些文件的默认位置位于项目的`src/main/resources`文件夹中。
+
+[[transformations]]
+== 变换
+
+单个Transform组件元素（`<ee:transform/>`）可以为Mule事件的所有部分指定内容：
+
+*  `<ee:message/>`可以包含`<ee:set-payload/>`和`<ee:set-attributes/>`。
+*  `<ee:variables/>`可以包含一个或多个`<ee:set-variable/>`元素。
+
+。例
+[source, xml, linenums]
+----
+<ee:transform doc:id="747f74d4-cb66-4f8e-8222-24784e6863ae"
+  doc:name="Transform" doc:timestamp="1510861248434">
+    <ee:message>
+        <ee:set-payload resource="transform.dwl" />
+        <ee:set-attributes resource="myattributes.dwl" />
+    </ee:message>
+    <ee:variables>
+        <ee:set-variable variableName="myVar" resource="myvar.dwl"/>
+    </ee:variables>
+</ee:transform>
+----
+
+子元素包含一些相同的属性。
+
+[%header,cols="30a,70a"]
+|===
+|  {属性{1}}说明
+|  `resource`  | 指向包含DataWeave转换脚本的`.dwl`文件。这些值是静态解决的。例如，使用`<ee:set-payload resource="myscript-${env}.dwl"/>`在转换消息UI中生成此错误：`Unexpected end of input, expected header or content`。
+|	 `variableName`  | 仅对于输出变量，定义变量的名称。
+|===
+
+
+== 完整的XML示例
+
+以下是一个为有效负载，属性和变量创建转换的示例。
+
+[source,xml,linenums]
+----
+<ee:transform doc:id="747f74d4-cb66-4f8e-8222-24784e6863ae"
+  doc:name="Transform" doc:timestamp="1510861248434">
+    <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+
+output application/json
+---
+(payload map (value0, index0) -> {
+id: value0.id,
+username: value0.username,
+address: {
+street: value0.address.street
+},
+website: value0.website
+})]]></ee:set-payload>
+        <ee:set-attributes><![CDATA[%dw 2.0
+
+output application/json
+---
+{
+reasonPhrase: attributes.reasonPhrase
+}]]></ee:set-attributes>
+    </ee:message>
+    <ee:variables>
+        <ee:set-variable variableName="myVar"><![CDATA[%dw 2.0
+
+output application/json
+---
+{
+a: payload[0].phone
+}]]></ee:set-variable>
+    </ee:variables>
+</ee:transform>
+----

@@ -1,0 +1,77 @@
+= 共享自定义配置片段
+
+由于其元素命名和引用策略，Mule配置机制支持在团队内重复使用应用程序的片段。这对于共享复杂，重复或关键的配置位非常方便。
+
+以下类型的配置片段可以共享：
+
+[%header,cols="34,33,33"]
+|===
+一个|
+项目
+
+ 为|
+可以共享...
+
+ 为|
+备注
+
+|应用程序之间的连接器配置 |  |需要复杂配置的连接器（例如具有特定的传输级别详细信息）非常适合重复使用。
+|终端定义 |应用程序之间 |定义全局终结点有助于测试，但也可以在可共享时重用。
+应用程序 |之间的|流 |在几个Mule应用程序中存在服务是有意义的。在这种情况下，分享流量是最好的选择。如果将此流配置为依赖全局端点，那么使用此流的应用程序将完全控制实际使用的协议。
+|预先配置的转换器a |
+在同一应用程序内的流程之间
+
+要么
+
+应用之间
+
+  |一些变压器，如XSLT变压器，可能需要大量配置，使其更加可取。
+|将子流|
+在同一应用程序内的流程之间
+
+要么
+
+应用之间
+
+  |子流是值得重用的消息处理器链（下面的例子）
+|===
+
+我们来看看一个XML配置文件，其中包含一个子流，该子流定义了我们希望与所有应用程序共享的标准变换链。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+  
+  <sub-flow name="DefaultTransformers">
+    <append-string-transformer message=">>" />
+    <base64-encoder-transformer />
+  </sub-flow>
+</mule>
+----
+
+然后，当我们想通过该链变换器运行一条消息时，我们使用flow-ref元素调用该子流。此flow-ref可以位于不同的应用程序中，也可以位于同一应用程序中的不同流文件中。
+
+[source, xml, linenums]
+----
+<flow name="FlowUsingSubflow">
+  ...
+  <log-component />
+  <flow-ref name="DefaultTransformers" />
+  ...
+</flow>
+----
+
+如果此flow-ref在同一应用程序中，则不需要进一步的配置即可调用子流。但是，如果此flow-ref与其调用的子流不同，则需要先将包含子流的共享配置文件打包到JAR文件中。然后，使用 link:/mule-user-guide/v/3.3/sharing-custom-code[共享自定义代码]中描述的Maven依赖关系机制将其包含在您的应用程序中。最后，导入配置文件如下。
+
+[source, xml, linenums]
+----
+<spring:beans>
+  <spring:import resource="myCommonFlow.xml"/>
+</spring:beans>
+----
+
+通过这种配置，您可以调用应用程序中的"DefaultTransformers"子流。

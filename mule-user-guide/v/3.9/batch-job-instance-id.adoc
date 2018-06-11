@@ -1,0 +1,118 @@
+= 批量作业实例ID
+:keywords: connectors, anypoint, studio, batch, batch processing
+
+批处理的用户通常需要在批处理作业的执行阶段确定批处理作业的实例ID。
+
+*Note*：此功能仅适用于Mule 3.7和更新版本。
+
+批处理作业实例ID对于：
+
+* 将本地作业实例ID传递给外部系统以引用和管理数据
+* 改进作业的自定义日志记录
+* 为有意义的事件发送电子邮件或短信通知
+
+== 示例
+
+Mule通过密钥`batchJobInstanceId`的流变量公开批作业实例ID。该流量变量在输入阶段的开始处可用。流量变量也可用于每个步骤和完成阶段。
+
+示例工作：
+
+image:batch.png[批量]
+
+正如你看到这份工作非常简单。在其每个阶段中，作业调用一个子流，记录以下MEL表达式的输出：
+
+[source, code, linenums]
+----
+#[flowVars[‘batchJobInstanceId’]]
+----
+
+日志输出产生以下内容 - 请注意作业实例ID显示为的第二个块：
+
+org.mule.api.processor.LoggerMessageProcessor：作业实例ID是：ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d
+
+[source, code, linenums]
+----
+INFO 2015-05-08 18:18:09,599 [[batch].HTTP_Listener_Configuration.worker.01] com.mulesoft.module.batch.engine.DefaultBatchEngine: Starting input phase
+
+INFO 2015-05-08 18:18:09,603 [[batch].HTTP_Listener_Configuration.worker.01] org.mule.api.processor.LoggerMessageProcessor: Job Instance Id is: ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d
+
+INFO 2015-05-08 18:18:09,603 [[batch].HTTP_Listener_Configuration.worker.01] com.mulesoft.module.batch.engine.DefaultBatchEngine: Input phase completed
+
+INFO 2015-05-08 18:18:09,608 [[batch].HTTP_Listener_Configuration.worker.01] com.mulesoft.module.batch.engine.queue.BatchQueueLoader: Starting loading phase for instance 'ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d' of job 'batchBatch'
+
+INFO 2015-05-08 18:18:09,610 [[batch].HTTP_Listener_Configuration.worker.01] com.mulesoft.module.batch.engine.queue.BatchQueueLoader: Finished loading phase for instance ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d of job batchBatch. 1 records were loaded
+
+INFO 2015-05-08 18:18:09,615 [[batch].HTTP_Listener_Configuration.worker.01] com.mulesoft.module.batch.engine.DefaultBatchEngine: Started execution of instance 'ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d' of job 'batchBatch'
+
+INFO 2015-05-08 18:18:09,624 [batch-job-batchBatch-work-manager.01] org.mule.api.processor.LoggerMessageProcessor: Job Instance Id is: ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d
+
+INFO 2015-05-08 18:18:09,643 [batch-job-batchBatch-work-manager.01] com.mulesoft.module.batch.engine.DefaultBatchEngine: Starting execution of onComplete phase for instance ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d of job batchBatch
+
+INFO 2015-05-08 18:18:09,644 [batch-job-batchBatch-work-manager.01] org.mule.api.processor.LoggerMessageProcessor: Job Instance Id is: ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d
+
+INFO 2015-05-08 18:18:09,644 [batch-job-batchBatch-work-manager.01] com.mulesoft.module.batch.engine.DefaultBatchEngine: Finished execution of onComplete phase for instance ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d of job batchBatch
+
+INFO 2015-05-08 18:18:09,644 [batch-job-batchBatch-work-manager.01] com.mulesoft.module.batch.engine.DefaultBatchEngine: Finished execution for instance 'ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d' of job 'batchBatch'. Total Records processed: 1. Successful records: 1. Failed Records: 0
+----
+
+== 自定义批量作业实例ID
+
+您可以使用Mule表达式通过传递带有MEL表达式的*Job Instance Id*属性来指定每个批处理作业的唯一标识符。 +
+请注意，批量作业不允许使用常量值，如果MEL表达式返回先前看到的值，则Mule会引发异常并且不会创建作业实例。
+如果您未设置任务实例ID，则Mule auto会生成一个UUID以分配给您的实例。
+
+为上述作业实例生成的UUID是`ba01e1a0-f5c7-11e4-9414-10ddb1daeb6d`。正如你所看到的，这不是一个人类可读的标识符，很难与实际执行相关联，并且考虑到你可能同时运行多个作业，所以这个ID根本没有意义。
+
+为了保证唯一性，您可以通过MEL表达式将“作业ID”设置为服务器日期：+
+`#['Job From ' + server.dateTime.format('dd/MM/yy hh:mm:ss') + '.' ]`。
+
+这将命名执行实例`Job From 15/01/16 05:23:12`。
+
+[source, source, linenums]
+----
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Created instance Job From 15/01/16 05:23:12 for batch job contacts-to-SFDCBatch
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Starting input phase
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Input phase completed
+com.mulesoft.module.batch.engine.queue.BatchQueueLoader: Starting loading phase for instance 'Job From 15/01/16 05:23:12' of job 'contacts-to-SFDCBatch'
+com.mulesoft.module.batch.engine.queue.BatchQueueLoader: Finished loading phase for instance Job From 15/01/16 05:23:12 of job contacts-to-SFDCBatch. 3 records were loaded
+com.mulesoft.module.batch.engine.DefaultBatchEngine: Started execution of instance 'Job From 15/01/16 05:23:12' of job 'contacts-to-SFDCBatch'
+----
+
+正确识别的实例的日志更易于阅读。
+
+批处理作业属性选项卡现在看起来像这样：
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:batchJobProperties.png[batchJobProperties]
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<batch:job name="batchBatch" job-instance-id="#['Job From ' + server.dateTime.format('dd/MM/yy hh:mm:ss') + '.' ]">
+        <batch:input>
+            <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+            <set-payload doc:name="Set Payload"/>
+            <flow-ref name="logJobInstanceId" doc:name="logJobInstanceId"/>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Batch_Step">
+                <flow-ref name="logJobInstanceId" doc:name="logJobInstanceId"/>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <flow-ref name="logJobInstanceId" doc:name="logJobInstanceId"/>
+        </batch:on-complete>
+    </batch:job>
+----
+....
+------
+
+== 另请参阅
+
+在{https://github.com/[GitHub]上托管的* 查看{{0}
+*  link:http://blogs.mulesoft.com/batch-module-reloaded/[批量模块重新加载]
+*  link:http://blogs.mulesoft.com/handle-errors-batch-job/[在你的批处理中处理错误...就像一个冠军！]
+*  link:/anypoint-connector-devkit/v/3.9/building-a-batch-enabled-connector[Mule操作方法：构建批量启用的云连接器]

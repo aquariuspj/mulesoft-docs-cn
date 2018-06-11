@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" 
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+    <db:mysql-config name="MySQL_Configuration" host="localhost" port="3306" user="root" password="rootroot" database="company" doc:name="MySQL Configuration"/>
+    <file:connector name="File" autoDelete="true" streaming="true" validateConnections="true" doc:name="File"/>
+    <batch:job name="myprojectBatch">
+        <batch:input>
+            <poll doc:name="Poll">
+                <processor-chain doc:name="Processor Chain">
+                    <db:select config-ref="MySQL_Configuration" doc:name="Database">
+                        <db:parameterized-query><![CDATA[SELECT no, first_name, last_name, role FROM employees INNER JOIN roles ON employees.no = roles.emp_no]]></db:parameterized-query>
+                    </db:select>
+                </processor-chain>
+            </poll>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Batch_Step">
+                <batch:commit size="2" doc:name="Batch Commit">
+                    <dw:transform-message doc:name="Transform Message" metadata:id="c5664a66-2ff7-4588-8fb4-8e6ea9d0e11e">
+                        <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv
+---
+payload map ((payload01 , indexOfPayload01) -> {
+    first_name: payload01.first_name,
+    last_name: payload01.last_name,
+    no: payload01.no as :string,
+    role: payload01.role
+})]]></dw:set-payload>
+                    </dw:transform-message>
+                    <file:outbound-endpoint path="/Users/kristinehahn/Downloads" outputPattern="mycsv.csv" connector-ref="File" responseTimeout="10000" doc:name="File"/>
+                </batch:commit>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger message="Total Records exported: #[message.payload.getLoadedRecords()], Failed Records: #[message.payload.getFailedRecords(), Processing time: #[message.payload.getElapsedTimeInMillis()]" level="INFO" doc:name="Logger"/>
+        </batch:on-complete>
+    </batch:job>
+</mule>

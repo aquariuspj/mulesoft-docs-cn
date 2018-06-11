@@ -1,0 +1,81 @@
+= 关于请求 - 应答范围
+:keywords: request reply, asynchronous
+
+请求 - 回复作用域使您能够在Mule流中嵌入一堆异步处理。此功能使您能够接收来自异步流程的响应，而无需对响应的目标进行硬编码。 +
+例如，您可以使用request-reply将单向VM或JMS连接器流转换为请求 - 响应流，而无需更改其配置。换句话说，请求 - 回复将同步进程的一部分转换为异步进程。
+
+== 基本解剖学
+
+请求 - 回复由两部分组成：
+
+* 以下*request*部分。 +
+它封装了一个向另一个流或外部资源提交异步请求的出站连接器。
+* 以下*reply*部分。 +
+它包装了一个入站连接器，该连接器从另一个流或外部资源接收异步响应
+
+当消息到达Request-Reply范围的请求部分内的处理器时，Mule向出站端点的路径发送一个异步请求，触发远程资源的进程。 +
+只有在处理完成后，Mule才会将响应发送回作用域回复部分中处理器入站端点中定义的路径。
+
+image:request+reply+scope+1.png[图片]
+
+考虑一个非常简单的应用程序：
+
+[source,xml,linenums]
+----
+<flow name="sampleFlow">
+
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/"/>
+
+  <request-reply doc:name="Request-Reply">
+   <vm:outbound-endpoint exchange-pattern="one-way" path="request"/> //<1>
+   <vm:inbound-endpoint exchange-pattern="one-way" path="reply" /> //<3>
+  </request-reply>
+
+</flow>
+
+<flow name="requestFlow">
+  <vm:inbound-endpoint exchange-pattern="one-way" path="request"/> //<2>
+  <logger message="#[payload]" level="INFO"/>
+</flow>
+----
+<1> VM出站端点处理器收到HTTP请求后，将消息发送到/ request路径。
+<1>配置了/ request路径的VM入站端点处理器会收到触发requestFlow处理的消息。
+<1>只有在requestFlow完成处理后，Mule才会自动将消息发送回请求回复作用域回复部分中的VM入站端点。
+
+这是可能的，因为Mule隐式地将MULE_REPLYTO消息属性设置为指向作用域的回复部分中的处理器。 +
+在这种情况下，requestFlow源中的VM入站端点处理器接收到MULE_REPLYTO_REQUESTOR属性设置为"reply"的消息，因此Mule会将生成的消息（或消息）发送回请求者。 +
+这一点很重要，因为如果请求的流在末尾有另一个VM出站端点指向不同的流，回复范围内的VM处理器仍然会从触发流接收消息（或消息）。 +
+您可以通过设置MULE_REPLYTO变量来选择禁用此行为：
+
+[source,xml,linenums]
+----
+<flow name="sampleFlow">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/"/>
+  <request-reply doc:name="Request-Reply">
+   <vm:outbound-endpoint exchange-pattern="one-way" path="request"/>
+   <vm:inbound-endpoint exchange-pattern="one-way" path="reply" />
+  </request-reply>
+</flow>
+
+<flow name="requestFlow">
+  <set-variable variableName="MULE_REPLYTO_STOP" value="true"/> //<1>
+  <vm:inbound-endpoint exchange-pattern="one-way" path="request"/>
+  <logger message="#[payload]" level="INFO"/>
+</flow>
+----
+
+<1>将MULE_REPLYTO_STOP设置为true，告诉Mule不要在收到的消息中配置MULE_REPLYTO_REQUESTOR属性。
+
+
+[IMPORTANT]
+您不能在请求回复范围内的VM和JMS连接器中使用事务。
+
+事务与请求 - 回复作用域的工作方式不兼容。 +
+在提交事务之前，请求 - 回复作用域不会发送请求，并且只有在整个流程执行之前（包括执行请求 - 回复作用域），才会提交事务。这导致两个进程相互阻塞的情况。 +
+运行时无法完全执行流程，因为它仍在等待请求回复作用域上的回复，但该回复永远不会到达，因为直到事务提交前才发送该请求。
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.9/vm-transport-reference[VM传输参考]
+*  link:/mule-user-guide/v/3.9/configure-request-reply-scope-task[配置请求 - 应答范围（Anypoint Studio）]
+*  link:/mule-user-guide/v/3.9/request-reply-scope-reference[请求 - 应答范围XML参考]

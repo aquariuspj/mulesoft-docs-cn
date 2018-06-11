@@ -1,0 +1,179 @@
+= 脚本示例
+
+*Scripting*示例演示了在Mule ESB应用程序中使用Java平台脚本的两种方法。
+
+您可以在Mule ESB应用程序中包含几种脚本，所有这些脚本都由 http://www.jcp.org/en/jsr/detail?id=223[JSR-223]兼容脚本引擎支持。具体而言，Mule ESB支持 http://en.wikipedia.org/wiki/Groovy_(programming_language)[Groovy的]， http://en.wikipedia.org/wiki/Javascript[使用Javascript]， http://en.wikipedia.org/wiki/Python_(programming_language)[蟒蛇]， http://en.wikipedia.org/wiki/Ruby_(programming_language)[红宝石]和 http://en.wikipedia.org/wiki/Beanshell[BeanShell的]脚本语言。
+
+这个脚本示例展示了一个HTTP请求响应应用程序，最终用户通过Web浏览器访问客户端。在这个例子中，最终用户想要知道用多少美元和什么类型的硬币代表美元（USD）或英镑（GBP）的特定金额。换句话说，她使用脚本示例应用程序来回答如下问题：“我需要什么硬币才能赚2.42美元？”或“我需要什么硬币才能赚2.42英镑？”
+
+最终用户在其浏览器中输入一部分金钱到URL中，然后按下Enter键将其请求提交给Mule ESB脚本示例应用程序。当它接收到最终用户请求时，Mule应用程序执行几个任务来准备消息有效载荷，以供两个脚本之一处理。该脚本计算最终用户需要代表特定金额的硬币的数量和类型，然后应用程序将响应返回给最终用户的Web浏览器。为了贯彻上述示例，应用程序返回读取`9 quarters, 1 dimes, 1 nickels, 2 pennies`的USD请求的响应。
+
+除了执行脚本之外，此应用程序还执行以下处理任务：
+
+. 根据其有效负载内容路由消息
+. 它解析并转换消息有效载荷数据
+
+这个例子应该使您能够创建一个包含Java平台脚本的应用程序。要更多地了解Mule ESB整合服务和系统的能力，请访问Mule link:/mule-user-guide/v/3.3/mule-examples[例子]并查看其他正在运行的应用程序。
+
+== 假设
+
+本文档假定您熟悉Mule ESB和 link:/mule-user-guide/v/3.3/mule-studio-essentials[Mule Studio界面]。要提高您对Studio的熟悉度，请考虑完成一个或多个 link:/mule-user-guide/v/3.3/mule-studio[Mule Studio教程]。
+
+本文档在Mule ESB的图形用户界面（GUI）*Mule Studio*的上下文中描述了示例的细节。在适当的情况下，XML配置在可扩展部分的Studio界面屏幕截图之后。
+
+== 设置
+
+与本脚本示例一样，您可以直接在*Mule Studio*或*Mule Standalone*（没有Studio的Mule ESB）中创建模板应用程序。您可以调整这些基于用例的模板的配置，以在Mule中创建您自己的自定义应用程序。
+
+按照以下步骤创建，然后在Mule ESB中运行脚本应用程序。
+
+. 完成 link:/mule-user-guide/v/3.3/mule-examples[示例和练习]中的过程以创建，然后在Mule Studio中运行脚本模板，或者在Mule Standalone（无Studio的Mule ESB）中运行脚本示例。
+. 打开您的Web浏览器，然后在地址栏中键入以下两个URL中的一个：+
+* 以美元计算：+
+  `http://localhost:47493/change-machine?amount=2042&currency=USD`
+用英镑计算的* ：
++
+`http://localhost:47493/change-machine?amount=2.42&currency=GBP`
+
+. 按*enter*提交您的请求（默认值为2.42），并从Mule应用程序中获得响应（请参阅下图中的顶部为美元;下方为GBP的底部）。
++
+image:launched_both.png[launched_both]
+
+. 调整网址以将`2.42`更改为其他金额，例如`6.85`，然后按*enter*提交您的请求并引发回复（参见下图，顶部美元;下方，英镑下方）。
++
+image:tweaked_both.png[tweaked_both]
+
+== 它是如何工作的
+
+*Scripting*示例应用程序使用处理最终用户HTTP请求的 link:/mule-user-guide/v/3.3/mule-application-architecture[流]。
+
+以下各部分详细阐述了Scripting示例应用程序的配置以及它如何使用脚本为最终用户请求提供响应。
+
+[TIP]
+====
+*For Mule Studio Users*
+
+在Mule Studio中，双击 link:/mule-user-guide/v/3.3/studio-building-blocks[积木]打开其*Properties Panel*，然后检查其配置细节。或者，单击*Configuration XML*选项卡检查应用程序的XML配置文件。
+
+image:config_tab.png[config_tab]
+====
+
+===  HTTP入站流
+
+image:http-inbound.png[HTTP的入站]
+
+//查看XML
+
+*HTTP-inbound*流程利用多个 link:/mule-user-guide/v/3.3/studio-building-blocks[建筑模块]来处理和响应最终用户请求。
+
+==== 端点和变换器
+
+当最终用户请求遇到脚本应用程序时，遇到的第一个构建块是请求 - 响应**{{0}}**。由于它具有双向消息交换模式，因此此HTTP端点负责接收和返回消息。请注意，此端点接收来自美元和GDP网址的最终用户请求; Mule决定如何在HTTP入站流中稍后处理不同类型的消息。
+
+[NOTE]
+====
+*Two-Way vs. One-Way*
+
+请注意，HTTP端点具有*two-way message exchange pattern*（如左下方的小双箭头图标所示）。由于它必须响应请求者，因此本示例中的HTTP端点具有请求 - 响应消息交换模式。
+
+如果HTTP端点只需要将信息输入到应用程序中，则需要*one-way message exchange pattern*（下方，右边）。
+
+image:http_endpoints.png[http_endpoints]
+====
+
+接下来，HTTP入站流将消息移动到** {{0}}**，以将消息的数据格式从HTTP请求转换为Java http://en.wikipedia.org/wiki/Associative_array[地图对象]。要访问如何执行此转换的具体说明，变压器会引用*Global Body to Parameter Map Transformer*。左下图显示了Studio中的`Transform HttpRequest to Map`转换器属性面板;注意变压器引用全局变压器的红色部分。右下图显示了Studio中的全局体到参数映射变换器的属性面板。 +
+
+image:global_reference.png[global_reference]
+
+//查看XML
+
+[NOTE]
+====
+*What is a Global Element?*
+
+Mule ESB支持应用程序中的*Global Elements*，例如脚本示例中的*Body to Parameter Map Transformer*和`StringToNumber` *{{0}}*。
+
+您可以创建一个全局元素来详细说明所需的行为或配置，然后在您的流或子流中多次引用该全局元素，而不是将代码重复写入不同流中的元素或连接器骡应用程序。
+
+*Read more...*
+
+例如，描述脚本示例中`Transform HttpRequest to Map`转换器配置的代码在HTTP入站流程中不存在;相反，代码位于*Mule Studio*（或XML配置文件顶部）的*Global Elements*选项卡中的全局元素中。
+
+
+`StringToNumber`转换器引用全局Java组件以获取有关如何将 http://en.wikipedia.org/wiki/String_(computer_science)[串]转换为数字的说明。 （Java组件本身引用*Transformer Class*;有关脚本示例中Java类的更多详细信息，请参阅下面的<<Drill Down>>部分。）
+====
+
+==== 选择流量控制（基于内容的消息路由器）
+
+使用新转换的内容，接下来的消息会遇到**{{0}}**。这个基于内容的路由器检查消息的有效载荷，以发现内容的货币，然后决定在哪里路由它：
+
+* 如果货币为USD，则选择流控制会将消息路由到第一个`Extract Amount` *Set Payload Transformer*
+* 如果货币是GBP，则选择流控制会将消息路由到第二个`Extract Amount`集负载转换器
++
+image:choice_router2.png[choice_router2]
+
+//查看XML
+
+形成这一点，消息遵循两个途径之一，即脚本组件：
+
+. 以*{{0}}*结尾的USD路径
+. 以**{{0}}** +结尾的GBP路径
+ 位于选择流程控制和每个路径中的脚本组件之间的变换器执行相同的任务;唯一的区别是他们的最终目的地。
+
+==== 变压器
+
+从消息有效负载中，每个`Extract Amount`集有效负载转换器获取最终用户在客户端URL中输入的金额。他们在有效载荷上设置数据以指定剩余流程将处理的金额。
+
+这对`String to Number`变换器引用全局`StringToNumber` Java组件，该组件将 http://en.wikipedia.org/wiki/String_(computer_science)[串]中的金额转换为整数。这种转换非常重要，因为下一个消息处理器`Dollars To Cents`变换器需要一个整数才能执行简单的数学运算。
+
+引用全球`DollarsToCents` Java组件时，`Dollars To Cents`变换器将金额乘以100，以便将金额转换为整数（即​​便士）。
+
+==== 脚本
+
+最后，一条消息会到达两个脚本组件之一：*Groovy*或*Python*。
+
+Groovy脚本组件访问脚本文件`greedy.groovy`，该脚本文件将整个数字转换为代表特定金额所需的美元硬币。改编自 link:https://web.archive.org/web/20150213041152/http://groovy.codehaus.org/Greedy+Coin+Changer+in+Groovy[Groovy食谱]，这个简单的脚本驻留在应用程序的`src/main/resources`文件夹中。请注意，groovy脚本_can_以任何一种货币处理请求，但在此流程中它将只处理USD请求。
+
+//查看Groovy脚本
+
+根据{{​​0}}进行调整，Python脚本组件完成与Groovy脚本组件完全相同的任务，不同之处在于它使用Python来转换磅，而不是Groovy来转换美元。请注意，python脚本_can_以任一种货币处理请求，但在此流程中它将只处理GBP请求。该脚本也驻留在应用程序的`src/main/resources`文件夹中。
+
+//查看Python脚本
+
+[TIP]
+====
+*Examine the Scripts*
+
+在*Mule Studio*中，您可以打开脚本文件并查看Groovy或Python脚本的内容。
+
+. 在*Package Explorer*中，单击以展开`src/main/resources`文件夹。
+. 双击`greedy.groovy`文件，在Studio的新*Canvas*窗口中打开该脚本。
+. 双击`greedy.py`文件以在文本编辑器中打开脚本。
++
+您还可以检查*Mule Standalone*中的脚本。
+. 在您的本地驱动器上，导航至`mule-enterprise-standalone-3.3.0`> `apps`> `mule-example-scripting-3.3.0`> `classes`。
+. 双击文件名以打开两个脚本文件中的任意一个。
+====
+
+当Mule完成处理消息时，请求 - 响应HTTP端点通过她的Web浏览器将响应返回给最终用户。
+
+== 向下钻取
+
+本脚本示例应用程序中的`StringToNumber`和`DollarsToCents`全局Java组件都引用了Java类，它们详细说明了Mule必须对遇到这些组件的消息做些什么。如果您想更仔细地检查Java类，则可以访问Mule ESB中的文件。
+
+在==== 中访问Mule Studio中的Java类
+
+. 在*Package Explorer*中，单击以展开`src/main/java`文件夹。
+. 点击展开`org.mule.example.scripting`文件夹。
+. 双击三个`.java`文件中的任意一个，以在Studio的新*Canvas*窗口中打开该脚本。
+
+==== 以Mule独立访问Java类
+
+. 在您的本地驱动器上，转到`mule-enterprise-standalone-3.3.0`> `apps`> `mule-example-scripting-3.3.0`> `classes`> `org` `mule`> {{ 7}}> `scripting`。
+. 双击打开三个`.class`文件中的任何一个。
+
+== 相关主题
+
+* 有关使用Choice Flow Control的更多信息，请参阅 link:/mule-user-guide/v/3.3/choice-flow-control-reference[选择流量控制参考]。
+* 有关变形金刚的更多信息，请参阅 link:/mule-user-guide/v/3.3/studio-transformers[工作室变形金刚]。
+* 有关脚本的更多信息，请参阅 link:/mule-user-guide/v/3.3/studio-components[Studio组件]。

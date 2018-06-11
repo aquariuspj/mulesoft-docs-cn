@@ -1,0 +1,119 @@
+=  Mule OAuth 2.0提供程序配置参考
+
+构建Mule OAuth 2.0外部提供者的示例涵盖了在提供者中配置端点路径。本节涵盖更多细节并讨论在提供程序中配置作用域。还讨论了将CORS应用于提供者并暴露其他端点的选项。
+
+* 配置提供程序中的端点路径
+* 配置范围
+* 应用CORS（可选）
+
+== 配置端点路径
+
+其中一个关键的配置任务是指定提供者的端点路径。根据您要使用的OAuth授予类型，OAuth提供者应用程序可以公开以下端点：
+
+*  `/validate`
++
+配置为流中HTTP侦听器连接器的地址。提供获取令牌的访问代码。
++
+*  `/authorize`
++
+配置为`oauth2-provider:config`元素的属性。验证令牌的有效性。
++
+*  `/access_token`
++
+配置为`oauth2-provider:config`元素的属性。返回一个标记。
+
+根据您要使用的OAuth授予类型，提供者可能会公开两个或三个端点。您可以在提供程序的mule属性文件中配置这些端点路径。自定义 link:/api-manager/v/1.x/v/1.x/building-an-external-oauth-2.0-provider-application[OAuth 2提供程序示例]在`config.properties`文件中配置mule属性，如下所示：
+
+[source,code,linenums]
+----
+http.validate.endpoint.path=validate
+oauth.authorization.endpoint.path=authorize
+oauth.access.token.endpoint.path=access_token
+----
+
+在构建提供者之后，当您将API link:/api-manager/v/1.x/v/1.x/external-oauth-2.0-token-validation-policy#applying-the-oauth-2-0-token-validation-policy[应用OAuth 2.0策略]添加到API时，您将再次使用验证端点路径。
+
+== 配置范围
+
+另一个关键配置任务是使用 link:https://tools.ietf.org/html/rfc6749#page-23[范围]请求参数指定访问范围。 OAuth范围是用于限制某些类型的API访问的配置，例如对特定API资源的读取或写入访问。如果您配置使用外部提供程序的访问令牌实施策略来使用范围，则令牌验证会确保令牌对这些范围有效。
+
+要使用API​​控制台模拟API，请从*Scopes*中删除默认`READ WRITE`，并使用空字符串（""）指定任何范围。
+
+您可以根据您在提供程序中配置的范围的子集来限制客户端对API的访问。配置为具有作用域的API优先于提供者指定的默认作用域，或者没有作用域。
+
+在config.xml中，`defaultScopes`是使用以下定义之一指定范围的属性：
+
+* 没有作用域（一个空字符串）
+* 客户端将拥有的默认范围的空格分隔列表。
+
+例如，在这个config.xml片段中，提供者不指定任何作用域：
+
+[source, xml, linenums]
+----
+    <oauth2-provider:config
+        name="oauth2provider"
+        providerName="oauth2provider"
+        resourceOwnerSecurityProvider-ref="single-user-security-provider"
+        clientSecurityProvider-ref="single-user-client-security-provider"
+        clientStore-ref="single-user-client-store"
+
+        defaultScopes=""
+        supportedGrantTypes="${supported.grant.types}"
+        authorizationEndpointPath="${authorization.endpoint.path}"
+        accessTokenEndpointPath="${access.token.endpoint.path}"
+
+        enableRefreshToken="true"
+        listenerConfig-ref="https.listener" doc:name="OAuth provider module" port="8083" scopes="${scopes}">
+    </oauth2-provider:config>
+----
+
+`scopes="${scopes}"`引用以下空白属性：`scopes=`。
+
+当您 link:/api-manager/v/1.x/v/1.x/external-oauth-2.0-token-validation-policy#applying-the-oauth-2-0-token-validation-policy[应用这项政策]访问API时，您可以输入受支持的OAuth范围列表。
+
+== 实施CORS
+
+要应用CORS策略，请参阅 link:/api-manager/v/1.x/v/1.x/cors-policy[应用和编辑CORS策略]。
+
+您可能会发现您需要在OAuth Provider上实施CORS。 OAuth配置元素上的*preFlow*属性可以引用在其他任何操作之前处理的流。使用此属性，您的OAuth提供程序配置可以引用已实施CORS配置的其他流程，从而在授权和访问令牌侦听器中启用CORS。
+
+[source, xml, linenums]
+----
+  <flow name="myCorsFlow">
+      <cors:validate publicResource="true"/>
+  </flow>
+
+  <oauth2-provider:config
+      name="external-oauth2-provider"
+      preFlow-ref="myCorsFlow"
+      providerName="Ping API"
+      resourceOwnerSecurityProvider-ref="single-user-security-provider"
+      clientSecurityProvider-ref="single-user-client-security-provider"
+      clientStore-ref="single-user-client-store"
+      tokenTtlSeconds="86400"
+      enableRefreshToken="true"
+      listenerConfig-ref="https.listener">
+  </oauth2-provider:config>
+----
+
+在本例中，"myCorsFlow"流将CORS配置为允许来自任何来源的请求。此流程通过*preFlow-ref*属性在OAuth 2.0提供程序中引用。
+
+== 提供商组件
+
+下表显示了源代码中定义的提供程序组件。
+
+[%header,cols="2*"]
+|===
+| {组件{1}}说明
+| `oauth2-provider:config`  |该组件封装了实现OAuth所需的大部分配置，用于生成令牌或授权码，并用于验证它们。它隐含地暴露了两个端点用于分配授权代码和令牌。然后它被流程中的匹配元素引用。
+| `ss:authentication-manager`  |
+- 定义验证管理器和提供者+的Spring bean
+ +
+- 验证用户凭据
+
+| `api-platform-gw:client-store`  |  - 保留OAuth客户特定信息的商店。如果客户端在正文或请求查询中发送了验证凭证，则OAuth服务提供者只需针对clientStore +中的内容验证传入凭据（客户端ID和客户端密钥）
+- 缓存有效组织的客户端应用程序的客户端ID和客户端密钥
+| `api-platform-gw:client-security-provider`  |验证客户端应用程序的凭据。
+| `mule-ss:security-manager`  |  - 用于配置 link:/mule-user-guide/v/3.7/configuring-the-spring-security-manager[Spring Security Manager] +
+- 对资源所有者进行身份验证（例如：在登录页面之后验证用户凭据时）。唯一不需要此提供程序的情况是授权类型为客户端凭证。
+|===

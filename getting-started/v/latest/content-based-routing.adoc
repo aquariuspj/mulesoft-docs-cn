@@ -1,0 +1,823 @@
+= 如何使用Switch语句路由邮件
+:keywords: anypoint, if, for each, conditional, tutorial
+：NOINDEX：
+
+本教程向您介绍如何使用Anypoint Studio构建根据其内容切换或路由邮件的"Hello, World"应用程序。应用程序使用*Choice Router*根据条件执行Mule代码，类似于传统编程语言中的switch语句。在本教程中创建并运行本教程中的示例之后，您应该能够应用所学知识来创建更复杂的应用程序。
+
+== 先决条件
+
+在 link:/anypoint-studio/v/6/basic-studio-tutorial[基本工作室教程]中，您可以了解Anypoint Studio并构建一个简单的"Hello, World"应用程序。
+
+本教程假设您拥有 link:/anypoint-studio/v/6/download-and-launch-anypoint-studio[下载并安装Anypoint Studio]。如果您之前没有使用Eclipse或基于Eclipse的IDE的经验，请查看对 link:/anypoint-studio/v/6/[Anypoint Studio界面]的简要介绍或完成 link:/anypoint-studio/v/6/basic-studio-tutorial[基本工作室教程]。
+
+== 目标
+
+在本教程中，您的目标是：
+
+. 在Anypoint Studio中创建一个根据您在选择路由器中提供的逻辑路由邮件的应用程序。
+. 使用Mule表达式语言设置和调用流变量。
+. 在嵌入到Anypoint Studio中的本地运行时运行应用程序。
+. 使用浏览器测试应用程序。
+. 在应用程序运行时调整它，有效调用"hot deployment."
+. 编辑应用程序以将某些处理移动到子流程中。
+.  _（可选）_将您的知识应用于额外的信用挑战。
+
+使用选择路由对流进行建模== 
+
+启动Anypoint Studio并创建一个名为CBR Tutorial的新Mule项目。如果您在启动Studio和创建项目时需要更多指导，请参阅 link:/anypoint-studio/v/6/basic-studio-tutorial[基本工作室教程]。
+
+接下来，使用Studio调色板中的构建模块对以下应用程序进行建模：
+
+* 接收HTTP请求
+* 筛选出任何"favicon.ico"个浏览器请求
+* 将入站属性转换为流变量
+* 根据与消息关联的流变量路由消息
+* 根据路由逻辑设置新的有效负载
+* 将有效负载作为HTTP响应提供
+* 将结果摘要记录到控制台
+
+您可以通过在Studio中搜索并拖动这些构建块来创建此应用程序：
+
+[cols="30a,70a"]
+|===
+| *{{0}}*  |允许您的Mule应用程序通过HTTP或HTTPS协议连接到Web资源。
+| *Expression Filter*  |根据Mule表达式过滤邮件。
+| *{{0}}*  |在消息中设置可在流程中的其他地方调用的流变量。
+| link:/mule-user-guide/v/3.8/choice-flow-control-reference[*选择路由器*]  |根据配置的逻辑路由传入的消息。
+
+| *{{0}}*  |根据选择路由的结果，将您的负载修改为不同的消息。
+| link:/mule-user-guide/v/3.8/logger-component-reference[*记录器*]  |根据Mule表达式的值记录消息或活动。
+|===
+
+将构建块拖到“画布”上并按照如下所示重命名它们：
+
+image:full+flow.png[全+流]
+
+=== 对选择路由器进行可视化建模
+
+在选择范围内拖放需要一些精确的定位。以下是对选择路由器进行建模的详细分步说明。
+
+. 首先，将适当的消息处理器拖放到画布上的默认框中。
++
+image:add+component.png[添加+组件]
++
+image:add+component2.png[添加+ COMPONENT2]
++
+image:add+component3.png[添加+ component3]
++
+. 然后，将另一个消息处理器拖入同一空间，定位鼠标，以便看到黑色垂直线，表示您正在创建另一个选择。
++
+image:add+component4.png[添加+ component4]
++
+. 您选择的路由器现在应该与显示的图像匹配。
++
+image:choice+closeup.png[选择+特写镜头]
++
+. 在Choice块后添加*Logger*。
++
+image:cbr-add-logger.png[CBR-外接记录仪]
+
+只需点击几下，您就可以在Studio画布上创建完整的应用程序。
+
+在您配置流程中的各个元素后，您将在下一节中完成该流程，从而完成您设定的使用此应用程序实现的目标。您选择并放置在画布上的每个构建块都将成为应用程序功能的一部分，如下图所示。
+
+image:Studio-CBRTutorial_step1_unconfigured_notes.png[工作室CBRTutorial_step1_unconfigured_notes]
+
+== 配置流程元素
+
+接下来，配置流程元素以使应用程序根据您在调用入站端点时在URL中传递的查询参数以几种不同语言对您做出响应。例如，如果您调用`http://localhost:8081/?language=French`，则应用程序应以法语回复您。
+
+几乎所有的Mule元素都提供配置选项，您可以通过以下两种方式之一进行设置：
+
+* 在Studio的可视化编辑器的控制台中使用构建块*Properties Editor*
+* 在Studio的*XML*编辑器或任何其他XML编辑环境中使用XML代码。
+
+[NOTE]
+以下说明将指导您如何在可视化编辑器和XML中配置每个构建块。使用选项卡在可视化编辑器和XML编辑器的指令之间来回切换。
+
+===  HTTP连接器
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Click the HTTP building block in your flow to open its
+link:/mule-user-guide/v/3.8/the-properties-editor[Properties Editor]. For this element to work, you must reference an abstract element called a *Connector Configuration*, which contains several of the high level necessary configuration properties. One single Connector Configuration element can be referenced by as many HTTP connectors as you like. Create a new Conector Configuration element by clicking the plus sign image:plus-1.png[plus] next to the Connector Configuration field.
++
+. A new window opens. Fill in the two required fields: *Host* and *Port*. Set `localhost` as the host and leave the default value `8081` as the port:
++
+image:http-global-config.png[http-global-config]
++
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*Name* |`HTTP_Listener_Configuration`
+|*Host* |`localhost`
+|*Port* |8081
+|===
++
+. Click *Ok* to close this dialogue. Notice how the Connector Configuration field now contains a reference to the HTTP_Listener_Configuration element. You can edit the Global Element Properties further by clicking the `edit` icon. Click the HTTP Connector in the Canvas and the error notification indicator disappears.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Configure the HTTP connector as follows:
+
+[source,xml, linenums]
+----
+<http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+----
+
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*config-ref* |`HTTP_Listener_Configuration`
+|*path* |`/`
+|*doc:name* |`HTTP`
+|===
+
+For this element to work, you must reference an abstract element called a *Connector Configuration*, which contains several of the high level necessary configuration properties. One single Connector Configuration element can be referenced by as many HTTP connectors as you like. The `config-ref` field in the connector references a configuration element named HTTP_Listener_Configuration. You must now create a configuration element that matches the name that the connector is referencing. Configure this element as follows:
+
+[source,xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+----
+
+[%header,cols="30a,70a"]
+|===
+|Attribute |Value
+|*name* |`HTTP_Listener_Configuration`
+|*host* |`localhost`
+|*port* |`8081`
+|*doc:name* |`HTTP Listener Configuration`
+|===
+
+....
+------
+
+=== 表达式过滤器
+
+表达式过滤器告诉Mule检查有效载荷_不等于字符串`'/favicon.ico'`。如果表达式的计算结果为真，则Mule会将该消息传递给流中的下一个步骤。如果表达式计算结果为false，Mule将停止处理该消息。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+Click the *Expression Filter* building block on the Canvas to open its Properties Editor, and set the *Expression* as:
+
+`#[message.inboundProperties.'http.request.uri' != '/favicon.ico']`
+
+image:filter+new.png[filter+new]
+
+[NOTE]
+Notice that when you start typing a value in the *expression* field, a menu displays all of the available options, saving you from having to remember the exact names as you type them in.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Configure the expression filter as follows:
+
+[source,xml, linenums]
+----
+<expression-filter expression="#[message.inboundProperties.'http.request.uri' != '/favicon.ico']" doc:name="Expression"/>
+----
+
+[%header,cols="10a,90a"]
+|=====
+|Attribute |Value
+|*expression* |`#[message.inboundProperties.'http.request.uri' != '/favicon.ico']`
+|*doc:name* |`Expression`
+|=====
+
+....
+------
+
+=== 变量变量
+
+该转换器指示Mule在所有传入消息中查找名为`language`的入站属性，并且如果找到，则将其设置（及其值）作为*flow variable —*元数据，并与消息一起携带键/值对的形式。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+Click the *Variable Transformer* to open its Properties Editor, then configure as per the table below.  
+
+image:set+variable.png[set+variable]
+
+[%header,cols="10a,90a"]
+|===
+|Field |Value
+|*Display Name* |`Set Language Variable`
+|*Operation* |`Set Variable`
+|*Name* |`language`
+|*Value* |`#[message.inboundProperties.'http.query.params'.language]`
+|===
+
+[NOTE]
+Notice that when you start typing a value into the *value* field, a menu  displays all of the available options, saving you from having to remember the exact names as you type them in.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+If you model the flow on the canvas, then switch to the XML editor, the placeholder XML for this element looks like the following code:
+
+[source,xml, linenums]
+----
+<variable-transformer doc:name="Variable"/>
+----
+
+Change the `variable-transformer` placeholder element to the element `set-variable` , then configure the set-variable transformer as follows:
+
+[source,xml, linenums]
+----
+<set-variable variableName="language" value="#[message.inboundProperties.'http.query.params'.language]" doc:name="Set Language Variable"/>
+----
+
+[%header%autowidth.spread]
+|====
+|Field |Value
+|*variableName* |`language`
+|*value* |`#[message.inboundProperties.'http.query.params'.language]`
+|*doc:name* |`Set Language Variable`
+|====
+
+....
+------
+
+=== 选择路由器和组成消息处理器
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Click the *Choice Router* building block to open its Properties Editor. Here, enter Mule expressions to define the routing logic that Mule applies to incoming messages (see table below; detailed instructions follow).
++
+[%header%autowidth.spread]
+|===
+|When |Route Message to
+|`#[flowVars.language == 'Spanish']` |`Set Payload`
+|`#[flowVars.language == 'French']` |`Set Payload`
+|`Default` |`Variable`
+|===
++
+. In the table, click the first empty row under *When*, then enter `#[flowVars.language == 'Spanish']`
+. This expression tells Mule to look for a flow variable called `language` on the incoming message and check whether it equals Spanish. If this expression evaluates to true, Mule routes the message to the message processor in that path.
+. Click the next empty row, then enter `#[flowVars.language == 'French']`
++
+Just as in the previous row, this expression tells Mule to look for a flow variable called `language` on the incoming message. This time, the expression indicates Mule should check whether `language` equals French. If this expression evaluates to true, Mule routes the message to the message processor in that path.
++
+image:cbr-choice.png[cbr-choice]
++
+. Next, click the topmost *Set Payload* building block within your Choice Router scope to open its Properties Editor, then configure it as shown below so that the Display Name is set to *Reply in Spanish* and the Value is *Hola!*:
++
+image:hola.png[hola]
++
+This Set Payload transformer corresponds to the first option you configured above in your choice routing logic. If Mule finds the flow variable `language=Spanish`, your message produces this payload as a response.
+. Click the next *Set Payload* building block within the Choice Router scope to open its Properties Editor, then configure it as shown below so that the Display Name is set to *Reply in French* and the value is *Bonjour!*:
++
+image:bonjour.png[bonjour]
++
+This Set Payload transformer corresponds to the second option you configured above in your choice routing logic. If Mule finds the flow variable `language=French`, your message produces this payload as a response.
+. Click the *Variable Transformer* inside the Default box to open its Properties Editor, then configure it as shown so that the Display Name is *Set Language to English*, the Name is *language*, and the Value is *English*:
++
+image:set+english.png[set+english]
++
+This Variable Transformer, and the Set Payload that follows it, are only invoked if neither of the expressions in the choice routing logic evaluate to true. Thus, if Mule does not find either the flow variable `language=Spanish` or the flow variable `language=French`, Mule routes the message to this default processing option, which sets the flow variable `language` with the value `English`.
++
+[NOTE]
+Note that in this configuration you are setting a literal value for the variable, rather than using Mule expression language to extract a value from the message, as you did in the previous Variable Transformer.
++
+. Click the *Set Payload* after the Variable Transformer inside the Default box to open its Properties Editor, then configure it as shown.
++
+image:hello.png[hello]
++
+This Set Payload transformer sets a payload for the default option you configured above in your choice routing logic.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+If you model the flow on the canvas, then switch to the XML editor, the placeholder XML for this element as per the following code:
+
+[source,xml, linenums]
+----
+<choice doc:name="Choice">
+   <when expression="">
+       <set-payload doc:name="Set Payload"/>
+   </when>
+   <when expression="">
+       <set-payload doc:name="Set Payload"/>
+   </when>
+   <otherwise>
+       <variable-transformer doc:name="Variable"/>
+       <set-payload doc:name="Set Payload"/>
+   </otherwise>
+</choice>
+----
+
+Configure the two `when` and the `otherwise` child elements and each of their nested elements as shown.
+
+[source,xml, linenums]
+----
+<choice doc:name="Choice">
+   <when expression="#[flowVars.language == 'Spanish']">
+       <set-payload value="Hola!" doc:name="Reply in Spanish"/>
+   </when>
+   <when expression="#[flowVars.language == 'French']">
+       <set-payload value="Bonjour!" doc:name="Reply in French"/>
+   </when>
+   <otherwise>
+       <set-variable variableName="language" value="English" doc:name="Set Language to English"/>
+       <set-payload value="Hello!" doc:name="Reply in English"/>
+   </otherwise>
+</choice>
+----
+
+In each of the `when` child elements of the choice router, the expression tells Mule to look for a flow variable called `language` on the incoming message and check whether it equals Spanish or French. If either expression evaluates to true, Mule routes the message to the corresponding nested set-payload message processor.
+
+If both of the expressions in the `when` elements evaluate to false, Mule routes the message via the processing defining in the `otherwise` child element. Messages that are routed this way have a variable language=English set, then return a payload in English.
+
+....
+------
+
+=== 记录器
+
+该记录器根据Choice路由的结果产生三种可能的消息之一。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+Click the *Logger* to open its Properties Editor, then configure as per the table below.
+
+image:logger.png[logger]
+
+[%header%autowidth.spread]
+|====
+|Field |Value
+|*Display Name* |`Logger`
+|*Message* |`The reply "#[payload]" means "hello" in #[flowVars.language].`
+|*Level* |`INFO`
+|====
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Configure the logger as follows:
+
+[source,xml, linenums]
+----
+<logger message="The reply "#[payload]" means "hello" in #[flowVars.language]." level="INFO" doc:name="Logger"/>
+----
+
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*message* |`The reply "#[payload]" means "hello" in #[flowVars.language].`
+|*level* |`INFO`
+|*doc:name* |`Logger`
+|===
+
+Note that Studio automatically escapes the quotes, as per the following:
+
+[source,xml, linenums]
+----
+<logger message="The reply &quot;#[payload]&quot; means &quot;hello&quot; in #[flowVars.language]." level="INFO" doc:name="Logger"/>
+----
+
+....
+------
+
+点击*File*> *Save*保存您的应用程序。
+
+下载应用程序的 link:_attachments/choiceproject.zip[Studio可部署的存档]。
+
+== 运行应用程序
+
+在构建，配置和保存新应用程序之后，就可以在嵌入式Mule服务器上运行它（作为Anypoint Studio捆绑下载的一部分）。
+
+. 在*Package Explorer*窗格中，右键点击`cbr_tutorial`项目，然后选择*Run As*> *Mule Application*。 （如果你还没有保存，Mule会提示你现在保存。）
+.  Mule立即开始启动应用程序并运行。启动过程完成后，Studio将在控制台中显示一条消息，内容为`Started app 'cbr_tutorial'`。
++
+image:cbr-deploy-readout.png[CBR部署，读出]
+
+== 使用应用程序
+
+. 打开任何Web浏览器并转到`http://localhost:8081/?language=Spanish`
+. 您的浏览器显示的消息为"Hola!"
+. 检查Studio中的控制台日志并查找此日志消息：
++
+[source]
+----
+INFO  2016-05-02 12:30:28,850 [[cbr_tutorial].connector.http.mule.default.receiver.02] org.mule.api.processor.LoggerMessageProcessor: The reply "Hola!" means "hello" in Spanish.
+----
++
+. 在浏览器地址栏中，用`http://localhost:8081/?language=French`替换网址，然后按*Enter*。
++
+您的浏览器会显示一条消息，显示"Bonjour!"
++
+. 再次检查Studio中的控制台日志并查找此日志消息：
++
+[source]
+----
+INFO  2016-05-02 12:31:50,990 [[cbr_tutorial].connector.http.mule.default.receiver.03] org.mule.api.processor.LoggerMessageProcessor: The reply "Bonjour!" means "hello" in French.
+----
++
+. 尝试请求没有查询参数的网址：
++
+`http://localhost:8081`
++ 
+. 您的浏览器会显示一条消息，显示"Hello!"
+. 再次检查Studio中的控制台日志并查找此日志消息：
++
+[source]
+----
+INFO  2016-05-02 12:40:32,376 [[cbr_tutorial].connector.http.mule.default.receiver.02] org.mule.api.processor.LoggerMessageProcessor: The reply "Hello!" means "hello" in English.
+----
++
+. 这最后的日志消息不是非常有趣或信息量大。您可以在下面的<<Extra Credit>>部分修复此问题。
+
+== 编辑正在运行的应用程序
+
+如果您在运行时对应用程序进行了更改并保存更改，Mule会自动重新部署应用程序，通常称为"hot deployment"。
+
+. 要查看此功能的实际操作，请将另一个Logger添加到包含Choice范围中默认选项的消息处理器链中。
++
+. 将记录器拖放到已在默认框中的两个消息处理器的前面。
++
+image:CBRtutorial_addlogger.png[CBRtutorial_addlogger]
++
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+Click the *Logger* to open its Properties Editor, then configure as per the table below.
+
+image:cbrlogger2.png[cbrlogger2]
+
+[%header,cols="20a,80a"]
+|=====
+|Field |Value
+|*Display Name* |`Logger`
+|*Message* |`No language specified. Using English as a default.`
+|*Level* |`INFO`
+|=====
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Configure the logger as follows:
+
+[%header%autowidth.spread]
+|====
+|Field |Value
+|*message* |`No language specified. Using English as a default.`
+|*level* |`INFO`
+|*doc:name* |`Logger`
+|====
+
+The full code of the choice scope now appears as follows:
+
+[source,xml, linenums]
+----
+  ...
+<choice doc:name="Choice">
+  <when expression="#[flowVars.language == 'Spanish']">
+      <set-payload value="Hola!" doc:name="Reply in Spanish"/>
+  </when>
+  <when expression="#[flowVars.language == 'French']">
+      <set-payload value="Bonjour!" doc:name="Reply in French"/>
+  </when>
+  <otherwise>
+      <logger message="No language specified. Using English as a default." level="INFO" doc:name="Logger"/>
+      <set-variable variableName="language" value="English" doc:name="Set Language to English"/>
+      <set-payload value="Hello!" doc:name="Reply in English"/>
+  </otherwise>
+</choice>
+  ...
+----
+
+....
+------
++
+. 点击画布下方的*Console*标签查看应用的运行日志，然后点击*File*> *Save*保存您的应用。
+. 观看控制台并注意Mule立即重新部署应用程序。
+. 要测试此更改并确认您的新记录器正在工作，请返回浏览器并再次请求`http://localhost:8081`。
+. 检查Studio中的控制台日志并查找此日志消息：
++
+[source, code, linenums]
+----
+INFO  2016-05-01 12:48:22,694 [[cbr_tutorial].connector.http.mule.default.receiver.02] org.mule.api.processor.LoggerMessageProcessor: No language specified. Using English as a default.
+----
+
+您现在已成功更改您的应用程序并执行更新的热部署！
+
+== 添加子流
+
+您已经通过简单而有限的选项成功地在您的应用程序中路由消息。在这个例子中，最复杂的路由选项在一个链中只有三个消息处理器，但在一个更复杂的应用程序中，可能会有更多的消息处理步骤，可能还有额外的分支或路由逻辑。为了保持代码的组织性并将其分解为可重用的块，可以将离散的处理部分移动到单独的流或子流中，并使用流参考组件引用这些流或子流以在需要时调用它们。
+
+[NOTE]
+====
+*What is the difference between a flow and subflow?*
+
+流和子流都是构造，您可以在其中将几个单独的构建块链接在一起，以处理消息的接收，处理和路由。出于本教程的目的，您可以使用流或子流来完成以下步骤，但在更高级的情况下，您可能需要一个或另一个。 *flow*具有更高级的配置选项，例如更改处理策略并定义异常策略的功能。 *subflow*总是具有同步处理策略，并且它继承了引用它的流的异常策略。使用流参考组件调用流和子流。
+====
+
+编辑您的应用程序以添加子流并将当前在选择路由器中默认框中出现的处理移动到子流中。为此，您需要将两个构建块添加到您的应用程序中：
+
+*  A *{{0}}*，它在应用程序中调用另一个流。在调色板的“组件”部分找到它。
+*  A *Subflow Scope*，在您的应用程序中创建另一个流程，您可以使用上述流参考组件进行参考。你可以在调色板的范围部分找到它 - 但是使用下面显示的过程，Studio为你添加它。
+
+使用Studio的可视化编辑器将消息处理器移动到子流程中非常容易。
+
+在选择范围的默认框中按住Shift并单击三个消息处理器，以便所有三个都高亮显示，然后右键单击并选择**Extract to... > Sub Flow**。 +
++
+image:CBR-extracttosubflow.png[CBR-extracttosubflow]
++
+.  Studio会提示您命名子流。你可以给它任何独特的名字。本示例使用名称`CBR_TutorialFlow2`。
+.  Studio会在现有流程下创建子流程，并使用流程参考组件替换默认框中的内容。 +
++
+image:AddaSubflow.png[AddaSubflow]
+
+=== 通过拖放创建子流
+
+您也可以通过拖放来创建子流程，或者使用XML编辑器。
+
+在现有流程下添加子流程范围。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+Drag and drop the *Sub Flow* scope onto your canvas in the empty space underneath your existing flow.
+
+image:altaddsubflow1.png[altaddsubflow1]
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Add a sub flow element beneath your existing flow and before the closing `mule` tag.
+
+[source,xml,linenums]
+----
+  ...
+    </flow>
+    <sub-flow name="CBR_TutorialFlow2" doc:name="CBR_TutorialFlow2"/>
+</mule>
+----
+
+....
+------
+
+将两个消息处理器从您选择的路由器的默认路径移动到新的子流程中。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+Drag and drop the message processors into their new positions in the sub flow scope.
+
+image:altaddsubflow2.png[altaddsubflow2]
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Copy and paste the code for these three processors into the scope of the sub flow element.
+
+[source,xml, linenums]
+----
+<sub-flow name="CBR_TutorialFlow2" doc:name="CBR_TutorialFlow2">
+    <logger message="No language specified. Using English as a default." level="INFO" doc:name="Logger"/>
+    <set-variable variableName="language" value="English" doc:name="Set Language to English"/>
+    <set-payload value="Hello!" doc:name="Reply in English"/>
+</sub-flow>
+----
+
+....
+------
+
+在选择路由器的默认路径中添加流引用。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+Drag and drop a *Flow Reference Component* into the Default box within the Choice scope.
+
+image:altaddsubflow3.png[altaddsubflow3]
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Add a `flow-ref` element as a nested element within the `otherwise` child element of the choice router.
++
+[source,xml, linenums]
+----
+<otherwise>
+    <flow-ref name="" doc:name="Flow Reference"/>
+</otherwise>
+----
+
+....
+------
+
+将流参考配置为指向您刚刚创建的子流。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+Click the *Flow Reference* building block to open its properties tab, then click `CBR_TutorialFlow2` from the *Flow name* drop down menu.
+
+image:configflowref.png[configflowref]
+
+Insert the name of the subflow as the value for the `name` attribute.
+
+[source,xml, linenums]
+----
+<flow-ref name="CBR_TutorialFlow2" doc:name="Flow Reference"/>
+----
+
+....
+------
+
+=== 验证代码
+
+检查您的完整应用程序代码现在是否与以下代码匹配：
+
+[source,xml, linenums]
+----
+include::_sources/content-based-routing_2.xml[]
+----
+
+保存您的项目，并在重新部署已更改的应用程序时观看控制台。
+
+重复上述<<Using the Application>>中的步骤。
+
+请注意，行为完全不会改变 - 将这三个消息处理器组织成一个子流，然后使用flow-ref调用该流对应用程序的功能没有影响。但是，正如您在下面的<<Extra Credit>>部分中看到的那样，将处理块分成子流可以帮助您将应用程序代码（及其在Studio画布上的可视表示）组织起来并且易于阅读。有关如何使用多个流或子流来组织应用程序的一些实际用例的示例，请查看一些 link:/anypoint-exchange[骡子的例子]。
+
+== 额外信用
+
+现在您已经了解了在Studio中基于内容路由的方式，请尝试将您的知识应用于此额外任务：
+
+修改您的应用程序，以便传入消息没有设置为法语或西班牙语的入站属性不会自动默认为英语，而是根据循环法原则选择回复其他三种随机语言之一（您的选择！）。
+
+要实现这一点，请替换刚刚创建的子流的内容。您需要另一个流量控制按照循环机制设计路由传入消息，并且您需要在循环法流量控制范围内定义三个可能的处理分支。在这三个处理分支的每一个中，设置语言属性并设置有效负载以您选择的语言进行响应。
+
+如果您需要帮助，请使用下面的提示。
+
+=== 提示
+
+[cols="1*a",width=80%]
+|===
+| image:icon-question-blue-big.png[图标问题 - 蓝 - 大]
+|===
+
+*How do I add round robin logic to my application?*
+
+使用循环法流量控制将循环法逻辑添加到您的应用程序。在调色板的“流量控制”部分找到此处理器，或者在您的XML中添加一个`round-robin`元素。
+
+*How do I define options for a round robin mechanism?*
+
+在可视编辑器中，在说明循环法流量控制范围的虚线内，拖放三个可变变形器。正如您在Choice流程控制中所做的那样，放置您的鼠标以便出现一条垂直的黑线以创建额外的路线选项。在每个变量变压器之后，添加一个设置有效载荷变换器。
+
+或者，在XML编辑器中，在循环元素下面嵌套三个设置变量元素。在每个set变量之后立即添加一个set-payload元素。为了指示Mule，每个集变量变压器后面的集合有效载荷变换器应该是下一个处理步骤而不是不同的循环法选项，请将每个集变量和集合有效载荷对包装在处理器链标签中，喜欢这个：
+
+*How do I configure additional language responses?*
+
+当您在上面的<<Choice Router and Constituent Message Processors>>中配置默认​​选项时，只能使用不同的语言进行操作。
+
+=== 答案
+
+[cols="1*a",width=80%]
+|===
+| image:icon-checkmark-blue-big.png[蓝色复选标记表示答案]
+|===
+
+实现上述目标的方法不止一种，但这是最快的方法：
+
+. 将Round Robin路由器拖入子流，如图所示。
++
+image:AddRR.png[AddRR]
++
+. 将现有的三个消息处理器拖入循环范围，如图所示。
++
+image:cbr-ec2.png[CBR-EC2]
++
+. 切换到*Configuration XML*标签，以XML编辑。
+. 突出显示包装在`processor-chain`标签中的代码部分，并将其复制到您的剪贴板：
++
+image:cbr-ec3.png[CBR-EC3]
++
+代码是：
++
+[source,xml,linenums]
+----
+<processor-chain>
+   <logger message="No language specified. Using English as a default." level="INFO" doc:name="Logger"/>
+   <set-variable variableName="language" value="English" doc:name="Set Language to English"/>
+   <set-payload value="Hello!" doc:name="Reply in English"/>
+</processor-chain>
+----
++
+. 按*enter*开始新行，然后粘贴代码两次以创建三组处理器链。
++
+image:cbr-ec4.png[CBR-EC4]
++
+循环法代码现在是：
++
+[source,xml,linenums]
+----
+<round-robin doc:name="Round Robin">
+    <processor-chain>
+        <logger message="No language specified. Using English as a default." level="INFO" doc:name="Logger"/>
+        <set-variable variableName="language" value="English" doc:name="Set Language to English"/>
+        <set-payload value="Hello!" doc:name="Reply in English"/>
+    </processor-chain>
+     <processor-chain>
+        <logger message="No language specified. Using English as a default." level="INFO" doc:name="Logger"/>
+        <set-variable variableName="language" value="English" doc:name="Set Language to English"/>
+        <set-payload value="Hello!" doc:name="Reply in English"/>
+    </processor-chain>
+     <processor-chain>
+        <logger message="No language specified. Using English as a default." level="INFO" doc:name="Logger"/>
+        <set-variable variableName="language" value="English" doc:name="Set Language to English"/>
+        <set-payload value="Hello!" doc:name="Reply in English"/>
+    </processor-chain>
+</round-robin>
+----
++
+. 编辑您创建的三个路由选项的属性，以设置三个新的语言变量并用这些语言的有效负载进行响应。编辑记录器以匹配。例如：
++
+image:cbr-ec5.png[CBR-EC5]
++
+此示例的更新代码是：
++
+[source,xml,linenums]
+----
+<round-robin doc:name="Round Robin">
+    <processor-chain>
+        <logger message="No language specified. Using Klingon." level="INFO" doc:name="Logger"/>
+        <set-variable variableName="language" value="Klingon" doc:name="Set Language to Klingon"/>
+        <set-payload value="tlhIngan mah!" doc:name="Reply in Klingon"/>
+    </processor-chain>
+     <processor-chain>
+        <logger message="No language specified. Using Turkish." level="INFO" doc:name="Logger"/>
+        <set-variable variableName="language" value="Turkish" doc:name="Set Language to Turkish"/>
+        <set-payload value="Merhaba!" doc:name="Reply in Turkish"/>
+    </processor-chain>
+     <processor-chain>
+        <logger message="No language specified. Using Basque." level="INFO" doc:name="Logger"/>
+        <set-variable variableName="language" value="Basque" doc:name="Set Language to Basque"/>
+        <set-payload value="Kaixo!" doc:name="Reply in Basque"/>
+    </processor-chain>
+</round-robin>
+----
++
+在可视化编辑器中，子流程如下所示：
++
+image:cbr-ec-subflow.png[CBR-EC-子流]
++
+. 再次保存应用程序，等待重新部署完成，并在您重复访问`http://localhost:8081`时未使用查询参数指定法语或西班牙语时观察结果。
+. 检查控制台消息。您应该看到以下列结尾的消息：
++
+image:cbr-log-msgs.png[CBR-LOG-封邮件]
+
+恭喜！你赢得了额外的信用。你们都准备继续使用 link:/getting-started/anypoint-connector[Anypoint连接器快速入门]。
+
+查看修改后的应用程序的代码：
+
+[source,xml, linenums]
+----
+include::_sources/content-based-routing_3.xml[]
+----
+
+== 停止应用程序
+
+要停止应用程序，请点击控制台上方的红色正方形*Terminate*图标。
+
+image:Studio-stopcbrapp.png[工作室stopcbrapp]
+
+== 另请参阅
+
+*  *NEXT STEP:*使用下一个更复杂的 link:/getting-started/anypoint-connector[Anypoint连接器快速入门]进行测试。
+* 想要了解更多关于Mule表达语言（MEL）？查看 link:/mule-user-guide/v/3.8/mule-expression-language-mel[完整的参考]。
+* 更深入地了解 link:/mule-user-guide/v/3.8/mule-application-architecture[骡应用程序]的{​​{0}}和解剖结构。

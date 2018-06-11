@@ -1,0 +1,314 @@
+= 关于DataWeave脚本
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+DataWeave是Mule流的主要数据转换语言。您可以在Transform Message组件中编写独立的DataWeave脚本，也可以编写内联DataWeave表达式来转换数据_in-place_并动态设置各种属性（如事件处理器或全局配置元素中的配置字段）的值。内联DataWeave表达式包含在`#[ ]`代码块中。例如，您可以使用DataWeave表达式来设置Choice路由器中的条件或设置Set Payload或Set Variable组件的值。
+
+此示例中的DataWeave代码使用DataWeave `now()`函数将时间戳变量设置为当前时间：
+
+。示例：Simple Inline DataWeave脚本
+[source, dataweave, linenums]
+----
+<set-variable value="#[now()]" variableName="timestamp" doc:name="Set timestamp" />
+----
+
+您还可以在<<dwl_file, external files>>中存储DataWeave代码并将它们读入其他DataWeave脚本中，或者可以将DataWeave代码归入可由Mule应用程序中的所有组件共享的可重复使用的DataWeave函数的模块（库）中。
+
+
+==  DataWeave脚本的结构
+DataWeave脚本和文件分为两个主要部分：
+
+* 标题，它定义适用于正文表达式的指令（可选）。
+
+*  Body，其中包含用于生成输出结构的表达式。
+
+当您包含标题时，标题显示在由三个短划线组成的分隔符分隔的正文上方：`---`。
+
+下面是一个DataWeave文件的例子，在头文件中声明了一个输出指令，后面跟着一个DataWeave表达式来创建一个包含两个子键/值对的用户对象：
+
+。示例：简单的DataWeave脚本
+[source, dataweave, linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  user: {
+    firstName: payload.user_firstname,
+    lastName: payload.user_lastName
+  }
+}
+----
+
+==  DataWeave标题
+
+此示例显示了可用于标题指令的关键字（例如`import`和`var`）。
+
+.DataWeave脚本
+[source, dataweave, linenums]
+----
+%dw 2.0
+import * from dw::core::Arrays
+var myVar=13.15
+fun toUser(obj) = {
+  firstName: obj.field1,
+  lastName: obj.field2
+}
+type Currency = String { format: “##“}
+ns ns0 http://www.abc.com
+output application/xml
+---
+/*
+ * Body here.
+ * /
+----
+
+*  `%dw`：DataWeave版本是可选的。默认值是`2.0`。
++
+示例：`%dw 2.0`
++
+*  `output`：常用指令，用于指定脚本输出的MIME类型。
++
+示例：`output application/xml`
++
+有效值： link:dataweave-formats[DataWeave支持的数据格式]。
++
+默认值：如果未指定输出，则默认输出由检查脚本中使用的输入（有效内容，变量等）的算法确定：
++
+. 如果没有输入，则默认为`output application/java`。
+. 如果所有输入都是相同的MIME类型，则脚本输出到相同的MIME类型。例如，如果所有输入都是`application/json`，则输出`output application/json`。
+. 如果输入的MIME类型不同，并且未指定输出，那么脚本将引发异常，以便您知道指定输出MIME类型。
++
+请注意，只能指定一种输出类型。
++
+*  `import`：用于导入DataWeave功能模块。请参阅 link:dw-functions[DataWeave函数]。
+*  `var`：用于定义可在整个DataWeave脚本主体中引用的常量的全局变量：
++
+。例
+[source, dataweave, linenums]
+----
+%dw 2.0
+var conversionRate=13.15
+output application/json
+---
+{
+ price_dollars: payload.price,
+ price_localCurrency: payload.price * conversionRate
+}
+----
++
+有关详情，请参阅 link:dataweave-variables[关于DataWeave变量]。
++
+*  `type`：用于指定您可以在表达式中使用的自定义类型。
++
+有关更完整的示例，请参阅 link:dataweave-types-coercion[关于DataWeave的类型强制]。
++
+*  `ns`：名称空间，用于导入名称空间。
++
+。例
+[source,DataWeave,linenums]
+----
+%dw 2.0
+output application/xml
+
+ns ns0 http://www.abc.com
+ns ns1 http://www.123.com
+---
+{
+    ns0#myroot: {
+         ns1#secondroot: "hello world"
+    }
+}
+----
++
+*  `fun`：用于创建可以从脚本主体中调用的自定义函数。
++
+。例
+[source, dataweave, linenums]
+----
+%dw 2.0
+output application/json
+fun toUser = (user) -> {firstName: user.name, lastName: user.lastName}
+---
+{
+  user: toUser(payload)
+}
+----
+
+=== 在内联DataWeave脚本中包含标题
+
+通过将DataWeave脚本中的所有行展平为一行，可以在编写内联DataWeave脚本时包含标题指令。对于较小的DataWeave脚本，这允许您快速应用标题指令（无需添加单独的变换消息组件来设置变量），然后在下一个事件处理器中替换该变量。
+
+例如，下面是Mule配置XML，用于创建与以前的Transform Message组件相同的有效XML输出：
+
+。示例：Simple Inline DataWeave脚本
+[source, dataweave, linenums]
+----
+<set-payload value="#[output application/xml --- { myroot: payload } ]" doc:name="Set Payload" />
+----
+
+请注意，DataWeave文档提供了许多<<see_also, transformation examples>>。
+
+==  DataWeave正文
+
+DataWeave主体包含一个生成输出结构的表达式。请注意，MuleSoft为您提供了使用DataWeave模型处理数据的规范方法：查询，转换和构建过程。
+
+以下是为DataWeave脚本提供JSON输入的简单示例：
+
+。示例：JSON输入
+[source,JSON,linenums]
+----
+{
+    "message": "Hello world!"
+}
+----
+
+此DataWeave脚本获取上面JSON输入的整个有效内容，并将其转换为`application/xml`格式。
+
+[[script_output_xml]]
+。示例：输出application / xml的脚本
+[source,DataWeave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+payload
+----
+
+下一个示例显示了DataWeave脚本生成的XML输出：
+
+。示例：XML输出
+[source,XML,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<message>Hello world!</message>
+----
+
+上面的脚本成功地将JSON输入转换为XML输出。
+
+== 错误（脚本与格式错误）
+
+由于DataWeave编码错误和格式错误，DataWeave脚本可能会引发错误。因此，在将一种数据格式转换为另一种格式时，牢记语言和格式的约束是很重要的。例如，XML需要一个根节点。如果您在尝试将此JSON输入转换为XML时使用<<script_output_xml, DataWeave script above>>，您将收到错误（`Unexpected internal error`），因为JSON输入缺少单个根：
+
+[[json_input]]
+。示例：JSON输入
+[source,JSON,linenums]
+----
+{
+    "size" : 1,
+    "person": {
+      "name": "Yoda"
+    }
+}
+----
+
+创建脚本的一个好方法是将输入标准化为类似JSON的<<dataweave-formats#format_dataweave, application/dw>>格式。实际上，如果出现错误，您可以简单地将输入内容转换为`application/dw`。如果转换成功，那么错误可能是格式错误。如果不成功，那么错误是编码错误。
+
+此示例将输出格式更改为`application/dw`：
+
+。示例：输出application / dw的DataWeave脚本
+[source,DataWeave,linenums]
+----
+%dw 2.0
+output application/dw
+---
+payload
+----
+
+您可以看到该脚本成功地从上面的<<json_input, JSON input example>>生成`application/dw`输出：
+
+。示例：application / dw输出
+----
+{
+  size: 1,
+  person: {
+    name: "Yoda"
+  }
+}
+----
+
+所以你知道前面的错误（`Unexpected internal error`）是特定于格式的，而不是编码。您可以看到，上面的`application/dw`输出没有提供XML格式所需的单个根元素。因此，要修复_XML_输出的脚本，您需要为脚本提供一个根元素，例如：
+
+。示例：输出application / xml的脚本
+[source,DataWeave,linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+    "myroot" : payload
+}
+----
+
+现在输出符合XML的要求，因此当您将输出指令更改回`application/xml`时，结果会生成有效的XML输出。
+
+。示例：包含单个XML根的XML输出
+[source,XML,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<myroot>
+  <size>1</size>
+  <person>
+    <name>Yoda</name>
+  </person>
+</myroot>
+----
+
+==  DataWeave评论
+DataWeave也接受使用类似Java的语法的注释。
+----
+// My single-line comment here.
+
+/*
+ * My multi-line comment here.
+ */
+----
+
+[[dwl_file]]
+==  dwl文件
+
+除了在Transform和其他组件中指定DataWeave脚本外，还可以在`.dwl`文件中指定脚本。在Studio项目中，您的脚本文件存储在`src/main/resources`中。
+
+在Mule应用程序XML中，您可以使用`${file::filename}`语法通过任何需要表达式的XML标记在`dwl`文件中发送脚本。例如，请参阅Choice路由器中的`when expression="${file::logic.dwl}"`：
+
+[source,XML,linenums]
+----
+<http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/test">
+  <http:response >
+    <{{0}}]]></http:body>
+  </http:response>
+</http:listener>
+<choice doc:name="Choice"  >
+  <when expression="${file::logic.dwl}" >
+    <set-payload value="It's greater than 4!" doc:name="Set Payload"  />
+  </when>
+  <otherwise >
+    <set-payload value="It's less than 4!" doc:name="Set Payload" />
+  </otherwise>
+</choice>
+----
+
+
+[[see_also]]
+== 另请参阅
+
+link:dataweave-selectors[DataWeave选择器]
+
+link:dw-functions[DataWeave函数]
+
+link:dataweave-cookbook[DataWeave食谱]
+
+link:dataweave-formats[DataWeave支持的数据格式]
+
+link:dataweave-types#functions-and-lambdas[函数和Lambdas]
+
+// TODO：需要更多的信息.​​..显示XML vs DW vs JSON
+
+////
+请注意，DataWeave表达式的输出可以包含这些数据类型：
+
+* 简单值：字符串和数字，例如：`Some String`，`18`。
+* 数组：一系列逗号分隔值，例如：`1, 2, 3`。这些值可以是任何支持的数据类型。
+* 对象：键值对的集合，例如：`{"key": "some value"}`。这些值可以是任何支持的数据类型。
+////
+
+// ==嵌入式DataWeave脚本中的数据格式转换

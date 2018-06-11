@@ -1,0 +1,220 @@
+= 示例：测试APIkit
+：版本信息：3.7.0和更新
+:keywords: munit, testing, unit testing
+
+[[scenario]]
+== 概述
+
+本文档包含测试基于APIkit的应用程序的基本示例。测试基于APIkit的应用程序有两种基本方法：浏览APIkit路由器，或者不通过APIkit路由器。
+
+差异在于你想要测试的东西。显然，如果你浏览APIkit路由器，你会得到比没有完整的测试更完整的测试;然而，没有通过路由器屏蔽你的测试API相关的信息，只允许你测试API的业务逻辑。
+
+在这个例子中，我们通过APIkit路由器。
+
+除XML配置中包含的内容外，APIkit路由器还处理一些任务：
+
+* 按资源/方法/内容类型进行路由
+* 验证输入有效载荷，标题，查询参数，uri-params
+* 响应有效负载的自动转换（序列化）
+
+为了执行这些任务，APIkit路由器不断读取`api.raml`文件。因此，通过APIkit路由器可以帮助您在实现API的XML配置和RAML定义文件之间保持一致。
+
+[[hands-on]]
+== 示例测试
+
+创建一个新的Mule Studio项目并在`api`文件夹中创建一个RAML定义文件（有关如何操作的详细信息，请参阅 link:/apikit/apikit-tutorial[APIkit教程]）。
+
+注意：此测试仅适用于MUnit版本*3.5-M3-SNAPSHOT*及以上版本。
+
+[[the-raml-definition]]
+===  RAML定义
+
+---------------------------------------------
+#%RAML 0.8
+---
+title: Sample API
+
+/munit:
+  displayName: Login
+  get:
+    description: Login through signed request
+    responses:
+      200:
+        body:
+          application/json:
+  post:
+    description: Login through signed request
+    responses:
+      201:
+        body:
+          application/json:
+  put:
+    description: Login through signed request
+    responses:
+      201:
+        body:
+          application/json:
+  delete:
+    description: Login through signed request
+    responses:
+      200:
+        body:
+          application/json:
+---------------------------------------------
+
+[[the-api-implementation]]
+===  API实现
+
+下面是为RAML定义生成流之后的结果：
+
+[source, xml, linenums]
+----
+ <apikit:config name="api-config" raml="api.raml" consoleEnabled="true" consolePath="console" doc:name="Router" />
+    <apikit:mapping-exception-strategy name="api-apiKitGlobalExceptionMapping" doc:name="Mapping Exception Strategy">
+        <apikit:mapping statusCode="404">
+            <apikit:exception value="org.mule.module.apikit.exception.NotFoundException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Resource not found&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="405">
+            <apikit:exception value="org.mule.module.apikit.exception.MethodNotAllowedException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Method not allowed&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="415">
+            <apikit:exception value="org.mule.module.apikit.exception.UnsupportedMediaTypeException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Unsupported media type&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="406">
+            <apikit:exception value="org.mule.module.apikit.exception.NotAcceptableException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Not acceptable&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="400">
+            <apikit:exception value="org.mule.module.apikit.exception.BadRequestException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Bad request&quot; }" doc:name="Set Payload" />
+        </apikit:mapping>
+    </apikit:mapping-exception-strategy>
+    <flow name="api-main" doc:name="api-main">
+        <http:inbound-endpoint doc:name="HTTP" exchange-pattern="request-response" host="localhost" path="api" port="9090" responseTimeout="999999" />
+        <apikit:router config-ref="api-config" doc:name="APIkit Router" />
+        <exception-strategy ref="api-apiKitGlobalExceptionMapping" doc:name="Reference Exception Strategy" />
+    </flow>
+    <flow name="get:/munit:api-config" doc:name="get:/munit:api-config">
+        <set-payload value="#['GET RESPONSE']" doc:name="Set Payload" />
+    </flow>
+    <flow name="put:/munit:api-config" doc:name="put:/munit:api-config">
+        <set-payload value="#['PUT RESPONSE']" doc:name="Set Payload"/>
+    </flow>
+    <flow name="delete:/munit:api-config" doc:name="delete:/munit:api-config">
+        <set-payload value="#['DELETE RESPONSE']" doc:name="Set Payload"/>
+    </flow>
+    <flow name="post:/munit:api-config" doc:name="post:/munit:api-config">
+        <set-payload value="#['POST RESPONSE']" doc:name="Set Payload"/>
+    </flow>
+----
+
+注：在上面的代码中，默认入站端口已更改为9090。
+
+[[the-munit-test]]
+===  MUnit测试
+
+这些部分包含测试重要部分的细目。您可以在页面底部找到完整版本的XML。
+
+*The MUnit configuration:*
+
+[source, xml, linenums]
+----
+<munit:config doc:name="Munit configuration" mock-connectors="false" mock-inbounds="false"/>
+<spring:beans>
+  <spring:import resource="classpath:api.xml"/>
+</spring:beans>
+----
+
+注意：在MUnit配置中，您必须将`mock-connectors`和`mock-inbounds`设置为`false`。默认情况下，MUnit将这些值设置为`true`（因为通常您不想启用入站端点），因此您必须手动将这些值设置为false;否则测试不起作用。
+
+
+*An actual test:*
+
+[source, xml, linenums]
+----
+<munit:test name="api-test-get" description="Test">
+        <munit:set payload="#['']" doc:name="Set Message"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9090" path="api/munit" method="GET" doc:name="HTTP"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq('200'))]" doc:name="Assert True"/>
+        <munit:assert-on-equals message="The response payload is not correct!" expectedValue="#['\&quot;GET RESPONSE\&quot;']" actualValue="#[payload]" doc:name="Assert Equals"/>
+</munit:test>
+----
+
+如您所见，我们使用`http:outbound-endpoint`来触发测试。确保`exchange-pattern`设置为`request-response`。这使您可以使用HTTP出站端点来定义您需要的所有内容，以便找到您的API资源（HTTP动词，标题，路径，MIME类型等）。在这个例子中，我们只涉及动词。
+
+*The two assertions in the test:*
+
+[source, xml, linenums]
+----
+<munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq('200'))]" doc:name="Assert True"/>
+
+<munit:assert-on-equals message="The response payload is not correct!" expectedValue="#['\&quot;GET RESPONSE\&quot;']" actualValue="#[payload]" doc:name="Assert Equals"/>
+----
+
+这个例子说明了像这样一个测试中需要的最基本的断言之一：
+
+* 验证HTTP状态码
+* 验证返回的有效负载
+
+*Full test config XML:*
+
+[source, xml, linenums]
+----
+ <munit:config doc:name="Munit configuration" mock-connectors="false" mock-inbounds="false"/>
+    <spring:beans>
+        <spring:import resource="classpath:api.xml"/>
+    </spring:beans>
+
+    <munit:test name="api-test-get" description="Test">
+        <munit:set payload="#['']" doc:name="Set Message"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9090" path="api/munit" method="GET" doc:name="HTTP"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq('200'))]" doc:name="Assert True"/>
+        <munit:assert-on-equals message="The response payload is not correct!" expectedValue="#['\&quot;GET RESPONSE\&quot;']" actualValue="#[payload]" doc:name="Assert Equals"/>
+    </munit:test>
+
+    <munit:test name="api-test-post" description="Test">
+        <munit:set payload="#['']" doc:name="Set Message"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9090" path="api/munit" method="POST" doc:name="HTTP"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq('201'))]" doc:name="Assert True"/>
+        <munit:assert-on-equals message="The response payload is not correct!" expectedValue="#['\&quot;POST RESPONSE\&quot;']" actualValue="#[payload]" doc:name="Assert Equals"/>
+    </munit:test>
+
+    <munit:test name="api-test-put" description="Test">
+        <munit:set payload="#['']" doc:name="Set Message"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9090" path="api/munit" method="PUT" doc:name="HTTP"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq('201'))]" doc:name="Assert True"/>
+        <munit:assert-on-equals message="The response payload is not correct!" expectedValue="#['\&quot;PUT RESPONSE\&quot;']" actualValue="#[payload]" doc:name="Assert Equals"/>
+    </munit:test>
+
+    <munit:test name="api-test-delete" description="Test">
+        <munit:set payload="#['']" doc:name="Set Message"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9090" path="api/munit" method="DELETE" doc:name="HTTP"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq('200'))]" doc:name="Assert True"/>
+        <munit:assert-on-equals message="The response payload is not correct!" expectedValue="#['\&quot;DELETE RESPONSE\&quot;']" actualValue="#[payload]" doc:name="Assert Equals"/>
+    </munit:test>
+----
+
+[[conclusion]]
+== 结论
+
+此示例显示如何触发APIkit公开的端点的命中，以及为什么以这种方式测试端点很重要。与往常一样，您可以使用MUnit提供的工具： link:/munit/v/1.0/mock-message-processor[嘲笑]， link:/munit/v/1.0/spy-message-processor[间谍]， link:/munit/v/1.0/verify-message-processor[验证]， link:/munit/v/1.0/assertion-message-processor[断言]等，使您的测试尽可能复杂。
+
+== 最后一分钟评论
+
+您可以在使用或不使用API​​网关的情况下在Mule运行时使用API​​kit。 API网关运行时1.3  -  2.x有一个 link:/api-manager/api-gateway-domain[名为api-gateway的mule域名]。
+
+*MUnit does not yet support Mule domains*;因此，为在API网关上运行的基于APIkit的应用程序创建的测试可能会失败。如果发生这种情况，可能是因为在测试运行期间，域中定义的全局配置对MUnit不可见。要使测试正常工作，请在MUnit Test Suite文件中复制这些全局配置。
+

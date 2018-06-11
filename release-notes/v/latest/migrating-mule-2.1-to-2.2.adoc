@@ -1,0 +1,244 @@
+= 将Mule 2.1移植到2.2
+:keywords: release notes, esb
+
+本页描述了Mule 2.2中的主要配置和代码更改，以帮助Mule 2.1用户理解发布之间的变化。如果您正在从较早版本的Mule ESB迁移，请分别阅读 link:/release-notes/migrating-mule-1.x-to-2.0[将Mule 1.x迁移到2.0]和 link:/release-notes/migrating-mule-2.0-to-2.1[将Mule 2.0迁移到2.1]。
+
+==  Spring Security 2.0
+
+在Mule 2.2中，Acegi安全性已被弃用，并增加了对Spring Security 2.0的支持。您应该迁移您的配置以使用Spring Security 2.0。
+
+== 端点配置
+
+端点上的`@remoteSync`属性已被删除。这也消除了端点同步如何配置和行为的困惑。从Mule 2.1开始，端点的同步性必须在每个端点上明确定义（否则使用Mule实例的默认值）。现在，配置端点时适用以下规则：
+
+. 如果端点是异步的，结果永远不会返回
+. 如果端点被处理，则不能从后向通道读取响应（即JMSReplyTo）
+. 如果端点是同步的，即使结果为空，它也会始终返回结果a
++
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/NullPayload.html[NullPayload]
++
+将被退回。这种行为试图打开一个返回通道来接收结果，这相当于@ remoteSync = true。如果没有通过反向通道收到任何内容，端点上的新的@responseTimeout配置选项允许Mule超时。
+
+[NOTE]
+====
+*Back channel* +
+
+反向信道是一种通信信道，允许通过端点的呼叫返回数据。在客户端套接字中，这将是套接字上的输入流，对于JMS，JMSReplyTo功能为远程服务器提供了一个返回结果的通道。诸如文件和FTP之类的传输没有反向信道。
+====
+
+==  JMS临时目标
+
+当JMS出站端点是同步的并且未处理时，Mule将尝试打开反向通道以接收结果。如果未设置replyTo目的地，它将尝试使用_temporary destination_。可以使用JMS连接器或端点上的新`@disableTemporaryReplyToDestinations`标志关闭此行为。
+
+== 包含自定义标题属性
+
+以前，如果您希望自定义标头属性包含在出站HTTP端点中，则必须将它们添加到出站端点上的http.custom.headers属性映射中。现在，您只需将它们设置为属性即可。旧方法仍然受支持。
+
+== 用于过滤路由器的单一端点
+
+出站过滤路由器现在只接受一个端点。要使用多个端点，请使用不同的出站路由器，并在各个端点上指定过滤器。
+
+== 弃用的MessageBuilder API
+
+MessageBuilder API（包括ReflectionMessageBuilder和ScriptMessageBuilder）已被弃用。改为使用带有绑定的组件。
+
+==  MuleMessage API
+
+一些新的方法被添加到MuleMessage和MessageAdapter API中，以允许用户在指定范围上设置属性。
+
+增加了两种新的方法：
+
+[%header,cols="2*"]
+|===
+| {方法{1}}说明
+| `Set getPropertyNames(PropertyScope scope)`  |获取给定作用域中的所有属性名称（入站，调用，出站或会话）
+| `Object getProperty(String name, PropertyScope scope)`  |从给定范围的消息中获取属性
+|===
+
+== 表达式
+
+表情有了几处变化。您现在可以使用星号来表示可选属性。此外，本节中描述了几个API更改。
+
+表达式API包变化=== 
+
+Expression API已被重构以反映正确的包结构。进行了以下更改：
+
+[%header,cols="2*"]
+|===
+| {老{1}}新
+| `org.mule.util.expression.ExpressionEvaluatorManager`  |此课程现在在`org.mule.api.expression.ExpressionManager`处有一个接口，位于`org.mule.expression.DefaultExpressionManager`处的实现
+| `org.mule.util.expression.ExpressionEvaluator`  | `org.mule.api.ExpressionEvaluator`
+| `org.mule.util.expression.ExpressionRuntimeException`  | `org.mule.api.expression.ExpressionRuntimeException`
+|其他所有`org.mule.util.expression.*`  | `org.mule.expression.*`
+|===
+
+=== 表达式评估器API
+
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/expression/ExpressionEvaluator.html[的ExpressionEvaluator]的API稍微改变了一下，以使其强制输入。 `message`现在是 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/MuleMessage.html[MuleMessage]，而不是`java.lang.Object`。
+
+[source,java]
+----
+Object evaluate(String expression, MuleMessage message);
+----
+
+表达式管理器=== 
+
+`ExpressionManager`（是`ExpressionEvaluatorManager`）不再是单例对象。要获得经理的参考，可以使用`getExpressionManager()`方法从`MuleContext`中获取。需要`MuleContext`的对象可以实现 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/context/MuleContextAware.html[org.mule.api.context.MuleContextAware]。
+
+== 嵌套的路由器类名称已更改
+
+嵌套路由器类已被重命名为组件绑定。这个名称更改有几个类更改。例如，`NestedRouterTestCase.java`类重命名为`ComponentBindingTestCase.java`，`NestedCollectionTestCase.java`重命名为`BindingCollectionTestCase.java`，`nested`包重命名为`binding`，更多。
+== 其他API更改
+
+以下定义了其他次要API重构。本节中的更改较小，仅包含程序包或名称更改。
+
+[%header,cols="2*"]
+|===
+| {老{1}}新
+| `org.mule.api.MuleEvent#getProperty(String name, boolean exhaustive)`  | `org.mule.api.MuleEvent#getProperty(String name)`
+| `org.mule.api.MuleEvent#getProperty(String name, Object defaultValue, boolean exhaustive)`  | `org.mule.api.MuleEvent#getProperty(String name, Object defaultValue)`
+| `org.mule.api.retry.RetryNotifier#sucess()`  | `org.mule.api.retry.RetryNotifier#onSuccess()`
+| `org.mule.api.retry.RetryNotifier#failed()`  | `org.mule.api.retry.RetryNotifier#onFailure()`
+| `N/A`  | `org.mule.api.transaction.Transaction#getId()`
+| `org.mule.routing.outbound.CorrelationAggregator`  | `org.mule.routing.outbound.AbstractCorrelationAggregator`
+| `org.mule.transport.jdbc.sqlstrategy.SQLStrategy`  | `org.mule.transport.jdbc.sqlstrategy.SqlStatementStrategy`
+| `org.mule.transport.jdbc.sqlstrategy.SelectSQLStrategy`  | `org.mule.transport.jdbc.sqlstrategy.SelectSqlStatementStrategy`
+| `org.mule.transport.jdbc.sqlstrategy.SimpleUpdateSQLStrategy`  | `org.mule.transport.jdbc.sqlstrategy.SimpleUpdateSqlStatementStrategy`
+| `org.mule.transport.jdbc.sqlstrategy.SQLStrategyFactory`  | `org.mule.transport.jdbc.sqlstrategy.DefaultSqlStatementStrategyFactory`
+| `org.mule.transport.servlet.HttpRequestToByteArray`  | `org.mule.transport.servlet.transformers.HttpRequestToByteArray`
+| `org.mule.transport.servlet.HttpRequestToInputStream`  | `org.mule.transport.servlet.transformers.HttpRequestToInputStream`
+| `org.mule.transport.servlet.HttpRequestToParameter`  | `org.mule.transport.servlet.transformers.HttpRequestToParameter`
+|===
+
+== 传输行为
+
+某些传输（如不支持反向通道的FTP和文件）在同步调用时返回当前消息作为响应。这给人的印象是远程呼叫接收到的结果不正确。该行为现在已在Mule 2.2中进行了更改，以便同步FTP和文件终结点将返回空值（ http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/NullPayload.html[NullPayload]）。
+
+== 测试
+
+新的测试组件类型已引入到*test*名称空间中。
+
+[source, xml, linenums]
+----
+<test:web-service-component/>
+----
+
+这是一个可用于测试Web服务的组件。该组件具有与*test:component*相同的属性，但它也实现了三个其他服务接口： http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/component/simple/EchoService.html[org.mule.api.component.simple.EchoService]， http://www.mulesoft.org/docs/site/current/apidocs/org/mule/tck/testmodels/services/DateService.html[org.mule.tck.testmodels.services.DateService]和 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/tck/testmodels/services/PeopleService.html[org.mule.tck.testmodels.services.PeopleService]。其他实现的服务接口是 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/lifecycle/Callable.html[org.mule.api.lifecycle.Callable]。将此端点用于CXF等WS端点时，请确保将端点的*serviceClass*属性设置为您正在使用的服务类型。
+
+=== 为CXF定义'serviceClass'属性
+
+由于`<test:component>`中的更改也适用于`<test:web-service-component>`，因此您现在需要在使用这些组件时在CXF入站端点上设置服务类。服务类可以是以下之一：
+
+*  http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/component/simple/EchoService.html[org.mule.api.component.simple.EchoService]
+*  http://www.mulesoft.org/docs/site/current/apidocs/org/mule/tck/testmodels/services/DateService.html[org.mule.tck.testmodels.services.DateService]
+*  http://www.mulesoft.org/docs/site/current/apidocs/org/mule/tck/testmodels/services/PeopleService.html[org.mule.tck.testmodels.services.PeopleService]
+*  http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/lifecycle/Callable.html[org.mule.api.lifecycle.Callable]
+
+例如，要公开要测试的`PeopleService`，请使用：
+[source, xml, linenums]
+----
+<service name="PeopleService">
+    <inbound>
+        <cxf:inbound-endpoint address="http://localhost:62109/mule/services/people"
+                       serviceClass="org.mule.tck.testmodels.services.PeopleService"/>
+    </inbound>
+    <test:web-service-component/>
+</service>
+----
+
+== 架构更改
+
+下表列出了自2.1以来所做的模式更改，并介绍了如何在应用程序中迁移此更改。
+
+[%header,cols="34,33,33"]
+|===
+|旧标记 |新标记 |笔记
+| `@remoteSync`  |已删除 | `<endpoint>`，`<inbound-endpoint>`和`<outbound-endpoint>`上的`@remoteSync`属性已被删除。有关更多信息，请参阅上面的端点配置部分。
+| `@remoteSyncTimeout`  | `@responseTimeout`  |此属性已在`<endpoint>`，`<inbound-endpoint>`和`<outbound-endpoint>`元素上重命名。
+| `@defaultRemoteSync`  |已删除 |这已从`<mule-configuration>`元素中移除，因为它不再需要。
+| `@defaultSynchronousEventTimeout`  | `@defaultResponseTimeout`  |在`<mule-configuration>`元素上进行配置，这已被重命名以反映其用途。
+在`<jms:connector>`，`<jms:endpoint`或`<jms:outbound-endpoint`元素上配置|（在2.2中添加） | `@disableTemporaryReplyToDestinations`  |切换支持在使用同步，非事务出站端点时创建临时目标。
+|（在2.2中添加） | `<test:web-service-component>` a |
+用于测试Web服务，因为它通过`<test:component>`实现了3项附加服务，即 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/component/simple/EchoService.html[org.mule.api.component.simple.EchoService]
+， http://www.mulesoft.org/docs/site/current/apidocs/org/mule/tck/testmodels/services/DateService.html[org.mule.tck.testmodels.services.DateService]和 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/tck/testmodels/services/PeopleService.html[org.mule.tck.testmodels.services.PeopleService]。
+
+| <selective-consumer> @ transformer-refs  |（从2.2中移除） |此属性不再需要。如果消息需要在过滤之前进行转换，则应该在入站端点上定义转换。
+|（2.2中的新功能） | <expression-splitter-router> @disableRoundRobin  |如果过滤器在端点上使用，则循环法行为可能不是理想的。此标志将循环轮询行为关闭，默认情况下它处于打开状态。
+如果'disableRoundRobin'为false并且该选项为true（默认值），则第一个消息部分如果路由到第一个端点，第二个端点到第二个端点等，第n个部分到+
+ （n个端点的模数）端点。如果为false，则消息将在所有端点之间平均分配。
+|（2.2中的新功能） | <expression-splitter-router> @failIfNoMatch  |如果'disableRoundRobin'为true，则可能会出现当前拆分消息与任何端点不匹配的情况。此标志控制是否在未找到匹配项时引发异常。
+|（HTTP：）HTTP客户端响应对对象的变压器 |（HTTP：）HTTP的响应到消息变压器 | 
+|（HTTP：）对象到HTTP客户端请求变压器 |（HTTP：）对象至http请求变压器 | 
+|（xml：）object-to-xml-transformer @acceptUmoMessage  |（xml：）object-to-xml-transformer @acceptMuleMessage  | 
+|自定义事务@action（可选） |自定义事务@action（必需） |此属性现在需要在2.2
+（Mule WMQ传输）此属性已被重命名，因为它禁用了Mule JMSReplyTo处理，这在使用远程队列定义时非常有用。
+|（2.2中的新功能） | <sqlStatementStrategyFactory> @ref  | JDBC连接器元素的子元素，允许您覆盖默认的SqlStatementStrategyFactory。它根据所提供的SQL确定执行策略。
+`<jms:selector/>`元素 |中的|可选`expression`属性现在需要`expression`属性。 | 
+交易 |中的|可选`action`属性现在需要`action`属性。 | 
+CXF入站和全局端点 |中的|（2.2.1中的新功能） | `namespace`属性（可选）指定服务名称空间。
+CXF入站，出站和全局端点中的|（2.2.1中的新功能） | `enableMuleSoapHeaders`属性 |可选地指定是否编写Mule SOAP标头，相关性和ReplyTo信息。
+|（全新2.2.2）全球`<configuration>`元素 |的 | `shutdownTimeout`属性等待任何进行中消息的时间（以毫秒为单位）在Mule关闭之前完成处理。达到此阈值后，Mule开始中断线程，并且可能丢失消息。
+`<expression-filter>`元素 |的`evaluator`属性中的|（2.2.2中的新功能） | `registry`选项允许您在满足指定标准的注册表中的对象，例如，`<expression-filter evaluator="registry" expression="foo=1"/>`筛选foo对象等于1的消息。
+|（2.2.2中的新功能）JMS入站端点 |中的 | `durableName`属性允许您指定持久主题订阅的名称。
+CXF端点 |中的|（2.2.2中的新功能） | `payload`属性指定在代理模式下是应发送整个SOAP信封还是只发送正文内容。
+|（2.2.2中的新内容） | `request-wildcard-filter`元素 |此过滤器可用于通过将通配符表达式应用于URL来限制HTTP请求。
+| `returnClass`属性是substitutableClass  | `returnClass`属性是字符串 |从2.2.2开始，此属性是一个字符串。请注意，如果您需要指定数组类型，请使用"[]"来后缀类名。
+|===
+
+==  CXF端点处理
+
+默认情况下，Mule现在将CXF端点上的变换器，安全性和过滤器应用于原始XML消息，而不是从CXF接收到的有效负载。要更改此行为，请根据需要将`applyTransformersToProtocol`，`applySecurityToProtocol`和`applyFiltersToProtocol`属性设置为false。例如：
+[source, xml, linenums]
+----
+<cxf:inbound-endpoint address="http://localhost/service" applyTransformersToProtocol="false"/>
+----
+==  Maven OSGi库
+
+重大的工作已经完成，以清理在Mule中使用OSGi重新绑定的依赖关系。 Mule现在使用它自己的定制OSGi插件，它保留原始的groupId，artifactId，POM和工件来源。这个插件只是改变了两件事：它增加了一个OSGi包清单，它也改变了版本，使它在最后包含一个"-osgi"。
+
+如果您发现自己排除了与Mule 2.0 / 2.1的很多依赖关系，因为它们与正常的groupIds / artifactIds冲突，您不必再这样做。
+
+==  Mule企业版更改
+
+_企业版_
+
+本节仅介绍适用于Mule Enterprise Edition的更改。
+
+新的模式名称空间惯例。=== 
+
+Mule Enterprise Edition架构命名空间约定已经过修订，以简化从Community Edition到Enterprise Edition的升级路径：
+
+* 使用www.mulesource。*org*而不是www.mulesource。*com*
+*  URI包含`/ee`子树
+* 架构文件名具有`-ee`后缀
+
+例如：
+
+----
+
+http://www.mulesource.org/schema/mule/ee/jdbc/2.2 http://www.mulesource.org/schema/mule/ee/jdbc/2.2/mule-jdbc-ee.xsd
+----
+
+=== 重试策略的更改
+
+重试策略模式已经与其他新元素合并为一个更通用的Mule EE核心模式：
+
+----
+
+http://www.mulesource.org/schema/mule/ee/core/2.2 http://www.mulesource.org/schema/mule/ee/core/2.2/mule-ee.xsd
+----
+
+使用MULE IDE的自动完成功能时，重试模式元素已重命名以实现更好的分组：
+
+[%header,cols="2*"]
+|===
+|旧名称 |新名称
+|简单策略 |重试-简单的策略
+|永远策略 |重试-永远政策
+|定制策略 |重试定制的策略
+|连接-通知 |重试-CONNECT-通知
+|定制通知 |重试-定制通知
+|（2.2 EE中的新增功能） |多笔交易
+|===
+
+此外，这三个策略元素现在接受`asynchronous`属性，该属性指定重试策略是否应在单独的非阻塞线程中运行。

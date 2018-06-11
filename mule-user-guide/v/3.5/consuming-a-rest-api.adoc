@@ -1,0 +1,468 @@
+= 使用REST API
+
+当您需要从Mule应用程序中使用REST API时，可以通过配置HTTP出站端点来实现。本文档描述了如何准备请求，然后调用REST API以及如何使用其响应。
+
+[NOTE]
+
+请注意，如果您的用例涉及多次连接到相同的REST API，或者您正在使用具有复杂身份验证协议的API，则可能会发现开发您自己的Anypoint Connector是一种更有效且可重用的解决方案。有关构建连接器的更多详细信息，请参阅 link:/anypoint-connector-devkit/v/3.7[Anypoint连接器DevKit]。
+
+== 基本解剖学
+
+在其最简单的化身中，设置为使用REST API的Mule应用程序包含：
+
+* 配置一个或多个消息处理器来构建您的请求
+* 配置为调用REST API的HTTP出站端点
+* 配置一个或多个消息处理器来接受和处理响应
+
+image:Consume+REST+basic+anatomy.png[消费+ REST +基本+解剖]
+
+构建请求和处理响应的应用程序部分可以配置为满足您的用例需求。本文档重点介绍中心步骤：使用HTTP连接器调用REST API。
+
+== 最低配置
+
+在使用REST API时，您首先需要了解一些最低限度的信息，通常您可以通过访问API文档获取这些信息。
+
+*  *Does the API require authentication?* +
+如果API需要基本认证，则可以配置HTTP端点来使用API​​。如果API使用复杂身份验证（如OAuth），请考虑使用Anypoint Connector DevKit构建自定义连接器。
+*  *What is its base URL?* +
+您需要基URL来配置出站HTTP端点地址以指向您的API。
+*  *What scope does the API allow you to access?* +
+根据您使用API​​的身份验证凭据，您的应用程序调用可能仅限于某些资源上的GET请求，或者根本无法访问其他资源。
+*  *Which resources within that scope you want to access?* +
+您需要知道要访问的资源的确切路径，以便您可以将它们包含在出站HTTP端点的配置中。
+*  *What methods does the API support for each of those resources?* +
+HTTP出站端点的默认方法是POST，因此您需要知道该资源支持哪些方法，并在必要时将此默认值更改为调用成功呼叫所需的方法。
+*  *What input is the API expecting? (JSON, XML, etc.)* +
+对于POST和PUT调用，API几乎总是需要根据其模式格式化的特定输入。
+*  *What output will the API produce?* +
+在流程中的HTTP出站端点之后，您需要消息处理器接受来自API的响应并将其转换为您可以使用的格式。
+*  *Does the API use redirects?* +
+如果确实如此，请确保在HTTP出站端点中启用重定向。
+*  *What headers are required for the method you are using?* +
+请注意，GET请求可能不需要特殊标题，但POST，PUT和DELETE请求几乎总是需要标题。
+*  *What error codes can you expect?* +
+您可能希望将错误代码写入应用程序的后续步骤，以处理来自API的所有可能的响应。
+
+==== 简单示例
+
+例如，如果您想要使用OpenWeatherMap API，请 http://openweathermap.org/API[访问文档]确定您需要的基本信息。在这个例子中：
+
+*  API不需要身份验证
+* 基本网址是http://api.openweathermap.org/data/2.5/
+* 范围仅限于少数资源，包括*weather*，*forecast*等，并且这些资源上唯一可用的方法是*GET*
+* 文档中提供的示例API请求显示，如果您想在**London, UK**中检索有关当前天气的信息，那么您的API请求如下所示：
+
+[source, code, linenums]
+----
+http://api.openweathermap.org/data/2.5/weather?q=London,uk
+----
+
+该URL使用以下格式：
+
+image:REST-api-address-format.png[REST的API地址格式]
+
+[%header%autowidth.spread]
+|===
+|协议 | API基本网址 |资源路径 |查询参数
+| `http://`  | `api.openweathermap.org/data/2.5/`  | `/weather`  | `?q=London,uk`
+|===
+
+要在您的Mule应用程序中实现此调用，请按照以下说明配置您的HTTP出站端点。 （请注意，此示例仅显示此HTTP连接器的配置，为了使此示例可用，至少需要配置HTTP连接器以触发流中的消息，并且至少有一个消息处理器可以接受请参阅 link:/mule-user-guide/v/3.6/rest-api-examples[完整的例子]了解更多信息。）
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+. Open the Properties Editor of the *HTTP outbound endpoint.*
+. Ensure the exchange pattern is set to *request-response.*
+. Delete the contents of the *Host* field.
+. Select the *Method* you want to use from the drop-down list. This example uses *GET.*
+
++
+image:ge.png[ge] +
++
+
+. Open the Advanced tab. Enter your API call into the Address field
+
+
++
+image:http2.png[http2] +
++
+
+. Click any blank area of the canvas to *Save* your configuration changes.
++
+[TIP]
+Note that if the API you are calling requires HTTPS or basic authentication, involves redirects, or requires a specific Content-Type header be specified, the HTTP connector supports additional configuration to manage these details.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+[source, xml, linenums]
+----
+<http:outbound-endpoint exchange-pattern="request-response" method="GET" address="http://api.openweathermap.org/data/2.5/weather?q=London,uk" doc:name="HTTP"/>
+----
+....
+------
+
+在这个例子中，响应是JSON。
+
+[source, code, linenums]
+----
+{
+  "coord": {
+    "lon": -0.13,
+    "lat": 51.51
+  },
+  "sys": {
+    "message": 0.0506,
+    "country": "GB",
+    "sunrise": 1396589257,
+    "sunset": 1396636746
+  },
+  "weather": [
+    {
+      "id": 801,
+      "main": "Clouds",
+      "description": "few clouds",
+      "icon": "02d"
+    }
+  ],
+  "base": "cmc stations",
+  "main": {
+    "temp": 287.46,
+    "pressure": 1010,
+    "temp_min": 285.93,
+    "temp_max": 289.26,
+    "humidity": 73
+  },
+  "wind": {
+    "speed": 2.06,
+    "gust": 4.11,
+    "deg": 310
+  },
+  "clouds": {
+    "all": 24
+  },
+  "dt": 1396633274,
+  "id": 2643743,
+  "name": "London",
+  "cod": 200
+}
+----
+
+根据应用程序的需求，可以使用DataMapper或JSON到Object的转换器将此响应转换为另一种格式，从中可以提取信息，路由消息等。
+
+== 使用MEL表达式配置动态请求
+
+在上面的例子中，请求在URL中被硬编码：
+
+[source, code, linenums]
+----
+http://api.openweathermap.org/data/2.5/weather?q=London,uk
+----
+
+大多数使用情况要求根据消息中的某些数据动态更改API。例如，在下面的GET请求示例中，该调用指示Mule从消息的有效载荷中提取城市名称。
+
+[source, code, linenums]
+----
+http://api.openweathermap.org/data/2.5/weather?q=#[payload]
+----
+
+在更复杂的情况下，您可能需要根据消息属性中的数据或先前在流中设置的变量来查询其他资源。例如：
+
+[source, code, linenums]
+----
+http://api.someservice.com/#[flowVars['resource_path']]?#[flowVars['query_param']]=#[flowVars['query_param_value']]
+----
+
+或者，您可能希望根据流程中较早执行的逻辑动态配置调用的方法（GET，POST等）。要覆盖HTTP出站端点中设置的方法，请在端点之前使用*Property transformer*来显式设置`http.method`属性（请参阅下面的说明）。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+
+Insert a `set-property` element in your flow before your HTTP outbound endpoint and configure it to set the http.method property. If set, Mule uses this property to override the method attribute set on the HTTP outbound endpoint.
+
+image:set+property.png[set+property]
+
+This sample configuration assumes that you have configured a flow variable earlier in your flow called `method-override `with logic to populate the value of that variable with a valid method.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Insert a `set-property` element in your flow before your HTTP outbound endpoint and configure it to set the http.method property. If set, Mule uses this property to override the method attribute set on the HTTP outbound endpoint.
+
+[source, xml, linenums]
+----
+<set-property propertyName="http.method" value="#[flowVars['method-override']]" doc:name="Property"/>
+----
+
+This sample configuration assumes that you have configured a flow variable earlier in your flow called `method-override` with logic to populate the value of that variable with a valid method.
+....
+------
+
+== 处理HTTP内容类型和编码
+
+当您发送POST请求正文时，Mule遵守以下关于Content-Type和编码的规则。
+
+=== 发送
+
+[cols="2*"]
+|========================
+| *For a String, char[], Reader, or similar* a |
+* 如果端点已经明确设置了编码，Mule使用这种编码。
+* 如果端点没有显式设置编码，Mule将根据消息属性`Content-Type`确定编码。
+* 如果未设置`Content-Type`消息属性，Mule将使用Mule上下文默认配置。
+* 对于`Content-Type`，Mule发送消息属性`Content-Type`，但使用实际的编码集。
+
+| *For binary content* a |
+编码不相关。 Mule设置`Content-Type`如下：
+
+* 如果在消息上设置了`Content-Type`属性，Mule会使用定义的内容类型。
+* 如果消息中未设置`Content-Type`属性，则Mule将"application/octet-stream"设置为`Content-Type`。
+
+|========================
+
+=== 接收
+
+当收到HTTP响应时，Mule消息的负载通常是HTTP响应的InputStream。
+
+== 使用自定义标题
+
+许多API要求您将自定义标头与请求一起传递，例如开发人员密钥。您可以在消息到达HTTP出站端点之前将这些标头添加为 link:/mule-user-guide/v/3.5/configuring-properties[性能]，从而在消息上设置这些标头。
+
+例如，如果您正在使用的API要求您注册开发人员密钥，那么请使用标头名称`accessKey`将该密钥作为标头传递给您的请求，您可以添加一个属性来设置此标头，如图所示下面。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+
+. In the HTTP connector's properties editor click the *Add Parameter* button, this will create a few new fields that correspond to a new parameter. By default this will create a query-param, but you can pick other types of parameters from the dropdown menu, for this example pick *header*. For the header's name, type `accessKey` and for its value, provide your key.
++
+image:header1.png[header1]
++
+Note that you can also configure the value of the custom header using a MEL expression if you want to define the value dynamically (see image below).
++
+image:rest-prop2.png[rest-prop2]
++
+You can also use a link:/mule-user-guide/v/3.7/configuring-properties[property placeholder], then define the value in your **mule-app.properties** file.
++
+image:rest-prop3.png[rest-prop3]
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+[source, xml, linenums]
+----
+<set-property propertyName="accessKey" value="897s44783kdg94545" doc:name="Property"/>
+----
+
+Note that you can also configure the value of the custom header using a MEL expression if you want to define the value dynamically (see image below).
+
+[source, xml, linenums]
+----
+<set-property propertyName="accessKey" value="#[sessionVars.accesskey]" doc:name="Property"/>
+----
+
+You can also use a link:/mule-user-guide/v/3.5/configuring-properties[property placeholder], then define the value in your mule-app.properties file.
+
+[source, xml, linenums]
+----
+<set-property propertyName="accessKey" value="${access.key}" doc:name="Property"/>
+----
+....
+------
+
+== 处理安全要求
+
+[NOTE]
+
+请注意，如果您的用例涉及使用具有复杂身份验证协议（例如OAuth）的API，则可以构建自己的Anypoint Connector来使用该API。有关构建连接器的更多详细信息，请参阅 link:/anypoint-connector-devkit/v/3.7[Anypoint连接器DevKit]。
+
+
+
+===  HTTPS
+
+如果您正在使用的REST API要求传入请求通过HTTPS到达，则可以在Mule应用程序中配置全局HTTPS连接器，然后在出站端点中引用连接器。
+
+首先，您必须创建一个密钥库文件来验证通信。这可以使用Java提供的keytool来完成，该工具位于Java安装的bin目录中。使用命令行导航到本机上的此目录，然后执行以下命令以创建密钥库文件：
+
+[source, code, linenums]
+----
+keytool -genkey -alias mule -keyalg RSA -keystore keystore.jks
+----
+
+系统会提示您创建两个密码; *remember the passwords!*该命令在本地目录`keystore.jks`中创建一个`jks`文件。
+
+* 如果您使用的是Mule Studio，请将此文件拖放到Mule Studio的包资源管理器中的`yourappname/src/main/resources `目录中。
+* 如果您正在使用独立版，请将其放在`MULE_HOME/conf`目录中，以便在多个应用程序中使用;如果您仅在此应用程序中使用此目录，请将其放在`yourappname/src/main/resources`目录中。
+
+现在，您可以在全局HTTPS连接器中引用此密钥存储库，而该连接器又由流程中的HTTP出站端点引用。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+. Open the *Properties Editor* of the *HTTP endpoint* in your flow to ensure that *Enable HTTPS* is checked.
++
+image:rest-http-3.png[rest-http-3]
+
+. Click the green plus sign next to the *Connector Configuration* field to create a global connector.
++
+image:rest-http-4.png[rest-http-4]
+
+. Select *HTTP-HTTPS*, then click *OK.*
++
+image:http-choose-global.png[http-choose-global]
+
+. Click the *Security* tab.
++
+image:HTTP-clicksecurity.png[HTTP-clicksecurity]
+
+. Enter the *Path, Key Password*, and *Store Password* (the passwords your remembered when creating your keystore file), then click *OK.*
+
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+[source, xml, linenums]
+----
+<https:connector name="httpsConnector">
+     <https:tls-key-store path="keystore.jks" keyPassword="YOURPASSWORD" storePassword="YOURPASSWORD"/>
+</https:connector>
+----
+
+Note that if you placed your keystore in the yourappname/src/main/resources directory then you can just specify the name of the keystore as the value of the path. Otherwise, if the keystore is located in the MULE_HOME/conf directory, specify `"/keystore.jks"` as the path.
+....
+------
+
+== 基本认证
+
+如果您正在使用的REST API要求您传递基本身份验证凭据，则可以在出站HTTP端点配置中提供它们。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+
+. Click the *HTTP Settings* tab in the *Properties Editor* of your HTTP outbound endpoint, then enter your API access credentials – *User* and *Password* –as shown. Your application passes these credentials with the API call at runtime.
++
+image:http-userpass.png[http-userpass]
+
+Note that you can also replace these with link:/mule-user-guide/v/3.5/configuring-properties[property placeholders] and define the properties in your mule-app.properties file.
+
+. Enter placeholder values in the Basic Authentication fields, as shown below.
++
+image:http-userpass-props.png[http-userpass-props]
+
+. Navigate to your mule-app.properties file under src/main/app in the Package Explorer.
++
+image:src-main-app-propertiesfile.png[src-main-app-propertiesfile]
+
+. Define the placeholders here, as shown below.
+
+....
+[tab,title=XML Editor or Standalone]
+....
+
+Add the user and password attributes to your http:outbound-endpoint configuration, as shown below.
+
+[source, xml, linenums]
+----
+<http:outbound-endpoint exchange-pattern="request-response" method="GET" address="http://www.targetAPI.com/path" doc:name="HTTP"  user="myusername" password="mypassword"/>
+----
+
+Rather than hardcode the values of your credentials, you can define them as link:/mule-user-guide/v/3.5/configuring-properties[property placeholders.]
+
+[source, xml, linenums]
+----
+<http:outbound-endpoint exchange-pattern="request-response" method="GET" address="http://www.targetAPI.com/path" doc:name="HTTP"  user="${service.username}" password="${service.password}"/>
+----
+
+Open (or create, if you don't have one) the `mule-app.properties` file in your application's `src/main/app` folder, then define the properties in the file:
+
+[source, code, linenums]
+----
+service.username=myusername
+service.password=mypassword
+----
+....
+------
+
+== 轮询REST API
+
+[NOTE]
+
+尽管HTTP连接器具有内置的轮询功能（如下所述），但您可以配置 link:/mule-user-guide/v/3.5/poll-reference[轮询]作用域，然后将HTTP端点放入其中。通过使用轮询范围，您可以利用更强大的轮询功能，例如使用cron表达式进行水印和计划。
+
+
+HTTP连接器支持轮询HTTP URL以调用REST API并从结果中生成消息。这对于只提供Web服务以及需要API GET请求启动流程中的处理的情况非常有用。
+
+要配置您的应用程序以轮询REST API，请使用轮询HTTP连接器引用来配置入站HTTP端点。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+. Open the *Properties Editor* of the *HTTP endpoint.* Click the green plus sign next to *Connector Configuration.*
++
+
+image:rest-http-4.png[rest-http-4]
+
+. In the Choose Global Type window, select *HTTP Polling.*
++
+
+image:http-polling.png[http-polling]
+
+. You can configure a polling connector with all the same optional attributes as a regular HTTP-HTTPS connector, with the addition of *Polling Frequency* (located in the *Polling* tab), and flags for processing the *ETag header* and *Discarding Empty Content* (both false by default).
++
+
+image:global_polling.png[global_polling]
+
+
+
+The ETag, or entity tag, is HTTP's cache control mechanism. APIs that support it will provide an HTTP header with an ETag value that represents a unique version of the resource located by the request URL. After successful processing when polling a resource, you might not want to process the same resource again if there are no changes. Activating the ETag checkbox instructs Mule not to send two requests with the same ETag.
+....
+[tab,title="XML Editor or Standalone"]
+....
+The following example illustrates how to configure a global http:polling-connector.
+
+[source, xml, linenums]
+----
+<http:polling-connector name="HTTP_Polling" cookieSpec="netscape" validateConnections="true" pollingFrequency="1000" sendBufferSize="0" receiveBufferSize="0" receiveBacklog="0" clientSoTimeout="10000" serverSoTimeout="10000" socketSoLinger="0" checkEtag="false" discardEmptyContent="false" doc:name="HTTP Polling"/>
+
+    <flow name="Example_Flow1" doc:name="Example_Flow1">
+        <http:inbound-endpoint exchange-pattern="one-way" host="localhost" port="8081" doc:name="HTTP" connector-ref="HTTP_Polling"/>
+----
+
+Note that the checkEtag attribute (false by default) can be set to true if you want to enable HTTP's cache control mechanism. APIs that support entity tags will provide an HTTP header with an ETag value that represents a unique version of the resource located by the request URL. After successful processing when polling a resource, you might not want to process the same resource again if there are no changes. Setting checkEtag to true instructs Mule not to send two requests with the same ETag.
+....
+------
+
+== 提示
+
+*  **Follow redirects: **如果您使用GET向API发出请求，并且API使用`redirectLocation`标头进行响应，请将HTTP连接器配置为遵循重定向，以便将请求推送到重定向URL。这仅适用于GET请求，因为您无法自动遵循POST请求的重定向。 +
+** 在Studio中，点击HTTP连接器属性编辑器的*Advanced*选项卡上的*Follow Redirects*复选框。
+** 在XML中，添加属性`followRedirects=` `"true"`。
+
++
+image:follow+redirects.png[遵循+重定向]
++
+
+*  *POST requests and the API schema:*如果您使用POST请求调用REST API，则需要获取POST的API模式，并将该格式与发送给API的Mule消息的有效内容相匹配你的申请。一个好的方法是在流程中的HTTP出站端点之前插入*DataMapper transformer*，然后使用API​​的模式定义输出格式。 +
+
++
+image:consume-rest-datamapper.png[占用休息-的DataMapper]
+
+
+== 另请参阅
+
+* 查看一些使用REST API的 link:/mule-user-guide/v/3.6/rest-api-examples[示例应用程序]。
+* 请参阅HTTP连接器的参考文档。
+* 如果HTTP连接器不符合您的需求，请考虑使用 link:/anypoint-connector-devkit/v/3.7[Anypoint连接器DevKit]构建连接器。

@@ -1,0 +1,231 @@
+=  CloudHub Fabric（CloudHub）
+
+CloudHub Fabric为CloudHub上的应用程序提供可扩展性，工作负载分布和可靠性。此功能由CloudHub的可扩展负载平衡服务，工作者扩展和持久队列功能提供支持。
+
+在部署新应用程序或重新部署现有应用程序时，可以使用Runtime Manager控制台以每个应用程序为基础启用CloudHub Fabric功能。
+
+本文档中的主题仅通过基于云的Runtime Manager版本处理云部署。
+
+== 先决条件
+
+CloudHub Fabric需要CloudHub Enterprise或合作伙伴帐户。本文档假定您有一个允许您使用此功能的帐户类型，并且您熟悉使用Runtime Manager控制台部署应用程序。
+
+== 员工向外扩展
+
+CloudHub允许您为应用程序的工作人员选择数量和大小，从而提供横向可伸缩性。这种对计算容量配置的细粒度控制使您能够灵活地扩展应用程序以随时处理更高的负载（或在低负载时段内缩小）。
+
+使用*workers*旁边的下拉菜单选择应用程序工作人员的数量和大小，并配置所需的计算能力。
+
+每个应用程序可以部署最多8个任意类型的工作人员，总计最多128个vCore。但是，根据您的订阅中可用的数量，您可能会被限制为比您需要的更少的vCore。有关部署到多个vCore的信息，请参阅 link:/runtime-manager/deploying-to-cloudhub[工人上浆]。
+
+工作人员的扩大也增加了可靠性。为了获得最大的可靠性，MuleSoft会自动将同一应用程序的多个工作人员分配到两个或更多数据中心。
+
+将应用程序部署到两个或更多的工作人员时，可以将工作负载分布在这些Mule实例上。 CloudHub提供以下内容：
+
+.  HTTP负载平衡服务会自动向您分配的工作人员分配HTTP请求。
+. 持久的消息队列（见下文）
+
+批量作业一次只能在单个工作人员上运行，并且不能跨多个工作人员分发。
+如果mule在同一个部署中重新启动，状态将会持续，批处理将继续处理。如果在批处理运行时更新或重新部署整个应用程序，则批处理作业的其余部分将不会继续。 CloudHub中持久批量作业的主要解决方案是使用Cloud Object Store。
+
+== 持久队列
+
+持久队列确保零消息丢失，并让您将工作负载分配给一组工作人员。
+
+* 如果您的应用程序部署到多个工作人员，持久性队列允许工作人员与工作负载分配之间的通信。例如，如果将大文件放入队列中，则您的工作人员可以将其分开并并行处理。
+* 即使一个或多个工作人员或数据中心停机，持久队列也能保证您的邮件的传递，从而为高风险处理提供额外的邮件安全性。
+* 通过在您的应用程序上启用持久性队列，您可以在运行时管理器控制台的*Queues*选项卡上查看您的队列。
+* 您可以为所有持久性队列启用静态数据加密。通过启用此功能，可以确保写入持久队列的任何共享应用程序数据都已加密，从而满足您的安全性和合规性需求。
+* 持久队列中消息的保留时间长达4天。消息大小或持久队列中的消息数量没有限制。
+* 工作人员的持续队列与工作人员位于同一区域
+
+请注意，持久队列不保证一次性消息传递。可能会发送重复的邮件。如果一次性消息传递对您的用例至关重要，则不要启用持久队列。
+
+要详细了解如何在应用程序中使用持久队列，请参阅 link:/runtime-manager/managing-queues[管理队列]。
+
+== 启用CloudHub Fabric功能
+
+您可以通过以下两种方式之一启用和禁用CloudHub Fabric的一项或两项功能：
+
+* 首次使用Runtime Manager控制台将应用程序部署到CloudHub时
+* 通过访问Runtime Manager控制台中的*Deployment*选项卡以查看以前部署的应用程序
+
+在*Workers*旁边，从下拉菜单中选择选项，以定义分配给您的应用程序的工作人员人数和类型。有关部署到多个工作人员的更多信息，请参阅 link:/runtime-manager/deploying-to-cloudhub#worker-sizing[工人上浆]。
+
+点击应用以查看概览，然后点击*Manage Application*。点击*Settings*并点击*Persistent Queues*复选框启用队列持久性。
+
+如果您的应用程序已部署，则必须重新部署它以使新设置生效。
+
+==  CloudHub Fabric如何实施
+
+在内部，工作者扩展和VM队列负载均衡是使用Amazon SQS实现的。
+
+即使您未为应用程序启用持久队列，也始终使用Amazon SQS持久存储应用程序中的对象库。
+
+HTTP负载均衡由内部反向代理服务器实现。对应用程序（域）URL + http：//appname.cloudhub.io+的请求会自动在所有应用程序的工作程序URL之间进行负载平衡。
+
+客户可以通过使用工人的直接URL来绕过CloudHub Fabric负载平衡器。有关如何访问特定CloudHub工作程序中的应用程序的更多信息，请参阅 link:https://docs.mulesoft.com/runtime-manager/cloudhub-networking-guide[CloudHub网络指南]。
+
+== 用例
+
+根据您的使用情况，您可能希望在同一应用程序上同时使用两种CloudHub Fabric功能，或者您可能更愿意仅启用其中一项，或者两项都不启用。
+
+注意事项：
+
+* 要利用持久排队，请将您的Mule应用程序设置为支持此功能。有关更多信息，请参阅<<Building Mule Applications to Support Persistent Queues>>。
+* 启用持久队列会带来性能影响：将小消息（50KB或更少）放入队列可能需要10-20毫秒（ms）;从队列中取消相同的消息可能需要70-100毫秒。
+* 添加额外的工作人员会增加服务成本。
+
+[%header,cols="3*a"]
+|===
+|用例 |建议的CloudHub结构配置 |含义
+|您希望扩展您的应用程序，但您对现有高度可用的CloudHub体系结构感到满意，以防止服务中断或消息丢失。 |
+持久队列已启用？ *No*
+
+工人人数：*2 or more*
+
+|
+* 应用程序性能不受队列延迟的影响。
+* 无需配置您的应用程序以支持队列持久性。
+{0}}如果一个数据中心发生故障，您的员工可以使用不同的数据中心。
+
+|您有一个需要防止消息丢失的高风险流程，但是您在处理处理负载方面没有遇到问题，并且在数据中心停机的情况下可以保持某些服务中断。{{ 1}}
+持久队列已启用？ *Yes*
+
+工人人数：*1*
+
+|
+* 应用程序可能会遇到一些队列延迟。
+* 您需要在部署前配置您的应用程序以支持队列持久性。
+* 如果您的工作人员所在的数据中心遇到中断，CloudHub会自动将您的应用程序迁移到另一个可用区域。在迁移过程中您可能会遇到停机时间;但是，您的持久队列确保零消息丢失。
+
+|您有一个高风险流程，您需要防止邮件丢失，避免任何服务中断，并处理大量处理负载。 |
+持久队列已启用？ *Yes*
+
+工人人数：*2 or more*
+
+|
+* 应用程序可能会遇到一些队列延迟。
+* 您需要在部署前配置您的应用程序以支持队列持久性。
+{0}}如果一个数据中心发生故障，您的员工将自动分发以确保冗余。
+
+|您的应用程序对处理负载或消息丢失没有任何特殊要求。 |
+持久队列已启用？ *No*
+
+工人人数：*1*
+
+|
+* 应用程序性能不受队列延迟的影响。
+* 无需配置您的应用程序以支持队列持久性。
+{0}}如果您的工作人员所在的数据中心遇到中断，CloudHub会自动将您的应用程序迁移到另一个可用区域，但在迁移过程中可能会遇到一些停机时间和信息丢失。
+
+|===
+
+
+== 包含批量作业的应用程序的持久排队行为
+
+将包含批处理作业的应用程序部署到启用了持久性队列的CloudHub时，批处理作业使用CloudHub的持久排队功能来实现批处理排队功能。
+
+使用持久队列时，请记住以下限制：
+
+* 使用CloudHub持久队列的批处理作业会遇到更多延迟
+*  CloudHub持久队列偶尔会不止一次地处理消息。如果您的用例要求确保每个消息只处理一次，请考虑在不启用持久队列的情况下部署应用程序。
+* 在应用程序重新启动的情况下仍可能发生消息丢失
+
+== 构建Mule应用程序以支持持久队列
+
+为了让您的应用程序获得持久排队的好处，请在您的应用程序代码中实施可靠性模式，将单个XA事务与VM传输分开。有关更多信息，请参阅 link:/mule-user-guide/v/3.9/reliability-patterns[可靠性模式]。
+
+image:CH_Fabric.png[CH_Fabric]
+
+*reliable acquisition flow*可靠地将来自入站HTTP连接器的消息传递到出站VM端点。如果可靠的采集流程无法将消息放入VM队列中，则可通过向客户端返回"unsuccessful request"响应来确保消息不会丢失，以便客户端可以重试请求。
+
+*application logic flow*将来自入站VM端点的消息传递到应用程序中的业务逻辑处理。该流程代表一项交易。 （您的业务逻辑可能涉及其他几项交易，未显示。）
+
+在这两个流程之间，*persistent VM queue*保存可靠采集流程提交的消息，直到它们准备好由应用程序逻辑流程处理。如果事务中发生处理错误，或者事务超时（分配给事务的时间超时），Mule会触发回滚。该回滚消除消息中发生的任何部分处理，并将消息放回到队列中。如果您的Mule实例遇到中断并且无法显式回滚事务，则一旦分配给事务的时间超出，事务就会自动回滚。分配的时间由事务元素的`timeout`属性确定。您可以自己配置超时，或接受默认值。
+
+从三个步骤来考虑每笔交易是有帮助的：
+
+.  *Begin*。 Mule启动交易中所有子组件的处理。
+.  *Commit*。 Mule将完成的交易结果发送到下一步。 （对于XA事务，提交步骤有两个阶段：_commit-request阶段_和_commit阶段_在提交请求阶段，Mule将多个资源的结果协调在事务范围内，并确认所有处理成功执行并准备提交，提交阶段然后调用每个资源来提交它的处理。）
+.  *Rollback*。如果在“开始”或“提交”步骤中发生错误，Mule会回滚事务中的操作，以便没有任何部分导致部分完成。
+
+以下代码片段提供了使用VM传输在CloudHub上进行队列持久性的可靠性模式中设置的应用程序示例。
+
+[source,xml, linenums]
+----
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.7.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+ 
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+ 
+http://www.mulesoft.org/schema/mule/jbossts http://www.mulesoft.org/schema/mule/jbossts/current/mule-jbossts.xsd">
+ 
+    <vm:connector name="vmConnector" doc:name="VM">
+    </vm:connector>
+    <http:listener-config name="listener-config" host="..." port="..."/>
+ 
+    <!-- This is the reliable acquisition flow in the reliability pattern.  -->
+ 
+    <flow name="reliable-data-acquisition" doc:name="reliable-data-acquisition">
+        <http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+        <expression-filter expression="#[message.inboundProperties.'http.request.path' != '/favicon.ico']" nullReturnsTrue="true" doc:name="Expression"/>
+        <vm:outbound-endpoint exchange-pattern="one-way" path="input" connector-ref="vmConnector" doc:name="VM"/>
+    </flow>
+ 
+    <!-- This is the application logic flow in the reliability pattern.
+         It is a wrapper around a subflow, "business-logic-processing".
+    -->
+    <flow name="main-flow" doc:name="main-flow">
+        <vm:inbound-endpoint exchange-pattern="one-way" path="input" connector-ref="vmConnector" doc:name="VM">
+            <xa-transaction action="ALWAYS_BEGIN" timeout="30000"/>
+        </vm:inbound-endpoint>
+        <flow-ref name="business-logic-processing" doc:name="Flow Reference"/>
+        <vm:outbound-endpoint exchange-pattern="one-way" path="output" connector-ref="vmConnector" doc:name="VM">
+    </flow>
+ 
+    <!--
+            This subflow is where the actual business logic is performed.
+        -->
+    <sub-flow name="business-logic-processing" doc:name="business-logic-processing">
+    ....
+    </sub-flow>
+</mule>
+----
+
+混合VM队列和CloudHub VM队列之间的差异=== 
+
+下表介绍了混合VM队列和CloudHub VM队列之间的主要区别。
+
+[%header,cols="2*a"]
+|===
+|本地应用程序中的VM队列 |部署到CloudHub的应用程序中的VM队列
+|您可以使用queue-profile元素配置未完成消息的最大数量。 | CloudHub中未完成消息的数量没有限制。即使您的应用程序中编写了具有最大数量的未完成消息的队列配置文件元素，如果您将应用程序部署到CloudHub并且选中了“持久队列”复选框，CloudHub也会允许无限制的未完成消息。
+|您可以使用queue-profile元素切换队列的持久性。 |使用部署对话框的“高级详细信息”部分中的“持久队列”复选框来管理队列的持久性。即使在应用程序中编写了一个队列配置文件元素，当您将应用程序部署到CloudHub并选中持久性队列复选框时，CloudHub也会覆盖这些设置。
+|您可以为要使用的VM队列定义队列存储。 | CloudHub为您管理队列存储，因此不需要定义队列存储。
+| XA事务的事务提交和回滚按照两阶段提交算法进行操作。 |在CloudHub中，当两阶段提交算法适用于XA事务时，存在一个重要的例外消息正被添加到队列中。有关详细信息，请参阅下面所述的已知问题注意：当CloudHub_consumes_消息来自持久队列时，两阶段落实算法的此例外情况不适用。
+|===
+
+== 注意事项
+
+当消息添加到CloudHub中的VM队列中时，如果满足以下条件，则XA事务的两阶段落实协议可能无法回滚完整事务：
+
+* 提交请求阶段已成功完成。事务内的所有参与进程都成功执行，因此消息已准备好提交到队列中。
+* 在提交阶段，会发生错误，导致事务内的子进程无法提交，从而触发事务的回滚。
+*  VM出站端点在发生回退之前完成其提交。
+
+如果上述三个条件均为真，则该消息将被添加到队列中，而不是按事务回滚过程的意图回退。没有消息丢失发生，并且事务仍然可以重复，但出站VM队列包含一个意外的消息。
+
+请注意，只有当流产生需要添加到VM队列的消息时才会出现此问题。消耗队列消息的过程没有影响。
+
+== 另请参阅
+
+*  link:/runtime-manager/deploying-to-cloudhub#worker-sizing[工人上浆]
+*  link:/runtime-manager/managing-queues[管理队列]
+*  link:/runtime-manager/cloudhub-architecture[CloudHub体系结构]。
+*  link:/mule-user-guide/v/3.8/transaction-management[交易管理]
+*  link:/mule-user-guide/v/3.8/vm-transport-reference[VM传输]
+*  link:/mule-user-guide/v/3.8/reliability-patterns[可靠性模式]。

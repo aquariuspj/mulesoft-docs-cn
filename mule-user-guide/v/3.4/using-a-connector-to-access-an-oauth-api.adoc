@@ -1,0 +1,322 @@
+= 使用连接器访问OAuth API
+
+Mule提供了大量的连接器，您可以将其插入流中并以即插即用的方式使用。在某些情况下，这些连接器使用OAuth安全协议来管理用户身份。在这些情况下，使用连接器需要一些额外的步骤。 Mule在很大程度上简化了OAuth协议的实现，本文档解释了配置连接器以使用OAuth的其余步骤。
+
+== 假设
+
+本页假定您了解基本的 link:/mule-user-guide/v/3.4/mule-concepts[骡子概念]， link:/mule-user-guide/v/3.4/message-sources[消息来源]， link:/mule-user-guide/v/3.4/message-processors[消息处理器]和 link:/mule-user-guide/v/3.4/global-elements[全球元素]。
+
+== 什么是OAuth？
+
+**{{0}}**（开放式授权标准）是一种允许应用程序通过第三方Web服务对受保护资源进行有限访问的方法。换句话说，OAuth为Web服务提供了一种安全的方式，通过其他Web服务获得对资源（如用户帐户）的有限临时访问。
+
+OAuth允许Web服务提供者：
+
+* 向Web服务的使用者授予对安全数据的有限访问权限
+* 避免向最终用户披露Web服务使用者的访问凭证
+* 有权随时撤销消费者对最终用户安全数据的访问权限
+
+目前有两种OAuth版本正在使用：OAuth1和OAuth2。本文将解释处理OAuth2的过程。 OAuth1实现细节因连接器而异，所以如果您需要使用OAuth1，请阅读您的特定连接器文档。
+
+== 通过OAuth2使用连接器
+
+为了更好地解释这个过程，本文将介绍一个构建使用OAuth和Salesforce连接器的Mule流的示例。
+
+=== 获取OAuth令牌
+
+要在您的连接器中实现OAuth2，您必须首先从要连接的应用程序中获取*consumer key*和*secret*。此过程因服务提供商而异，因此请查看他们提供的文档。
+
+OAuth提供商（即您要连接的服务）会要求您提供*callback URL*。回调URL是OAuth提供商在授权完成后与授权令牌一起调用的URL。请记住您在此设置的网址，因为它必须与您的应用使用的网址相匹配。
+
+=== 配置您的连接器
+
+在您的Mule应用程序中，您现在需要创建并设置具有以下内容的新连接器：
+
+* 您的消费者密钥
+* 你的秘密
+*  OAuth回拨网址
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+
+. If you haven't already done so, create a new Mule project.
+. Click the *Global Elements* tab at the bottom of the canvas. +
+
++
+image:sfcon1.png[sfcon1] +
++
+. Click on *Create* to create a new global element, then expand the Cloud Connectors node and select the appropriate global type that matches your OAuth-enabled connector. 
++
+image:Studio_ChooseGlobalType.png[Studio_ChooseGlobalType]
+
+. Complete the *Consumer Key* and *Consumer Secret* with the information that the service provider gave you.
++
+image:oauth5.png[oauth5]
+
+. On the *OAuth* tab, enter the callback URL.
++
+image:oauth9.png[oauth9]  
++
+[%autowidth.spread]
+|===
+|Field |Example |CloudHub | 
+|Domain |*`localhost`* |*`${fullDomain}`* |The domain of the endpoint where your OAuth callback is hosted.  When in production, this will be the domain where your application is hosted.
+|Local Port |`8081` |*`${http.port}`* |The port which your authorization flow is hosted on. This will be the port which your HTTP endpoint is hosted on.
+|Remote Port |  |*`${fullDomain}`* |The port of the endpoint where your OAuth callback is hosted.
+|Path |*`callback`* |*`callback`* |The path of the endpoint where your OAuth callback is hosted.
+|===
++
+What you place in these parameters will be used to construct the full callback URL in the following form: `{{0}}:[remotePort]/[path]`. The example above results in a callback URL of `http://localhost:8081/callback`.
+
+=== Controlling Flow Processing
+
+You can decide what happens when a connector is invoked by a user that has no OAuth token set for the connector (i.e. he is not yet authenticated via OAuth). There are two options:
+
+* STOP_FLOW: acts as a filter and kills the execution of the flow.
+* EXCEPTION: throws an exception informing that the token is not acquired.
++
+image:oauth6.png[oauth6]
+
+EXCEPTION is the default value of this parameter. If you want to keep error logs light, STOP_FLOW is probably the ideal choice as it doesn't create exceptions before you have had a chance to authorize your connector to access the OAuth provider.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Configure a connector as shown in the following example:
+
+[source, xml, linenums]
+----
+<sfdc:config-with-oauth name="salesforce" consumerKey="[insert key]" consumerSecret="[insert secret]" doc:name="Salesforce (OAuth)">
+        <sfdc:oauth-callback-config domain="localhost" remotePort="8081" path="callback"/>
+ </sfdc:config-with-oauth>
+----
+
+=== The Callback URL
+
+The `oauth-callback-config` element instructs the connector and the OAuth provider what the callback URL should be. Here are the different parameters that can be set on this element:  
+
+[%autowidth.spread]
+|===
+|Field |Example |CloudHub | 
+|Domain |*`localhost`* |*`${fullDomain}`* |The domain of the endpoint where your OAuth callback is hosted.  When in production, this will be the domain where your application is hosted.
+|Local Port |  |*`${http.port}`* |The port which your authorization flow is hosted on. This will be the port which your HTTP endpoint is hosted on.
+|Remote Port |`8081` |*`${fullDomain}`* |The port of the endpoint where your OAuth callback is hosted.
+|Path |*`callback`* |*`callback`* |The path of the endpoint where your OAuth callback is hosted.
+|===
+
+What you place in these parameters will be used to construct the full callback URL in the following form: `{{0}}:[remotePort]/[path]`. The example above results in a callback URL of` http://localhost:8081/callback`.
+
+=== Controlling Flow Processing
+
+You can decide what happens when a connector is invoked by a user that has no OAuth token set for the connector (i.e. he is not yet authenticated via OAuth). The `onNoToken` parameter can be used to set this, it has two possible values:
+
+* `STOP_FLOW`: acts as a filter and kills the execution of the flow.
+* `EXCEPTION`: throws an exception informing that the token is still not acquired.
+
+`EXCEPTION` is the default value of this parameter. If you want to keep error logs light, `STOP_FLOW` is probably the ideal choice as it doesn't create exceptions before you have had a chance to authorize your connector to access the OAuth provider.
+
+[source, xml, linenums]
+----
+<sfdc:config-with-oauth name="salesforce" consumerKey="[insert key]" consumerSecret="[insert secret]" doc:name="Salesforce (OAuth)" onNoToken="[STOP_FLOW|EXCEPTION]">
+        <sfdc:oauth-callback-config domain="localhost" remotePort="8081" path="callback"/>
+ </sfdc:config-with-oauth>
+----
+
+....
+------
+
+== 创建授权流程
+
+本示例中创建的Salesforce连接器可供应用程序的最终用户使用，以使用其Salesforce帐户执行各种操作。但是，在他可以进行任何行动之前，他必须先认证自己。要使认证成为可能，您需要创建一个*authorization flow*。授权流程从OAuth提供程序获取应用程序需要的令牌，以便能够与OAuth服务进行交互。
+
+该流程由一个HTTP端点组成，随后在启用OAuth的连接器上调用授权操作。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+
+. Dragging elements from the palette to the canvas, build the following Mule flow:
++
+image:sfcon5.png[sfcon5]
+
+. Configure your HTTP endpoint's host and port to correspond to the callback URL that you set in your global element. (In the example, the callback URL is http://localhost:8081/callback.) Leave the path blank.
+. Open the Salesforce connector properties and set the *Config Reference* to the global element created in the previous section.
++
+image:sfcon6.png[sfcon6]
+
+. Set the Operation to *Authorize*.
+. Configure any additional fields required by the connector you have selected. See below for configuration details of the Salesforce connector example.
++
+[%header%autowidth.spread]
+|========
+|Field |Value
+|Config Reference |The name of the global element you created for your connector.
+|Operation |Authorize
+|Access Token URL |(Optional, see below.) Example: +https://na1.salesforce.com/services/oauth2/token+
+|Authorization URL |(Optional, see below.) Example: +https://na1.salesforce.com/services/oauth2/authorize+
+|Display |POPUP
+|========
+
+=== Access Token and Authorization URLs
+
+Some applications expose different sets of URLs to acquire access tokens and perform authorization (for example, one URL for sandboxed development and one URL for production). These can also be set on the `Authorize` operation if the default values are not sufficient.
+
+[%header,cols="2*"]
+|=========
+|Variable |Description
+|Authorization URL |_Optional._ The URL defined by the Service Provider where the resource owner will be redirected to grant authorization to the connector
+|Access Token URL |_Optional._ The URL defined by the Service Provider to obtain an access token
+|Access Token ID |_Optional._ (Not shown in Visual Editor. XML only.) The OauthAccessTokenId under which tokens will be stored. Default value: connector's config name.
+|=========
+
+=== Scopes
+
+Depending on the service you are using OAuth with, there may or may not be different scopes to choose. A scope gives you access to perform a set of particular actions, such as viewing contacts, posting items, changing passwords, etc. The Salesforce connector doesn't use scopes. Connectors that require scopes include it as a configurable field in the properties window. If the connector you wish to use makes use of scopes then refer to the documentation of the application you wish to connect to in order to determine what values are valid.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Create an authorization flow, as shown in the following example:
+
+[source, xml, linenums]
+----
+<flow name="OAuthTestFlow1" doc:name="OAuthTestFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP" />
+        <sfdc:authorize config-ref="Salesforce__OAuth_" display="POPUP" doc:name="Salesforce" accessTokenUrl="https://na1.salesforce.com/services/oauth2/token" authorizationUrl="https://na1.salesforce.com/services/oauth2/authorize"/>
+</flow>
+----
+
+[%header%autowidth.spread]
+|====
+|Element |Description
+|`sfdc:authorize` |Invokes the authorize operation of the connector.
+|====
+
+[%header%autowidth.spread]
+|========
+|Attribute |Value
+|config-ref |The name of the global element you created for your connector.
+|accessTokenUrl |(Optional, see below.) `+https://na1.salesforce.com/services/oauth2/token+`
+|authorizationUrl |(Optional, see below.)`+https://na1.salesforce.com/services/oauth2/authorize+`
+|display |POPUP
+|========
+
+In the above example, the `display`, `accessTokenUrl`, and `authorizationUrl` parameters are configured. Depending on the connector you select, some of these may not be present.
+
+On the HTTP endpoint the port MUST correspond to the remotePort attribute in your oauth-callback-config.
+
+=== Access Token and Authorization URLs
+
+Some applications expose different sets of URLs to acquire access tokens and perform authorization (for example, one URL for sandboxed development and one URL for production). These can also be set as attributes on the connector's authorization operation if the default values are not sufficient. 
+
+[%header%autowidth.spread]
+|======
+|Variable |Description
+|`authorizationUrl` |_Optional._ The URL defined by the Service Provider where the resource owner will be redirected to grant authorization to the connector.
+|`accessTokenUrl` |_Optional._ The URL defined by the Service Provider to obtain an access token.
+|`accessTokenId` |_Optional._ The OauthAccessTokenId under which tokens will be stored. Default value: connector's config name.
+|======
+
+=== Scopes
+
+Depending on the service you are using OAuth with, there may or may not be different scopes to choose. A scope gives you access to perform a set of particular actions, such as viewing contacts, posting items, changing passwords, etc. The Salesforce connector doesn't use scopes. Connectors that require scopes include it as a configurable field in the properties window. If the connector you wish to use makes use of scopes then refer to the documentation of the application you wish to connect to in order to determine what values are valid.
+
+....
+------
+
+=== 关于授权流程
+
+如果您使用浏览器点击上面创建的HTTP端点，Mule将启动OAuth舞蹈，将用户重定向到服务提供商页面。 Mule还将创建一个回叫端点，以便服务提供商可以在用户通过身份验证和授权后重新定向用户。一旦回调被调用，连接器将自动发出一个将存储在ObjectStore中的访问令牌标识符。
+
+授权操作是一个拦截器。如果用户请求需要身份验证但连接器尚未获得授权的内容，则会触发授权操作。它会将用户重定向到服务提供商，以便他可以授权连接器。一旦认证和授权成功，服务提供商需要将用户重定向回服务使用者（即您的应用程序）。这就是*callback*的用途。回调是在请求授权时作为参数发送给服务提供商的引用URL。服务提供商然后将用户重定向到这个URL并且包括认证令牌作为参数。连接器将从此回调中提取信息，将其自己的内部状态设置为_authorized_，然后继续执行由授权方法中断的任何事情。
+
+认证后== 
+
+在连接器设置为授权操作后向您的流中添加** Logger **元素。如果连接器尚未获得授权，记录器的执行将会延迟，直到收到回调。另一方面，如果用户已经在前一个请求中被授权并且连接器已经拥有TokenId，那么流程执行将会继续，记录器将立即执行，而不是在服务提供者返回回调后执行。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Drag a *Logger* message processor from the palette to the canvas and place it after the Salesforce connector.
++
+image:oauthppp.png[oauthppp]
+
+. Open the Logger's properties and add a message for the Logger to output. For example: "The connector has been properly authorized."
++
+image:oauthfff.png[oauthfff]
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Add a logger element into your flow:
+
+[source, xml, linenums]
+----
+<logger message="&quot;The connector has been properly authorized.&quot;" level="INFO" doc:name="Logger"/>
+----
+
+The full flow code should look like this example:
+
+[source, xml, linenums]
+----
+<flow name="authorizationAndAuthenticationFlow">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081"/>
+        <sfdc:authorize config-ref="Salesforce__OAuth_" display="POPUP" accessTokenUrl="https://na1.salesforce.com/services/oauth2/token" authorizationUrl="https://na1.salesforce.com/services/oauth2/authorize"/>
+        <logger message="&quot;The connector has been properly authorized.&quot;" level="INFO" doc:name="Logger"/>
+    </flow>
+----
+
+....
+------
+
+
+== 管理OAuth令牌（可选）
+
+=== 配置ObjectStore
+
+为了保持数据的持久性，你需要将它存储在某个地方，建议你使用ObjectStore来做到这一点。安装ObjectStore连接器。在你的应用程序中像这样配置它：
+
+[source, xml, linenums]
+----
+<objectstore:config name="ObjectStore" doc:name="ObjectStore" />
+----
+
+=== 授权后存储令牌
+
+授权舞蹈完成后，您正在调用的服务的accessTokenId可用作名为`OAuthAccessTokenId`的流变量。您必须坚持这个ID，以便您可以在将来调用连接器时使用它。这个例子展示了如何将这个变量存储到Object {{}中的密钥`accessTokenId`下。
+
+[source, xml, linenums]
+----
+<flow name="authorize-google" doc:name="authorize-google">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="authorize" doc:name="HTTP"/>
+        <google-contacts:authorize config-ref="Google_Contacts" doc:name="Authorize GContacts"/>
+        <objectstore:store config-ref="ObjectStore" key="accessTokenId" value-ref="#[flowVars['OAuthAccessTokenId']]" overwrite="true" doc:name="ObjectStore"/>   
+</flow>
+----
+
+=== 使用您的访问令牌
+
+任何连接器的调用都必须从ObjectStore中加载访问令牌并引用它。此示例显示在继续之前从ObjectStore加载它并检查它是否已设置。
+
+[source, xml, linenums]
+----
+<enricher target="#[flowVars['accessTokenId']]" doc:name="Message Enricher">
+            <objectstore:retrieve config-ref="ObjectStore" key="accessTokenId" defaultValue-ref="#['']" doc:name="Get AccessToken"/>
+</enricher>
+<expression-filter expression="#[flowVars['accessTokenId'] != '']" doc:name="Is Access Token Set"/>
+----
+
+一旦`accessTokenId`作为流变量可用，您可以在连接器操作中引用它：
+
+[source, xml, linenums]
+----
+<google-contacts:get-contacts config-ref="Google_Contacts" accessTokenId="#[flowVars['accessTokenId']]" />
+----

@@ -1,0 +1,76 @@
+= 股票报价示例
+
+[ <<Running the Application>> ] [ <<How it Works>> ] [ The Web Service Version ]
+
+本示例演示如何从Mule ESB调用ASPX Web服务，使用XSLT转换结果并将结果反序列化为StockQuote Java bean。该示例演示了如何使用REST和Web服务来调用该服务。
+
+该配置使用HTTP端点从用户接收股票代码，调用StockQuote服务，使用XSLT转换器转换结果，然后使用XmlToObject转换器将结果转换为StockQuote Java bean。然后将引用发回浏览器，再次将其转换为纯文本。
+
+本页介绍如何运行股票报价示例并引导您完成其配置。
+
+== 运行应用程序
+
+. 根据[MULE3INTRO：安装Mule]说明，确保您已满足先决条件并安装了Mule。
+. 在命令行中，导航到您的Mule主目录下的`examples/stockquote`目录。
+. 将预构建的应用程序归档文件复制到应用程序文件夹（$ MULE_HOME / apps）
+. 开始骡子
+. 现在调用以下URL之一，具体取决于您要运行的示例风格：+
+  http：// localhost：48309 / stockquote？symbol = IBM＆method = REST +
+  http：// localhost：48309 / stockquote？symbol = IBM＆method = SOAP +
+  HTTP：//本地主机：48309 /股票报价符号= IBM＆方法= WSDL
+. 显示股票信息。
+. 要停止Mule，请在Mule控制台窗口中键入'CTRL-C'。
+
+== 它是如何工作的
+
+本节将介绍股票报价示例的REST版本的配置，但Web服务配置非常相似。假设您已经看过[MULETEMP：Echo Example]，本节将讨论配置，而不会详细介绍详细信息。
+
+首先，因为代理设置位于外部属性文件中，我们在Mule上下文中指定文件：
+
+[source,xml]
+----
+<context:property-placeholder location="proxy.properties"/>
+----
+
+接下来，我们使用在proxy.properties文件中定义值的属性来配置HTTP连接器：
+
+[source,xml]
+----
+  <http:connector name="HttpConnector"                  proxyHostname="${proxyHostname}"                  proxyPassword="${proxyPassword}"                  proxyPort="${proxyPort}"                  proxyUsername="${proxyUsername}"/>
+----
+
+
+下一节是变压器的配置。有四个变压器，将被链接在一起。请注意，XSLT转换器引用`stockquote`目录下的`xsl`子目录中的XSLT文件。 XSLT文件可以位于类路径中的任何位置。
+
+[source,xml]
+----
+  <xm:xml-to-object-transformer name="XmlToObject"/>  <xml-entity-decoder-transformer name="XmlDecoder"/>  <xm:xslt-transformer name="Xslt" xsl-file="xsl/rest-stock.xsl"/>  <object-to-string-transformer name="ToString"/>
+----
+
+
+接下来，我们建立一个流程作为此示例的主要入口点。该流接收发送到HTTP URL的请求，并使用HttpRequestToMap变换器将请求的主体转换为Map。然后它从Map中提取该方法以确定要调用哪个子流进行处理。
+
+[source,xml]
+----
+<flow name="HTTP input">    <http:inbound-endpoint host="localhost" port="48309" path="stockquote">        <http:body-to-parameter-map-transformer />        <response>            <object-to-string-transformer />        </response>    </http:inbound-endpoint>    <choice>        <when expression="payload.method == 'REST'" evaluator="groovy">            <flow-ref name="REST" />        </when>        <when expression="payload.method == 'SOAP'" evaluator="groovy">            <flow-ref name="SOAP" />        </when>        <when expression="payload.method == 'WSDL'" evaluator="groovy">            <flow-ref name="WSDL" />        </when>    </choice>    <transformer ref="XmlToObject" /></flow>
+----
+
+
+该组件是REST服务组件，它使用REST服务包装来代理REST服务，以像本地Mule组件那样工作。 REST服务包装器配置了许多属性。 `serviceUrl`是要调用的REST服务的URL。 `payloadParameterName`是与消息有效载荷关联的参数的名称。在这种情况下，我们只有一个参数名称"symbol"。 `httpMethod`可以是GET或POST。
+
+[source,xml]
+----
+<flow name="REST">    <transformer ref="ExtractSymbol" />    <http:rest-service-component serviceUrl="http://www.webservicex.net/stockquote.asmx/GetQuote"        httpMethod="POST">        <http:payloadParameterName value="symbol" />    </http:rest-service-component>    <transformer ref="XmlDecoder" />    <transformer ref="XsltRest" /></flow>
+----
+
+
+==  Web服务版本
+
+Web服务版本与REST版本非常类似，但具有不同的服务配置。 Web服务版本明确配置出站直通路由器，该出站直通路由器从一个端点接收输入并将其直接传递到出站CXF端点。出站端点配置了映射到股票报价服务的参数。
+
+[source,xml]
+----
+<flow name="SOAP">    <transformer ref="ExtractSymbol" />    <outbound-endpoint address="http://www.webservicex.net/stockquote.asmx">        <cxf:jaxws-client clientClass="net.webservicex.StockQuote" operation="GetQuote"            port="StockQuoteSoap" wsdlLocation="classpath:stockquote.wsdl" />    </outbound-endpoint>    <transformer ref="XmlDecoder" />    <transformer ref="XsltSoap" /></flow>
+----
+
+

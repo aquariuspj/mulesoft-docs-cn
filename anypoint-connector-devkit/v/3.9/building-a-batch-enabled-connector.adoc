@@ -1,0 +1,193 @@
+= 构建批量启用连接器
+:keywords: devkit, batch, bulk
+
+Mule的能力之一是处理 link:/mule-user-guide/v/3.7/batch-processing[批次]中的消息。此功能由`<batch:commit>`块提供，特别适用于需要收集批量upsert到外部源或服务的记录子集时。但是，除非所述连接器支持批量操作，否则不能在批处理块内使用。
+
+批处理的好处包括：
+
+* 记录的并行处理
+* 将来自API的大量输入数据处理为遗留系统
+* 在业务应用程序之间同步数据集
+
+一些已有的连接器（例如 link:/mule-user-guide/v/3.7/salesforce-connector[销售队伍]和 link:http://www.mulesoft.com/cloud-connectors/netsuite-integration-connector[NetSuite的]）已经支持批量操作多年。但是，通过引入新的批处理模块，开发人员不再需要解析连接器的响应，以确定哪些记录失败。相反，这由`<batch:commit>`自动处理。
+
+本文档说明如何利用自己的连接器来利用 link:/mule-user-guide/v/3.7/batch-processing[批量处理]文档中介绍的此功能。
+
+*  <<Prerequisites>>
+*  <<Backwards Compatibility>>
+*  <<See Also>>
+
+== 先决条件
+
+本文假定您熟悉 link:/mule-user-guide/v/3.7/batch-processing[批量处理]，您拥有 link:/anypoint-connector-devkit/v/3.9/creating-an-anypoint-connector-project[创建一个连接器项目]并且有 link:/anypoint-connector-devkit/v/3.9/connector-attributes-and-operations[定义了操作]可供使用。
+
+== 它是如何工作的
+
+为新连接器实现此功能非常简单。它包括对连接器应用轻微修改，以便所有批量操作都返回`BulkOperationResult`。 BulkOperationResult允许批处理模块了解所有类型的批量操作结果。
+
+[source,java,linenums]
+----
+
+/**
+ * This class is used to provide item level information about a bulk operation. This
+ * master entity represents the bulk operation as a whole, while the detail entity
+ * {@link BulkItem} represents the operation status for each individual data piece.
+ * The {@link #items} list defines a contract in which the ordering of those items
+ * needs to match the ordering of the original objects. For example, if the bulk
+ * operation consisted of 10 person objects in which number X corresponded to the
+ * person 'John Doe', then the Xth item in the {@link #items} list must reference to
+ * the result of processing the same 'John Doe'
+ */
+public final class BulkOperationResult<T> implements Serializable
+{
+    /**
+     * The operation ID
+     */
+    public Serializable getId();
+
+    /**
+     * Whether or not the operation was successful. Should be <code>true</code> if
+     * and only if all the child {@link BulkItem} entities were also successful
+     */
+    public boolean isSuccessful();
+
+    /**
+     * An ordered list of {@link BulkItem}, one per each item in the original
+     * operation, no matter if the record was successful or not
+     */
+    public List<BulkItem<T>> getItems();
+
+    /**
+     * A custom property stored under the given key
+     *
+     * @param key the key of the custom property
+     * @return a {@link Serializable} value
+     */
+    public Serializable getCustomProperty(String key);
+}
+----
+
+基本上，上述课程是一种主从关系，其中：
+
+*  `BulkOperationResult`代表整个操作，扮演主人的角色。
+*  `BulkItem`代表每个记录的结果，扮演细节的角色。
+* 这两个类都是不可变的。
+* 主设备和细节之间存在排序关系。 `BulkItem`列表中的第一项必须与原始批量中的第一条记录相对应。第二个必须对应于第二个，等等。
+
+[source,java,linenums]
+----
+/**
+ * This class represents an individual data piece in the context of a bulk operation
+ */
+public final class BulkItem<T> implements Serializable
+{
+    /**
+     * The item ID
+     */
+    public Serializable getId();
+
+    /**
+     * Wether or not it was successful. Notice that this should be <code>false</code>
+     * if {@link #exception} is not <code>null</code>, however there might not be an
+     * exception but the item could still not be successful for other reasons.
+     */
+    public boolean isSuccessful();
+
+    /**
+     * Message to add context on this item. Could be an error description, a warning
+     * or simply some info related to the operation
+     */
+    public String getMessage();
+
+    /**
+     * An optional status code
+     */
+    public String getStatusCode();
+
+    /**
+     * An exception if the item was failed
+     */
+    public Exception getException();
+
+    /**
+     * The actual data this entity represents
+     */
+    public T getPayload();
+
+    /**
+     * A custom property stored under the given key
+     *
+     * @param key the key of the custom property
+     * @return a {@link Serializable} value
+     */
+    public Serializable getCustomProperty(String key);
+}
+----
+
+== 向后兼容性
+
+在考虑现有的连接器时，您需要采取一些额外的步骤来确保它们向后兼容使用它们的任何Mule应用程序。通常，这些Mule应用程序将自己处理批量操作的输出。结果，这些连接器将需要包含变压器。
+
+每个连接器都需要将其自身的批量操作表示转换为`BulkOperationResult`对象。鉴于不同的API实现，此翻译在连接器与另一个连接器之间有所不同。
+
+[source,java,linenums]
+----
+public List<BatchResult> batchContacts(String batchId, List<NestedProcessor> operations) throws Exception;
+----
+
+在上面的代码片段中，注意该操作返回一个`BatchResult`对象列表。因此，变压器必须将`BatchResults`个对象转换为`BulkOperationResult`。
+
+[source,java,linenums]
+----
+@Start
+public void init() {
+ this.muleContext.getRegistry().registerTransformer(new BatchResultToBulkOperationTransformer());
+}
+----
+
+[source,java,linenums]
+----
+
+public class BatchResultToBulkOperationTransformer extends AbstractDiscoverableTransformer {
+
+    public BatchResultToBulkOperationTransformer() {
+        this.registerSourceType(DataTypeFactory.create(List.class, BatchResult.class, null));
+        this.setReturnDataType(DataTypeFactory.create(BulkOperationResult.class));
+    }
+
+    @Override
+    protected Object doTransform(Object src, String enc) throws TransformerException {
+        List<BatchResult> results = (List<BatchResult>) src;
+
+        BulkOperationResultBuilder<BaseEntry<?>> builder = BulkOperationResult.<BaseEntry<?>>builder();
+
+        if (results != null) {
+            for (BatchResult result : results) {
+                BatchStatus status = result.getStatus();
+                int code = status.getCode();
+
+                builder.addItem(BulkItem.<BaseEntry<?>>builder()
+                        .setRecordId(result.getId())
+                        .setPayload(result.getEntry())
+                        .setMessage(status.getContent())
+                        .setStatusCode(String.format("%d - %s", code, status.getReason()))
+                        .setSuccessful(code == 200 || code == 201 || code == 204)
+                    );
+            }
+        }
+
+        return builder.build();
+    }
+----
+
+有一些重要的事情要注意上述变压器：
+
+* 它需要扩展`AbstractDiscoverableTransformer`类。这样批处理模块就可以在运行时动态地找到它。
+* 它在其构造函数中定义源和目标数据类型。
+*  `doTransform()`方法执行转换过程。
+* 请注意`BulkOperationResult`和`BulkItem`类如何提供方便的Builder对象来将它们的内部表示与连接器代码解耦。
+
+== 另请参阅
+
+*  *NEXT*：了解如何将 link:/anypoint-connector-devkit/v/3.9/developing-devkit-connector-tests[测试]添加到连接器。
+* 生成 link:/anypoint-connector-devkit/v/3.9/connector-reference-documentation[参考文档]。

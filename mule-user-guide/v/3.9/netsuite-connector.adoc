@@ -1,0 +1,975 @@
+=  NetSuite连接器
+:keywords: anypoint studio, connector, endpoint, netsuite
+：imagesdir：./_images
+
+
+NetSuite是世界领先的基于云计算的商业管理软件提供商。 NetSuite通过一个完全集成的系统来帮助公司管理核心业务流程，这些系统涵盖ERP /财务，CRM，电子商务，库存等。
+
+NetSuite连接器利用*SuiteTalk WSDL*提供*SOAP-based integration*并生成NetSuite业务对象，利用不同的身份验证级别并支持错误处理。它还能够对*RESTlets*执行*REST*次调用，以公开使用*SuiteScript*创建的API。
+
+MuleSoft在 link:/mule-user-guide/v/3.9/anypoint-connectors#connector-categories[_选择_]支持策略下维护此连接器。
+
+== 先决条件
+
+要使用此连接器，您需要：
+
+* 包含*Web Services Features enabled*的NetSuite帐户。
+安装在开发计算机上的*  Anypoint Studio。
+
+=== 兼容性
+
+有关您版本的兼容性详细信息，请参阅发行说明。
+
+== 安装连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+== 配置连接器全局元素
+
+要在Mule应用程序中使用NetSuite连接器，您必须配置全局NetSuite元素，该应用程序中的所有NetSuite连接器都可以使用该元素。
+
+此版本的连接器允许您从四个全局元素列表中进行选择，每个元素代表对NetSuite进行身份验证的不同方式：
+
+[%header,cols="40a,60a"]
+|===
+| {配置{1}}说明
+| *Login Authentication*  |根据连接器发送的第一个请求，使用SuiteTalk的登录API调用与NetSuite建立会话。
+| *Request Level Authentication*  |使用此策略，您可以在每个请求的SOAP标头中发送用户凭证，而不是通过调用登录对NetSuite进行身份验证。
+| *Single Sign-On Login Authentication*  |这是一个基于令牌的认证系统，可避免使用环境用户名和密码。这里你提供一个私钥和其他信息。然后连接器负责生成身份验证令牌，并通过第一次请求中的`ssoLogin` API调用与NetSuite建立会话。 *Not available for RESTlet calls.*
+| *Request Level Token Based Authentication*  |与单点登录验证类似，这是一个基于令牌的验证系统。但是，不使用通过openssl生成的privateKey，而是使用在NetSuite环境中建立的使用者和令牌密钥/密钥对。 *Not available for RESTlet calls.*
+|===
+
+如果您希望进行RESTlet调用，请使用*Login Authentication*或*Request Level Authentication*。
+
+按照以下步骤在Mule应用程序中配置NetSuite连接器全局元素：
+
+. 点击画布底部的*Global Elements*标签。
+. 在Global Mule Configuration Elements屏幕上，点击*Create*。
+. 在"Choose Global Type"向导中，展开*Connector Configuration,*，然后根据您的NetSuite身份验证选择*NetSuite: Login Authentication, NetSuite: Request Level Authentication,* *NetSuite: SSO Login Authentication,*或*NetSuite: Request Level Token Based Authentication*。
++
+image:netsuite_configurations.png[NetSuite配置选项]
++
+. 点击*Ok*。
+. 输入全局元素属性。
+
+必须为所有配置定义*Endpoint URL*。主机名特定于用户的*Account* ID。网址的其余部分包含API版本。另请注意，每个连接器版本*only supports* SuiteTalk API的一个版本。
+
+=== 登录验证和请求级别验证
+
+[%header,cols="30a,70a"]
+|===
+| {参数{1}}说明
+|名称 |输入稍后参考的配置名称。
+|电子邮件 |输入NetSuite用户界面的登录电子邮件。
+|密码 |输入相应的密码以登录到NetSuite UI。
+|帐户 |输入SuiteTalk NetSuite Web服务的帐户ID。这通常在设置>集成> Web服务首选项下的NetSuite沙箱UI中找到。
+|角色ID  |在SuiteTalk中输入用户的角色ID，确定处理器权限。
+|应用程序ID  |输入与要使用的积分记录对应的应用程序ID。
+|连接超时 |输入客户端在超时之前必须尝试建立连接的时间量（以毫秒为单位）。
+|接收超时 |输入客户端在超时之前必须等待响应的时间量（以毫秒为单位）。
+|启用DataSense  |如果您选择此选项，DataSense会提取NetSuite标准对象的元数据，以自动确定应用程序必须传递给NetSuite或可期待NetSuite的数据类型和格式。通过启用此功能，Mule可以发现您必须发送的数据类型，或准备从NetSuite接收数据。
+|端点a |
+输入服务端点的URL。
+
+确保端点使用连接器支持的NetSuite版本。
+
+|分隔符 |输入用于支持为自定义字段提供更好支持所需的键的分隔符。
+|===
+
+===  SSO登录验证
+
+要使用SSO登录验证，请通过NetSuite的支持在您的沙盒环境中启用此功能。 NetSuite提供了一个SSO工具包以及有关如何设置私钥和公钥以用于生成身份验证令牌的信息。他们还为您提供合作伙伴ID。在建立此设置后，必须在标准NetSuite凭证，合作伙伴ID，公司ID和用户ID之间创建映射。开发人员或管理员应执行此映射。它不由连接器处理，并且仅针对允许使用公司内的SSO进行身份验证的每个用户标识执行一次。
+
+对于此映射，首先使用NetSuite提供的SSO工具包生成令牌。要建立映射，请使用外部Java应用程序或您选择的任何其他方法调用SuiteTalks Web Service API调用`mapSso`。 `mapSso` API调用的示例SOAP请求如下所示：
+
+[source, xml, linenums]
+----
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:messages_2015_1.platform.webservices.netsuite.com" xmlns:urn1="urn:core_2015_1.platform.webservices.netsuite.com">
+   <soapenv:Header></soapenv:Header>
+   <soapenv:Body>
+      <urn:mapSso>
+         <urn:ssoCredentials>
+            <urn1:email>Your NetSuite email</urn1:email>
+            <urn1:password>Your NetSuite password</urn1:password>
+            <urn1:account>Your NetSuite account Id</urn1:account>
+            <urn1:role internalId="The account role Id"></urn1:role>
+            <urn1:authenticationToken>
+                The token string generated using the SSO kit
+            </urn1:authenticationToken>
+            <urn1:partnerId>Your NetSuite partner Id</urn1:partnerId>
+         </urn:ssoCredentials>
+      </urn:mapSso>
+   </soapenv:Body>
+</soapenv:Envelope>
+----
+
+[%header,cols="30a,70a"]
+|===
+| {参数{1}}说明
+|名称 |为配置输入一个名称，以便稍后可以引用它。
+|合作伙伴ID  |输入映射过程中使用的合作伙伴ID。
+|合作伙伴帐户 |输入SuiteTalk NetSuite Web服务的帐户ID。
+|公司ID  |输入映射过程中用于连接器生成令牌的公司ID。
+|用户标识 |输入映射过程中用于连接器生成标记的用户标识。
+|密钥文件 |输入私钥文件名以从项目中选取。该文件应该是根据NetSuite规范生成的.der文件。这用于将公司ID和用户ID加密为ssoLogin的令牌。
+|应用程序ID  |输入与要使用的积分记录对应的应用程序ID。
+|连接超时 |输入客户端在超时之前必须尝试建立连接的时间量（以毫秒为单位）。
+|接收超时 |输入客户端在超时之前必须等待响应的时间量（以毫秒为单位）。
+|启用DataSense  |如果您选择此选项，DataSense会提取NetSuite标准对象的元数据，以自动确定应用程序必须传递给NetSuite或可期待NetSuite的数据类型和格式。通过启用此功能，Mule可以发现您必须发送的数据类型，或准备从NetSuite接收数据。
+|端点 |输入服务端点的URL。
+|分隔符 |输入用于支持为自定义字段提供更好支持所需的键的分隔符。
+|所需的库 |单击添加文件以添加您通过NetSuite支持获取的SSO jar。
+|===
+
+=== 基于请求级别令牌的身份验证
+
+要使用此认证机制，您需要在NetSuite中设置一个集成记录并启用基于令牌的认证。这将自动为您生成消费者密钥和秘密。
+
+此外，您必须在集成记录与用户相结合的NetSuite环境中设置访问令牌。假设您的NetSuite帐户已启用所需的权限，以便生成此类令牌并使用它们进行登录，可以完成此操作。
+
+有关如何导航NetSuite并进行设置的详细信息，请参阅NetSuite的帮助中心或SuiteAnswers。
+
+[%header,cols="30a,70a"]
+|===
+| {参数{1}}说明
+|使用者密钥 |输入使用的基于令牌的身份验证启用集成记录的使用者密钥值。
+|消费者密钥 |为使用的基于令牌的身份验证启用集成记录输入消费者秘密值。
+|令牌ID  |输入代表用户和NetSuite环境内生成的集成的唯一组合的令牌ID。
+|令牌机密 |为用户/整合对输入相应的令牌机密。
+|帐户 |输入SuiteTalk NetSuite Web服务的帐户ID。这通常在设置>集成> Web服务首选项下的NetSuite沙箱UI中找到。
+|连接超时 |输入客户端在超时之前必须尝试建立连接的时间量（以毫秒为单位）。
+|接收超时 |输入客户端在超时之前必须等待响应的时间量（以毫秒为单位）。
+|启用DataSense  |如果您选择此选项，DataSense会提取NetSuite标准对象的元数据，以自动确定应用程序必须传递给NetSuite或可期待NetSuite的数据类型和格式。通过启用此功能，Mule可以发现您必须发送的数据类型，或准备从NetSuite接收数据。
+|端点a |
+输入服务端点的URL。
+
+确保端点使用连接器支持的NetSuite版本。
+
+|分隔符 |输入用于支持为自定义字段提供更好支持所需的键的分隔符。
+|===
+
+== 使用连接器
+
+NetSuite连接器是基于操作的连接器，这意味着将连接器添加到流中时，需要配置连接器执行的特定Web服务操作。 NetSuite连接器v7.2.0支持50个操作。
+
+=== 连接器命名空间和架构
+
+在Studio中设计应用程序时，将连接器从调色板拖放到Anypoint Studio画布上的操作应自动使用连接器*namespace*和*schema location*填充XML代码。
+
+[TIP]
+如果您是在Studio的XML编辑器或其他文本编辑器中手动编码Mule应用程序，请在`<mule>`标记内*Configuration XML*的标题中定义名称空间和模式位置。
+
+[source, xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:netsuite="http://www.mulesoft.org/schema/mule/netsuite"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core
+               http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/netsuite
+               http://www.mulesoft.org/schema/mule/netsuite/current/mule-netsuite.xsd">
+
+      <!-- put your global configuration elements and flows here -->
+
+</mule>
+----
+
+NetSuite全局配置示例：
+
+[source, xml, linenums]
+----
+<!-- Login Authentication -->
+<netsuite:config-login-authentication name="NetSuite" email="${email}" password="${password}" account="${account}" roleId="${roleId}" applicationId="${applicationId}"/>
+
+<!-- Request Level Authentication -->
+<netsuite:config-request-level-authentication name="NetSuite" email="${email}" password="${password}" account="${account}" roleId="${roleId}" applicationId="${applicationId}"/>
+
+<!-- Request Level Token Based Authentication -->
+<netsuite:config-request-level-token-based-authentication name="NetSuite" consumerKey="${consumerKey}" consumerSecret="${consumerSecret}" tokenId="${tokenId}" tokenSecret="${tokenSecret}" account="${account}" />
+
+<!-- SSO Login Authentication -->
+<netsuite:config-sso-login-authentication name="NetSuite" email="${email}" password="${password}" account="${account}" roleId="${roleId}" applicationId="${applicationId}"/>
+----
+
+=== 在Mavenized Mule应用程序中使用连接器
+
+如果您正在编写Mavenized Mule应用程序，则此XML片段必须包含在您的`pom.xml`文件中。
+
+[source,xml,linenums]
+----
+<dependency>
+    <groupId>org.mule.modules</groupId>
+    <artifactId>mule-module-netsuite</artifactId>
+    <version>7.4.0</version>
+</dependency>
+----
+
+== 使用连接器演示Mule应用程序
+
+您可以使用 link:http://mulesoft.github.io/mule-netsuite-connector/[此链接]中的NetSuite连接器下载功能完整的演示应用程序。
+
+=== 示例用例
+
+当前用例描述了如何创建Mule应用程序，以使用登录验证在NetSuite中添加新的员工记录。
+
+image:netsuite_flow_add_record.png[添加记录流]
+
+. 在Anypoint Studio中创建一个新的*Mule Project*。
+. 在`src/main/resources/mule-app.properties`中设置NetSuite *credentials*。
++
+[source,code,linenums]
+----
+netsuite.email=
+netsuite.password=
+netsuite.account=
+netsuite.roleId=
+netsuite.applicationId=
+----
++
+. 创建一个新的**NetSuite: Login Authentication**全局元素配置并使用placholders填充凭据：
++
+[source,xml]
+----
+<netsuite:config-login-authentication name="NetSuite"
+    email="${netsuite.email}"
+    password="${netsuite.password}"
+    account="${netsuite.account}"
+    roleId="${netsuite.roleId}"
+    applicationId="${netsuite.applicationId}"
+    doc:name="NetSuite: Login Authentication"/>
+----
++
+. 单击测试连接以确认Mule可以连接到NetSuite实例。如果连接成功，请单击确定以保存配置。否则，请查看或更正任何无效参数并再次测试。
+. 创建一个新的HTTP侦听器全局元素配置，并保留默认值。
+. 将HTTP端点拖放到画布上并配置以下参数：
++
+[options="header", width="100%"]
+|===
+| {参数{1}}值
+|连接器配置|  HTTP_Listener_Configuration
+| {路径{1}} / addEmployee
+|===
++
+. 将NetSuite连接器拖放到HTTP旁边并在连接器配置字段中选择上一节中创建的配置。
+. 使用以下值配置处理器：
++
+[options="header", width="100%"]
+|===
+| {参数{1}}值
+|显示名称 | NetSuite（或您喜欢的任何其他名称）
+|配置参考 | NetSuite（您创建的全局元素的名称）
+|操作 |添加记录
+|记录类型 |雇员
+|属性参考 | `#[payload]`
+|===
++
+. 在NetSuite连接器之前拖动一个转换消息组件，然后单击该组件打开其属性编辑器。一旦检索到元数据，为员工选择相应的字段以填充。 DataWeave脚本应该类似于以下内容：
++
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/java
+---
+{
+	email: inboundProperties."http.query.params".email,
+	externalId:  inboundProperties."http.query.params".externalId,
+	firstName:  inboundProperties."http.query.params".name,
+	lastName:  inboundProperties."http.query.params".lastname,
+	subsidiary: {
+		internalId: 3
+	}
+}
+----
++
+. 在NetSuite端点之后立即添加一个对象到JSON转换器以捕获响应。
+. 部署应用程序（右键单击>运行方式> Mule应用程序）。
+. 在Web浏览器中，以下列查询参数的形式输入员工的电子邮件地址，externalId，姓氏和姓名：
++
+[source]
+----
+http://localhost:8081/addEmployee?email=<EMAIL_ADDRESS>&externalId=<ENTERNAL_ID>&lastname=<LAST_NAME>&name=<FIRST_NAME>
+----
++
+.  Mule执行查询，并将员工记录添加到NetSuite。
+
+
+=== 示例用例 -  XML
+
+将其粘贴到Anypoint Studio中以与本指南中讨论的示例用例应用程序进行交互。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:netsuite="http://www.mulesoft.org/schema/mule/netsuite"
+	xmlns:json="http://www.mulesoft.org/schema/mule/json"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/netsuite http://www.mulesoft.org/schema/mule/netsuite/current/mule-netsuite.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+	<netsuite:config-login-authentication name="NetSuite__Login_Authentication"
+	    email="${netsuite.email}" password="${netsuite.password}"
+	    account="${netsuite.account}" roleId="${netsuite.roleId}"
+	    applicationId="${netsuite.applicationId}" doc:name="NetSuite: Login Authentication"/>
+	<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+	<flow name="netsuite-demoFlow" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/addEmployee" doc:name="HTTP"/>
+		<dw:transform-message doc:name="Set Input Params">
+			<dw:input-payload />
+			<dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	email: inboundProperties."http.query.params".email,
+	externalId:  inboundProperties."http.query.params".externalId,
+	firstName:  inboundProperties."http.query.params".name,
+	lastName:  inboundProperties."http.query.params".lastname,
+	subsidiary: {
+		internalId: 3
+	}
+}]]></dw:set-payload>
+		</dw:transform-message>
+		<netsuite:add-record config-ref="NetSuite" recordType="EMPLOYEE" doc:name="Add Employee Record"/>
+		<json:object-to-json-transformer doc:name="Object to JSON"/>
+	</flow>
+</mule>
+----
+
+=== 其他XML示例
+
+==== 异步操作
+
+此代码示例演示如何使用`async-add-list`与`check-async-status`，`get-async-result`和`delete`操作一起使用自定义记录类型。
+
+对于这个示例代码来说，你必须使用你自己的自定义记录类型（或者只是一个常规类型）。
+
+image:netsuite_flow_async.png[异步添加列表流程]
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
+	xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:netsuite="http://www.mulesoft.org/schema/mule/netsuite"
+	xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/netsuite http://www.mulesoft.org/schema/mule/netsuite/current/mule-netsuite.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+
+	<!-- Configs -->
+	<netsuite:config-login-authentication name="NetSuite__Login_Authentication"
+	    email="${netsuite.email}" password="${netsuite.password}"
+	    account="${netsuite.account}" roleId="${netsuite.roleId}"
+	    applicationId="${netsuite.applicationId}" doc:name="NetSuite: Login Authentication" />
+	<http:listener-config name="HTTP_Listener_Configuration"
+    		host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration" />
+
+	<!-- Add List Flow -->
+	<flow name="asyncAddList">
+		<http:listener config-ref="HTTP_Listener_Configuration" path="/asyncAddList" doc:name="HTTP" />
+		<logger message="Process Started ..." level="INFO" doc:name="Logger" />
+		<netsuite:async-add-list config-ref="NetSuite__Login_Authentication"
+			recordType="__customRecordType__customrecordcustomaccount__22"
+			doc:name="Async Add List">			        
+			<netsuite:records-attributes>
+			    <!-- Attribute 1 -->            
+				<netsuite:records-attribute>					                
+					<netsuite:inner-records-attribute
+						key="externalId">addListExt1</netsuite:inner-records-attribute>					                
+					<netsuite:inner-records-attribute
+						key="name">addListName1</netsuite:inner-records-attribute>					            
+				</netsuite:records-attribute>
+				<!-- Attribute 2 -->  
+				<netsuite:records-attribute>					                
+					<netsuite:inner-records-attribute
+						key="externalId">addListExt2</netsuite:inner-records-attribute>					                
+					<netsuite:inner-records-attribute
+						key="name">addListName2</netsuite:inner-records-attribute>					            
+				</netsuite:records-attribute>				        
+			</netsuite:records-attributes>			    
+		</netsuite:async-add-list>
+		<set-variable variableName="jobId" value="#[payload.getJobId()]"
+			doc:name="Set Variable: jobId" />
+		<!-- Call sub-flow 'Check Async' -->
+		<flow-ref name="check_async_status" doc:name="Check Async Status" />
+	</flow>
+
+	<!-- Check Async Sub-flow -->
+	<sub-flow name="check_async_status">
+		<logger message="===== Checking status for jobId: #[flowVars.jobId] =====" level="INFO" doc:name="Logger" />
+
+		<until-successful maxRetries="180"
+			failureExpression="#[payload.getStatus() == com.netsuite.webservices.platform.core.types.AsyncStatusType.PENDING
+			|| payload.getStatus() == com.netsuite.webservices.platform.core.types.AsyncStatusType.PROCESSING]"
+			synchronous="true" doc:name="Until Successful" millisBetweenRetries="10000">
+			<processor-chain doc:name="Processor Chain">
+				<netsuite:check-async-status config-ref="NetSuite__Login_Authentication" jobId="#[flowVars.jobId]" doc:name="Check Async Status" />				            
+				<logger message="Status is: #[payload.getStatus()]" level="INFO" doc:name="Status" />				        
+			</processor-chain>			    
+		</until-successful>
+
+		<choice doc:name="Choice">			        
+			<when expression="#[payload.getStatus() == com.netsuite.webservices.platform.core.types.AsyncStatusType.FINISHED]">				            
+				<logger message="Records have been added successfully." level="INFO" doc:name="FINISHED" />
+			</when>			        
+			<otherwise>				            
+				<logger message="An error has been encountered for jobId: #[flowVars.jobId] Navigate to Setup &gt; Integration &gt; Web Services Process Status on your sandbox for more information."
+					level="ERROR" doc:name="FAILED / FINISHED_WITH_ERRORS" />				        
+			</otherwise>			    
+		</choice>
+	</sub-flow>
+	 
+	<!-- Get Result Sub-flow -->
+	<sub-flow name="get_async_result" >		    
+		<http:listener config-ref="HTTP_Listener_Configuration"
+		    path="/getAsyncResult" doc:name="HTTP" />		    
+		<set-variable variableName="jobId"
+			value="#[message.inboundProperties.'http.query.params'.jobId]"
+			doc:name="Set Variable: jobId" />		    
+		<logger message="===== Results for jobId: #[flowVars.jobId] ====="
+		    level="INFO" doc:name="Logger" />		    
+		<netsuite:get-async-result config-ref="NetSuite__Login_Authentication"
+			jobId="#[flowVars.jobId]" doc:name="Get Async Result" />		    
+		<set-payload value="#[payload.getWriteResponseList().getWriteResponse()]"
+			doc:name="Get Response List" />
+
+		<foreach doc:name="For Each">			        
+			<logger message="Custom record with externalId:
+			        #[payload.getBaseRef().getExternalId()] and typeId:
+			        #[payload.getBaseRef().getTypeId()] ... Deleting it!"
+				    level="INFO" doc:name="Result Info" />     
+			<netsuite:delete config-ref="Netsuite" doc:name="Delete">				            
+				<netsuite:base-ref type="CUSTOM_RECORD_REF"
+				    externalId="#[payload.getBaseRef().getExternalId()]">					                
+					<netsuite:specific-fields>						                    
+						<netsuite:specific-field key="typeId">#[payload.getBaseRef().getTypeId()]</netsuite:specific-field>						                
+					</netsuite:specific-fields>					            
+				</netsuite:base-ref>				        
+			</netsuite:delete>			    
+		</foreach>
+		    
+		<logger message="Process Complete" level="INFO" doc:name="Logger" />
+	</sub-flow>
+</mule>
+----
+
+==== 基本搜索
+
+在本例中，我们使用以下条件为客户（`CustomerSearchBasic`）设置了基本搜索操作：
+
+*  `companyName`以"A"开头。
+* 客户不是个人。
+* 客户的优先级为50，由`customField`处理。
+
+以下是Studio流程和相应的代码：
+
+image:netsuite_flow_basic_search.png[基本搜索流程]
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:netsuite="http://www.mulesoft.org/schema/mule/netsuite"
+	xmlns:json="http://www.mulesoft.org/schema/mule/json"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.8.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/netsuite http://www.mulesoft.org/schema/mule/netsuite/current/mule-netsuite.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+
+<netsuite:config-login-authentication name="NetSuite__Login_Authentication" email="${netsuite.email}" password="${netsuite.password}" account="${netsuite.account}" roleId="${netsuite.roleId}" applicationId="${netsuite.applicationId}" doc:name="NetSuite: Login Authentication"/>
+
+<flow name="customer-basic-search">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/basicSearch" doc:name="HTTP"/>
+    <component class="CustomerBasicSearchComponent" doc:name="Create Customer Search Basic criteria"/>
+    <netsuite:search config-ref="NetSuite__Login_Authentication" searchRecord="CUSTOMER_BASIC" fetchSize="5" doc:name="Customer Basic Search"/>
+    <json:object-to-json-transformer doc:name="Object to JSON"/>
+</flow>
+</mule>
+----
+
+*Java Component Code*
+
+[source, java, linenums]
+----
+public class CustomerBasicSearchComponent implements Callable {
+ 
+    @Override
+    public Object onCall(MuleEventContext eventContext) throws Exception {
+        CustomerSearchBasic searchCriteria = new CustomerSearchBasic();
+ 
+        SearchStringField companyNameFilter = new SearchStringField();
+        companyNameFilter.setOperator(SearchStringFieldOperator.STARTS_WITH);
+        companyNameFilter.setSearchValue("A");
+        searchCriteria.setCompanyName(companyNameFilter);
+ 
+        SearchBooleanField isPersonFilter = new SearchBooleanField();
+        isPersonFilter.setSearchValue(false);
+        searchCriteria.setIsPerson(isPersonFilter);
+ 
+        SearchCustomFieldList customFieldListFilter = new SearchCustomFieldList();
+        List<SearchCustomField> customFieldList = new ArrayList<SearchCustomField>();
+        SearchLongCustomField priority = new SearchLongCustomField();
+        priority.setScriptId("custentity_cust_priority");
+        priority.setOperator(SearchLongFieldOperator.EQUAL_TO);
+        priority.setSearchValue(50l);
+        customFieldList.add(priority);
+        customFieldListFilter.setCustomField(customFieldList);
+        searchCriteria.setCustomFieldList(customFieldListFilter);
+ 
+        return searchCriteria;
+    }
+ 
+}
+----
+
+==== 加入搜索
+
+这里的示例搜索所有具有定价连接（ItemSearch）的库存物品，其中价格率为10.00。 +
+搜索标准在自定义Java组件中设置。
+
+image:netsuite_flow_joined_search.png[加入搜索流程]
+
+[source, xml, linenums]
+----
+<flow name="item-search-pricing-join">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/joinedSearch" doc:name="HTTP"/>
+    <component class="ItemSearchPricingJoinComponent" doc:name="Create Item Search Pricing Join criteria"/>
+    <netsuite:search config-ref="NetSuite__Login_Authentication" searchRecord="ITEM" doc:name="Item Search Pricing Join"/>
+    <json:object-to-json-transformer doc:name="Object to JSON"/>
+</flow>
+----
+
+*Java Component Code*
+
+[source, java, linenums]
+----
+public class ItemSearchPricingJoinComponent implements Callable {
+ 
+    @Override
+    public Object onCall(MuleEventContext eventContext) throws Exception {
+        ItemSearch searchCriteria = new ItemSearch();
+ 
+        ItemSearchBasic basicCriteria = new ItemSearchBasic();
+        SearchEnumMultiSelectField typeFilter = new SearchEnumMultiSelectField();
+        List<String> typeList = new ArrayList<String>();
+        typeList.add("_inventoryItem");
+        typeFilter.setOperator(SearchEnumMultiSelectFieldOperator.ANY_OF);
+        typeFilter.setSearchValue(typeList);
+        basicCriteria.setType(typeFilter);
+        searchCriteria.setBasic(basicCriteria);
+ 
+        PricingSearchBasic pricingJoinCriteria = new PricingSearchBasic();
+        SearchDoubleField rateFilter = new SearchDoubleField();
+        rateFilter.setOperator(SearchDoubleFieldOperator.EQUAL_TO);
+        rateFilter.setSearchValue(10.00d);
+        pricingJoinCriteria.setRate(rateFilter);
+        searchCriteria.setPricingJoin(pricingJoinCriteria);
+ 
+        return searchCriteria;
+    }
+ 
+}
+----
+
+==== 高级搜索
+
+该示例构造了一个简单的Java组件，该组件创建一个条件以在我们的NetSuite环境（EmployeeSearchAdvanced）中获得Employee保存搜索的结果。 NetSuite中每个保存的搜索都有一个特定的ID。在这里，我们使用scriptId customsearch130。
+
+image:netsuite_flow_advanced_search.png[高级搜索流程]
+
+[source, xml, linenums]
+----
+<flow name="employee-search-advanced-saved-search">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/advancedSearch" doc:name="HTTP"/>
+    <component class="EmployeeSearchAdvancedSavedComponent" doc:name="Create Employee Search Advanced Saved Search criteria"/>
+    <netsuite:search config-ref="NetSuite__Login_Authentication" searchRecord="EMPLOYEE_ADVANCED" doc:name="NetSuite"/>
+    <json:object-to-json-transformer doc:name="Object to JSON"/>
+</flow>
+----
+
+*Java Component Code*
+
+[source,java,linenums]
+----
+public class EmployeeSearchAdvancedSavedComponent implements Callable {
+ 
+    @Override
+    public Object onCall(MuleEventContext eventContext) throws Exception {
+        EmployeeSearchAdvanced searchCriteria = new EmployeeSearchAdvanced();
+ 
+        searchCriteria.setSavedSearchScriptId("customsearch130");
+ 
+        return searchCriteria;
+    }
+ 
+}
+----
+
+====  RESTlet调用
+
+NetSuite RESTlet允许您使用JavaScript和SuiteScript为您的NetSuite帐户开发定制的RESTful Web服务。
+该示例通过GET方法调用部署为RESTlet的脚本。在这里，我们试图使用script = 546和deploy = 1的RESTlet获取ID = 700的CUSTOMER记录。
+
+image:netsuite_flow_restlet_calls.png[RESTlet调用流程]
+
+[source,xml,linenums]
+----
+<flow name="restletGet">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/get" doc:name="/get"/>
+    <dw:transform-message doc:name="Transform GET Input">
+        <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+"id": "700",
+"recordtype": "customer"
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <netsuite:call-restlet-get config-ref="NetSuite__Request_Level_Authentication" deploy="1" script="546" doc:name="NetSuite RESTlet (GET)"/>
+    <json:object-to-json-transformer doc:name="Map to JSON"/>
+    <logger level="INFO" doc:name="Logger"/>
+</flow>
+----
+
+== 连接器性能
+
+=== 最佳实践
+
+====  DataWeave
+
+NetSuite连接器的DataSense功能通过Transform Message组件与DataWeave相结合，使您可以直接与NetSuite环境集成。对于以下两个示例，我们使用JSON输入字符串并从中提取必要的数据以形成我们的NetSuite请求。
+
+此示例代码通过以下JSON输入向NetSuite添加日记条目：
+
+[source,dataweave,linenums]
+----
+{
+   "tranId":"SampleJournal123",
+   "subsidiary":{
+      "internalId":"1"
+   },
+   "customFieldList":{
+      "customField":[
+         {
+            "StringCustomFieldRef__custbodytestbodyfield":"Sample Transaction Body Custom Field"
+         }
+      ]
+   },
+   "lineList":{
+      "line":[
+         {
+            "account":{
+               "internalId":"1"
+            },
+            "debit":100.0,
+            "customFieldList":{
+               "customField":[
+                  {
+                     "SelectCustomFieldRef__custcol_far_trn_relatedasset":{
+                         "internalId":"1"
+                     }
+                  },
+                  {
+                     "StringCustomFieldRef__custcoltestcolumnfield": "Sample Transaction Column Custom Field 1"
+                  }
+               ]
+            }
+         },
+         {
+            "account":{
+               "internalId":"1"
+            },
+            "credit":100.0,
+            "customFieldList":{
+               "customField":[
+                  {
+                     "SelectCustomFieldRef__custcol_far_trn_relatedasset":{
+                         "internalId":"2"
+                     }
+                  },
+                  {
+                     "StringCustomFieldRef__custcoltestcolumnfield": "Sample Transaction Column Custom Field 2"
+                  }
+               ]
+            }
+         }
+      ]
+   }
+}
+----
+
+
+“连接器的添加操作需要一个Map作为输入，下面是DataWeave脚本，用于粘贴到Transform Message DataWeave编辑器中：
+
+[source,dataweave,linenums]
+----
+
+%dw 1.0
+%output application/java
+---
+{
+	customFieldList: payload.customFieldList,
+	lineList: payload.lineList,
+	subsidiary: payload.subsidiary,
+	tranId: payload.tranId
+}
+----
+
+在这个例子中，我们使用前一节所述的基本搜索相同的场景。然而，我们不是在java组件中构造标准，而是转换JSON字符串：
+
+
+[source,dataweave,linenums]
+----
+{
+   "companyName": {
+      "operator": "STARTS_WITH",
+      "searchValue": "A"
+   },
+   "isPerson": false,
+   "priority": {
+      "operator": "EQUAL_TO",
+      "searchValue": 50
+   }
+}
+----
+
+这里是DataWeave脚本，可以粘贴到Transform Message DataWeave编辑器中：
+
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/java
+---
+{
+	customFieldList: {
+		customField: [{
+			scriptId: "custentity_cust_priority",
+			operator: payload.priority.operator,
+			searchValue: payload.priority.searchValue
+		} as :object {
+			class : "com.netsuite.webservices.platform.core.SearchLongCustomField"
+		}]
+	} as :object {
+		class : "com.netsuite.webservices.platform.core.SearchCustomFieldList"
+	},
+	companyName: {
+		operator: payload.companyName.operator,
+		searchValue: payload.companyName.searchValue
+	} as :object {
+		class : "com.netsuite.webservices.platform.core.SearchStringField"
+	},
+	isPerson: {
+		searchValue: payload.isPerson
+	} as :object {
+		class : "com.netsuite.webservices.platform.core.SearchBooleanField"
+	}
+} as :object {
+	class : "com.netsuite.webservices.platform.common.CustomerSearchBasic"
+}
+----
+
+=== 提示
+
+==== 搜索操作
+
+在NetSuite中，`search`操作可用于执行*Basic Search*，*Joined Search*或*Advanced Search*。为此，您需要为要查询的记录类型实例化以下三种搜索类型之一：
+
+[%header,cols="30a,70a"]
+|===
+| `<Record>SearchBasic` |用于基于特定于该类型的搜索过滤器字段对记录类型执行搜索。
+| `<Record>Search` +
+|用于基于特定于该类型的搜索过滤器字段以及与相关记录类型关联的其他记录类型执行对记录类型的搜索。
+| `<Record>SearchAdvanced` +
+|用于对指定搜索过滤器字段和/或搜索返回列或联合搜索列的记录类型执行搜索。使用高级搜索，您还可以返回现有的已保存搜索。
+|===
+
+这也适用于搜索的异步等效项`asyncSearch`操作。
+
+==== 搜索分页支持
+
+对于NetSuite连接器版本7.0.0，已将分页支持添加到`search`。
+
+现在，连接器的搜索功能可以在一个操作中统一。其他与搜索相关的处理器已被删除。因此，`search`将始终检索整组结果。因此，用户需要使用`searchNext`或`searchMore`才能从后续页面获取其余记录。*not*返回类型也不同;处理器将输出一张地图列表，表示通过您的搜索条件获得的每条记录。
+
+需要注意的一个重要方面是分页不能应用于`search`（`asyncSearch`）的异步等价物。这是由于实际的分页必须应用于`getAsyncResult`操作。这意味着只有第一页才会异步检索。此外，`getAsyncResult`对所有异步操作都是通用的。因此，我们甚至无法在此处应用分页，因为此操作的返回类型取决于调用的异步操作。
+
+关于新的*search*配置，连接器与名为`fetchSize`的新属性相同：
+
+[source, xml, linenums]
+----
+<netsuite:paged-search config-ref="NetSuite__Login_Authentication"
+    searchRecord="CUSTOMER_BASIC"
+    fetchSize="5"
+    doc:name="Customer Basic Search"/>
+----
+
+====  ItemSearchAdvanced和ReturnSearchColumns
+
+使用`search`时，连接器会输出表示您的`search`操作返回的Record对象的地图列表。如果使用高级搜索并且`returnSearchColumns`标志设置为true，则NetSuite会返回包含搜索结果的`SearchRowList`。
+
+但是，对于`ItemSearchAdvanced`，连接器不会执行此映射，只是向用户提供SearchRows。这是由于NetSuite中的ITEM可能具有各种类型，我们无法从`ItemSearchRow`中承担项目类型。对于任何其他类似于`ITEM`的记录类型，也会出现此问题，但我们不知道其他记录类型。
+
+=== 自定义字段DataSense
+
+在NetSuite中，可以添加不同类型的自定义字段，并将这些自定义应用于不同的记录类型。启用DataSense后，NetSuite连接器将检索并显示这些字段。但请注意，我们不完全支持NetSuite用户可以定义的所有定制类型。
+以下列表概述了我们所做和所不处理​​的字段，以及它们与记录类型的属性相关的位置。大多数情况下，您可以看到定制通常存在于名为_customFieldList_的列表字段中，但在某些情况下，这些可能驻留在其他位置。
+
+==== 实体字段
+
+[%header,cols="50a,50a"]
+|===
+|记录类型 |自定义字段放置
+|联系人 |联系人> customFieldList> customField
+|客户 |客户> customFieldList> customField
+|员工 |员工> customFieldList> customField
+| ENTITY_GROUP  | EntityGroup> customFieldList> customField
+|合作伙伴 |合作伙伴> customFieldList> customField
+| PROJECT_TASK  | ProjectTask> customFieldList> customField
+|供应商 |供应商> customFieldList> customField
+|===
+
+==== 项目字段
+
+[%header,cols="50a,50a"]
+|===
+|记录类型 |自定义字段放置
+| ASSEMBLY_ITEM  | AssemblyItem> customFieldList> customField
+| ENTITY_GROUP  | EntityGroup> customFieldList> customField
+| INVENTORY_ITEM  | InventoryItem> customFieldList> customField
+| KIT_ITEM  | KitItem> customFieldList> customField
+| NON_INVENTORY_PURCHASE_ITEM  | NonInventoryPurchaseItem> customFieldList> customField
+| NON_INVENTORY_RESALE_ITEM  | NonInventoryResaleItem> customFieldList> customField
+| NON_INVENTORY_SALE_ITEM  | NonInventorySaleItem> customFieldList> customField
+| OTHER_CHARGE_PURCHASE_ITEM  | OtherChargePurchaseItem> customFieldList> customField
+| OTHER_CHARGE_RESALE_ITEM  | OtherChargeResaleItem> customFieldList> customField
+| OTHER_CHARGE_SALE_ITEM  | OtherChargeSaleItem> customFieldList> customField
+| SERVICE_PURCHASE_ITEM  | ServicePurchaseItem> customFieldList> customField
+| SERVICE_RESALE_ITEM  | ServiceResaleItem> customFieldList> customField
+| SERVICE_SALE_ITEM  | ServiceSaleItem> customFieldList> customField
+|===
+
+====  CRM字段
+
+[%header,cols="50a,50a"]
+|===
+|记录类型 |自定义字段放置
+| CALENDAR_EVENT  | CalendarEvent> customFieldList> customField
+| CAMPAIGN  |广告系列> customFieldList> customField
+|问题 |问题> customFieldList> customField
+| MANUFACTURING_OPERATION_TASK  | ManufacturingOperationTask> customFieldList> customField
+| PHONE_CALL  | PhoneCall> customFieldList> customField
+| PROJECT_TASK  | ProjectTask> customFieldList> customField
+|解决方案 |解决方案> customFieldList> customField
+| SUPPORT_CASE  | SupportCase> customFieldList> customField
+| TASK  |任务> customFieldList> customField
+|===
+
+==== 交易主体字段
+
+[%header,cols="50a,50a"]
+|===
+|记录类型 |自定义字段放置
+| ASSEMBLY_BUILD  | AssemblyBuild> customFieldList> customField
+| CASH_SALE  | CashSale> customFieldList> customField
+| CUSTOMER_PAYMENT  | CustomerPayment> customFieldList> customField
+|存款 |存款> customFieldList> customField
+| ESTIMATE  |估计> customFieldList> customField
+| EXPENSE_REPORT  | ExpenseReport> customFieldList> customField
+| INVENTORY_ADJUSTMENT  | InventoryAdjustment> customFieldList> customField
+| INVOICE  |发票> customFieldList> customField
+| ITEM_FULFILLMENT  | ItemFulfillment> customFieldList> customField
+| ITEM_RECEIPT  | ItemReceipt> customFieldList> customField
+| JOURNAL_ENTRY  | JournalEntry> customFieldList> customField
+|机会 |机会> customFieldList> customField
+| PURCHASE_ORDER  | PurchaseOrder> customFieldList> customField
+| PURCHASE_REQUISITION  | PurchaseRequisition> customFieldList> customField
+| SALES_ORDER  | SalesOrder> customFieldList> customField
+| TRANSFER_ORDER  | TransferOrder> customFieldList> customField
+| VENDOR_BILL  | VendorBill> customFieldList> customField
+| VENDOR_CREDIT  | VendorCredit> customFieldList> customField
+| VENDOR_PAYMENT  | VendorPayment> customFieldList> customField
+| VENDOR_RETURN_AUTHORIZATION  |供应商返回授权> customFieldList> customField
+| WORK_ORDER  | WorkOrder> customFieldList> customField
+|===
+
+==== 事务列字段
+
+[%header,cols="50a,50a"]
+|===
+|记录类型 |自定义字段放置
+| CASH_SALE  | CashSale> itemList> item> customFieldList> customField
+| ESTIMATE  |估计> itemList> item> customFieldList> customField
+| EXPENSE_REPORT  | ExpenseReport> expenseList>费用> customFieldList> customField
+| INVOICE  |发票> itemList> item> customFieldList> customField
+| ITEM_FULFILLMENT  | ItemFulfillment> itemList> item> customFieldList> customField
+| ITEM_RECEIPT  | ItemReceipt> itemList> item> customFieldList> customField
+| JOURNAL_ENTRY  | JournalEntry> lineList> line> customFieldList> customField
+|机会 |商机> itemList> item> customFieldList> customField
+| PURCHASE_ORDER  | PurchaseOrder> itemList> item> customFieldList> customField
+| PURCHASE_REQUISITION  | PurchaseRequisition> itemList> item> customFieldList> customField
+| SALES_ORDER  | SalesOrder> itemList> item> customFieldList> customField
+| TIME_BILL  | TimeBill> customFieldList> customField
+| TRANSFER_ORDER  | TransferOrder> itemList> item> customFieldList> customField
+| VENDOR_BILL  | VendorBill> itemList> item> customFieldList> customField
+| VENDOR_CREDIT  | VendorCredit> itemList> item> customFieldList> customField
+| VENDOR_PAYMENT  | VendorPayment> itemList> item> customFieldList> customField
+| VENDOR_RETURN_AUTHORIZATION  | VendorReturnAuthorization> itemList> item> customFieldList> customField
+| WORK_ORDER  | WorkOrder> itemList> item> customFieldList> customField
+|===
+
+==== 交易项目选项
+
+DataSense无法检测到NetSuite的交易项目选项。
+
+==== 项目编号字段
+
+DataSense无法检测到NetSuite的物料编号字段。
+
+==== 其他自定义字段
+
+[%header,cols="50a,50a"]
+|===
+|记录类型 |自定义字段放置
+|帐户 |帐户> customFieldList> customField
+| BIN  | Bin> customFieldList> customField
+|分类 |分类> customFieldList> customField
+| EXPENSE_CATEGORY  | ExpenseCategory> customFieldList> customField
+| ITEM_DEMAND_PLAN  | ItemDemandPlan> customFieldList> customField
+| ITEM_SUPPLY_PLAN  | ItemSupplyPlan> customFieldList> customField
+|位置 |位置> customFieldList> customField
+| MANUFACTURING_COST_TEMPLATE  | ManufacturingCostTemplate> customFieldList> customField
+| MANUFACTURING_ROUTING  | ManufacturingRouting> customFieldList> customField
+|注意 |注意> customFieldList> customField
+| PROMOTION_CODE  | PromotionCode> customFieldList> customField
+|子公司 |子公司> customFieldList> customField
+|===
+
+== 另请参阅
+
+* 详细了解如何使用 link:/mule-user-guide/v/3.9/anypoint-connectors[Anypoint连接器]。
+* 访问 link:/release-notes/netsuite-connector-release-notes[NetSuite连接器]。

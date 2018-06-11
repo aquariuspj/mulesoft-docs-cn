@@ -1,0 +1,37 @@
+= 从消息源发送异步响应
+:keywords: mule, sdk, sources, listener, triggers, response, output, asynchronous
+
+源可以以异步方式发送响应。一些异步源的主要用例是：
+
+* 响应操作是非阻塞的。
+* 响应操作是阻塞的，但它在异步执行的线程中不是启动它的线程（最典型的是执行用`OnSuccess`或`OnError`注释的方法的线程）。
+* 源将执行异步审计，因此需要在单独的线程中使用响应流。
+
+在这些情况下：
+
+* 运行时需要知道响应是异步的。否则，在发送响应的线程和尝试释放的运行时间之间将存在争用条件
+建立与正在获得响应的消息相关联的资源。
+* 用`OnSuccess`或`OnError`注释的方法必须具有`SourceCompletionCallback`类型的参数。这足以向运行时指示源是异步的。
+
+直到调用`success()`或`error(Throwable)`方法，运行时才会完成关联的事件。请注意，这是一个非常强大的合同。在没有正确通知运行时的情况下请求`SourceCompletionCallback`的源可能会最终冻结整个运行时。
+
+这里是一个例子：
+[source, java, linenums]
+----
+@OnSuccess
+public void onSuccess(@Content String response, SourceCompletionCallback callback) {
+  asyncResponder.sendResponse(response, new ResponderCallback() {
+    void onSuccess() {
+      callback.success();
+    }
+
+    void onFailure(Throwable t) {
+      callback.error(t);
+    }
+  };)
+}
+----
+
+== 下一步
+
+<<sources-transactions#, Transactional Message Sources>>

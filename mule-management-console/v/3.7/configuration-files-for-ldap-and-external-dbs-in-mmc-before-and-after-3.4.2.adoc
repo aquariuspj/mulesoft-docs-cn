@@ -1,0 +1,251 @@
+=  3.4.2之前和之后的MMC中的LDAP和外部DB的配置文件
+:keywords: mmc, configuration, ldap, authenthication
+
+Mule管理控制台的3.4.2版为以下方案引入了一种新的简化配置：
+
+* 在外部数据库上保存MMC数据
+* 通过LDAP管理MMC用户
+
+如果从早于3.4.2的MMC升级到3.4.2或更高版本，并且上述任何情况适用于您的安装，则需要迁移到通过LDAP进行数据持久性和/或用户管理的新配置。
+
+此页面不提供完整的升级说明;它只是从MMC 3.4.1或更早版本迁移到3.4.2或更高版本的文件和参数的快速参考。有关逐步说明，请参阅 link:/mule-management-console/v/3.7/upgrading-to-mmc-with-an-external-database[使用外部数据库升级到MMC]和 link:/mule-management-console/v/3.7/upgrading-to-mmc-with-ldap[使用LDAP升级到MMC]。
+
+== 激活LDAP和外部数据库的Spring配置文件
+
+在所有MMC版本中，文件MMC_HOME / WEB-INF / web.xml都包含参数spring.profiles.active，它允许您激活Spring配置文件以便在外部数据库上保存数据并使用LDAP管理用户。
+
+支持持久化环境数据的===  Spring配置文件
+
+要在外部数据库上保存MMC环境数据，请根据数据库激活以下参数之一：
+
+*  ENV-postgres的
+*  ENV-预言
+*  ENV-MySQL的
+*  ENV-DB2
+*  ENV-MSSQL
+
+示例spring.profiles.active部分：
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-oracle</param-value>
+</context-param>
+----
+
+支持持久化交易数据的===  Spring配置文件
+
+要在外部数据库上保存MMC事务数据（Business Events），请根据数据库激活以下参数之一：
+
+* 跟踪postgres的
+* 跟踪预言
+* 跟踪MySQL的
+* 跟踪DB2
+* 跟踪MSSQL
+
+示例spring.profiles.active部分：
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-oracle,env-derby</param-value>
+</context-param>
+----
+
+用于LDAP的===  Spring配置文件
+
+要通过LDAP管理用户，请激活web.xml中的ldap Spring配置文件，如下所示。
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-oracle,env-derby,ldap</param-value>
+</context-param>
+----
+
+== 在外部数据库中保留环境数据
+
+支持持久化环境数据的=== 配置文件
+
+[%header,cols="34,33,33"]
+|===
+| 3.4.1及更早版本中的文件名 | 3.4.2及更高版本中的文件名 |描述
+| MMC_HOME / WEB-INF / web.xml  | MMC_HOME / WEB-INF / web.xml  |指定用于数据持久性的数据库（通过活动的Spring配置文件设置）
+| MMC_HOME / WEB-INF / classes / META-INF / mmc.properties a |
+MMC_HOME / WEB-INF /班/ META-INF /数据库/ mmc-DATABASE_NAME.properties
+
+DATABASE_NAME是DB服务器名称，例如oracle或postgres。
+
+  |设置数据库连接参数，如用户名，主机，端口等
+|  MMC_HOME / WEB-INF / classes / META-INF / jackrabbit-repo.xml a |
+  MMC_HOME / WEB-INF /类/ META-INF /兔崽子/兔崽子-回购DATABASE_NAME.xml
+
+DATABASE_NAME是DB服务器名称，例如oracle或postgres。
+
+  |定义工作区名称和其他参数
+|===
+
+以下各节提供了将MMC 3.4.1中的文件中的必要数据迁移到MMC 3.4.2中的文件的快速参考。
+
+==== 文件web.xml  - 所有MMC版本
+
+文件web.xml存储活动的Spring配置文件信息，该信息确定用于数据持久性的数据库。有关为特定数据库激活Spring配置文件的详细信息，请参阅上面的部分。
+
+==== 文件mmc.properties < 3.4.1 to mmc-<database_name>。properties> 3.4.2
+
+下表将映射3.4.1，mmc.properties中的环境数据持久性的配置文件中的相关参数以及MMC 3.4.2和更高版本中的等效配置文件中的相关参数。
+
+[%header,cols="34,33,33"]
+|===
+|旧MMC版本中的参数名称 | MMC中的参数名称3.4.2  |注释
+| {datasource.username {1}} env.username  | 
+| {datasource.password {1}} env.password  | 
+| datasource.url  | env.host a |
+从datasource.url的值中提取数据库服务器所在的主机，并将其作为3.4.2中的数据库配置文件中的env.host的值。
+
+例如，如果数据库驻留在主机dbserver上，则从3.4.2配置文件中的datasource.url = jdbc：mysql：// dbserver / mmc_persistency_status将dbserver提取到env.host = dbserver。
+
+| datasource.url  | env.port a |
+从datasource.url的值中，提取数据库服务器正在侦听的端口，并将其作为3.4.2的数据库配置文件中env.port的值分配。
+
+例如，如果数据库驻留在主机dbserver端口9155处，则从3.4.2配置文件中的datasource.url = jdbc：mysql：// dbserver：9155 / mmc_persistency_status将9155解压为env.port = 9155。
+
+请注意，如果端口号在URL中不存在，则可能意味着正在使用数据库服务器的默认端口，例如1521用于Oracle，3306用于MySQL等。
+
+| datasource.url  | env.servicename（仅限Oracle）。a |
+从datasource.url的值中，为连接提取Oracle服务名称，并将其作为3.4.2的数据库配置文件中env.servicename的值分配。 +
+ +
+
+例如，如果3.4.1中的datasource.url的值为jdbc \：oracle \：thin \：MMC_STATUS / mmc123 @ dbserver \：1521 \：xe，则服务名称为xe。使用参数env.servicename = xe将其分配到新的配置文件中。
+
+|===
+
+==== 文件jackrabbit-repo.xml < 3.4.1 to jackrabbit-repo-<database_name>。xml> 3.4.2
+
+===== 工作区名称
+
+您需要从< 3.4.1 jackrabbit file to the relevant > 3.4.2 jackrabbit文件迁移*workspace name*和*default workspace name*的定义。工作区定义存储在工作区部分，如下例所示。
+
+[source, xml, linenums]
+----
+<Workspaces rootPath="${rep.home}/workspaces" defaultWorkspace="mmcworkspace"/>
+    <!--
+        workspace configuration template:
+        used to create the initial workspace if there's no workspace yet
+    -->
+    <Workspace name="mmcworkspace">
+----
+
+您需要检查旧的和新的jackrabbit-repo文件中Workspace名称的值是否相同。
+
+=====  schemaObjectPrefix
+
+在同一个文件中，所有schemaObjectPrefix声明的值必须在旧的和新的jackrabbit-repo文件中重合。下面显示了一个schemaObjectPrefix声明的示例。
+
+[source, xml, linenums]
+----
+<FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+      <param name="schemaObjectPrefix" value="workspace_"/>
+----
+
+== 持久性交易数据
+
+用于持续追踪商业活动数据的=== 配置文件
+
+[%header,cols="3*"]
+|===
+
+| 3.4.1及更早版本中的文件名
+| 3.4.2及更高版本中的文件名
+|说明
+| MMC_HOME / WEB-INF / web.xml中| MMC_HOME / WEB-INF / web.xml中
+|指定用于数据持久性的数据库（通过活动的Spring配置文件设置）
+| MMC_HOME / WEB-INF /类/ META-INF / mmc-persistence.properties
+0.2 + | MMC_HOME / WEB-INF /类/ META-INF /数据库/跟踪的持久性 -  <database name>属性
+其中，<database name>是数据库服务器的名称，例如oracle或postgres。
+|设置数据库连接参数，例如用户名，主机，端口等。该文件可能包含applicationContext-tracking.xml中的值（见下文）。
+| MMC_HOME / WEB-INF / classes / META-INF / applicationContext-tracking.xml  |设置数据库连接参数，例如用户名，主机，端口等。 mmc-persistence.properties（见上文）。
+
+|===
+
+==== 文件web.xml（所有MMC版本）
+
+文件web.xml存储活动的Spring配置文件信息，该信息确定用于数据持久性的数据库。有关为特定数据库激活Spring配置文件的详细信息，请参阅上面的部分。
+
+MMC中的==== 文件< 3.4.1 to file tracking-persistence-<database_name>。MMC中的属性> 3.4.2
+
+在您的旧MMC安装中，数据库连接信息包含在文件中：
+
+*  MMC_HOME / WEB-INF /类/ mmc-persistence.properties
+*  MMC_HOME / WEB-INF /类/ META-INF /的applicationContext-tracking.xml
+
+请注意，您的安装中可能不存在mmc-persistence.properties。此外，这两个文件之间的功能有重叠;有可能所有相关的配置仅存储在这些文件中的一个上，或者分散在这两个文件上。
+
+以下是applicationContext-tracking.xml中dataSource bean中定义的数据库连接参数示例。
+
+[source, xml, linenums]
+----
+<bean id="dataSource" class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+    <property name="driverClassName" value="oracle.jdbc.driver.OracleDriver" />
+    <property name="url" value="jdbc:oracle:thin:@192.168.10.21:1521:xe" />
+    <property name="username" value="TRACKER" />
+    <property name="password" value="tracker" />
+</bean>
+----
+
+MMC中的==== 文件< 3.4.1 to file tracking-persistence-<database_name>。MMC中的属性> 3.4.2
+
+下表将用于跟踪MMC 3.4.1及更早版本中的数据持久性的相关参数映射到MMC 3.4.2及更高版本中的等效参数文件。
+
+[%header,cols="34,33,33"]
+|===
+| 3.4.1中的参数名称 | 3.4.2中的参数名称 |注释
+| {用户名{1}} mmc.tracking.db.username  | 
+| {密码{1}} mmc.tracking.db.password  | 
+|网址 | mmc.tracking.db.host a |
+从url的值中提取数据库服务器所在的主机，并将其分配为3.4.2中的数据库配置文件中的mmc.tracking.db.host的值。
+
+例如，如果数据库驻留在主机dbserver上，则从3.4.2配置文件中的datasource.url = jdbc：mysql：// dbserver / mmc_persistency_status将dbserver提取到mmc.tracking.db.host = dbserver。
+
+|网址 | mmc.tracking.db.port a |
+从URL的值中提取数据库服务器正在侦听的端口，并将其分配为3.4.2中的数据库配置文件中的mmc.tracking.db.port值。
+
+例如，如果您的数据库驻留在主机dbserver端口9155处，请从datasource.url = jdbc：mysql：// dbserver：9155 / mmc_persistency_status将9155解压缩到3.4.2配置文件中的mmc.tracking.db.port = 9155。
+
+请注意，如果端口号在URL中不存在，则可能意味着正在使用数据库服务器的默认端口，例如1521用于Oracle，3306用于MySQL等。
+
+|网址 | mmc.tracking.db.servicename a a |
+从url的值中，提取连接的Oracle服务名称，并将其分配为3.4.2中的数据库配置文件中mmc.tracking.db.servicename的值。 +
+ +
+
+例如，如果3.4.1中的url值为jdbc：oracle：thin：MMC_STATUS / mmc123 @ dbserver：1521：xe，则服务名称为xe。使用参数env.servicename = xe将其分配到新的配置文件中。
+
+|===
+
+== 通过LDAP管理用户
+
+=== 用于通过LDAP管理用户的配置文件
+
+[%header%autowidth.spread]
+|===
+| 3.4.1及更早版本中的文件名 | 3.4.2及更高版本中的文件名 |描述
+| MMC_HOME / WEB-INF / web.xml  | MMC_HOME / WEB-INF / web.xml  |定义LDAP是否用于用户认证（通过LDAP Spring配置文件）
+| MMC_HOME / WEB-INF / classes / mmc-ldap.properties  | MMC_HOME / WEB-INF / classes / META-INF  |存储LDAP连接和搜索参数
+|===
+
+==== 文件web.xml（所有MMC版本）
+
+文件web.xml存储活动的Spring配置文件信息;要使用LDAP，您需要激活ldap Spring配置文件。有关详细信息，请参阅本文档中的<<Activating Spring Profiles for LDAP and External DBs>>。
+
+==== 文件mmc-ldap.properties
+
+该文件在所有MMC版本中都是相同的，所以升级时不需要迁移参数。将文件从旧的MMC版本复制到新的安装。
+
+升级期间出现===  LDAP问题
+
+所有LDAP配置都应驻留在mmc-ldap.properties文件中，但即使MMC配置为使用LDAP，您也可能发现该文件在您的安装中不存在。在这种情况下，LDAP设置驻留在文件MMC_HOME / WEB-INF / classes / META-INF / ldap.xml中。
+
+在某些MMC安装中，LDAP配置不存储在mmc-ldap.properties文件中，而是存储在位于MMC_HOME / WEB-INF / classes / META-INF /目录中的名为ldap.xml的文件中。这不应该是这样;所有LDAP配置都应驻留在mmc-ldap.properties文件中。如果您的安装是这种情况，请参阅 link:/mule-management-console/v/3.7/upgrading-to-mmc-with-ldap[使用LDAP升级到MMC]中的*Troubleshooting*部分。

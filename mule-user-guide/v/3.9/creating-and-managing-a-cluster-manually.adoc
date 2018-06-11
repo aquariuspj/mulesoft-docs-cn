@@ -1,0 +1,214 @@
+= 手动创建和管理群集
+:keywords: cluster, deploy
+
+*_Enterprise Edition_*
+
+本页介绍手动创建和配置群集。有3种创建和管理群集的方式：
+
+* 使用Mule管理控制台的图形界面
+* 使用运行时管理器 - 有关更多信息，请参阅 link:/runtime-manager/managing-servers#create-a-cluster[创建和管理集群]
+手动使用配置文件* 
+
+
+[CAUTION]
+====
+*Do not attempt mixed management of clusters*
+
+如果您手动创建集群，请勿尝试通过管理控制台进行管理。管理控制台无法识别您手动创建的群集，并覆盖群集配置。
+====
+
+[NOTE]
+====
+集群中的所有节点必须具有相同的代理版本。
+====
+
+== 手动创建群集
+
+按照以下过程使用配置文件手动创建群集。
+
+. 确保节点未运行，即Mule Runtime Server已停止。
+. 在节点的`$MULE_HOME/.mule`目录内创建一个名为`mule-cluster.properties`的文件。
+. 使用参数=值对编辑文件，每行一个。看下面的例子。
++
+*Note*：`mule.clusterId`和`mule.clusterNodeId`必须位于属性文件中。
++
+[source, code, linenums]
+----
+...
+mule.cluster.nodes=192.168.10.21,192.168.10.22,192.168.10.23
+mule.cluster.multicastenabled=false
+mule.clusterId=<Cluster_ID>
+mule.clusterNodeId=<Cluster_Node_ID>
+...
+----
++
+. 对您希望在群集中的所有Mule服务器重复此过程。
+. 启动节点中的Mule服务器。
+
+有关可用参数的完整列表，请参阅<<Cluster Configuration Parameters>>。
+
+== 手动管理群集
+
+手动管理群集仅适用于手动创建的群集，这些群集不由Mule管理控制台管理。
+
+要手动更改群集节点的配置，请按照下列步骤操作：
+
+. 停止节点的Mule服务器。
+
+. 根据需要编辑节点的`mule-cluster.properties`，然后保存该文件。
+
+. 重新启动节点的Mule服务器。
+
+[CAUTION]
+====
+*Ensure consistency across nodes*
+
+确保您在配置文件中应用的选项对所有群集节点均有效。如果不这样做，可能会导致您中断群集配置并无意中禁用群集。
+====
+
+=== 法定人数管理。
+
+在管理_手动配置的群集_时，您现在可以设置群集运行所需的最少法定机器数量。
+
+分区网络时，默认情况下集群可用。但是，通过设置最小法定大小，您可以将群集配置为拒绝未通过最小阈值的更新。 +
+这可以帮助您实现更好的一致性，并在您的某个节点（群集中的Mule运行时）意外丢失时保护您的群集。
+
+在正常情况下，如果一个节点在集群中死亡，您仍然可以拥有足够的内存来存储您的数据，但是可用于处理请求的线程数量将会减少，因为您现在将拥有较少的节点并且分区线程在集群中可能很快变得不堪重负。这可能导致
+
+* 客户没有线程处理他们的请求。
+* 群集中的其他成员对请求感到如此不知所措，以至于他们无法做出响应，并假定它们已经死亡，被迫退出群集。
+
+为了在成员丢失的情况下保护集群的其他部分，可以设置最小法定大小以停止对节点的并发更新，并且每当集群中活动节点的数量低于配置值时抛出+ QuorumException +。
+
+[CAUTION]
+====
+*QuorumExceptions must be caught*
+
+在为群集配置定额大小时，您需要捕获抛出的异常以做出某种决定（例如发送电子邮件，停止进程，记录日志，重试策略等）
+====
+
+要启用仲裁，+ mule.cluster.quorumsize +属性必须放置在集群配置文件+ {MULE_HOME} /。mule / mule-cluster.properties +上，以定义要保持运行状态的最小集群节点数。
+
+[NOTE]
+--
+仲裁功能仅适用于使用对象存储的组件。
+--
+
+=== 对象存储持久性
+
+您可以持久地将JDBC数据存储在可从所有群集节点访问的集中式系统中。
+
+[TIP]
+--
+查看 link:/mule-user-guide/v/3.9/hardware-and-software-requirements#mule-database-servers[Mule的硬件和软件要求]以获取支持的关系数据库管理系统的列表。
+
+请记住，从该列表中，Oracle数据库支持对于Mule 3.8.x是 link:/release-notes/mule-3.8.0-release-notes#enterprise-edition-known-issues-and-limitations[已知的限制]，并且计划在未来的版本中使用。
+--
+
+要启用对象存储持久性，您需要在+ {MULE_HOME} /。mule / mule-cluster.properties +文件中创建一个数据库并定义其配置值：
+
+.  *mule.cluster.jdbcstoreurl*：用于连接到数据库的JDBC URL
+.  *mule.cluster.jdbcstoreusername*：数据库用户名
+.  *mule.cluster.jdbcstorepassword*：数据库用户密码
+.  *mule.cluster.jdbcstoredriver*：JDBC驱动程序类名称
+.  *mule.cluster.jdbcstorequerystrategy*：SQL方言
+
+数据库的表格是自动创建的，因为此功能会为要保留的每个不同对象库创建表格。 +
+每个对象存储创建两个表：
+
+* 一张表存储数据
+* 另一个表存储分区。
+
+==== 针对对象存储数据库的建议
+
+. 建议您创建仅用于JDBC存储的专用数据库/模式。
+. 数据库用户名需要具有以下权限：
+.. 在数据库中创建对象，这意味着DDL CREATE，DROP表。
+.. 对其创建的对象具有DML权限（INSERT，UPDATE，DELETE，SELECT）
+. 请始终记住，数据存储需要托管在可从所有节点访问的集中式数据库中。每个群集不要使用多个数据库。 +
+有关如何配置这些值的详细信息，请查看<<persistency-config,cluster configuration reference for persistency>>。
+
+
+=== 监测
+
+您可以通过 link:http://www.oracle.com/technetwork/java/javase/tech/javamanagement-140525.html[JMX技术]监视群集成员抛出的事件。
+
+JMX监视选项默认处于禁用状态。为了启用它，您需要将+ mule.cluster.jmxenabled +属性添加到+ {MULE_HOME} /。mule / mule-cluster.properties +配置文件。
+
+请注意，启用JMX可能会导致一些性能开销，因为底层结构会添加侦听器以获取每个单独节点的统计信息。
+
+
+=== 成员听众
+
+成员侦听器允许您在以下情况下收到通知：
+
+. 将新成员添加到群集
+. 现有成员离开集群
+
+当其中一个事件被触发时，成员侦听器分别输出加入或离开的成员的地址。
+
+== 群集配置参数
+
+下表列出了`mule-cluster.properties`文件的参数。
+
+[%header%autowidth.spread]
+|===
+|属性名称 |说明
+| `mule.clusterId`  | *Mandatory.*集群的唯一标识符。它可以是任何字母数字字符串。
+| `mule.clusterNodeId`  | *Mandatory.*集群内节点的唯一标识。它可以是1到集群中节点数量之间的任何整数。
+| `mule.cluster.networkinterfaces` a |
+由Hazelcast使用的逗号分隔的接口列表。通配符支持，如下所示。
+
+[source, code]
+----
+192.168.1.*,192.168.100.25
+----
+
+| `mule.cluster.nodes` a |
+属于集群的节点，格式为`<host:port>`，例如`172.16.9.24:9000`。只指定一个IP地址可以使服务器加入群集。
+
+端口号是可选的;如果未设置，则默认值为5701.要包含多个主机，请创建一个以逗号分隔的列表。
+
+该选项使用指定的固定IP地址配置群集。如果您不依赖多播进行集群节点发现，请使用此选项。如果使用此选项，请将`mule.cluster.multicastenabled`设置为`false`，否则启动集群时会引发异常。 （见下表中的下一项）。 +
+
+例子：
+
+监听端口9000的两个节点：
+
+[source]
+----
+172.16.9.24:9000,172.16.9.51:9000
+----
+
+侦听端口5701的两个节点：
+
+[source]
+----
+192.168.1.19,192.168.1.20
+----
+
+| `mule.cluster.quorumsize`  | 使您能够定义群集中所需的最少机器数量，使其保持在运行状态。
+| `mule.cluster.multicastenabled`  | *(Boolean)*启用/禁用多播。如果使用固定IP地址进行集群节点发现，请设置为`false`（请参阅上面的选项`mule.cluster.nodes`）。 +
+如果设置为`true`，请勿在{{1​​}}中设置IP地址。
+| `mule.cluster.multicastgroup`  |要使用的多播组IP地址。
+| `mule.cluster.multicastport`  |要使用的多播端口号。
+|  [[persistency-config]] `mule.cluster.jdbcstoreurl`  |  *Required only when storing persistent data*。 +
+用于连接到数据库的JDBC URL
+| `mule.cluster.jdbcstoreusername`  | *Required only when storing persistent data*。 +
+数据库用户名
+| `mule.cluster.jdbcstorepassword`  | *Required only when storing persistent data*。 +
+数据库用户密码
+| `mule.cluster.jdbcstoredriver`  | *Required only when storing persistent data*。 +
+JDBC驱动程序类名称
+| `mule.cluster.jdbcstorequerystrategy`  | *Required only when storing persistent data*。 +
+用于访问存储的对象数据的SQL方言。 +
+该属性可以有三个不同的值：`mssql`，`mysql`和`postgresql` ^ <<anchor-1,1>> ^。
+| `mule.cluster.jmxenabled` |  *(Boolean)*启用/禁用监控
+|  `mule.cluster.listenersenabled`  |  *(Boolean)*启用/禁用成员侦听器。如果您希望节点在成员进入或离开群集时得到通知，请设置为`true`。
+|===
+
+[[anchor-1]]
+[CAUTION]
+--
+Oracle数据库支持是Mule 3.8.x的 link:/release-notes/mule-3.8.0-release-notes#enterprise-edition-known-issues-and-limitations[已知的限制]，并计划将来发布。
+--

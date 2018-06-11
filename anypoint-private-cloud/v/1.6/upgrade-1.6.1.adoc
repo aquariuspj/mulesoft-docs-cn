@@ -1,0 +1,200 @@
+= 将任意平台私有云版本1.5.x迁移到1.6.1
+
+本主题介绍如何从Anypoint Platform私有云版本1.5.x迁移到版本1.6.1。这些过程适用于1,3和6节点环境。
+
+[WARNING]
+在迁移过程中，每个节点都可能会因迁移而停机。
+
+== 先决条件
+
+在迁移之前，请确保您已经完成并满足以下先决条件：
+
+* 按照 link:backup-and-disaster-recovery[关于备份和恢复]中所述执行系统备份。
+
+* 确保您的环境满足 link:system-requirements[关于最低系统要求]中描述的所有系统和网络要求
+
+* 启用TCP端口`5973`，`3022`，`7373`节点以启用与数据库集群的通信。
+
+* 确保您有权在启动迁移工具的节点上运行`sudo`命令。
+
+* 确保`kubectl`命令在您执行迁移的节点中可用。要验证是否安装了`kubectl`，请运行以下命令：
++
+----
+$ sudo gravity enter
+$ kubectl
+----
+
+* 在负载均衡器上启用端口10248。
++
+该平台使用此端口对负载均衡器执行健康检查。
+
+
+== 执行升级
+
+. 从您的客户成功代表获取`anypoint-1.6.1-installer.tar.gz`档案。
+
+. 通过运行以下命令来确定集群的主节点：
++
+----
+$ systemctl status | grep gravitational
+   │     └─25249 grep --color=auto gravitational
+     ├─gravity__gravitational.io__teleport__1.2.0.service
+     ├─gravity__gravitational.io__planet-master__0.1.39-138.service
+----
++
+您可能必须在群集的每个节点上运行此命令。显示`planet-master`的节点是主节点。
+
+. 使用`ssh`登录到群集的主节点。
+
+. 将安装程序上传到群集的主节点。
+
+. 创建一个目录并解压缩安装程序存档。
++
+----
+mkdir anypoint-1.6.1
+tar -xzf anypoint-1.6.1-installer.tar.gz -C anypoint-1.6.1
+----
+
+. 转到`anypoint-1.6.1`目录，然后运行上传脚本。
++
+----
+cd anypoint-1.6.1
+sudo ./upload
+----
++
+此命令将数据上载到主节点并执行内部更新。
++
+等到命令完成后再继续下一步。根据您的网络配置，此命令可能需要一段时间才能完成。当`upload`命令成功完成时，它显示以下消息：
++
+----
+new application anypoint 1.6.1 has been uploaded
+----
+
+
+. 下载更新脚本并将其复制到群集中的每个节点。
+.. 从以下网址下载脚本
++
+----
+https://anypoint-anywhere.s3.amazonaws.com/1.6.1-GA/manual_update_161.sh?Signature=xTkDlF%2F1OKFYtjG2lXPZcuc2itY%3D&Expires=1536705930&AWSAccessKeyId=AKIAITTY5MSTT3INJ7XQ
+----
+
+.. 将脚本复制到您运行`./upload`的主节点上的目录。
+
+.. 将脚本复制到您环境中的其他节点。
+
+. 导出RBAC引导程序包。
++
+从主节点运行以下命令：
++
+----
+./manual_update_161.sh export-rbac
+----
+
+. 缩减部署
++
+从主节点运行以下命令：
++
+----
+./manual_update_161.sh scale-down
+----
+
+
+. 启动更新操作
++
+从主节点运行以下命令：
++
+----
+./manual_update_161.sh start-update
+----
+
+
+. 引导系统更新过程
++
+从主节点运行以下命令：
++
+----
+./manual_update_161.sh bootstrap-system
+----
+
+. 用适当的坐骑更新行星配置
++
+----
+./manual_update_161.sh update-config=<node-name>
+----
++
+您必须在群集的每个节点上顺序运行此命令。等到该命令在一个节点上完成后，才能在下一个节点上运行它。
+
+. 通过登录到群集的每个节点并运行以下命令来执行系统更新。
++
+----
+./manual_update_161.sh update-system
+----
++您必须在集群的每个节点上顺序运行此命令。等到该命令在一个节点上完成后，才能在下一个节点上运行它。
+
+. 引导群集中的RBAC配置
++
+从主节点运行以下命令：
++
+----
+./manual_update_161.sh bootstrap-rbac
+----
+
+. 运行以下命令以确定群集中每个节点的名称：
++
+----
+kubectl get nodes
+NAME          STATUS    AGE
+172.31.0.25   Ready     19h
+172.31.0.37   Ready     19h
+172.31.0.9    Ready     19h
+----
++
+名称列中将显示群集中每个节点的节点名称。将这些名称记录下来供以后使用。
+
+. 退出重力壳
++
+----
+exit
+----
+
+. 排空并取消群集中的每个节点。清除节点会停止节点上运行的所有容器。 Uncordoning一个节点确保该节点可调度。
+
+.. 登录到群集的每个节点。
+.. 通过传递您所登录节点的节点名称来排空节点：
++
+----
+./manual_update_161.sh drain=<node-name>
+----
++
+在继续之前，您必须确保所有Pod均处于`running`或`pending`状态。没有pod应该处于`crashloopbackoff`或`terminating`状态。
+
+.. 通过传递您所登录节点的节点名称来取消节点的记录：
++
+----
+./manual_update_161.sh uncordon=<node-name>
+----
+
+. 从主节点启动应用程序更新：
++
+----
+./manual_update_161.sh update-app
+----
+
+. 如果要升级单节点环境，请通过运行以下命令修复LDAP配置目录权限：
++
+----
+./manual_update_161.sh fix-ldap
+----
+
+. 完成并完成更新操作
++
+----
+./manual_update_161.sh finalize-update 
+----
+
+== 另请参阅
+
+*  link:/anypoint-private-cloud/v/1.6/upgrade-1.6.0-1.6.1[将任意平台私有云1.6.0版迁移到1.6.1]
+*  link:/anypoint-private-cloud/v/1.6/upgrade-1.6.0-1.6.1-one-node[将任意平台私有云版本1.6.0迁移到1.6.1（单节点）]
+*  link:system-requirements[关于最低系统要求]
+*  link:managing-via-the-ops-center[使用Ops Center管理Anypoint平台私有云版]

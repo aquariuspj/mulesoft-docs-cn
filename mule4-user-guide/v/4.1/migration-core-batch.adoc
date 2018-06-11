@@ -1,0 +1,196 @@
+// sme：MG，作者：sduke？
+= 迁移批处理路由器
+
+//一般地解释Mule 3和Mule 4之间如何以及为什么会发生变化。
+引入了批处理模块来处理提取转换加载（ETL）功能。
+
+本节涵盖的内容：
+
+*  <<batch_scope>>
+*  <<record_var>>
+*  <<non_java_datasets>>
+*  <<xml_changes>>
+
+[[batch_scope]]
+== 迁移批处理元素
+
+在Mule 3中，Batch是一个顶级元素，与流程级别相同。在Mule 4中，`<batch:job>`元素是一个存在于流内的范围，因此它更易于理解，动态调用并与其他Mule组件交互。
+
+// TODO：这是哪里？ link:mule-4-batch-module[Mule 4批量模块]
+
+这也意味着不再有`<batch:input>`。 `<batch:input>`的作用现在由触发`<batch:job>`之前流中的任何一组处理器来完成。
+
+*  `<batch:job>`：尽管Batch是一个范围，但它有一个名称。没有Mule应用程序可以有两个具有相同名称的`<batch:job>`定义。当单个流程定义多个工作时，这允许更好的跟踪和管理
+
+*  `<batch:execute>`：此操作不再存在。相反，只需调用包含bach作业的任何流。
+
+.Mule 3的例子
+[source,xml, linenums]
+----
+<batch:job name="batchJob">
+    <<batch:input>>
+        <poll frequency="10000">
+            <sfdc:query ..../>
+        </poll>
+    </<batch:input>>
+    <batch:process-records>
+        <batch:step name="batchStep1">
+          <mp />
+          <mp />
+      </batch:step>
+      <batch:step name="batchStep1">
+        <event processor/>
+        <event processor/>
+      </batch:step>
+    <batch:process-records>
+</batch:job>
+----
+
+.Mule 4的例子
+[source,xml, linenums]
+----
+<flow name="flowOne">
+  <scheduler>
+			<scheduling-strategy>
+				<fixed-frequency frequency="10000"/>
+			</scheduling-strategy>
+		</scheduler>
+  <batch:job jobName="batchJob">
+    <batch:process-records>
+      <batch:step name="batchStep1">
+        <event processor/>
+        <event processor/>
+      </batch:step>
+      <batch:step name="batchStep1">
+        <mp />
+        <mp />
+      </batch:step>
+    </batch:process-records>
+  </batch:job>
+</flow>
+----
+
+[[record_var]]
+== 将记录变量迁移到变量
+
+与常规流程不同，批处理在记录级别而不是消息级别。
+
+在Mule 3中，您使用记录级变量（`recordVars`）将变量附加到特定记录，就像您为Mule消息使用流变量（`flowVars`）一样。
+
+在Mule 4中，变量（`vars`）取代`recordVars`。变量是Mule 4中Mule事件的一部分。从`<batch:step>`中，您可以修改在`<batch:job>`开始执行之前存在的变量，并且您可以为一个特定记录执行此操作，而不会产生副作用在其他的。
+
+这里的Mule 3示例在For Each组件的表达式中使用`recordVars`：
+
+.Mule 3示例
+[source,xml, linenums]
+----
+<batch:step name="commitStep">
+  <batch:commit size="10">
+    <foreach>
+      <expression-component>
+        record.payload = 'foo';
+        record.recordVars['marco'] = 'polo';
+      </expression-component>
+    </foreach>
+  </batch:commit>
+</batch:step>
+----
+
+这里的Mule 4示例在For Each组件的表达式中使用`vars`：
+
+.Mule 4示例
+[source,xml, linenums]
+----
+<batch:job jobName="batchJob">
+  <batch:process-records>
+    <batch:step name="batchStep">
+      <batch:aggregator doc:name="batchAggregator" size="10">
+        <foreach doc:name="For Each">
+          <script:execute engine="groovy">
+            <script:code>
+              vars['marco'] = 'polo'
+              vars['record'].payload = 'foo'
+            </script:code>
+          </script:execute>
+        </foreach>
+      </batch:aggregator>
+    </batch:step>
+  </batch:process-records>
+</batch:job>
+----
+
+[[non_java_datasets]]
+== 支持非Java数据集
+
+在Mule 3中，批量输入阶段需要Java结构。因此，对于XML或JSON等格式的输入数据，首先需要转换为Java，然后使DataWeave在该转换中使用流，以避免大数据集内存不足。
+
+例如，假设您通过HTTP调用将此源数据推送到您的应用程序：
+
+。示例：JSON输入数据
+----
+[
+    {
+        "name": "Luke Skywalker",
+        "darkSide": true
+    },
+    {
+        "name": "Ben Solo",
+        "darkSide": true
+    },
+    {
+        "name": "Obi-Wan Kenobi",
+        "darkSide": false
+    }
+]
+----
+
+在Mule 3中，您需要先将该JSON转换为Java，然后再传递给它，如下所示：
+
+.Mule 3示例
+[source,xml, linenums]
+----
+<batch:job name="forceJob">
+   <<batch:input>>
+     <http:listener path="/forceWielders" config-ref="forceListener" />
+     <ee:transform>
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+                  output application/java
+                  ---
+                 payload
+                }]]></ee:set-payload>
+            </ee:message>
+     </ee:transform>
+   <<batch:input>>
+   .....
+</batch:job>
+----
+
+在Mule 4中，Batch可以自动确定有效负载是JSON数组，并自行执行分割，例如：
+
+.Mule 4示例
+[source,xml, linenums]
+----
+<flow name="useTheForceBatch">
+  <http:listener path="/forceWielders" config-ref="forceListener" />
+  <batch:job name="forceJob">
+    ....
+  </batch:job>
+</flow>
+----
+
+由于使用了自动流式传输框架，您不再需要在Mule 4中设置流式传输。所以，当你迁移到Mule 4时，你可以避免一个转换步骤。
+
+[[xml_changes]]
+== 对Mule的批处理元素和属性的XML更改4
+
+* 骆驼案例属性：遵循Mule 4 DSL准则，并且为了提高一致性，所有DSL属性都已更改为驼峰案例。例如，`max-failed-records`现在是`maxFailedRecords`，`accept-policy`是`acceptPolicy`，依此类推。
+
+*  MuleSoft从`<batch:step>` ` element. This attribute was deprecated in Mule 3.6 and should be replaced with ` accept-expression`参数中移除了`filter-expression`参数。
+
+*  `<batch:commit>`现在称为`<batch:aggregator>`。
+
+
+== 另请参阅
+
+*  link:batch-processing-concept[批处理模块文档]

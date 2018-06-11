@@ -1,0 +1,73 @@
+= 使用MTOM
+:keywords: anypoint studio, studio, mule esb, mtom, wsdl
+
+
+本页介绍如何在服务中使用MTOM的基础知识。有关更多信息，请转至CXF的https://cwiki.apache.org/confluence/display/CXF20DOC/MTOM[MTOM文档]。本页中的部分示例来自该指南。
+
+对于WSDL优先服务，一般过程如下：
+
+  1。编写你的WSDL
+  2。生成你的服务器存根
+  3。在Mule中配置CXF端点
+
+== 编写一个启用了MTOM的WSDL
+
+要开始，像通常一样编写一个WSDL。使用`xsd:base64Binary`模式类型来表示您想发送的任何二进制数据。
+
+通常，在创建二进制数据的XML模式类型时，您可以编写如下的模式类型：
+
+[source,xml, linenums]
+----
+<element name="yourData" type="xsd:base64Binary"/>
+----
+
+要告诉CXF将此二进制类型视为附件，您必须向其添加一个`xmime:expectedContentTypes`属性：
+
+[source,xml, linenums]
+----
+<schema targetNamespace="http://mediStor.org/types/"
+  xmlns="http://www.w3.org/2001/XMLSchema"
+  xmlns:xmime="http://www.w3.org/2005/05/xmlmime">
+ 
+<element name="yourData" type="xsd:base64Binary" xmime:expectedContentTypes="application/octet-stream"/>
+...
+</schema>
+----
+
+== 生成服务器存根和/或客户端
+
+在编写WSDL之后，在其上运行wsdl2java以生成服务器存根和客户端（如果您正在创建出站端点）。为此，请下载CXF分发包，将其解压缩，然后输入以下命令：
+
+[source, code, linenums]
+----
+$ ./apache-cxf-2.1.2-incubator/bin/wsdl2java -d outputDirectory path/to/your.wsdl
+----
+
+== 配置CXF入站端点
+
+以上命令生成一个服务器存根接口。这是你的服务必须实现的接口。每个方法将对应于您的WSDL中的操作。如果base64Binary类型是您的某个操作的参数，CXF将生成如下所示的方法：
+
+[source, java, linenums]
+----
+public void yourOperation(DataHandler handler) {
+...
+}
+----
+
+您可以使用此DataHandler方法通过调用"handler.getInputStream();"来访问附件数据。
+
+配置CXF服务时，请将`mtomEnabled`属性设置为true以启用MTOM：
+
+== 配置CXF客户端
+
+除了您必须指定`mtomEnabled`属性之外，MTOM客户端的配置与正常CXF出站端点的配置完全相同。例如：
+
+[source,xml, linenums]
+----
+<cxf:jaxws-client
+    clientClass="org.mule.example.employee.EmployeeDirectory_Service"
+    operation="addEmployee"
+    wsdlPort="EmployeeDirectoryPort"
+    wsdlLocation="classpath:employeeDirectory.wsdl"
+    mtomEnabled="true"/>
+----

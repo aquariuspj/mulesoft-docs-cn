@@ -1,0 +1,401 @@
+= 航班预定示例
+
+*_Version 3.3.1 only_*
+
+*_Enterprise Edition_*
+
+该示例应用程序模拟在线预订系统，该系统允许用户搜索两个城市之间可用的最佳航班。系统处理请求，并提供航班号，座位信息和三腿航班每条航段的价格，计算最终的总价。
+
+此航班预定示例应用程序由两部分组成，每部分完全在*Mule ESB*中实现：
+
+.  *Client-side Frontend Application* +
+ 客户端应用程序，它接受来自基于AJAX的图形用户界面（GUI）的最终用户请求。此应用程序使用户能够在一个出发城市和两个可能的目的地之间选择。
+.  *Server-side Backend Application* +
+ 处理最终用户请求的服务器端应用程序。应用程序编排数据操作并在四个 link:/mule-user-guide/v/3.3/mule-application-architecture[流动]之间传输。它使用Mule 3.3中添加的几个新功能，包括：+
+*  link:/mule-user-guide/v/3.3/session-variable-transformer-reference[会话变量变换器]
+* 设置有效负载变换器
+表达式组件* 
+*  link:/mule-user-guide/v/3.3/variable-transformer-reference[设置变量变压器]
+*  link:/mule-user-guide/v/3.3/foreach[的foreach]
+*  link:/mule-user-guide/v/3.3/choice-exception-strategy[选择例外策略]
+*  link:/mule-user-guide/v/3.3/catch-exception-strategy[捕捉异常策略]
+*  link:/mule-user-guide/v/3.3/mule-expression-language-mel[Mule表达语言MEL]
+
+[NOTE]
+====
+*Where is the Client-side Code?*
+
+要检查客户端界面的代码，请访问Mule中的`src/main/app/docroot`文件夹中的文件。
+
+. 在*Package Explorer*中，单击以展开`src`文件夹。
+. 点击展开文件夹以导航到`main > app > docroot`。
+. 双击以下文件以在Studio中的新闻画布窗格中打开它们：
+*  `flight-reservations.css`
+*  `flight-reservations.js`
+*  `index.html`
+====
+
+== 假设
+
+本文档假定您熟悉Mule ESB和 link:/mule-user-guide/v/3.3/mule-studio-essentials[Mule Studio界面]。要提高您对Studio的熟悉度，请考虑完成一个或多个 link:/mule-user-guide/v/3.3/mule-studio[Mule Studio教程]。
+
+本文档在Mule ESB的图形用户界面（GUI）*Mule Studio*的上下文中描述了示例的细节。在适当的情况下，XML配置在可扩展部分的Studio界面屏幕截图之后。
+
+== 设置
+
+与此航班预定示例一样，您可以直接在*Mule Studio*或*Mule Standalone*（没有Studio的Mule ESB）中创建模板应用程序。您可以调整这些基于用例的模板的配置，以在Mule中创建您自己的自定义应用程序。
+
+按照以下步骤创建，然后在Mule ESB中运行Flight Reservation应用程序。
+
+. 完成 link:/mule-user-guide/v/3.3/mule-examples[示例和练习]中的过程以创建，然后在Mule Studio中运行Flight Reservation模板，或者在Mule Standalone（没有Studio的Mule ESB）中运行Flight Reservation示例。
+. 打开您的Web浏览器。
+. 浏览到网址`http://localhost:9092/reservation/`。该应用程序显示其Web用户界面（见下文）。
++
+image:Flight+Reservation+UI.png[机票+预订+ UI]
+
+该应用程序包括预先加载在`Origin`和`Destination`组合框中的三个城市，并且可以输出以下三个结果：
+
+. 错误（如果在一个或两个组合框中未选择城市）
++
+image:Flight+Reservation+Invalid+Error.png[机票+预订+ +无效错误]
+
+. 没有可用的航班（布宜诺斯艾利斯到香港）
++
+image:Flight+Resrvation+no+flights.png[机票+ Resrvation +没有+航班]
+
+. 三航班航班信息（布宜诺斯艾利斯至莫斯科）
++
+image:Flight+Reservation+success.png[机票+预订+成功]
+
+成功后，搜索结果将显示一张表格，其中包含每个航段的信息和航班的总价格（请参阅上图）。
+
+== 它是如何工作的
+
+Flight Reservation应用程序由四个flowMule应用程序体系结构组成。这些流程一起处理最终用户请求，然后返回包含航班信息的响应。 +
+ +
+  image:partA-1.png[A部分-1] +
+
+
+image:partB-1.png[部分B-1] +
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:json="http://www.mulesoft.org/schema/mule/json"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:core="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      version="EE-3.3.0" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/current/mule-ajax.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+ 
+    <ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:9092/reservation" resourceBase="${app.home}/docroot" doc:name="Ajax"/>
+    <flow name="makeReservation" doc:name="makeReservation">
+        <ajax:inbound-endpoint channel="/searchFlights" responseTimeout="10000" connector-ref="ajaxServer" doc:name="Search Flights"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <flow-ref name="processReservation" doc:name="processReservation"/>
+    </flow>
+    <flow name="processReservation" doc:name="processReservation">
+        <json:json-to-object-transformer returnClass="org.mule.example.ReservationRequest" doc:name="JSON to ReservationRequest"/>
+        <set-session-variable variableName="reservationRequest" value="#[payload]" doc:name="Save original request in Session"/>
+        <set-payload value="#[new org.mule.example.ReservationResponse()]" doc:name="Set ReservationResponse payload"/>
+        <expression-component doc:name="Add request flight to response">payload.setFlights(reservationRequest.flights)</expression-component>
+        <set-variable variableName="totalPrice" value="#[0]" doc:name="Initialize totalPrice"/>
+        <foreach collection="#[payload.flights]" doc:name="Foreach on flights">
+            <logger message="Before throw exception" level="ERROR" doc:name="Logger"/>
+            <scripting:transformer doc:name="Search flight availability">
+                <scripting:script engine="Groovy">
+                    <scripting:text><![CDATA[if (payload.flightNumber.endsWith('3'))
+   throw new org.mule.example.FlightUnavailableException()
+else
+   payload]]></scripting:text>
+                </scripting:script>
+            </scripting:transformer>
+            <vm:outbound-endpoint exchange-pattern="request-response" path="acquireSeatsInfoQueue" doc:name="Acquire Seats Info"/>
+            <vm:outbound-endpoint exchange-pattern="request-response" path="acquireFlightPrice" doc:name="Acquire Flight Price"/>
+            <set-variable variableName="totalPrice" value="#[totalPrice + payload.ticketPrice]" doc:name="Add price to totalPrice"/>
+        </foreach>
+        <expression-component doc:name="Add total price to reservation">payload.totalPrice = flowVars['totalPrice']</expression-component>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+        <choice-exception-strategy doc:name="Choice Exception Strategy">
+            <catch-exception-strategy when="#[exception.causedBy(org.mule.example.FlightUnavailableException)]" doc:name="Catch Exception Strategy">
+                <logger message="In Catch Exception" level="ERROR" doc:name="Logger"/>
+                <scripting:transformer doc:name="Add no availability error">
+                    <scripting:script engine="Groovy">
+                        <scripting:text><![CDATA[def payload = new org.mule.example.ReservationResponse()
+payload.addError('There is no availability for the selected flight')
+payload]]></scripting:text>
+                    </scripting:script>
+                </scripting:transformer>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+            </catch-exception-strategy>
+            <catch-exception-strategy doc:name="Catch Exception Strategy">
+                <scripting:transformer doc:name="Add exception message">
+                    <scripting:script engine="Groovy">
+                        <scripting:text><![CDATA[def payload = new org.mule.example.ReservationResponse()
+payload.addError("Error processing request")
+payload]]></scripting:text>
+                    </scripting:script>
+                </scripting:transformer>
+                <set-property propertyName="http.status" value="500" doc:name="Set http status 500"/>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+            </catch-exception-strategy>
+        </choice-exception-strategy>
+    </flow>
+    <flow name="acquireSeatsInfo" doc:name="acquireSeatsInfo">
+        <vm:inbound-endpoint exchange-pattern="request-response" path="acquireSeatsInfoQueue" doc:name="acquireSeatsInfo"/>
+        <scripting:component doc:name="Aquire seats info service">
+            <scripting:script engine="Groovy">
+                <scripting:text><![CDATA[if (payload.flightNumber.endsWith('2'))
+   payload.seatInfo = '20A'
+else
+   throw new Exception()
+payload]]></scripting:text>
+            </scripting:script>
+        </scripting:component>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <expression-component doc:name="Add no seat info avaiable message">payload.seatInfo = 'No seat info available'</expression-component>
+        </catch-exception-strategy>
+    </flow>
+    <flow name="acquireFlightPrice" doc:name="acquireFlightPrice">
+        <vm:inbound-endpoint exchange-pattern="request-response" path="acquireFlightPrice" doc:name="acquireFlightPrice"/>
+        <expression-component doc:name="acquireFlightPrice">payload.ticketPrice = Integer.valueOf(payload.flightNumber) * 2</expression-component>
+    </flow>
+</mule>
+----
+
+以下部分提供了航班预订系统在处理最终用户请求时的行动的逐流描述。
+
+[TIP]
+====
+*For Mule Studio Users*
+
+在Mule Studio中，双击 link:/mule-user-guide/v/3.3/studio-building-blocks[积木]打开其*Properties Panel*，然后检查其配置细节。或者，单击*Configuration XML*选项卡检查应用程序的XML配置文件。
+
+image:config_tab.png[config_tab]
+====
+
+===  MakeReservation流
+
+应用程序中的第一个流接收传入请求并将它们转发到下一个流*processReservation*流。
+
+image:MakeReservation+Flow.png[MakeReservation +流量]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:9092/reservation" resourceBase="${app.home}/docroot" doc:name="Ajax"/>
+ 
+<flow name="makeReservation" doc:name="makeReservation">
+    <ajax:inbound-endpoint channel="/searchFlights" responseTimeout="10000" connector-ref="ajaxServer" doc:name="Search Flights"/>
+    <object-to-string-transformer doc:name="Object to String"/>
+    <flow-ref name="processReservation" doc:name="processReservation"/>
+</flow>
+----
+
+流中的第一个构建块是配置为侦听传入请求的 link:/mule-user-guide/v/3.3/ajax-endpoint-reference[AJAX入站端点]。端点引用在AJAX link:/mule-user-guide/v/3.3/understand-global-mule-elements[全球元素]中设置的配置值，该值定义监听端点的参数。
+
+*What is an AJAX Global Element?*
+
+[TIP]
+====
+AJAX link:/mule-user-guide/v/3.3/studio-building-blocks[积木]必须引用AJAX link:/mule-user-guide/v/3.3/understand-global-mule-elements[全球元素]。全局元素包含AJAX端点的基本配置，例如服务器URL和文档资源库。完成以下过程以查看Studio中的AJAX全局端点配置。
+
+. 点击*Message Flow*标签右侧的*Global Elements*标签。
++
+image:global.elements.tab.png[global.elements.tab]
+
+. 点击*Global Configuration Elements*视图中的`ajaxServer`行，然后点击*Edit*。
++
+image:global.element-edit.png[global.element编辑]
+
+.  Studio显示AJAX全局元素的*Global Element Properties*窗口。
++
+image:global.element-props.png[global.element道具]
+====
+
+AJAX Endpoint将数据转发给下一个Building Block，一个*Object to String*转换器，它将数据转换为可读的文本字符串。然后， link:/mule-user-guide/v/3.3/flow-ref-component-reference[流量参考组件]将数据转发到*ProcessReservation*流。这第二个流程包含应用程序的主要逻辑。
+
+===  ProcessReservation流程
+
+image:processflow1.png[processflow1]
+
+image:processflow2.png[processflow2]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<json:json-to-object-transformer returnClass="org.mule.example.ReservationRequest" doc:name="JSON to ReservationRequest"/>
+<set-session-variable variableName="reservationRequest" value="#[payload]" doc:name="Save original request in Session"/>
+<set-payload value="#[new org.mule.example.ReservationResponse()]" doc:name="Set ReservationResponse payload"/>
+<expression-component doc:name="Add request flight to response">payload.setFlights(reservationRequest.flights)</expression-component>
+<set-variable variableName="totalPrice" value="#[0]" doc:name="Initialize totalPrice"/>
+----
+
+该流从前端Web应用程序接收JSON格式的请求。因此，*ProcessReservation*流程必须将JSON对象转换为应用程序的其余部分可以使用的Java对象。为此，此流程使用*JSON to Object Transformer*。
+
+流中的第二个构建块 link:/mule-user-guide/v/3.3/session-variable-transformer-reference[会话变量变换器]将原始请求存储为变量。与在一个特定流程中保持活动状态的流量变量不同，会话变量保持活动状态并可供整个应用程序使用。在这个例子中，会话变量被称为`reservationRequest`。
+
+然后，*Set Payload Transformer*创建一个名为`ReservationResponse`的响应，该响应由来自`reservationRequest`会话变量的信息填充。为了填充`reservationResponse`，Mule使用*Expression Component*。
+
+接下来， link:/mule-user-guide/v/3.3/variable-transformer-reference[可变变压器]在消息上设置一个空的`totalPrice`变量。与使用会话变量变换器设置的变量不同，此变量仅在当前流程中有效。
+
+====  FOREACH
+
+link:/mule-user-guide/v/3.3/foreach[的foreach]范围将集合分解为元素，然后通过范围内定义的消息处理器对其进行迭代处理。 Mule从`#[payload.flights]`中提取集合，该集合包含航班段的信息（参见下图）。
+
+image:foreach.png[的foreach]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<foreach collection="#[payload.flights]" doc:name="Foreach on flights">
+            <logger message="Before throw exception" level="ERROR" doc:name="Logger"/>
+            <scripting:transformer doc:name="Search flight availability">
+                <scripting:script engine="Groovy">
+                    <scripting:text><![CDATA[if (payload.flightNumber.endsWith('3'))
+   throw new org.mule.example.FlightUnavailableException()
+else
+   payload]]></scripting:text>
+                </scripting:script>
+            </scripting:transformer>
+            <vm:outbound-endpoint exchange-pattern="request-response" path="acquireSeatsInfoQueue" doc:name="Acquire Seats Info"/>
+            <vm:outbound-endpoint exchange-pattern="request-response" path="acquireFlightPrice" doc:name="Acquire Flight Price"/>
+            <set-variable variableName="totalPrice" value="#[totalPrice + payload.ticketPrice]" doc:name="Add price to totalPrice"/>
+        </foreach>
+----
+
+Foreach范围`Search flight availability`中的*Groovy Transformer*调用Groovy脚本，该脚本检查航班段的可用性。对于此示例，如果航班号以`3`结尾，则脚本只会引发`FlightUnavailableException`。
+
+如果该航段的可用性，Groovy转换器将有效载荷发送到下一个building block `Acquire Seats Info`。这是调用<<AcquireSeatsInfo Flow>>的 link:/mule-user-guide/v/3.3/vm-transport-reference[内存（VM）出站端点]（在Studio画布底部附近可见）。 *AcquireSeatsInfo*流程返回一个座位号或一条读取`No seat info available`的消息。
+
+*How does this flow invoke another?*
+
+[TIP]
+====
+link:/mule-user-guide/v/3.3/vm-transport-reference[在内存（VM）传输中]允许Mule应用程序使用Mule流之间的Java虚拟机内通信。
+
+在这种情况下，`Acquire Seats Info`构造块是出站端点，配置为请求 - 响应传输，调用名为`acquireSeatsInfoQueue`的内存队列。
+
+该队列在*acquireSeatsInfo*流的第一个构建块中定义，该流也是内存传输（在此情况下为入站端点）。
+====
+
+接下来，`Acquire Flight Price` building block调用*acquireFlightPrice*流程，该流程返回航班的价格。
+
+Foreach范围中的最后一个构建块是一个**{{0}}**，它将航段的值设置为`totalPrice`变量中整个航班的价格。 （Mule在它进入Foreach范围之前在消息上设置一个空的`totalPrice`变量。）
+
+在Foreach范围之后， link:/mule-user-guide/v/3.3/expression-transformer-reference[*表情转换器*]将最终价格添加到响应中。最后，Mule将响应转换回JSON以供客户端Web浏览器接口接收。
+
+使用选择异常策略的==== 错误处理
+
+为了处理*ProcessReservation*流程中的错误，Mule使用**{{0}}**。该异常策略根据每个异常的原因来路由消息。
+
+image:choice_ES.png[choice_ES]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<choice-exception-strategy doc:name="Choice Exception Strategy">
+    <catch-exception-strategy when="#[exception.causedBy(org.mule.example.FlightUnavailableException)]" doc:name="Catch Exception Strategy">
+        <scripting:transformer doc:name="Add no availability error">
+            <scripting:script engine="Groovy">
+                <scripting:text><![CDATA[def payload = new org.mule.example.ReservationResponse()
+payload.addError('There is no availability for the selected flight')
+payload]]>      </scripting:text>
+            </scripting:script>
+        </scripting:transformer>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </catch-exception-strategy>
+    <catch-exception-strategy doc:name="Catch Exception Strategy">
+        <scripting:transformer doc:name="Add exception message">
+             <scripting:script engine="Groovy">
+                 <scripting:text><![CDATA[def payload = new org.mule.example.ReservationResponse()
+payload.addError("Error processing request")
+payload]]>
+                 </scripting:text>
+             </scripting:script>
+         </scripting:transformer>
+         <set-property propertyName="http.status" value="500" doc:name="Set http status 500"/>
+         <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </catch-exception-strategy>
+</choice-exception-strategy>
+----
+
+选择异常策略中的第一个**{{0}}**使用 link:/mule-user-guide/v/3.3/mule-expression-language-mel[表达]处理所有`FlightUnavailableException`异常（请参阅下图）。发生此异常时，捕获异常策略会使用Groovy转换器生成一条错误消息，指出该航班缺乏可用性。 +
+ +
+  image:catch_ES.png[catch_ES]
+
+第二个捕获异常策略处理所有其他异常。像第一个catch异常策略一样，它使用Groovy转换器生成错误消息，在这种情况下，`Error processing request.`接下来，它使用 link:/mule-user-guide/v/3.3/property-transformer-reference[物业变压器]将HTTP状态代码设置为`500: Internal Error`。最后，它将响应转换为客户端Web浏览器的JSON数据格式。
+
+===  AcquireSeatsInfo Flow
+
+由*ProcessReservation*流中的Foreach范围调用，此流为接收到的每个请求提供有效的响应。 +
+ +
+  image:Acquire+seat+info+flow.png[收购+座位+信息流+]
+
+[%header,cols="1*a"]
+|===
+^ | *View the XML*
+|
+[source, xml, linenums]
+----
+<flow name="acquireSeatsInfo" doc:name="acquireSeatsInfo">
+    <vm:inbound-endpoint exchange-pattern="request-response" path="acquireSeatsInfoQueue" doc:name="acquireSeatsInfo"/>
+    <scripting:component doc:name="Aquire seats info service">
+        <scripting:script engine="Groovy">
+            <scripting:text><![CDATA[if (payload.flightNumber.endsWith('2'))
+   payload.seatInfo = '20A'
+else
+   throw new Exception()
+payload]]>
+            </scripting:text>
+        </scripting:script>
+    </scripting:component>
+    <catch-exception-strategy doc:name="Catch Exception Strategy">
+        <expression-component doc:name="Add no seat info available message">payload.seatInfo = 'No seat info available'</expression-component>
+    </catch-exception-strategy>
+</flow>
+----
+|===
+
+流程中的第一个构建块`AcquireSeatsInfo`是**In Memory (VM) Inbound Endpoint**。 *ProcessReservation*流中Foreach作用域中的`Acquire Seats Info`构建块调用此构建块。
+
+下一个构建块**{{0}}**生成一个包含飞行座位信息的响应。就本例而言，如果航班号以`2`结尾，则它仅返回一个座位号;否则，它会抛出异常。
+
+捕获异常策略处理在此流程中发生的任何异常。它使用*Expression Component*将消息添加到读取`No seat info available`的响应中。
+
+=== 获取FlightPrice流量
+
+由*ProcessReservation*流的Foreach范围中的`Acquire Flight Price`构造块调用，此流为接收到的每个请求提供有效的响应。
+
+image:Acquire+price+info.png[收购+价格+信息]
+
+[%header,cols="1*a"]
+|===
+^ | *View the XML*
+|
+[source, xml, linenums]
+----
+<flow name="acquireFlightPrice" doc:name="acquireFlightPrice">
+    <vm:inbound-endpoint exchange-pattern="request-response" path="acquireFlightPrice" doc:name="acquireFlightPrice"/>
+    <expression-component doc:name="acquireFlightPrice">payload.ticketPrice = Integer.valueOf(payload.flightNumber) * 2</expression-component>
+</flow>
+----
+|===
+
+该流程设定航班的价格。就本示例而言，它使用一个表达式组件，该组件仅将航班号乘以二，然后将此值返回给*ProcessReservation*流。

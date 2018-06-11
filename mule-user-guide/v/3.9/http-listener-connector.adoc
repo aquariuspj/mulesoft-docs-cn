@@ -1,0 +1,1393 @@
+=  HTTP侦听器连接器
+:keywords: anypoint studio, esb, connectors, http, https, http headers, query parameters, rest, raml
+
+== 介绍
+
+HTTP侦听器连接器为*listen for HTTP requests*提供了最实用的方法。
+
+可以将连接器配置为接受任何请求，或仅接受发往特定URI的请求。您可以选择连接器接受的方法：GET，POST等。
+
+将*request body*作为Mule消息的_message payload_传递给Mule流的下一个元素，而HTTP请求的标头，查询参数，URI参数和其他元素作为_inbound properties_传递。这些属性可从Mule应用程序的Mule消息中访问。
+
+此连接器还可以使用HTTPS协议并通过TLS加密您的通信。
+
+该连接器还可以配置为提供响应代码和澄清，以获得成功和错误结果，允许您根据情况提供不同的错误消息。
+
+在Studio中，要将连接器实例化为HTTP侦听器连接器（而不是 link:/mule-user-guide/v/3.9/http-request-connector[HTTP请求连接器]），您必须将其放入流的_Source_部分。
+
+
+== 最低配置
+
+只需配置连接器即可侦听可能会到达给定HTTP地址的传入HTTP请求。以下示例显示了此连接器所需的最低配置：
+
+
+在流程中的连接器组件中，唯一必需的字段是定义资源的*Path*（https://url.spec.whatwg.org/#syntax-url-path-absolute[path-absolute URL]位置），默认为`/`，以及对全局元素的配置引用，其中包含必要的参数*Host*和*Port*。
+
+image:http-listener-connector-95329.png[基本+听者+ 1]
+
+== 全局元素
+
+与Studio中的大多数连接器一样，大部分配置都封装在一个全局可访问的对象中，该对象称为"global element"，然后可以根据需要通过多个连接器实例来引用它。在这种情况下，全局元素定义到特定网络接口和端口的服务器连接并处理来自它的传入请求。
+
+[NOTE]
+当有多个连接器必须使用相同的设置时，使用全局元素特别有用，因为服务器连接只能定义一次。
+
+=== 配置连接器的全局元素
+
+在全局元素中，唯一必需的字段是*Host*和*Port*，它们都具有分配给它们的默认值：
+
+image:http-listener-connector-fab30.png[显示添加全局元素]
+
+[NOTE]
+要监听服务器上每个网络接口的特定端口，可以使用主机`0.0.0.0`。如果您将其设置为`localhost`，那么您只能监听服务器内部生成的传入请求。
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" basePath="http://www.example.com/test" doc:name="HTTP Listener Configuration"/>
+
+    <flow name="http-listenerFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+连接器全局元素的=== 最小配置
+
+与Studio中的大多数连接器一样，大部分配置都封装在一个独立的可重用对象中，该对象位于流的外部，然后可以根据需要由连接器的多个实例引用。此元素定义到特定网络接口和端口的服务器连接，并处理来自它的传入请求。
+
+在全局元素中，您需要提供*Host*和*Port*。
+
+[NOTE]
+要监听服务器中每个网络接口的特定端口，可以使用主机`0.0.0.0`。如果您将其设置为`localhost`，那么您只能监听服务器内部生成的传入请求。
+
+=== 连接器实例的最低配置
+
+通过创建全局元素来定义HTTP侦听器连接器配置后，要实际处理HTTP请求，您需要在流程中的连接器_instance_中配置一些基本设置。 HTTP侦听器实例标有`<http:listener>`。在Studio中选择连接器时显示的连接器属性选项卡中，提供一个*Path*。
+
+不要忘记引用HTTP侦听器的全局元素。
+
+该配置对`http://localhost:8081`执行GET请求
+
+=== 完整的XML代码
+
+[source, xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+     
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+   
+   <flow name="basic_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <logger message="#[payload]"/>
+    </flow>
+     
+</mule>
+----
+
+
+== 将传入请求路由到不同的听众
+
+您可能想要在您的应用程序中公开几个不同的流程，最好的方法是通过不同的HTTP侦听器连接器公开每个流程，使它们共享一个全局配置元素。有几种不同的方式可以确保将每个请求路由到适当的流程，这些将在以下小节中进行解释。
+
+=== 全局路由配置
+
+在连接器配置全局元素中，可以将*Host*，*Port*和*Base Path*属性设置为仅处理特定地址处的请求。
+
+默认情况下，连接器配置的主机设置为`0.0.0.0`，该地址实际上是同时监听所有活动IP地址（包括`localhost`）的快捷方式。为了将项目部署到 link:/runtime-manager/cloudhub[CloudHub]，您必须将所有HTTP连接器的主机设置为`0.0.0.0`。否则，您的应用程序会与CloudHub的内部运作发生冲突。
+
+[WARNING]
+请记住，如果您在场所部署，出于安全考虑，建议您设置特定的主机，例如`localhost`，而不是使用默认的`0.0.0.0`来监听所​​有地址。
+
+. 使用HTTP侦听器连接器创建流，将其*Path*设置为`/`
+. 为连接器创建全局元素，将*Host*设置为`0.0.0.0`，将*Port*设置为默认`8081`，并设置*Base Path*到`mybasepath` +
++
+image:http-listener-connector-5fa02.png[使用0.0.0.0接口端口8081]
+
+. 通过在HTTP连接器之后添加任何其他处理器（例如*Logger*组件）来完成流程。
+
+=== 全局路由完整XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+
+     
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" basePath="mybasepath" doc:name="HTTP Listener Configuration"/>
+   
+   <flow name="basic_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+         <logger message="#[payload]"/>
+    </flow>
+     
+</mule>
+----
+
+
+上面的例子接受来自所有主机的请求，只要它们在端口8081上完成，所以它接受以下任何一种情况：
+
+*  `+http://localhost:8081/mybasepath+`
+*  `+http://127.0.0.2:8081/mybasepath+`
+
+基于路径的路由=== 
+
+在流程中的每个连接器实例中，可以将连接器的*Path*设置为仅侦听针对在连接器配置元素中配置的主机，端口和基本路径内的特定_subpath_所做的请求。
+
+很可能，您的应用程序公开了几个使用相同主机和端口但不同URI路径的HTTP服务。您可以通过在每个流上使用HTTP侦听器连接器将传入的HTTP请求路由到不同的流，它们都引用相同的全局配置元素（主机，端口和路径），但在每个连接器实例上具有不同的子路径。
+
+. 使用HTTP侦听器连接器创建流，将其*Path*设置为`account`
+. 为连接器创建全局元素，将*Host*设置为`localhost`，并将*Port*设置为默认`8081`
+. 通过在HTTP连接器之后添加任何其他处理器（例如*Logger*组件）来完成流程。
+. 然后通过将另一个HTTP连接器拖到第一个流下面的空白处来创建第二个流。其中引用与另一个连接器中相同的Connector Configuration元素。这一次，将路径设置为`employee`。
+. 通过在HTTP连接器之后添加任何其他处理器（例如*Logger*组件）来完成此第二个流程。
+. 确保每个HTTP连接器都引用您创建的全局元素。在从画布中选择每个连接器实例后，从*Connector Configuration*下拉列表中选择配置来执行此操作。
+
+
+==== 基于路径的路由 - 完整的XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+     <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+   
+   <flow name="basic_flow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="account" doc:name="HTTP"/>
+        <logger message="#[payload]" doc:name="Logger"/>
+    </flow>
+    <flow name="basic_flow2">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="employee" doc:name="HTTP"/>
+        <logger message="#[payload]" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+
+在上面的例子中：
+
+* 定向到`http://localhost:8081/account`的HTTP请求被路由到第一个流。
+* 指向`http://localhost:8081/employee`的HTTP请求被路由到第二个流。
+
+[WARNING]
+当侦听器全局元素收到与任何HTTP连接器实例上定义的路径不匹配的请求时，它将返回一个状态码为*404*（资源未找到）的HTTP响应。
+
+=== 在路径中使用通配符
+
+您还可以在*Path*的值中使用通配符，以监听指定基本路径内的任何路径的所有传入请求。您还可以指定以`/*`结尾的部分路径，指向任何以定义开始但可以用其他任何方式扩展的路径（请参阅下面的示例）。
+
+. 使用HTTP侦听器连接器创建流，将其*Path*设置为`mypath/*`
+
++
+image:http-listener-connector-9f800.png[连接器实例的基本设置中的通配符路径]
++
+
+. 为连接器创建全局元素，将*Host*设置为`localhost`，并将*Port*保留为默认`8081`
+. 通过在HTTP连接器之后添加任何其他处理器（例如*Logger*组件）来完成流程。
+
+[IMPORTANT]
+====
+当请求进入时，基于路径的可用侦听器通过基于文件夹的_folder模式匹配并从左向右进行选择。这意味着如果您指定以下两个侦听器：
+
+*  `/regions/*/customers`
+*  `/regions/us/prospects`
+
+对`/region/us/customers` *will fail*的请求，因为请求被映射到不支持_customers_路径的更具体的侦听器。因此，最好将通配符留给路径的最右部分，并尽量避免使其与更具体的监听器重叠。
+====
+
+=== 在路径中使用通配符 - 完整的XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration4" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="http-wildcard-in-pathFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration4" path="mypath/*" doc:name="HTTP"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+
+上面的示例接受来自在端口8081上完成的所有主机的请求，因此它接受以下任一项：
+
+*  `http://localhost:8081/mypath`
+*  `http://localhost:8081/mypath/foo`
+*  `http://localhost:8081/mypath/bar/really/specific/address`
+
+=== 带有通配符的示例2
+
+通配符的另一个用例是侦听URI中所有对资源的请求，在其路径中包含一个未定义的中间部分。
+
+
+. 使用HTTP侦听器连接器创建流，将其*Path*设置为`account/\*/main-contact`
+. 为连接器创建全局元素，将*Host*设置为`localhost`，并将*Port*保留为默认`8081`
+. 通过在HTTP连接器之后添加任何其他处理器（例如*Logger*组件）来完成流程。
+
+
+=== 带有通配符的示例2  - 完整的XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration4" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="http-wildcard-in-pathFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration4" path="account/*/main-contact/" doc:name="HTTP"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+==== 带有通配符2的示例 - 回顾
+
+在上例中，HTTP侦听器接收每个HTTP请求，其URI以`/account/`开头并以`/main-contact`结尾;中间的部分可以是任何东西。它接受以下任何一种：
+
+*  `http://localhost:8081/account/mulesoft/main-contact`
+*  `http://localhost:8081/account/foo/main-contact`
+
+[NOTE]
+如果使用通配符导致请求地址碰巧与多个侦听器的路径相匹配的情况，则不管连接器的定义顺序如何，具有*more specific path*的侦听器总是被赋予优先级。每个请求只有一个连接器处理。 +
+例如，假设有两个侦听器，一个侦听"account/(...)"，另一个侦听"account/(...)/main-contact"。如果请求到达"account/mulesoft/main-contact"，即使它符合两个连接器的条件，只有更具体的请求处理请求：在这种情况下，它是在"account/(...)/main-contact"上侦听的请求。
+
+=== 在URI中使用占位符
+
+将通配符与占位符一起使用的常见方案是使用 link:http://raml.org/[RESTful API。]通过向连接符*Path*添加占位符，可以将URI的未定义部分变为变量。例如，在路径`account/{accountId}/main-contact`中，部分`{accountId}`包含一个占位符，该占位符通过名称*accountId*定义变量。因此，连接器将其识别为URI参数，并将其映射到Mule Flow中作为入站属性，该入口属性可以通过简单的 link:/mule-user-guide/v/3.9/mule-expression-language-mel[MEL表达]轻松引用流中的任何位置。 +
+
+. 使用HTTP侦听器连接器创建流，将其*Path*设置为`account/{accountId}/main-contact`
+. 为连接器创建全局元素，将*Host*设置为`localhost`，并将*Port*保留为默认`8081`
+. 要查看URI参数的内容，请添加一个*Logger*组件，并将其Value字段设置为以下MEL表达式：
+
+`#[message.inboundProperties.'http.uri.params'.accountId]`
+
+
+==== 在URI中使用占位符 - 完整的XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+     <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+   
+   <flow name="basic_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="account/{accountId}/main-contact" doc:name="HTTP"/>
+        <logger message="#[message.inboundProperties.'http.uri.params'.accountId]" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+在上面的示例中，侦听器接受与之前示例中相同的一组请求：+
+
+*  `http://localhost:8081/account/mulesoft/main-contact`
+*  `http://localhost:8081/account/foo/main-contact`
+
+区别在于URI的未定义部分现在填充到Mule消息的入站属性中的映射中，该消息包含请求中的所有URI参数（`http.uri.params`）。您可以通过MEL表达式`#[message.inboundProperties.'http.uri.params'.accountId]`轻松地引用此部分URI的值。
+
+在接收到上述两个示例请求中的第一个请求后，URI参数将映射到Mule消息，并且`http.uri.params`入站属性包含一个包含密钥`accountId`的映射，并与值{{2 }}。通过连接器后，您可以在流程的任何部分访问此信息。 +
+
+基于HTTP方法的==== 路由
+
+您可以配置一个连接器，以便它只接受匹配HTTP方法缩减列表（GET，POST，DELETE等）的请求。例如，您可以创建两个不同的连接器，这些连接器共享一个相同的路径，但接受不同类型的请求 - 例如只接受GET，另一个接受POST  - 接收请求将根据其方法进行相应路由。
+
+. 使用HTTP侦听器连接器创建流，将其*Path*设置为`requests`，将*Allowed Methods*字段设置为`GET`
+. 为连接器创建全局元素，将*Host*设置为`localhost`，将*Port*设置为默认`8081`，并设置*Base Path*到`mypath`
+. 通过在HTTP连接器之后添加任何其他处理器（例如*Set Payload*转换器）来完成流程。设置有效负载转换器的值字段为`foo`
+. 使用另一个HTTP侦听器连接器创建第二个流，并将其*Path*设置为`requests`，但将*Allowed Methods*字段设置为POST。通过从字段中的下拉列表中选取现有连接器配置全局元素，将其分配给您已经为先前连接器创建的现有连接器配置全局元素。
+. 通过在HTTP连接器之后添加任何其他处理器（例如*Set Payload*转换器）来完成流程。将设置的有效负载变换器的值字段设置为`bar`。
++
+image:http-listener-connector-217f9.png[获取和发布流量]
+
+
+=== 基于HTTP方法的路由 - 完整的XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" basePath="mypath" doc:name="HTTP Listener Configuration"/>
+    <flow name="GET_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="requests" doc:name="HTTP" allowedMethods="GET"/>
+        <set-payload doc:name="Set Payload" value="foo"/>
+    </flow>
+     
+    <flow name="POST_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="requests" doc:name="HTTP" allowedMethods="POST" parseRequest="false"/>
+        <set-payload doc:name="Set Payload" value="bar"/>
+    </flow>
+</mule>
+
+----
+
+在上面的示例中，对同一地址执行的请求由一个流或另一个基于请求的类型处理：
+
+* 如果您向`http://localhost:8081/mypath/requests`发送*GET*请求，则请求由*GET_flow*处理，响应为`foo`。
+* 如果您向`http://localhost:8081/mypath/requests`发送*POST*请求，则请求由*POST_flow*处理，响应为`bar`。
+* 如果您向`http://localhost:8081/mypath/requests`发送*DELETE*请求，则没有任何侦听器实例接受此请求，并且侦听器全局元素将返回状态码为*405 Method Not Allowed*的HTTP响应。
+
+[TIP]
+要使用GET以外的方法发送HTTP请求，可以使用浏览器扩展（如Postman（Google Chrome））或 link:http://curl.haxx.se/[卷曲]命令行实用程序。从那里你可以很容易地配置HTTP方法用于你的请求。
+
+HTTP请求和Mule消息之间的映射== 
+
+与Mule中的任何其他连接器一样，HTTP Listener Connector接收到的每条消息都会生成一个Mule消息，然后通过其所在流中的其余块进行处理。下图说明了HTTP请求的主要部分，以及在将它转换为Mule消息后如何引用它们。
+
+image:http+request+parts+white3.png[HTTP请求+ + +份white3]
+
+[NOTE]
+如果连接器的路径定义为`{domain}/login`，则`mydomain`被视为*URI Parameter*。它可以被以下表达式引用：+
+`#[message.inboundProperties.'http.uri.params'.domain]`
+
+=== 请求正文
+
+HTTP请求体由连接器转换为Mule消息的有效载荷。除非请求的*Content-Type*标头是`application/x-www-form-urlencoded`或`multipart/form-data`，否则有效内容类型始终为`InputStream`。在这两种情况下，Mule解析请求以生成一个更容易使用的Mule消息。
+
+=== 请求带有x-www-form-urlencoded类型的主体
+
+一个典型的用例是拥有一个带有HTML表单的网页。提交此表单时，该页面将生成一个HTTP请求，其中标题`Content-Type: application/x-www-form-urlencoded`和表单字段作为请求主体中编码的键值对。 HTTP连接器接受请求主体，自动将其内容解析为键值映射并将其设置为Mule消息有效载荷。
+
+以下是通过提交表单生成的HTTP请求的示例：
+
+[source, code, linenums]
+----
+POST /submitform HTTP/1.1
+ 
+User-Agent: Mule/3.6
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 32
+ 
+firstname=Aaron&lastname=Aguilar+Acevedo&yearborn=1999
+----
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Create a flow with an HTTP Listener Connector, set the *Path* to `submitform`
+. Create a Global Element for the Connector, set the *Host* to `localhost` and leave the *Port* as the default `8081`
+. After the HTTP Connector, add a *Choice router*.
+. On the first choice of the router, add a *Set Payload* element. Set its Value field to the following expression: 
++
+
+[source, code]
+----
+Sorry #[payload.'firstname'], you're too young to register.
+----
+
++
+Notice that this expression refers to one of the form parameters included in the request: `firstname`. After being received by the connector, it exists in the mule message payload as an item in a map.
+. On the Choice router, configure the condition for that path to be the following expression:
++
+
+[source, code]
+----
+#[server.dateTime.year-18 < payload.'yearborn']
+----
+
++
+Once again, this expression refers to one of the incoming form parameters, `yearborn`.
+. Complete the flow by adding another *Set Payload* element in the default path of the Choice router. Set its Value field to:
++
+
+[source, code, linenums]
+----
+Registration has been carried out successfully! Welcome #[payload.'firstname'] #[payload.'lastname']!
+----
+
++
+image:http-listener-connector-7f39f.png[set payload]
+....
+[tab,title="XML Editor"]
+....
+For example:
+
+. Create an `<http:listener>` global configuration, set the *host* to localhost and the *port* to 8081
+. Create a flow with an `<http:listener>` connector. Reference your connector to the global element you just created, set the path to `submitform`.
++
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>  
+ 
+    <flow name="RegisterUser">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="submitform" doc:name="HTTP"/>
+ 
+    </flow>
+----
+
+. After the HTTP Connector, add a Choice scope with two alternative paths. Set the first to be executed when the following MEL expression is true:
++
+
+[source, code, linenums]
+----
+#[server.dateTime.year-18 &lt; payload.'yearborn']
+----
+
++
+Note that `yearborn` is one of the form parameters that is expected from incoming requests.
++
+
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+            <when expression="#[server.dateTime.year-18 &lt; payload.'yearborn']">
+                
+            </when>
+            <otherwise>
+                 
+            </otherwise>
+        </choice>
+----
+
+. Add a set-payload element on each alternative path, one to return a rejection notice, the other to return a success message. In both, refer to the fields of the incoming form parameters to construct the message.
++
+
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+            <when expression="#[server.dateTime.year-18 &lt; payload.'yearborn']">
+                <set-payload value="Sorry #[payload.'firstname'], you're too young to register." doc:name="Too young"/>
+            </when>
+            <otherwise>
+                <set-payload value="Registration has been carried out successfully! Welcome #[payload.'firstname'] #[payload.'lastname']!" doc:name="Success"/>
+            </otherwise>
+        </choice>
+----
+....
+------
+
+=== 请求使用x-www-form-urlencoded类型体 - 完整的XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="RegisterUser">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="submitform" doc:name="HTTP"/>
+        <choice doc:name="Choice">
+            <when expression="#[server.dateTime.year-18 &lt; payload.'yearborn']">
+                <set-payload value="Sorry #[payload.'firstname'], you're too young to register." doc:name="Too young"/>
+            </when>
+            <otherwise>
+                <set-payload value="Registration has been carried out successfully! Welcome #[payload.'firstname'] #[payload.'lastname']!" doc:name="Success"/>
+            </otherwise>
+        </choice>
+    </flow>
+</mule>
+----
+
+//如果您在xml编辑器中复制/粘贴文档，将左尖括号更改为＆lt;
+
+上面的示例希望从http：// localhost：8081 / submitform接收POST请求，其中包含以下表单参数：`firstname, lastname, yearborn`
+
+[source, code, linenums]
+----
+POST /submitform HTTP/1.1
+ 
+User-Agent: Mule/3.6
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 32
+ 
+firstname=Aaron&lastname=Aguilar+Acevedo&yearborn=1999
+----
+
+[TIP]
+====
+要发送包含表单参数的HTTP请求，最简单的方法是使用浏览器扩展程序（例如Postman（Google Chrome））或 link:http://curl.haxx.se/[卷曲]命令行实用程序。 +
+如果使用Postman，请确保您的表单参数以`x-www-form-urlencoded`类型发送
+
+image:submit+form+aaron.png[提交+形式+亚伦]
+====
+
+当连接器收到请求时，它会创建一个Mule消息，其中包含一个Map类型的有效内容，其中包含以下键/值对：
+
+`firstname: Aaron` +
+`lastname: Aguilar Acevedo` +
+`yearborn: 1999`
+
+[NOTE]
+请注意，对于`lastname`参数，在HTTP请求（`Aguilar+Acevedo)`中编码该值时，连接器在将它放入Mule消息中时会自动为您解码。
+
+在流程中的任何剩余块上，通过使用MEL表达式来引用其相应的键，可以轻松访问Map有效内容中元素的值。
+
+在上面的示例中，通过表达式`#[payload.'yearborn']`获取与`yearborn`键匹配的值。根据其价值，遵循两条不同路径之一。第一条路径将有效负载设置为拒绝注册的消息，通过类似的MEL表达式引用与`firstname`键匹配的值;第二个路径接受注册并通过名称引用用户，并引用`firstname`和`lastname`值。
+
+==== 请求使用多部分/表单数据类型主体
+
+在某些情况下，提交表单也可能意味着上传文件。在这些情况下，HTTP请求的内容类型为`multipart/form-data`。在这种情况下，HTTP连接器将请求主体接入并将其放入Mule消息的附件中，它还会自动分析内容并将其输出为此附件中的键值映射。 Mule消息的有效载荷为空。这种行为也适用于所有类型的多部分HTTP请求。 +
+
+假设提交了以下HTML表单：
+
+[source, xml, linenums]
+----
+<form action="http://server.com/cgi/handle" 
+        enctype="multipart/form-data" 
+        method="post"> 
+ 
+    What is your name? <INPUT type="text" name="name"><BR> 
+    What is your quest? <INPUT type="file" name="quest"><BR> 
+    What is your favorite color? <INPUT type="text" name="color"><BR> 
+    <INPUT type="submit" value="Send"> <INPUT type="reset"> 
+ 
+</form>
+----
+
+这就是上面的表单所产生的HTTP请求的样子：
+
+[source, code, linenums]
+----
+POST /accounts HTTP/1.1
+Host: localhost:8081
+Cache-Control: no-cache
+User-Agent: Mule/3.6
+Content-Type: multipart/form-data; boundary=AaB03x 
+  
+ --AaB03x
+Content-Disposition: form-data; name="name"
+ 
+MuleSoft
+ --AaB03x
+Content-Disposition: form-data; name="quest"; filename="myquest.png"
+Content-Type: image/png
+ 
+ 
+ --AaB03x
+Content-Disposition: form-data; name="color"
+ 
+blue
+ --AaB03x
+----
+
+当HTTP连接器接收到这样的请求时，它将表单值放入*inbound attachment*中，并将消息有效负载保留为*null payload*。由于每个表单字段的内容不是简单的类型，因此它们表示为*Data Handlers*。在内部，每个数据处理程序都包含一个包含字段内容的数据源。 +
+
+数据放入Mule消息后，您可以在流程的其他地方访问它。
+
+*   您可以通过表达式`#[message.inboundAttachments.‘name’.dataSource.content]`访问`name`字段的*content*
+* 您可以通过表达式`#[message.inboundAttachments.‘name’.dataSource.getHeader(‘Content-Disposition’)]`来访问`name`字段的*Content-Disposition header* +
+
+==== 禁用HTTP请求正文解析
+
+如最后两个示例所示，当请求的内容类型为`application/x-www-form-urlencoded`或`multipart/form-data`时，HTTP侦听器自动执行消息解析。如果您愿意，可以轻松禁用此解析功能。
+
+在Studio的可视化编辑器中，您可以取消选择*Advanced*标签中的*Parse Request*框。在XML编辑器中，您可以将*parseRequest*属性设置为*"false"*。
+
+[source, xml, linenums]
+----
+<http:listener config-ref="HTTP_Listener_Configuration" path="/" parseRequest="false"/>
+----
+
+===  HTTP标头
+
+HTTP头由HTTP连接器转换为Mule消息中的入站属性。
+
+下面是一个HTTP请求，它包含一对标头：
+
+[source, code, linenums]
+----
+GET /account HTTP/1.1
+Host: www.mulesoft.org
+Server: Mule/3.6
+----
+
+上述HTTP请求被转换为具有以下入站属性的Mule消息：
+
+[source, code, linenums]
+----
+Host = www.mulesoft.org
+Server = Mule/3.6
+----
+
+在您的Mule流程中，您可以通过以下MEL表达式访问这些标题：
+
+[source, code, linenums]
+----
+#[message.inboundProperties.’Host’]  
+ #[message.inboundProperties.’Server’]
+----
+
+===  HTTP自定义属性请求行
+
+除了标题和正文外，HTTP请求也由请求行组成。 HTTP请求行是HTTP请求的第一行中的内容，它主要包含通过浏览器请求内容时键入到地址栏中的URI。例如：
+
+`POST /mydomain/login/?user=aaron&age=32 HTTP/1.1` +
+
+此内容将转换为Mule消息中的一组入站属性，如下所示：+
+
+image:http+request+line+parts.png[HTTP请求+ + +线份]
+
+[%header,cols="4*"]
+|=====
+| *Property Name*  | *Description*  | *Default Value*  | *Example Value*
+| *http.method*  | HTTP请求方法+  |  -   |  `POST`
+| *http.request.uri*  |整个HTTP请求行URI  |  -   |   / `mydomain/login/?user=aaron&age=32`
+| *http.version*  | HTTP协议版本 |  -   | HTTP / 1.1
+| *http.request.path*  | HTTP请求行，减去查询参数 |  -   |  `/mydomain/login`
+| *http.query.string*  |来自URI的查询字符串，不分析 |  -   |  `user=aaron&age=32`
+| *http.query.params*  |包含来自URI的所有查询参数的地图，已解析并进行了网址解码 |空白地图a |
+`user=aaron`
+
+`age=32`
+
+| *http.uri.params*  |当HTTP侦听器在其路径中具有URI参数占位符时，将使用持有者名称作为键创建此Map，并从请求路径{{1} }  |空白地图a |
+`domain=mydomain`
+
+为了生成这个，监听器路径必须被定义为`{domain}/login`
+
+| *http.listener.path*  |接受请求的HTTP侦听器的路径属性的值。如果全局元素配置了基本路径，则还包括 |  -   | / `mydomain/login` / *
+如果关联的侦听器配置具有TLS配置（SSL），则| *http.scheme*  | HTTP协议方案 |  -   | HTTPS。否则HTTP。
+| *http.remote.address*  | HTTP请求被称为远程地址 |   | 
+| *http.client.cert*  |使用双向 |   | 
+时的客户端证书
+|=====
+
+== 生成HTTP响应
+
+一旦请求已被流中的各种元素处理完毕，该消息就会返回给HTTP连接器以向请求者提供响应。您可以设置此响应，以便它包含所需的正文，附件，标题和状态。
+
+image:http-listener-connector-39b46.png[请求者收到突出显示的响应]
+
+===  HTTP响应正文
+
+执行流程后，HTTP响应正文从Mule消息的结果负载生成。因此，无论有效负载如何，HTTP连接器都会尝试生成一个字节数组，并将其作为HTTP响应主体发送。唯一例外情况是有效载荷是Map还是消息中有附件。
+
+==== 发送一个x-www-form-urlencoded类型的主体
+
+当到达流末尾的Mule消息具有*Map*类型的有效内容时，HTTP Connector会自动生成一个`application/x-www-form-urlencoded`响应主体。它还添加了标题`Content-Type: application/x-www-form-urlencoded`。
+
+==== 发送多部分/表单数据类型主体
+
+当到达流末尾的Mule消息包含出站附件时，HTTP连接器将使用消息出站附件创建一个`multipart/form-data` HTTP响应主体。消息有效载荷根本不使用。您还可以通过在HTTP侦听器连接器中手动设置响应头Content-Type来更改您要返回的多部分类型（请参阅下面的操作步骤）。
+
+===  HTTP响应头
+
+HTTP侦听器连接器发送的响应消息也可以包含HTTP头。这些可以通过两种不同的方式添加到响应中，如以下各节所述。
+
+来自出站属性的====  HTTP响应头
+
+使用HTTP侦听器连接器时，每当到达流末尾的Mule消息中包含出站属性时，每个出站属性都将转换为HTTP响应头。使用 link:/mule-user-guide/v/3.9/property-transformer-reference[物业变压器]很容易为Mule消息添加特性。
+
+[NOTE]
+作为此规则的例外，如果传入出站属性名为"Connection"，"Host"，"Transfer-Encoding"，则不会将其转换为标题。
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Create a flow with an HTTP Listener Connector, set its *Path* to `/`
+. Create a Global Element for the Connector, set the *Host* to `localhost` and leave the *Port* as the default `8081`
+. Add two *Property transformers* in your flow after the HTTP Listener Connector.
+. Configure the first to set the property *date* to the expression `#[server.dateTime]`
+. Configure the second to set the property *expires* to the expression `#[server.dateTime.plusHours(1)]`
+....
+[tab,title="XML Editor"]
+....
+For example:
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration"/>
+     
+    <flow name="HTTP_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"  parseRequest="false"/>
+        <set-property propertyName="date" value="#[server.dateTime]" doc:name="Property"/>
+        <set-property propertyName="expires" value="#[server.dateTime.plusHours(1)]" doc:name="Property"/>
+    </flow> 
+----
+....
+------
+
+=== 显式设置标题 - 完整的XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration"/>
+     
+    <flow name="HTTP_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"  parseRequest="false"/>
+        <set-property propertyName="date" value="#[server.dateTime]" doc:name="Property"/>
+        <set-property propertyName="expires" value="#[server.dateTime.plusHours(1)]" doc:name="Property"/>
+    </flow>
+</mule>
+----
+
+
+在上面的示例中，将两个标头添加到对应用程序请求的每个响应中。两个标头的值都是 link:/mule-user-guide/v/3.9/mule-expression-language-date-and-time-functions[dateTime MEL表达式。]
+
+=== 禁用此行为
+
+注意：如果您愿意，可以防止出站属性作为响应中的标头传递。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+In the HTTP Listener Connector's properties editor, on the *Response Settings* section, tick the box labeled *Disable Properties* to prevent response messages from including outbound properties as headers.
+
+Keep in mind that this only affects responses when the execution of the flow is successful. If an exception is raised, then the fields in the Response Settings section won't be taken into account. Instead, the fields in the *Error Response Settings* are used. If you want to avoid properties from turning into headers in error response messages, tick the box labeled *Disable Properties* in the *Error Response Settings* section.
+....
+[tab,title="XML Editor"]
+....
+Add a `http:response-builder` as a child element of the `http:listener`, in this child element, set the attribute `disablePropertiesAsHeaders="true"` to prevent response messages from including outbound properties as headers.
+
+Keep in mind that this only affects responses when the execution of the flow is successful. If an exception is raised, then the `http:response-builder` element won't be taken into account. Instead the `http:error-response-builder` is used. If you want to avoid properties from turning into headers in error response messages, set the attribute `disablePropertiesAsHeaders="true"` in the `http:error-response-builder` child element.
+
+For example:
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration"/>
+     
+    <flow name="HTTP_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"  parseRequest="false">
+            <http:response-builder disablePropertiesAsHeaders="true"/>
+            <http:error-response-builder disablePropertiesAsHeaders="true"/>
+        </http:listener>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+----
+....
+------
+
+=== 禁止出站属性作为响应中的标题 - 完整的XML代码
+
+[source, xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration"/>
+     
+    <flow name="HTTP_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"  parseRequest="false">
+            <http:response-builder disablePropertiesAsHeaders="true"/>
+            <http:error-response-builder disablePropertiesAsHeaders="true"/>
+        </http:listener>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+
+来自监听器配置的====  HTTP响应头
+
+将HTTP标头添加到您的响应的另一种方法是直接在HTTP侦听器连接器响应配置中设置它们。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Create a flow with an HTTP Listener Connector, set its *Path* to `/`
+. Create a Global Element for the Connector, set the *Host* to `localhost` and leave the *Port* as the default `8081`
+. In the HTTP Listener Connector's properties editor, on the *Response Settings* section, click the *Add Header* button twice to add two headers
+. In the first header, set the name to *date* and the value to the expression `#[server.dateTime]`
+. In the second header, set the name to *expires* and the value to the expression `#[server.dateTime.plusHours(1)]`
+. In the *Error Response Settings* section, click the *Add Header* button once to add one header
+. Set the header's name to *cache-control* and its value to `no-cache`
+. Complete the flow by adding any other processor after the HTTP Connector, such as a *Logger* component.
+....
+[tab,title="XML Editor"]
+....
+For example:
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration"/>
+ 
+<flow name="HTTP_flow">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"  parseRequest="false">
+        <http:response-builder disablePropertiesAsHeaders="true">
+            <{{0}}"/>
+            <{{0}}"/>
+        </http:response-builder>
+        <http:error-response-builder disablePropertiesAsHeaders="true">
+            <http:header headerName="cache-control" value="no-cache"/>
+        </http:error-response-builder>
+    </http:listener>
+    <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+</flow>
+----
+....
+------
+
+=== 完整的XML代码
+
+[source, xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+ 
+     <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration"/>
+     
+    <flow name="HTTP_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"  parseRequest="false">
+            <http:response-builder disablePropertiesAsHeaders="true">
+                <{{0}}"/>
+                <{{0}}"/>
+            </http:response-builder>
+            <http:error-response-builder disablePropertiesAsHeaders="true">
+                <http:header headerName="cache-control" value="no-cache"/>
+            </http:error-response-builder>
+        </http:listener>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+
+在上面的示例中，当流成功执行时，HTTP侦听器连接器将添加上面示例中添加的相同的两个头。如果流程未成功执行，则不会添加这两个标题，而是将标题*cache-control*添加到响应中。
+
+[WARNING]
+请记住，如果在流程执行期间没有发生异常，或者所有异常都由catch-exception-strategies处理，则认为流程成功执行。
+
+您还可以使用映射来定义响应标题，这在您不知道标题数量或事先需要哪些标题名称时非常有用。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Create a flow with an HTTP Listener Connector, set its *Path* to `/`
+. Create a Global Element for the Connector, set the *Host* to `localhost` and leave the *Port* as the default `8081`
+. In the HTTP Listener Connector's properties editor, in the *Response Settings* section, click the *Add Header* button once
+. In the dropdown menu, select *headers* and assign it the expression  `#[flowVars.headersOut]`, which references a variable that contains a map of headers
+. Add a Variable transformer to your flow, after the HTTP Connector, to create the variable that you just referenced
+. Set the variable's name to `headersOut` and its value to a map through the following link:/mule-user-guide/v/3.9/mule-expression-language-mel[MEL expression]:  `#[['date': server.dateTime, 'expires' : server.dateTime.plusHours(1)]]`
+....
+[tab,title="XML Editor"]
+....
+For example:
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration"/>
+     
+    <flow name="HTTP_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"  parseRequest="false">
+            <http:response-builder >
+                <{{0}}"/>
+            </http:response-builder>
+        </http:listener>
+        <set-variable variableName="headersOut" value="#[['date': server.dateTime, 'expires' : server.dateTime.plusHours(1)]]" doc:name="Variable"/>
+ </flow>
+----
+....
+------
+
+=== 使用地图定义响应头 - 完整的XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration"/>
+
+    <flow name="HTTP_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"  parseRequest="false">
+            <http:response-builder >
+                <{{0}}"/>
+            </http:response-builder>
+        </http:listener>
+        <set-variable variableName="headersOut" value="#[['date': server.dateTime, 'expires' : server.dateTime.plusHours(1)]]" doc:name="Variable"/>
+    </flow>
+    </mule>
+----
+
+
+在上面的示例中，标题不是单独设置的，而是从可能被动态创建并具有任意长度并包含任何标题的地图中获取的。
+
+===  HTTP响应状态码和原因短语
+
+您可以配置您的连接器，以便它根据流程执行的成功或失败使用自定义响应来响应调用;您还可以根据情况动态设置这些值。例如，通过让每个错误处理程序方法将此变量的值设置为其相应的值，您可以根据引发的异常设置不同的错误状态代码号。
+
+来自出站属性的==== 状态码和原因词组
+
+状态码和原因短语在HTTP标头`http.status`和`http.reason`中定义。如上所示，您可以通过创建带有转义名称的出站属性来为响应添加标头，当流程执行完毕后，这些名称将由HTTP侦听器连接器转换为HTTP标头。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Create a flow with an HTTP Listener Connector, set its *Path* to `/`
+. Create a Global Element for the Connector, set the *Host* to `localhost` and leave the *Port* as the default `8081`
+. Add two *Property transformers* in your flow after the HTTP Listener Connector.
+. Configure the first to set the property *http.status* to `500`
+. Configure the second to set the property *http.reason* to `Request successfully executed!`
+....
+[tab,title="XML Editor"]
+....
+For example:
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration"/>
+ 
+<flow name="HTTP_flow">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"  parseRequest="false"/>
+    <set-property propertyName="http.status" value="500" doc:name="Property"/>
+    <set-property propertyName="http.reason" value="Request successfully executed!" doc:name="Property"/>
+</flow>
+----
+....
+------
+
+=== 完整的XML代码
+
+[source, xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration"/>
+     
+    <flow name="HTTP_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"  parseRequest="false"/>
+        <set-property propertyName="http.status" value="500" doc:name="Property"/>
+        <set-property propertyName="http.reason" value="Request successfully executed!" doc:name="Property"/>
+    </flow>
+</mule>
+----
+
+
+在上面的示例中，出站属性`http.status`和`http.reason`被转换为HTTP响应中的头部，并被接受为状态码和原因。
+
+监听器配置中的==== 状态码和原因词组
+
+HTTP侦听器连接器本身还包含一项功能，可让您设置这些值。您可以分别为成功执行流程事件和发生故障时设置不同的标头。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Create a flow with an HTTP Listener Connector, set the *Path* to `login`
+. Create a Global Element for the Connector, set the *Host* to `localhost` and leave the *Port* as the default `8081`
+. In the HTTP Connector's properties editor, in the Response Settings section, set the *Status Code* to 500 and the *Reason* to `Login Successful`
+. In the Error Response Settings section, set the Status Code to `\#[errorStatusCode]` and the reason to `#[errorReasonPhrase]`
+. After the HTTP Connector, add a *Message* *Filter*. Click the edit button next to the Nested Filter field and assign it the following value:
++
+
+[source, code, linenums]
+----
+#[message.inboundProperties.'http.query.params'.user == 'mule']
+----
+
+. After the filter, add a Set Payload element and set its *Value* field to `Log in Successful!`
+. Add a *Rollback Exception Strategy* to the Error Handling section of your flow.
+. Add two Variable transformers in this exception strategy. Configure the first to set the variable `errorStatusCode` to `404`, the second to set `errorReasonPhrase` to `Requested user does not exist`  +
+ +
+image:http-listener-connector-a2a90.png[status code and reason flow]
+....
+[tab,title="XML Editor"]
+....
+For example:
+
+. Create an `<http:listener>` global configuration, set the *host* to localhost and the *port* to 8081
++
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+----
+
+. Create a flow with an `<http:listener>` connector. Reference your connector to the global element you just created, set the path to `login`. Add two child elements to the connector: `http:response-builder` and `http:error-response-builder`.
++
+
+[source, xml, linenums]
+----
+<flow name="customResponseFlow">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="login" doc:name="HTTP">
+            <http:response-builder reasonPhrase="Log in Successful" statusCode="500"/>
+            <{{0}}" reasonPhrase="#[errorReasonPhrase]"/>
+    </http:listener>
+</flow>
+----
+
+. After the HTTP connector, add a message filter, set it to evaluate the expression `#[message.inboundProperties.'http.query.params'.user == 'mule']`
++
+
+[source, xml, linenums]
+----
+<message-filter throwOnUnaccepted="true" doc:name="Fail if person does not exists">
+            <expression-filter expression="#[message.inboundProperties.'http.query.params'.user == 'mule']"/>
+        </message-filter>
+----
+
+. Add a set payload after your filter to add a success message to the response's body:
++
+
+[source, xml, linenums]
+----
+<set-payload value="Log in Successful!" doc:name="Set Payload"/>
+----
+
+. Add a rollback exception strategy to deal with the request in case the filter is not successfully passed:
++
+
+[source, xml, linenums]
+----
+<rollback-exception-strategy  doc:name="Rollback Exception Strategy">
+        
+</rollback-exception-strategy>
+----
+
+. Inside your rollback strategy, add two set variable elements, one to set the value of `errorStatusCode` and the other to set the value of `errorReasonPhrase`. Note that these are the variables you set up in the HTTP Listener's `error-response-builder`.
++
+
+[source, xml, linenums]
+----
+<rollback-exception-strategy  doc:name="Rollback Exception Strategy">
+        <set-variable variableName="errorStatusCode" value="404" doc:name="Set status code"/>
+        <set-variable variableName="errorReasonPhrase" value="Requested user does not exist" doc:name="Set reason phrase"/>
+</rollback-exception-strategy>
+----
+....
+------
+
+=== 状态码和原因 - 完整的XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="customResponseFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="login" doc:name="HTTP">
+            <http:response-builder reasonPhrase="Log in Successful" statusCode="500"/>
+            <{{0}}" reasonPhrase="#[errorReasonPhrase]"/>
+        </http:listener>
+        <message-filter throwOnUnaccepted="true" doc:name="Fail if person does not exists">
+            <expression-filter expression="#[message.inboundProperties.'http.query.params'.user == 'mule']"/>
+        </message-filter>
+        <set-payload value="Log in Successful!" doc:name="Set Payload"/>      
+        <rollback-exception-strategy  doc:name="Rollback Exception Strategy">
+                <set-variable variableName="errorStatusCode" value="404" doc:name="Set status code"/>
+                <set-variable variableName="errorReasonPhrase" value="Requested user does not exist" doc:name="Set reason phrase"/>
+        </rollback-exception-strategy>
+    </flow>
+</mule>
+----
+
+
+上面的示例希望在地址http：// localhost：8081 / login /中接收请求，这些请求必须包含名为*user*的查询参数。根据此参数的值，可能会出现以下两种情况之一：
+
+* 当`user=mule`过滤器的计算结果为true时，一个有效负载元素将消息负载设置为成功消息，然后HTTP连接器将*Status Code*和*Reason*设置为{{ 4}}
+* 当`user=anythingElse`过滤器的计算结果为false时，将调用异常策略。其中，分配给错误状态代码和HTTP连接器中的错误原因的变量分配有值`404 Requested user does not exist`
+
+[TIP]
+请注意，无论哪种情况，请求响应都不会显示为响应主体，因此，如果您通过浏览器窗口发出请求，它将不可见。 +
+ +
+为了能够查看HTTP请求的状态码和解释，可以使用浏览器扩展（如Postman（Google Chrome））或 link:http://curl.haxx.se/[卷曲]命令行实用程序。
+
+[NOTE]
+如果状态码或原因短语定义为出站属性，并且它们也在HTTP侦听器连接器中定义，则后者优先。
+
+===  HTTP侦听器流式传输
+
+为了了解HTTP请求主体的长度，HTTP请求和响应包含一个名为Content-Length的头部，该头部描述了主体的预期长度。使用此值，HTTP消息的使用者可以知道正文在哪里结束。这意味着在写入身体之前，必须事先知道身体的长度，但情况并非总是如此。例如，如果我们想通过HTTP发送一个文件的内容，我们希望避免为了发送而在内存中读取整个文件。相反，我们想通过HTTP连接流式传输文件内容。在这种情况下，Transfer-Encoding标头用于以块的形式发送HTTP消息正文，从而使我们不必事先知道身体的长度。每个块由预定义的行分隔符分隔，其中包含特定块的长度。
+
+使用传输编码的====  HTTP侦听器请求：分块
+
+当客户端发送带有`Transfer-Encoding:chunked`头的HTTP请求时，HTTP侦听器连接器会自动将实体主体块解码为InputStream。
+
+使用传输编码的====  HTTP侦听器响应：分块
+
+根据用于生成HTTP响应的MuleMessage的有效内容，HTTP侦听器连接器在必要时手动添加`Content-Length`和`Transfer-Encoding:chunked`头。
+
+* 如果有效负载是InputStream，则HTTP侦听器连接器会向响应添加一个`Transfer-Encoding:chunked`头，以避免将整个InputStream加载到内存中。
+* 在其他情况下，HTTP侦听器连接器会计算有效负载的长度并相应地设置`Content-Length`标头的值。
+* 如果用户在HTTP侦听器连接器的响应设置中手动设置了Content-Length或Transfer-Encoding标头，则这些标头会被遵守。
+
+用户可以通过使用HTTP侦听器连接器中的`responseStreamingMode`属性来覆盖此行为。 `responseStreamingMode`的可能值为：
+
+*  AUTO（默认）：它提供了上面描述的行为。
+* 总是：侦听器总是发送添加`Transfer-Encoding:chunked`标题的响应
+永远不要：监听者总是计算`Content-Length`头并避免分块。
+
+请注意，将此属性设置为ALWAYS或NEVER时，HTTP侦听器连接器将遵守此配置，并忽略手动设置Content-Length或Transfer-Encoding标头的任何尝试。
+
+==  HTTPS协议配置
+
+您可以将连接器设置为使用HTTPS协议而不是HTTP协议。这是在全局元素级别设置的，所有引用配置为使用HTTPS的全局元素的连接器实例都可以使用此协议。
+
+如果您的连接器的TLS / SSL配置包含一个信任存储，则这隐含地强制传入请求需要客户端身份验证。如果您的配置同时包含信任存储和密钥存储，则它将实现双向TLS。
+
+有关详细信息，请参阅TLS配置。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Create a flow with an HTTP Listener Connector, set its *Path* to `/`
+. Create a Global Element for the Connector, set the *Host* to `localhost` and leave the *Port* as the default `8081`.  Select the *HTTPS* *Radio button*.
+. Select the *TLS/SSL* tab. Select the corresponding radio button and either provide your trust store / key store credentials, or add a reference to a global TLS configuration that contains these
++
+image::http-listener-connector-HTTPS-config.png[]
+
+. Complete the flow by adding any other processor after the HTTP Connector, such as a *Logger* component.
+....
+[tab,title="XML Editor"]
+....
+For example:
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" protocol="HTTPS" host="localhost" port="8081"  doc:name="HTTP Listener Configuration">
+        <tls:context>
+            <tls:trust-store path="mytrustpath" password="mytrustpass"/>
+            <tls:key-store path="mykeypath" password="mypass" keyPassword="mykeypass"/>
+        </tls:context>
+    </http:listener-config>
+ 
+    <flow name="customResponseFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration1" path="/" doc:name="HTTP"/>
+        <logger level="INFO" doc:name="Logger"/>   
+    </flow>
+----
+....
+------
+
+===  HTTPS协议配置 - 完整的XML代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tls="http://www.mulesoft.org/schema/mule/tls" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd">
+     
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration">
+        <tls:context>
+            <tls:trust-store path="aaa" password="bbb"/>
+            <tls:key-store path="aaa" password="bbb" keyPassword="ccc"/>
+        </tls:context>
+    </http:listener-config>
+     
+    <flow name="HTTP_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"  parseRequest="false">
+            <http:response-builder >
+                <{{0}}"/>
+            </http:response-builder>
+        </http:listener>
+        <set-variable variableName="headersOut" value="#[['Cache-Control': 'no-cache', 'Content-Length' : 32]]" doc:name="Variable"/>
+        <set-payload value="foo" doc:name="Set Payload"/>
+    </flow>
+</mule>
+----
+
+
+[TIP]
+如果您使用的是双向TLS身份验证连接，则会使用入站属性`http.client.cert`显示客户端证书。 +
+ +
+您可以通过以下方式访问客户主体：`inboundProperties['http.client.cert'].getSubjectDN()`
+
+== 认证
+
+您可以对通过HTTP侦听器连接器到达的传入请求实施基本身份验证。为此，您必须在HTTP连接器之后的流中添加一个额外的XML元素，并引用Spring安全性组件，如下例所示：
+
+[source, xml, linenums]
+----
+<spring:beans>
+    <ss:authentication-manager alias="authenticationManager">
+      <ss:authentication-provider>
+        <ss:user-service id="userService">
+          <ss:user name="user" password="password" authorities="ROLE_ADMIN" />
+          <ss:user name="anon" password="anon" authorities="ROLE_ANON" />
+        </ss:user-service>
+      </ss:authentication-provider>
+    </ss:authentication-manager>
+  </spring:beans>
+  
+  <mule-ss:security-manager>
+      <mule-ss:delegate-security-provider name="memory-provider" delegate-ref="authenticationManager" />
+  </mule-ss:security-manager>
+ 
+  <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration" />
+  
+  <flow name="SpringExample">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+    <http:basic-security-filter realm="mule-realm"/>
+  </flow>
+----
+
+有关更多详情，请参阅 link:/mule-user-guide/v/3.9/configuring-the-spring-security-manager[配置Spring Security Manager]。
+
+== 连接属性配置
+
+您可以通过以下方式定制HTTP传入连接
+
+* 设置连接可以空闲的最长时间
+* 启用/禁用持久HTTP连接
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+In the global configuration element setup window, the checkbox marked *Use Persistent Connection* defines if a connection established with a client processes several request or just once.  Default value is true, so multiple requests are handled by a single connection.
+
+image::http-listener-connector-connection-attributes.png[]
+
+If the box is checked, then you can also set up the *Connection Idle Timeout*, which defines the number of milliseconds that a connection can remain idle before it is closed. Default value is 30 seconds.
+....
+[tab,title="XML Editor"]
+....
+In the global configuration element, the attribute `connectionIdleTimeout` can be used to define the number of milliseconds that a connection can remain idle before it is closed. Default value is 30 seconds.
+
+In the global configuration element, the attribute `usePersistentConnections` defines if a connection established with a client is used to process several request or just once.  Default value is true, so multiple requests are handled by a single connection.
+
+For example:
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration" usePersistentConnections="true"  connectionIdleTimeout="9000" />
+----
+....
+------
+
+== 效果
+
+HTTP侦听器连接器使用专用线程来接收套接字连接，然后将消息转交给执行其余同步流的线程。 HTTP连接器的这些专用线程的默认值是128.这意味着当我们选择`Use default worker threading profile`时，`maxThreadsActive` ^ 1 ^值被设置为128。
+
+image::http-listener-connector-51981.png[]
+
+虽然这种默认配置通常足够，但可以调整最大线程值^ 2 ^
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image::http-listener-connector-08229.png[]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP" host="0.0.0.0" port="8081">
+        <http:worker-threading-profile maxThreadsIdle="8" maxThreadsActive="200"/>
+</http:listener-config>
+
+----
+....
+------
+
+详细的参考资料可以在 link:/mule-user-guide/v/3.9/tuning-performance#connector-level[在连接器级调整性能]文档中找到。
+
+HTTP连接器也可以配置为使用 link:/mule-user-guide/v/3.9/http-connector#non-blocking-processing[非阻塞处理策略]。
+
+
+
+== 另请参阅
+
+* 要发送HTTP请求，请参阅 link:/mule-user-guide/v/3.9/http-request-connector[HTTP请求连接器]
+* 查看此连接器中可用XML配置选项的 link:/mule-user-guide/v/3.9/http-connector-reference[充分参考]
+*   link:/mule-user-guide/v/3.9/consuming-a-rest-api[使用REST API]
+*   link:/mule-user-guide/v/3.9/rest-api-examples[REST API示例]
+*  link:/mule-user-guide/v/3.9/authentication-in-http-requests[HTTP请求中的身份验证] +
+* 要更新所有使用旧的基于HTTP端点的连接器的应用程序，请参阅 link:/mule-user-guide/v/3.9/migrating-to-the-new-http-connector[迁移到新的HTTP连接器]
+* 请参阅对此元素已弃用的前任的引用 link:/mule-user-guide/v/3.9/deprecated-http-transport-reference[HTTP传输参考]

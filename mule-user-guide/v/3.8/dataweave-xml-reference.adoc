@@ -1,0 +1,191 @@
+=  DataWeave XML参考
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+无需使用Studio用户界面为您的Mule项目添加 link:dataweave[DataWeave]脚本，您可以通过Studio中的XML标签或外部编辑器以XML格式编写 link:/anypoint-studio/v/6/transform-message-component-concept-studio[转换消息组件]。实际上，某些高级功能（例如用于内存管理的`mode`属性）只能通过XML进行配置。
+
+// TODO：哪些高级功能？
+
+请注意，当您使用Studio用户界面创建和配置元素时，将在XML编辑器中自动创建相同的XML配置。
+
+==  DataWeave依赖关系
+
+*  <<topic_1>>
+*  <<topic_2>>
+
+[[topic_1]]
+=== 名称空间和架构位置
+
+您的Mule项目必须以下列依赖项开始：
+
+[source,xml,linenums]
+----
+<mule
+
+  xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+  xsi:schemaLocation="
+    ...
+    http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+----
+
+请注意，将相应元素拖放到Studio画布时，会自动添加这些依赖项。
+
+[[topic_2]]
+===  Maven依赖项代码片段
+
+如果您在项目中 link:using-maven-in-mule-esb[使用Maven]，则还必须在您的`pom.xml` Maven文件中包含以下依赖项：
+
+[source,xml,linenums]
+----
+<dependency>
+  <groupId>com.mulesoft.weave</groupId>
+  <artifactId>mule-plugin-weave</artifactId>
+  <version>${mule.version}</version>
+  <scope>provided</scope>
+</dependency>
+----
+
+请注意，对于Mule Runtime版本3.8.0，`artifactID`是`mule-plugin-weave_2.11`，而不是`mule-plugin-weave`。
+
+==  <DW：变换消息/ =
+
+`<dw:transform-message>`元素是Transform Message组件的顶级XML标签。
+
+[%header,cols="30a,70a"]
+|===
+|  `<dw:transform-message>`属性 | 描述
+|  `doc:name`  | 定义元素在Studio画布中显示的名称。
+|  `mode`  | 引用 link:dataweave-memory-management#deferred-execution[延期执行]。接受的值：`immediate`或`deferred`。请参阅 link:dataweave-memory-management[DataWeave内存管理]。
+|===
+
+== 将DataWeave脚本添加到变换组件
+
+您可以使用<<transformation, Transformation>>元素中的`CDATA`将DataWeave代码输入到XML中，也可以引用外部`.dwl`文件。
+
+本示例在`<dw:set-payload>`转换元素内嵌入一个DataWeave脚本：
+
+[source,xml,linenums]
+----
+<dw:transform-message doc:name="Transform Message" mode="immediate">
+  <dw:set-payload>
+    <![CDATA[
+        %dw 1.0
+        %output application/json
+        ---
+        payload
+    ]]>
+  </dw:set-payload >
+</dw:transform-message>
+----
+
+以下是调用外部`.dwl`文件的相同示例：
+
+[source,xml,linenums]
+----
+<dw:transform-message doc:name="Transform Message" mode="immediate">
+  <dw:set-payload resource="transform.dwl" />
+</dw:transform-message>
+----
+
+这些文件的默认位置位于项目的`src/main/resources`文件夹中。
+
+[[transformations]]
+== 变换
+
+您可以将DataWeave脚本通过这些子元素传递给`<dw:transform-message>`：`<dw:set-payload/>`，`<dw:set-variable/>`或`<dw:set-session-variable/>`。
+
+。例
+[source, xml, linenums]
+----
+<dw:transform-message>
+   <dw:set-payload resource="classpath:path/transform.dwl"/>
+   <dw:set-variable variableName="myVariable"
+    resource="classpath:path/transform.dwl"/>
+   <dw:set-session-variable variableName="mySessionVariable"
+    resource="classpath:path/transform.dwl"/>
+</dw:transform-message>
+----
+
+子元素包含许多相同的属性。
+
+[%header,cols="30a,70a"]
+|===
+|  {属性{1}}说明
+|  `resource`  | 指向包含DataWeave转换脚本的`.dwl`文件。这些值是静态解决的。例如，使用`<dw:set-payload resource="myscript-${env}.dwl"/>`在转换消息UI中生成此错误：`Unexpected end of input, expected header or content`。
+|	 `variableName`  | 当所需的输出是一个变量时，它定义了命名该变量的内容。不适用于`dw:set-payload`。
+|===
+
+== 处理多个输出
+
+单个Transform Message元素包含几个不同的组件，为输出Mule消息提供内容。每个输出必须在单独的`.dwl`文件中定义，如<<transformations>>所示。例如，一个文件可能定义了有效内容，另一个是出站属性，另一个是会话变量。每个将成为相同输出Mule消息的一部分。
+
+您可以通过在`dw:transform-message`组件内添加多个子元素来完成此操作。
+
+== 输入定义
+
+`<dw:input-payload/>`可以指定关于输入的可选参数，例如：
+
+[%header,cols="30a,70a"]
+|===
+|  `<dw:input-payload>`  | 的属性描述
+|  `mimeType`  | 预期输入的MIME类型。如果您不提供此属性，DataWeave将尝试从元数据中读取有效载荷MIME类型。
+|  `doc:sample`  | 指向包含示例输入的文件，在设计时通过UI构建转换时非常有用。请参阅<<Providing Input Sample Data>>。
+|===
+
+。例
+[source,xml, linenums]
+----
+<dw:transform-message doc:name="Transform Message">
+  <dw:input-payload mimeType="application/xml"
+   doc:sample="sample_data/content.xml"/>
+  <dw:set-payload>
+    <![CDATA[%dw 1.0
+      %output application/java
+      ---
+      {
+        // YOUR DW SCRIPT
+      }
+    ]]>
+  </dw:set-payload>
+</dw:transform-message>
+----
+
+== 阅读器配置
+
+`<dw:reader-property/>`设置可以告诉读者如何解析输入。
+
+[source, xml, linenums]
+----
+<dw:input-payload doc:sample="list_csv.csv" mimeType="text/csv" >
+  <dw:reader-property name="separator" value="|"/>
+  <dw:reader-property name="header" value="false"/>
+</dw:input-payload>
+----
+
+读取器属性取决于输入的类型。有关每种类型的可用属性的详细列表，请参阅 link:dataweave-formats[DataWeave格式]。
+
+== 完整的XML示例
+
+以下是通过XML描述的完整Transform消息组件
+
+[source,xml,linenums]
+----
+<dw:transform-message doc:name="Transform Message" mode="immediate">
+  <dw:input-payload mimeType="text/csv" doc:sample="sample_data/content.csv">
+    <dw:reader-property name="separator" value="|"/>
+    <dw:reader-property name="header" value="false"/>
+  </dw:input-payload>
+  <dw:set-variable variableName="myVariable">
+    <![CDATA[
+      %dw 1.0
+      %output application/json
+      ---
+      payload
+    ]]>
+  </dw:set-variable >
+</dw:transform-message>
+----
+
+[[memory_management]]
+== 内存管理
+
+可以将变换组件`dw:transform-message`）的`mode`属性配置为等待执行大型有效负载的转换，直到流可用为止。您还可以设置转换的系统内存使用的最大大小。有关详情，请参阅 link:dataweave-memory-management[DataWeave内存管理]。

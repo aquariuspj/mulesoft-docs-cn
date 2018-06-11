@@ -1,0 +1,493 @@
+=  Web服务使用者
+:keywords: anypoint studio, studio, connector, endpoint, web service, soap, wsdl
+
+当使用Mule开发应用程序时，用户通常需要能够使用SOAP Web服务来从外部源获取数据。在最佳情况下，您可以使用Mule应用程序中的现有*Anypoint Connector*连接到特定的服务提供商，例如Zuora或Avalara。但是，如果不存在特定于服务的连接器以便于连接，则从Mule应用程序中使用Web服务的最快，最简单的方法是使用*Web Service Consumer*。
+
+通过使用服务WSDL中包含的信息，该连接器使您能够配置一些细节，以便建立从Mule应用程序中使用服务所需的连接。简单地标识Web服务的WSDL文件的位置，然后要求Web服务使用者从WSDL  - 主机，端口，地址配置自身。
+
+在Studio中存在此组件之前，您可能已经在Mule流中配置了HTTP连接器和SOAP组件，以便能够使用Web服务;现在您只需将Web服务使用者连接器插入流程即可。需要更少的配置努力。 Web服务使用者还提供了额外的功能来帮助您构建应用程序：
+
+*  Web服务使用者与DataWeave转换器一起使用，利用DataSense功能获取有关输入或输出的预期格式和结构的信息，以消除猜测发送到SOAP Web服务以及您将从中获得什么
+* 与DataWeave转换器一起使用时，您可以将接收到的输入（SOAP标题或正文）可视化地映射到另一种数据格式或结构中以供进一步处理
+* 使用Web服务使用者中嵌入的功能来保护您的Web服务请求，以将用户名令牌添加到请求，和/或WS-Security时间戳
+
+例如，假设您希望构建一个应用程序，您需要收集关于股票交易最后价格的信息。在接受最终用户请求后，您需要使用外部SOAP Web服务来检查特定股票的最近交易和卖出的价格，然后返回响应。这样的应用程序可以使用Web服务使用者来使用股票报价信息，然后使用DataWeave将结果映射到可以返回给最终用户的格式。见下面的第一张图;下面是第二个例子。
+
+image:first_diagram.png[带有标注的Web服务消费者工作流程]
+
+[WARNING]
+以前称为*SOAP Connector*的组件现在称为*{{0}}*。它不应该与Web服务使用者混淆。
+
+<<Complete Code Example>>
+
+== 先决条件
+
+本文档假定您熟悉Anypoint Studio;请查看 link:/anypoint-studio/v/5/index[Anypoint Studio Essentials]中的章节，详细了解如何使用Mule的图形用户界面进行开发。本文档还假定您熟悉 link:/mule-user-guide/v/3.7/dataweave[DataWeave]， link:/mule-user-guide/v/3.7/global-elements[全球元素]和 link:/anypoint-studio/v/5/datasense[DataSense]。
+
+== 安装此连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+== 限制
+
+*  Web服务使用者仅与SOAP Web服务接口，而不是REST API。
+* 在Mule中，Web服务使用者仅可与以下连接器配合使用：
+*  FTP
+* 文件
+*  HTTP
+*  JMS
+*  SFTP
+*  HTTPS
+
+== 基本解剖学
+
+要在您的Mule应用程序中使用Web Service使用者，您必须执行三项任务：
+
+. 将您想要使用的服务的*WSDL file*添加到您的Mule项目中。
+. 在您的Mule流中嵌入*Web Service Consumer element*，并将其配置为定义要执行的操作，并标识其引用的Global Web Service使用者元素。
+. 配置您引用服务的WSDL的*Global Web Service Consumer element*，启用DataSense并应用服务提供商所需的任何安全设置。要真正利用Web服务使用者的设计时功能，请考虑将其与以下Mule功能结合使用：
+
+*  *DataSense*：启用时，DataSense使用WSDL中的信息自动提取有关数据结构的元数据，并设置SOAP Web服务提供或预期的格式。当启用此功能时（在Global Web Service使用者元素中），Mule会发现发现服务发送或预期的数据类型的繁重工作。
+*  *DataWeave transformer*：当与支持DataSense的Web Service使用者结合使用时，DataWeave可以自动从服务中提取有效载荷或标题元数据，您可以通过可视界面进行映射和变换。例如，如果在应用程序中配置Web服务使用者，然后将DataWeave转换器拖拽到其后面，DataWeave将使用DataSense提取的信息预先填充输入值以进行映射，以便您只需确认（或调整）选择，然后继续映射到您想要的输出。换句话说，DataSense确保DataWeave知道它必须工作的数据格式和结构，因此您不必手动将其解决。
+
+有关DataSense和DataWeave的最佳设计时实践的更多信息，请参阅 link:/anypoint-studio/v/5/datasense[DataSense文档]。
+
+== 配置Web服务使用者
+
+要准备应用程序以使用上述示例中的Web服务，必须先将Web服务的WSDL添加到您的Mule项目中，然后至少配置Web服务使用者元素和全局Web服务所需的参数消费者元素。下面的图表和部分描述了如何解决这些要求。
+
+image:wsc_workflow2.png[关于何时使用WS消费者和DataWeave的流程图]
+
+===  Studio Visual Editor
+
+. 首先获取您打算使用的SOAP Web服务的*WSDL file*或标识*URL of the WSDL*。
+. 如果您使用的是WSDL文件，请将该文件复制到Studio项目的`src/main/resources`文件夹中。 （您可以拖放文件以将其复制到文件夹中。）如果使用URL，则不需要将任何内容复制到Studio项目。
+. 将*Web Service Consumer*连接器拖放到应用程序中的流程中。单击Web Service使用者图标以打开其*Properties Editor*，然后更改连接器*Display Name*的默认值（如果您愿意）。
+. 为连接器定义全局配置：单击*Global Configuration*字段旁边的加号。
+. 在打开的窗口中，首先在*WSDL Location*字段中输入值。首先填写此字段。要做到这一点：
+
+** 在字段中输入WSDL的URL
+** 单击*...*按钮以提供您复制到项目的`src/main/resources`文件夹中的WSDL文件的文件路径和文件名。
++
+在填充此字段后，您可以使Studio有机会阅读WSDL的内容，并使用包含在其中的信息自动填充剩余的空字段 -  `Service`，`Port`和`Address`。 WSDL文件。或者，您可以使用有关Web服务的相应信息手动填充这些字段。
++
+image:wsc_global.png[带有示例信息的Studio Global Element屏幕]
+
+. 确认已选中*Enable DataSense*框，然后点击*OK*进行保存。
+. 请注意，Studio会自动填充流中Web Service使用者元素的属性编辑器中的以下字段：
+
+*  *Global Configuration*  - 您刚刚创建的全局Web服务使用者的名称。
+*  *Operation*  -  Web服务为其使用者支持的操作的名称。
+
+. 如果您愿意（如果SOAP Web服务确实提供了多个操作），请在Web服务消费者元素中选择可用的操作，然后在画布内单击以自动保存您的配置。
+
+image:wsc_local.png[wsc_local]
+
+===  XML编辑器
+
+. 首先获取您打算使用的SOAP Web服务的*WSDL file*或标识*URL of the WSDL*。
+. 如果您使用的是WSDL文件，请将该文件复制到Studio项目的`src/main/resources`文件夹中。 （您可以拖放文件以将其复制到文件夹中。）如果使用URL，则不需要将任何内容复制到Studio项目。
+. 在应用程序的所有流程之上，向您的应用程序添加一个全局`ws:consumer-config`元素。根据下面的代码示例配置其属性，以定义如何连接到您打算使用的Web服务。有关元素，属性和默认值的完整列表，请参阅Web Service使用者参考。
+
+[source, xml, linenums]
+----
+<ws:consumer-config name="Web_Service_Consumer1" wsdlLocation="src/main/resources/sample_wsdl_2.txt" service="StockQuoteService" port="StockQuotePort" serviceAddress="http://example.com/stockquote" doc:name="Web Service Consumer"/>
+----
+
+. 将`ws:consumer`元素添加到应用程序中的流程中。根据下面的代码示例配置其属性，以定义要引用的全局Web服务使用者以及执行请求到Web服务的操作。有关元素，属性和默认值的完整列表，请参阅Web Service使用者参考。
+
+[source, xml, linenums]
+----
+<ws:consumer doc:name="Web Service Consumer" config-ref="Web_Service_Consumer1" operation="GetLastTradePrice"/>
+----
+
+==  Web服务使用者和DataWeave
+
+如上所述，当与支持DataSense的Web服务使用者结合使用时，DataWeave可以自动提取可用于通过 link:https://docs.mulesoft.com/mule-user-guide/v/3.7/dataweave[DataWeave语言]映射和/或转换为其他数据格式或结构的有效内容或标题元数据。当您在流程中配置了支持DataSense的Web服务使用者时，可以在其之前或之后放置一个DataWeave转换器 - 并且DataWeave会自动提取DataSense从WSDL收集的有关预期格式和结构的信息信息。
+
+* 如果DataWeave *follows*完全配置了Web服务使用者，DataWeave可以访问其*Input values*，并且可以使用这些输入来创建自定义输出。
+* 如果DataWeave *precedes*完全配置了Web Service使用者，DataWeave将创建一个支架，以生成与Web服务使用者预期接收的输出相匹配的输出（请参见下文）。
+
+[source, json, linenums]
+----
+{
+  "item_amount": "????",
+  "payment": {
+    "currency": "????",
+    "installments": "????",
+    "payment-type": "????"
+  },
+  "product": {
+    "model": "????",
+    "price": "????"
+  },
+  "salesperson": "????",
+  "shop": "????"
+}
+----
+
+要充分利用Web Service Consumer-DataSense-DataWeave的优势，请务必按以下顺序配置这些元素：
+
+. 启用了DataSense的*Global Web Service Consumer element*
+. 您应用程序中的流程中的*Web Service Consumer connector*，它引用Global Web Service使用者连接器
+.  *DataWeave transformer*在您的流程中的Web服务使用者连接器之前或之后丢弃
+
+=== 添加自定义标题
+
+SOAP头应该创建为出站属性。你可以通过*Property*变压器来完成
+
+重要说明：以`soap.`前缀开头的出站属性被视为SOAP标头，并被传输忽略。所有未用`soap.`前缀命名的属性都被视为传输标头（默认情况下，WSC使用HTTP传输）。
+
+image:properties_soap.jpg[properties_soap]
+
+[source, xml]
+----
+<set-property propertyName="soap.myProperty" value="#[payload]" doc:name="Property"/>
+----
+
+[WARNING]
+====
+在手动配置标题时，您传递的值应该具有XML元素的结构，它不应该是一对简单的键和值。例如，使用set属性元素，属性的值必须包含封闭的XML标签，如下所示：
+
+[source, xml, linenums]
+----
+<set-property propertyName="soap.Authorization"
+value="<auth>Bearer
+MWYxMDk4ZDktNzkyOC00Z</auth>"/>
+----
+
+上面的例子工作，下面的例子没有：
+
+[source, xml, linenums]
+----
+<set-property propertyName="soap.Authorization" value="Bearer
+MWYxMDk4ZDktNzkyOC00Z"/>
+----
+
+====
+
+=== 映射SOAP标题
+
+当与Web服务使用者结合使用时，DataWeave为您提供了通过选择不同输入来映射和转换消息的有效负载，属性或变量的选项。
+
+. 首先，确保您已在流程中配置了支持DataSense的Web服务使用者，并设置DataWeave转换器以遵循它。单击画布上的DataWeave图标以打开其*Properties Editor*。
+. 如果SOAP服务返回带有标题的响应，则DataWeave转换器的输入部分中的树在其中具有多个入站属性。每个标题作为入站属性输入Mule流。您可以双击它以在不同的选项卡中打开此属性并提供测试数据。
+. 在transform的输入指令中，您可以看到如何引用此输入，并在引用标题中的某个元素时将其用作路径的一部分。
+
+[TIP]
+====
+使用DataWeave，您可以在单个转换中使用多个输入，因此您可以从SOAP正文和SOAP标头中获取信息以生成输出。
+
+要生成多个输出，您必须创建单独的变换，但这些变换可以托管在流程中的单个DataWeave变换器中。因此，在单个DataWeave转换器中，您可以托管一个填充SOAP正文的变换，另一个填充SOAP标题。
+====
+
+== 使用HTTP请求者获取WSDL
+
+您可以使用useConnectorToRetrieveWsdl系统属性来使用
+HTTP请求者由连接器配置提供以获取WSDL。 WSDL位置
+必须位于HTTP或HTTPS URL位置。
+
+*Note:*使用此功能可将更改应用于涉及的环境中的每个应用程序。
+
+使用此命令启动Mule并启用此功能：
+
+[source,xml]
+----
+./mule -M-Dmule.ws.useConnectorToRetrieveWsdl=true
+----
+
+==  Web服务使用者和DataSense资源管理器
+
+使用Studio中的 link:/anypoint-studio/v/5/using-the-datasense-explorer[DataSense资源管理器]功能，可以在设计时洞察消息有效负载，属性和变量在整个流程中的状态。 DataSense Explorer在遇到Web Service使用者之前理解消息的内容时非常有用，并且在它出现之后可以更好地了解应用程序正在处理的数据的状态。
+
+以下示例中的DataSense Explorer提供有关消息遇到Web Service使用者时组成消息对象的Payload，Variables，Inbound Properties和Outbound Properties的信息。使用DataSense资源管理器顶部的*In-Out*开关可以查看消息到达或离开消息处理器时的元数据。
+
+Web服务使用者之前的==== 消息状态
+
+image:metadata_in.png[metadata_in]
+
+Web服务使用者之后的==== 消息状态
+
+image:metadata_out.png[metadata_out]
+
+== 安全地连接到SOAP Web服务
+
+根据SOAP Web服务使用的安全级别，您可能需要相应地保护Web Service使用者发送的请求。换句话说，您发送给Web服务的任何调用都必须遵守Web服务提供者的安全要求。要符合此要求，您可以在Global Web Service使用者连接器上配置安全设置。
+
+WSC允许您：
+
+* 为邮件添加到期日
+* 将用户名和密码标题添加到外发邮件中
+* 为外发邮件添加签名标题
+* 验证签名标题的传入消息
+* 加密传出消息（在SOAP级别）
+* 解密传入消息（在SOAP级别）
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Within the *Global Web Service Consumer* element's *Global Element Properties* panel, click the *Security* tab:
+
+image:wsc_security.png[wsc_security]
+
+. Based on the security requirements of the Web service provider, select to apply *Username Token* security, or a *WS-Security Timestamp* or both.
+. Enter values in the required fields.
++
+[TIP]
+--
+For a full list of elements, attributes and default values, consult the link:/mule-user-guide/v/3.7/web-service-consumer-reference[Web Service Consumer Reference].
+--
++
+. Click *OK* to save your security settings.
+
+....
+[tab,title="XML Editor"]
+....
+
+Add child elements to the global ws:consumer-config element you configured in your application. Configure the child elements' attributes according to the code sample below. For a full list of elements, attributes and default values, consult Web Service Consumer Reference.
+
+[source, xml, linenums]
+----
+...
+    <ws:consumer-config name="OrderWS" wsdlLocation="enterprise.wsdl.xml" service="OrderService" port="Soap" serviceAddress="https://login.orderservice.com/services/Soap/c/22.0" doc:name="Web Service Consumer">
+        <ws:security>
+            <ws:wss-username-token username="test" password="test" passwordType="DIGEST" addCreated="true" addNonce="true"/>
+            <ws:wss-timestamp expires="30000"/>
+        </ws:security>
+    </ws:consumer-config>
+...
+----
+
+....
+------
+
+=== 验证响应时间戳
+
+[CAUTION]
+并非所有的Web服务都在响应中提供时间戳。 +
+您需要根据您的Web服务提供商的安全要求进行验证。
+
+您可以通过指示Mule使用`mule.ws.checkWssResponseTimestamp`属性来验证响应的时间戳，从而确定响应安全语义的_freshness_值给您的ws请求：
+
+* 你可以在启动Mule传递下面的参数时设置它：
++
+[source,Example,linenums]
+----
+-M-Dmule.ws.checkWssResponseTimestamp=true
+----
++
+* 或者您可以在您的`${MULE_HOME}/conf/wrapper.conf`文件中将其设置为包装配置：
++
+[source]
+----
+wrapper.java.additional.<n>=-mule.ws.checkWssResponseTimestamp=true
+----
+
+[TIP]
+详细了解如何将JVM参数传递到您的Mule实例 link:/mule-user-guide/v/3.7/passing-additional-arguments-to-the-jvm-to-control-mule[这里]。
+
+== 使用基本身份验证和SSL
+
+如果您要连接的Web服务需要基本身份验证，您可以在接触到URL时轻松提供用户名和密码作为URL的一部分。
+
+该网址应该遵循以下结构：
+
+[source, code]
+----
+http://myUserName:myPassword@hostService
+----
+
+在Web服务使用者的全局元素中，添加对`http-request-config`元素的引用：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Enter the Web Service Consumer's global configuration element
+. Open the *References* tab
+. Create a new reference by clicking the green plus sign
+
+....
+[tab,title="XML Editor"]
+....
+
+[source, xml, linenums]
+----
+<http:request-config host="localhost" port="${port}" name="customConfig">
+        <http:basic-authentication username="user" password="pass" />
+    </http:request-config>
+
+    <ws:consumer-config wsdlLocation="Test.wsdl" service="TestService" port="TestPort" serviceAddress="http://localhost:${port}/services/Test" connectorConfig="customConfig" name="globalConfig"/>
+----
+
+....
+------
+
+默认情况下，WSC运行在HTTP请求连接器的默认配置上。如果您需要它来运行使用HTTPS的连接器的配置（或者与默认配置不同的HTTP配置），请按照以下步骤操作：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Click the Global Elements tab, below the canvas and create a new Global Element
+image:global_elements1.jpg[global_elements1]
+
+. For the Global Element type, select *HTTP Request Configuration*
+
+image:http_global_element.png[http_global_element]
+
+. Complete the required fields in the *General* tab (host and port)
+. Then select the *TLS/SSL* tab and configure the fields related to the HTTPS authentication
+
+image:ssl_tls.png[ssl_tls]
+
+. In your instance of the Web Service Consumer in your flow, click on the green plus sign next to Connector Configuration
+
+image:adding_https_ref.jpg[adding_https_ref]
+
+. In the *References* tab, select your newly created HTTPS Global Element for the *Connector Ref* field
+
+image:adding_https_ref2.jpg[adding_https_ref2]
+
+....
+[tab,title="XML Editor"]
+....
+
+. Add an link:/mule-user-guide/v/3.7/http-connector[HTTP Connector] global element in your project, configure it with the necessary security attributes
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" protocol="HTTPS" doc:name="HTTP_Request_Configuration"/>       
+        <tls:context>
+            <tls:trust-store path="your_truststore_path" password="your_truststore_password"/>
+            <tls:key-store path="your_keystore_path" password="your_keystore_path" keyPassword="your_keystore_keypass"/>
+        </tls:context>
+</http:request-config>
+----
+
+. In your `ws:consumer-config` element, include a `connectorConfig` attribute to reference to this HTTP connector configuration element:
+
+[source, xml, linenums]
+----
+<ws:consumer-config name="Web_Service_Consumer" wsdlLocation="tshirt.wsdl.xml" service="TshirtService" port="TshirtServicePort" serviceAddress="http://tshirt-service.qa2.cloudhub.io/tshirt-service" connectorConfig="HTTP_Request_Configuration"/>
+----
+
+....
+------
+
+=== 引用已弃用的HTTP传输
+
+为了设置备用HTTP设置，而不是引用实例新的HTTP连接器，可以引用已弃用的HTTP传输实例并完成相同的操作。要添加此引用，请向WSC配置元素添加一个`connector-ref`属性。 `connectorConfig`和`connector-ref`属性是互斥的，并且都是可选的。
+
+如果没有指定两个引用属性，则使用新的HTTP连接器的默认实例。为了向后兼容，您可以更改此行为并使不推荐使用的HTTP传输实例成为默认配置。在Mule运行时3.6中添加了全局配置属性，允许您更改此默认行为：
+
+[source, xml, linenums]
+----
+<configuration>
+  <http:config useTransportForUris="true"/>
+</configuration> 
+----
+
+这个属性的失败价值是错误的。将此标志设置为true时，Mule会退回到不推荐使用的HTTP传输，以在未指定传输/连接器时解析URI。
+
+== 完整的代码示例
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+image:code_example.png[Code Example section's flow diagram in Studio]
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:ws="http://www.mulesoft.org/schema/mule/ws" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.7.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+<ws:consumer-config name="Web_Service_Consumer" wsdlLocation="http://tshirt-service.cloudhub.io/?wsdl" service="TshirtServicePortTypeService" port="TshirtServicePortTypePort" serviceAddress="http://tshirt-service.cloudhub.io/" doc:name="Web Service Consumer"/>
+
+  <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+
+    <flow name="orderTshirt" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="orders" doc:name="HTTP">
+            <http:response-builder statusCode="200"/>
+        </http:listener>
+        <set-variable variableName="apiKey" value="#['abc12345']" doc:name="Set API Key"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:input-variable doc:sample="string.dwl" variableName="apiKey"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://mulesoft.org/tshirt-service
+---
+{
+    ns0#OrderTshirt: {
+        size: payload.size,
+        email: payload.email,
+        name: payload.name,
+        address1: payload.address1,
+        address2: payload.address2,
+        city: payload.city,
+        stateOrProvince: payload.state,
+        postalCode: payload.postal,
+        country: payload.country
+    }
+}]]></dw:set-payload>
+    <dw:set-property propertyName="soap.header"><![CDATA[%dw 1.0
+%output application/java
+---
+flowVars.apiKey]]></dw:set-property>
+        </dw:transform-message>
+        <ws:consumer config-ref="Web_Service_Consumer" operation="OrderTshirt" doc:name="Order Tshirt"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload]]></dw:set-payload>
+        </dw:transform-message>
+    </flow>
+ 
+    <flow name="listInventory" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="inventory" doc:name="HTTP">
+            <http:response-builder statusCode="200"/>
+        </http:listener>
+        <ws:consumer config-ref="Web_Service_Consumer" operation="ListInventory" doc:name="List Inventory"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+}]]></dw:set-payload>
+        </dw:transform-message>
+    </flow>
+</mule>
+----
+
+....
+------
+
+== 另请参阅
+
+* 详细了解如何使用 link:/mule-user-guide/v/3.7/dataweave[DataWeave变压器]。
+* 了解如何使用 link:/apikit[APIkit]在Mule中发布REST API。
+* 访问 link:/mule-user-guide/v/3.7/mule-fundamentals[骡子基础]以了解基本知识。

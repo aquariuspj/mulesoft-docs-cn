@@ -1,0 +1,427 @@
+= 迁移OAuth2提供商
+
+来自Mule 4的新OAuth2提供者模块来取代以前的Anypoint Enterprise Security提供者。
+但是，迁移应用程序时需要考虑一些配置更改。
+
+== 全局配置迁移
+
+以下是供应商全局配置中所做的更改以及它们在版本之间的差异。
+
+=== 更改了属性
+
+属性状态：
+
+* 保留：具有相同的名称，类型和位置。
+* 已移动：该属性具有相同的类型和名称，但应该配置的位置已更改。
+* 更改：类型或名称已更改，但位置相同。
+* 已移除：该属性不再存在。
+
+
+[options="header"]
+|======================
+|  Mule 3属性 | 状态 |  Mule 4 Config
+|  {名称{1}}不停 | 名称
+| 提供商名称 | 保留 | 提供商名称
+| 主持人 | 已移除 | 主持人来自*Listener Config*中的Http配置
+| 端口 | 已删除 | 端口取自*Listener Config*中的Http配置
+| 客户端商店参考 | 已更改 | 该属性现在是一个对象存储。需要是ref或Private Object Store定义
+| 授权代码商店参考 | 已更改，已更改 | 现在应将授权代码存储配置为*Authorization Config*的属性，并且应该是对象存储
+| 令牌生成策略 | 已删除 | 可以配置令牌生成的自定义
+| 令牌存储Ref  | 已移动，已更改 | 令牌存储现在应配置为*Token Config*的属性，并且它应该是对象存储
+| 登录页面 | 已移动 | 登录页面被配置为*Authorization Config*的属性
+| 范围 | 保留 | 现在应该用逗号分隔
+| 默认范围 | 保留 | 现在应该用逗号分隔
+| 支持的授权类型 | 保留 | 现在应该用逗号分隔
+| 授权端点路径 | 已更改，已移动 | 可在*Authorization Config*的属性_path_中进行配置
+| 访问令牌端点路径 | 已更改，已移动 | 可在*Token Config*的属性_path_中进行配置
+| 授权Ttl Seconds  | 已删除 | 授权码Ttl将取自*Authorization Code Store*对象库中配置的条目Ttl。
+| 令牌Ttl秒 | 已移动，已更改 | 令牌Ttl将取自*Token Store*对象库。由于代码中的限制，要求该字段也在*TokenConfig*的属性_tokenTtl_和_tokenTtlTimeUnit_中进行配置。 *Token Store* _entryTtl_和*Token Config* _tokenTtl_（和_tokenTtlTimeUnit_）必须相同。
+| 刷新令牌Ttl Seconds  | 已删除 | 刷新标记Ttl将取自*Refresh Token Strategy*中对象存储区configuren的条目Ttl，以防有一个。
+| 连接器 | 已移除 | 传输已从Mule 4中移除，因此该字段不再具有任何意义。
+|  HttpListenerConfig  | 已更改 | 现在它被称为*Listener Config*，它是强制性的
+| 资源所有者安全提供商Ref  | 已更改 |  *Ref*已从该属性的名称中删除。如果配置了Spring Security Provider，则应该使用Spring Module。
+| 客户端安全提供商Ref  | 已更改 |  *Ref*已从该属性的名称中删除。如果配置了Spring Security Provider，则应该使用Spring Module。
+| 启用刷新令牌 | 已删除 | 可使用不同的*Refresh Token Strategy*进行配置
+| 发布新刷新令牌 | 已删除 | 可使用不同的*Refresh Token Strategy*进行配置
+| 费率限制器 | 已更改 | 您无法再从spring bean添加自定义实施。目前仅实施期限费率限制器。
+| 客户端 | 保留 | 每个客户端定义都已更改
+|  Pre Flow  | 已删除 | 此版本不支持预流功能
+|======================
+
+== 商店
+身份验证代码，令牌或刷新令牌存储不再存在，并且没有允许您引用任何这些定制实现的属性。
+任何存储配置现在都通过对象存储完成。
+
+如果需要自定义行为，则应使用对象存储的自定义实现来配置任何这些属性
+
+== 安全提供商
+
+在Mule 4中，我们将应用程序配置与Spring彻底解耦，因此对于通过引用Spring Bean配置的某些属性，配置它们的方式已经改变。
+
+Spring安全提供程序仍然可以使用，但在这种情况下，需要Spring模块才能使应用程序正常工作。
+
+== 刷新令牌属性
+
+在Mule 3中，有2个属性允许刷新令牌行为配置。就像现在我们有不同的刷新令牌策略一样，配置应该按照以下方式完成。
+
+|=================
+|  *Enable Refresh Token*价值 |  *Issue New Refresh Token*价值 |  *Refresh Token Strategy*
+| 假 |   -   | 没有刷新令牌策略
+| 真 | 假 | 单刷新令牌策略
+| 真 | 真 | 多刷新令牌策略
+|=================
+
+== 客户端
+
+在这两个Mule版本中，您都可以定义将被授权向认证服务器发出请求的客户端列表。
+
+除了一些属性名称之外，添加客户端的方式保持不变。由于新版本的限制，必须通过添加_clients_和_client_前缀来更改子元素的名称。
+
+* 重定向Uri（s） - >客户端重定向Uris（s）
+* 授权的授予类型 - >客户授权的授予类型（S）
+* 范围 - >客户范围
+
+== 操作
+
+以下是模块中针对Mule 3的操作以及他们对Mule 4所做的更改
+
+=== 验证客户端
+
+这次手术在Mule 4中被移除。
+
+=== 验证
+
+现在该操作被称为*Validate Token*。
+
+由于OAuth2提供者操作不再链接到HTTP，因此需要用于解析令牌以进行验证的表达式。
+
+在Mule 3中，经过令牌验证后，如果涉及资源所有者身份验证，则使用该资源所有者身份验证创建新的安全上下文。此外，令牌信息的令牌持有者保存在名为_mule.oauth2.access_token_store_holder_的流变量中。 +
+现在，在Mule 4中，相同的信息会有所不同。在令牌验证之后，将使用可由`+#[authentication]+`访问的令牌认证来创建安全上下文。位于变量中的令牌持有者被保存为该令牌认证的属性：`+#[authentication.tokenHolder]+`。同时，如果涉及资源所有者，则可以通过评估`+#[authentication.tokenHolder.resourceOwnerAuthentication]+`来获取信息
+
+=== 创建客户端
+
+除了添加了一个新属性*Fail If Present*之外，该操作保持不变。
+
+*Fail If Present*可让您决定如果具有要添加的相同ID的客户端已存在，该如何处理。
+
+* 如果为true，则操作将失败
+* 如果为false，客户端信息将被更新
+
+=== 删除客户端
+
+操作保持不变。
+
+=== 撤消令牌
+
+操作保持不变。
+
+== 示例
+
+下面是在Mule 3和Mule 4中配置的相同应用程序的示例。
+
+该应用程序有一个OAuth2提供程序，用于授予令牌和一个流程，用于侦听HTTP请求并在处理某些逻辑之前具有令牌验证。
+
+请记住，Mule 4配置使用Spring模块和Object Store连接器。
+
+在这两种情况下，应用程序都被分成多个文件。
+
+对于Mule 3，有2个用于公共配置，另一个用于实际的OAuth2提供程序配置。 +
+对于Mule 4，有3个文件：一个用于bean定义，一个用于公共配置，另一个用于实际的OAuth2 Provider配置。
+
+=== 骡3
+
+==== 通用配置
+[source, xml]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:mule-ss="http://www.mulesoft.org/schema/mule/spring-security"
+    xmlns:ss="http://www.springframework.org/schema/security"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:p="http://www.springframework.org/schema/p"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/spring-security http://www.mulesoft.org/schema/mule/spring-security/current/mule-spring-security.xsd
+        http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security.xsd
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <global-property name="allSupportedGrantTypes"
+                     value="AUTHORIZATION_CODE IMPLICIT RESOURCE_OWNER_PASSWORD_CREDENTIALS CLIENT_CREDENTIALS" />
+
+    <spring:beans>
+        <spring:bean name="tokenGeneratorMockStrategy"
+                     class="org.mule.modules.oauth2.provider.mock.TokenGeneratorMockStrategy" />
+
+        <spring:bean name="rateLimiter"
+                     class="org.mule.modules.oauth2.provider.ratelimit.SimpleInMemoryRateLimiter" />
+
+        <spring:bean name="clientObjectStore"
+                     class="org.mule.util.store.InMemoryObjectStore" />
+        <spring:bean name="authorizationCodeObjectStore"
+                     class="org.mule.util.store.InMemoryObjectStore" />
+        <spring:bean name="tokenObjectStore"
+                     class="org.mule.util.store.InMemoryObjectStore" />
+        <spring:bean name="refreshTokenObjectStore"
+                     class="org.mule.util.store.InMemoryObjectStore" />
+
+        <spring:bean name="clientStore"
+                     class="org.mule.modules.oauth2.provider.client.ObjectStoreClientStore"
+                     p:objectStore-ref="clientObjectStore" />
+
+        <spring:bean name="tokenStore"
+                     class="org.mule.modules.oauth2.provider.token.ObjectStoreTokenStore"
+                     p:refreshTokenObjectStore-ref="refreshTokenObjectStore"
+                     p:accessTokenObjectStore-ref="tokenObjectStore"/>
+
+        <spring:bean name="authorizationCodeStore"
+                     class="org.mule.modules.oauth2.provider.code.ObjectStoreAuthorizationCode"
+                     p:objectStore-ref="authorizationCodeObjectStore" />
+
+        <ss:authentication-manager id="resourceOwnerAuthenticationManager">
+            <ss:authentication-provider>
+                <ss:user-service id="resourceOwnerUserService">
+                    <ss:user name="rousr"
+                             password="ropwd+%"
+                             authorities="RESOURCE_OWNER" />
+                </ss:user-service>
+            </ss:authentication-provider>
+        </ss:authentication-manager>
+
+        <ss:authentication-manager id="clientAuthenticationManager">
+            <ss:authentication-provider>
+                <ss:user-service id="clientUserService">
+                    <ss:user name="clusr"
+                             password="clpwd+%"
+                             authorities="CLIENT" />
+                </ss:user-service>
+            </ss:authentication-provider>
+        </ss:authentication-manager>
+    </spring:beans>
+
+    <mule-ss:security-manager>
+        <mule-ss:delegate-security-provider
+            name="resourceOwnerSecurityProvider"
+            delegate-ref="resourceOwnerAuthenticationManager" />
+        <mule-ss:delegate-security-provider
+            name="clientSecurityProvider"
+            delegate-ref="clientAuthenticationManager" />
+    </mule-ss:security-manager>
+</mule>
+----
+
+
+
+==== 应用程序配置
+[source, xml]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:oauth2-provider="http://www.mulesoft.org/schema/mule/oauth2-provider"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xsi:schemaLocation=
+        "http://www.mulesoft.org/schema/mule/oauth2-provider http://www.mulesoft.org/schema/mule/oauth2-provider/current/mule-oauth2-provider.xsd
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <oauth2-provider:config name="OAuth2Provider"
+                            providerName="Test OAuth2Provider"
+                            loginPage="static/auth.html"
+                            authorizationEndpointPath="authorize"
+                            accessTokenEndpointPath="token"
+                            host="localhost"
+                            port="8081"
+                            resourceOwnerSecurityProvider-ref="resourceOwnerSecurityProvider"
+                            clientSecurityProvider-ref="clientSecurityProvider"
+                            clientStore-ref="clientStore"
+                            tokenStore-ref="tokenStore"
+                            authorizationCodeStore-ref="authorizationCodeStore"
+                            rateLimiter-ref="rateLimiter"
+                            scopes="GUEST USER ADMIN"
+                            defaultScopes="USER"
+                            supportedGrantTypes="${allSupportedGrantTypes}"
+                            authorizationTtlSeconds="600"
+                            tokenTtlSeconds="86400"
+                            refreshTokenTtlSeconds="-1"
+                            enableRefreshToken="true"
+                            issueNewRefreshToken="true">
+
+        <oauth2-provider:clients>
+            <oauth2-provider:client clientId="clientId1"
+                                    secret="clientSecret1"
+                                    principal="clusr"
+                                    type="CONFIDENTIAL">
+                <oauth2-provider:redirect-uris>
+                    <oauth2-provider:redirect-uri>
+                        http://fake/redirect
+                    </oauth2-provider:redirect-uri>
+                </oauth2-provider:redirect-uris>
+                <oauth2-provider:authorized-grant-types>
+                    <oauth2-provider:authorized-grant-type>
+                        AUTHORIZATION_CODE
+                    </oauth2-provider:authorized-grant-type>
+                </oauth2-provider:authorized-grant-types>
+            </oauth2-provider:client>
+        </oauth2-provider:clients>
+    </oauth2-provider:config>
+
+    <flow name="protected-resource-flow">
+        <http:inbound-endpoint host="localhost"
+                               port="8081"
+                               path="protected"/>
+        <oauth2-provider:validate />
+        <flow-ref name="aditionalLogic"/>
+    </flow>
+
+</mule>
+----
+
+=== 骡4
+
+====  Bean配置
+[source, xml]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ss="http://www.springframework.org/schema/security"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-{version}.xsd
+       http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-{version}.xsd">
+
+        <ss:authentication-manager id="resourceOwnerAuthenticationManager">
+            <ss:authentication-provider>
+                <ss:user-service id="resourceOwnerUserService">
+                    <ss:user name="rousr"
+                             password="ropwd+%"
+                             authorities="RESOURCE_OWNER" />
+                </ss:user-service>
+            </ss:authentication-provider>
+        </ss:authentication-manager>
+
+        <ss:authentication-manager id="clientAuthenticationManager">
+            <ss:authentication-provider>
+                <ss:user-service id="clientUserService">
+                    <ss:user name="clusr"
+                             password="clpwd+%"
+                             authorities="CLIENT" />
+                </ss:user-service>
+            </ss:authentication-provider>
+        </ss:authentication-manager>
+</beans>
+
+----
+
+==== 通用配置
+[source, xml]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.mulesoft.org/schema/mule/spring"
+      xmlns:os="http://www.mulesoft.org/schema/mule/os"
+
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/spring http://www.mulesoft.org/schema/mule/spring/current/mule-spring.xsd
+        http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+    <spring:config name="springConfig" files="common-config-beans.xml"/>
+
+    <global-property name="allSupportedGrantTypes" value="AUTHORIZATION_CODE,IMPLICIT,RESOURCE_OWNER_PASSWORD_CREDENTIALS,CLIENT_CREDENTIALS"/>
+
+    <os:object-store name="clientObjectStore"
+                     persistent="true"/>
+    <os:object-store name="authorizationCodeObjectStore"
+                     entryTtl="600"
+                     entryTtlUnit="SECONDS"
+                     persistent="true"/>
+    <os:object-store name="tokenObjectStore"
+                     entryTtl="86400"
+                     entryTtlUnit="SECONDS"
+                     persistent="true"/>
+
+    <spring:security-manager>
+        <spring:delegate-security-provider name="clientSecurityProvider"
+                                           delegate-ref="clientAuthenticationManager"/>
+        <spring:delegate-security-provider name="resourceOwnerSecurityProvider"
+                                           delegate-ref="resourceOwnerAuthenticationManager"/>
+    </spring:security-manager>
+
+</mule>
+----
+
+==== 应用程序配置
+[source, xml]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:oauth2-provider="http://www.mulesoft.org/schema/mule/oauth2-provider"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/oauth2-provider http://www.mulesoft.org/schema/mule/oauth2-provider/current/mule-oauth2-provider.xsd
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <http:listener-config name="listenerConfig">
+        <http:listener-connection host="localhost"
+                                  port="8081"/>
+    </http:listener-config>
+
+
+    <oauth2-provider:config name="OAuth2Provider"
+                            providerName="Test OAuth2Provider"
+                            resourceOwnerSecurityProvider="resourceOwnerSecurityProvider"
+                            clientSecurityProvider="clientSecurityProvider"
+                            supportedGrantTypes="${allSupportedGrantTypes}"
+                            listenerConfig="listenerConfig"
+                            clientStore="clientObjectStore"
+                            scopes="GUEST,USER,ADMIN"
+                            defaultScopes="USER"
+                            supportedGrantTypes="${allSupportedGrantTypes}">
+        <oauth2-provider:client-validation-rate-limiter>
+            <oauth2-provider:period-rate-limiter/>
+        </oauth2-provider:client-validation-rate-limiter>
+        <oauth2-provider:token-config path="/token"
+                                      tokenStore="tokenObjectStore"
+                                      tokenTtl="86400"
+                                      tokenTtlTimeUnit="SECONDS">
+            <oauth2-provider:refresh-token-strategy>
+                <oauth2-provider:multiple-refresh-tokens/>
+            </oauth2-provider:refresh-token-strategy>
+        </oauth2-provider:token-config
+        <oauth2-provider:authorization-config loginPage="static/auth.html"
+                                              path="/authorize"
+                                              authorizationCodeStore="authorizationCodeObjectStore"/>
+        <oauth2-provider:clients>
+            <oauth2-provider:client clientId="clientId1"
+                                    secret="clientSecret1"
+                                    principal="clusr"
+                                    type="CONFIDENTIAL">
+                <oauth2-provider:client-redirect-uris>
+                    <oauth2-provider:client-redirect-uri>
+                        http://fake/redirect
+                    </oauth2-provider:client-redirect-uri>
+                </oauth2-provider:client-redirect-uris>
+                <oauth2-provider:client-authorized-grant-types>
+                    <oauth2-provider:client-authorized-grant-type>
+                        AUTHORIZATION_CODE
+                    </oauth2-provider:client-authorized-grant-type>
+                </oauth2-provider:client-authorized-grant-types>
+            </oauth2-provider:client>
+        </oauth2-provider:clients>
+    </oauth2-provider:config>
+
+
+    <flow name="protected-resource-flow">
+        <http:listener path="/protected" config-ref="listenerConfig"/>
+        <oauth2-provider:validate-token config-ref="OAuth2Provider"/>
+        <flow-ref name="aditionalLogic"/>
+    </flow>
+
+</mule>
+----
+
+
+== 另请参阅
+*  link:/connectors/v/latest/oauth2-provider-documentation-reference[OAuth2提供程序文档参考]

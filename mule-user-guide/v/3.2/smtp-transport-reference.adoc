@@ -1,0 +1,473 @@
+=  SMTP传输参考
+
+== 介绍
+
+SMTP传输可用于使用`javax.mail` API通过SMTP发送邮件。该实现支持CC / BCC / ReplyTo地址，附件和自定义标题属性。它还为`javax.mail.Message`转换提供支持。 SMTPS连接器使用`javax.mail` API启用基于SSL的SMTP。它支持SMTP传输的所有元素和属性，以及为SSL连接设置客户端密钥存储和信任存储的一些必需属性。
+
+TLS / SSL连接代表实体进行，实体可以是匿名的或由证书标识。 _key store_提供识别建立连接的实体所需的证书和相关私钥。此外，连接到可信系统。受信任系统的公用证书存储在_trust store_中，用于验证与远程系统建立的连接是否与期望的身份匹配。
+
+== 传输信息
+
+====
+xslt：找不到页面：空间传输特征矩阵MULECDEV
+
+无法呈现\ {include}无法使用键找到空格：MULECDEV
+====
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source, xml, linenums]
+----
+xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp"
+xmlns:smtps="http://www.mulesoft.org/schema/mule/smtps"
+----
+
+XML架构位置：
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/3.1/mule-smtp.xsd
+http://www.mulesoft.org/schema/mule/smtps http://www.mulesoft.org/schema/mule/smtps/3.1/mule-smtps.xsd
+----
+
+连接器语法：
+
+[source, xml, linenums]
+----
+<smtp:connector name="smtpConnector" bccAddresses="abc@example.com" ccAddresses="bcd@example.com" contentType="foo/bar"
+fromAddress="cde@example.com" replyToAddresses="def@example.com"
+subject="subject">
+  <smtp:header key="foo" value="bar" />
+  <smtp:header key="baz" value="boz" />
+</smtp:connector>
+
+<smtps:connector name="smtpsConnector" bccAddresses="abc@example.com" ccAddresses="bcd@example.com" contentType="foo/bar"
+fromAddress="cde@example.com" replyToAddresses="def@example.com"
+subject="subject">
+  <smtps:header key="foo" value="bar" />
+  <smtps:header key="baz" value="boz" />
+  <smtps:tls-client path="clientKeystore" storePassword="mulepassword" />
+  <smtps:tls-trust-store path="greenmail-truststore" storePassword="password" />
+</smtps:connector>
+
+<smtp:gmail-connector name="smtpGmailConnector"  bccAddresses="abc@example.com" ccAddresses="bcd@example.com" contentType="foo/bar"
+fromAddress="cde@example.com" replyToAddresses="def@example.com"
+subject="subject">
+  <smtp:header key="foo" value="bar" />
+  <smtp:header key="baz" value="boz" />
+</smtp:gmail-connector>
+----
+
+端点语法：+
+你可以用两种不同的方式定义你的端点：
+
+. 前缀端点：
++
+
+[source, xml, linenums]
+----
+<smtp:outbound-endpoint host="localhost" port="65437" from="steve@mycompany.com"
+                            to="bob@example.com" subject="Please verify your account details"/>
+<smtps:outbound-endpoint host="localhost" port="65437" from="steve@mycompany.com"
+                            to="bob@example.com" subject="Please verify your account details"/>
+----
+
+. 没有前缀的URI：
++
+
+[source, code, linenums]
+----
+smtp://muletestbox:123456@smtp.mail.yahoo.co.uk?address=dave@mycompany.com
+smtps://muletestbox:123456@smtp.mail.yahoo.co.uk?address=dave@mycompany.com
+----
+
+有关更多信息，请参阅下面的部分。
+
+== 特点
+
+* 在出站端点上配置电子邮件访问很简单
+* 轻松配置TLS安全性
+
+== 用法
+
+如果您想在您的配置中包含SMTP电子邮件传输，那么这些是您需要定义的命名空间：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+       http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/3.1/mule-smtp.xsd">
+...
+----
+
+安全版本：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:smtps="http://www.mulesoft.org/schema/mule/smtps"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+       http://www.mulesoft.org/schema/mule/smtps http://www.mulesoft.org/schema/mule/smtps/3.1/mule-smtps.xsd">
+----
+
+然后您需要按照以下所述配置连接器和端点。
+
+=== 配置示例
+
+假设您的首席财务官需要所有处理订单的电子邮件通知。以下配置将选取“已处理”目录中的任何文件，将它们转换为字符串并将其作为电子邮件正文发送给CFO。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:smtps="http://www.mulesoft.org/schema/mule/smtps"
+       xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+       xmlns:email="http://www.mulesoft.org/schema/mule/email"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.1/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/smtps http://www.mulesoft.org/schema/mule/smtps/3.1/mule-smtps.xsd
+       http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/3.1/mule-email.xsd
+       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.1/mule-vm.xsd">
+
+    <smtp:connector name="smtpConnector"  />
+
+    <flow name="processed-orders">
+        <file:inbound-endpoint path="/tmp/processed"> ❶
+            <file:file-to-string-transformer/> ❷
+        </file:inbound-endpoint>
+        <smtps:outbound-endpoint host="smtpsServer" port="25" from="bob" subject="processed order" to="cfo@example.com"> ❸
+            <email:string-to-email-transformer/> ❹
+        </smtps:outbound-endpoint>
+    </flow>
+</mule>
+----
+
+该配置定义了一个入站文件端点，该端点在'/ tmp / processed'目录中查找，并将找到的任何文件转换为字符串❷。出站smtp服务器在defined上定义。字符串到电子邮件转换器❹会在发送电子邮件之前将字符串转换为电子邮件格式。
+
+安全版本：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:smtps="http://www.mulesoft.org/schema/mule/smtps"
+       xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+       xmlns:email="http://www.mulesoft.org/schema/mule/email"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.1/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/smtps http://www.mulesoft.org/schema/mule/smtps/3.1/mule-smtps.xsd
+       http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/3.1/mule-email.xsd
+       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.1/mule-vm.xsd">
+
+    <smtps:connector name="smtpsConnector"> ❶
+        <smtps:tls-client path="clientKeystore" storePassword="mulepassword" />
+        <smtps:tls-trust-store path="greenmail-truststore" storePassword="password" />
+    </smtps:connector>
+
+    <flow name="processed-orders">
+        <file:inbound-endpoint path="/tmp/processed"> ❷
+            <file:file-to-string-transformer/> ❸
+        </file:inbound-endpoint>
+        <smtps:outbound-endpoint host="smtpsServer" port="25" from="bob" subject="processed order" to="cfo@example.com"> ❹
+            <email:string-to-email-transformer/> ❺
+        </smtps:outbound-endpoint>
+    </flow>
+</mule>
+----
+
+smtps连接器具有在❶上定义的TLS客户端和服务器密钥库信息。入站文件端点在'/ tmp / processed'目录中查找，并将找到的任何文件转换为字符串❸。出站smtp服务器在defined上定义。字符串到电子邮件转换器❺会在发送电子邮件之前将字符串转换为电子邮件格式。
+
+== 配置参考
+
+=== 连接器
+
+SMTP连接器支持所有 link:/mule-user-guide/v/3.2/configuring-a-transport[常见的连接器属性和属性]和以下可选元素和属性：
+
+[%header%autowidth.spread]
+|===
+| {属性{1}}说明 |缺省 |必
+| bccAddresses  |用于盲拷贝的逗号分隔地址列表。 |   |假
+| ccAddresses  |副本的逗号分隔地址列表。 |   |假
+| contentType  |传出邮件的MIME类型。 |   |错误
+| fromAddress  |传出邮件的发件人地址。 |   | False
+| replyToAddresses  |传出消息的答复地址。 |   |错误
+|主题 |如果邮件中没有设置，则为外发邮件的默认主题。 |   |假
+|===
+
+[%header%autowidth.spread]
+|===
+|元素 |说明
+|标题 |添加到消息中的附加标题名称和值。
+|===
+
+对于安全版本，还需要以下元素：
+
+[%header,cols="2*"]
+|===
+|元素 |说明
+| tls-client a |
+使用以下属性配置客户端密钥存储区：
+
+* 路径：包含公共证书和私钥用于识别的密钥库的位置（将相对于当前类路径和文件系统进行解析，如果可能的话）
+*  storePassword：用于保护密钥库的密码
+* 类：使用的密钥库类型（Java类名称）
+
+| tls-trust-store a |
+配置信任库。属性是：
+
+* 路径：包含可信服务器公用证书的信任存储的位置（将相对于当前类路径和文件系统进行解析，如果可能的话）
+*  storePassword：用于保护信任存储的密码
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+       http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/3.0/mule-smtp.xsd">
+...
+<smtp:connector name="smtpConnector" bccAddresses="abc@example.com" ccAddresses="bcd@example.com" contentType="foo/bar"
+fromAddress="cde@example.com" replyToAddresses="def@example.com"
+subject="subject">
+  <smtp:header key="foo" value="bar" />
+  <smtp:header key="baz" value="boz" />
+</smtp:connector>
+----
+
+安全版本：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:smtps="http://www.mulesoft.org/schema/mule/smtps"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+       http://www.mulesoft.org/schema/mule/smtps http://www.mulesoft.org/schema/mule/smtps/3.0/mule-smtps.xsd">
+
+<smtps:connector name="smtpsConnector">
+  <smtps:tls-client path="clientKeystore" storePassword="mulepassword" />
+  <smtps:tls-trust-store path="greenmail-truststore" storePassword="password" />
+</smtps:connector>
+<model name="test">
+  <service name="relay">
+    <inbound>
+      <vm:inbound-endpoint path="send" />
+  </inbound>
+  <outbound>
+    <pass-through-router>
+      <smtps:outbound-endpoint host="localhost" port="65439" to="bob@example.com" />
+    </pass-through-router>
+  </outbound>
+...
+----
+
+gmail连接器连接器支持上述所有功能。 +
+例如：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+       http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/3.0/mule-smtp.xsd">
+...
+<smtp:gmail-connector name="smtpGmailConnector"  bccAddresses="abc@example.com" ccAddresses="bcd@example.com" contentType="foo/bar"
+fromAddress="cde@example.com" replyToAddresses="def@example.com"
+subject="subject">
+  <smtp:header key="foo" value="bar" />
+  <smtp:header key="baz" value="boz" />
+</smtp:gmail-connector>
+----
+
+=== 端点
+
+SMTP端点描述了有关SMTP服务器和从SMTP端点发送的消息的收件人的详细信息。您 link:/mule-user-guide/v/3.2/configuring-endpoints[配置端点]与其他运输方式一样，具有以下附加属性：
+
+[%header%autowidth.spread]
+|==============
+| {属性{1}}说明
+|用户 |邮箱所有者的用户名
+|密码 |用户的密码
+|主机 | SMTP服务器的IP地址，例如www.mulesoft.com，localhost或127.0.0.1
+|端口 | SMTP服务器的端口号
+|到 |电子邮件的目的地
+来自 |的{​​{0}}电子邮件发件人的地址
+|主题 |电子邮件主题
+| cc  |要在此电子邮件上复制的电子邮件地址的逗号分隔列表
+|密件抄送 |用逗号分隔的电子邮件地址列表，以便在此电子邮件中进行盲目复制
+| replyTo  |有人回复电子邮件时默认使用的地址
+|==============
+
+例如：
+
+[source, xml, linenums]
+----
+<outbound>
+  <pass-through-router>
+    <smtp:outbound-endpoint host="localhost" port="65437" from="steve@mycompany.com"
+                            to="bob@example.com" subject="Please verify your account details"/>
+  </pass-through-router>
+</outbound>
+----
+
+安全版本：
+
+[source, xml, linenums]
+----
+<outbound>
+  <pass-through-router>
+    <smtps:outbound-endpoint host="localhost" port="65437" from="steve@mycompany.com"
+                            to="bob@example.com" subject="Please verify your account details"/>
+  </pass-through-router>
+</outbound>
+----
+
+您还可以使用URI语法定义端点：
+
+[source, xml, linenums]
+----
+<outbound-endpoint address="smtp://muletestbox:123456@smtp.mail.yahoo.co.uk?address=dave@mycompany.com"/>
+<outbound-endpoint address="smtps://muletestbox:123456@smtp.mail.yahoo.co.uk?address=dave@mycompany.com"/>
+----
+
+这将使用`smtp.mail.yahoo.co.uk`（使用默认的SMTP端口）将邮件发送到地址`dave@mycompany.com`。 SMTP请求使用用户名`muletestbox`和密码`123456`进行身份验证。
+
+====
+xslt：由于以下原因，请阅读http://www.mulesoft.org/xslt/mule/schemadoc/3.1/individual-transport-or-module-wiki.xsl错误：java.io.IOException：服务器返回的HTTP响应代码：401 for URL：http://svn.codehaus.org/mule/branches/mule-3.1.x/tools/schemadocs/src/main/resources/xslt//individual-transport-or-module-wiki.xsl
+====
+
+这里是你如何在你的Mule配置文件中定义变压器：
+
+[source, xml, linenums]
+----
+<email:bytes-to-mime-transformer encoding="" ignoreBadInput="" mimeType="" name="" returnClass="" xsi:type=""/>
+<email:email-to-string-transformer encoding="" ignoreBadInput="" mimeType="" name="" returnClass="" xsi:type=""/>
+<email:mime-to-bytes-transformer encoding="" ignoreBadInput="" mimeType="" name="" returnClass="" xsi:type=""/>
+<email:object-to-mime-transformer encoding="" ignoreBadInput="" mimeType="" name="" returnClass=""
+useInboundAttachments="true" useOutboundAttachments="true"/>
+{Note}Need to explain attributes somewhere; can we pull them in from xsd?{Note}
+<email:string-to-email-transformer encoding="" ignoreBadInput="" mimeType="" name="" returnClass="" xsi:type=""/>
+----
+
+每个变压器都支持所有常见的变压器属性和属性：
+
+====
+xslt：请阅读http://www.mulesource.org/xslt/mule/schemadoc/3.0/single-element-wiki.xsl错误，因为：java.io.IOException：服务器返回HTTP响应代码：401代表URL：http： //svn.codehaus.org/mule/branches/mule-3.1.x/tools/schemadocs/src/main/resources/xslt//single-element-wiki.xsl
+====
+
+对象到MIME变换器具有以下属性：
+
+[%header%autowidth.spread]
+|=========
+|属性 |描述 |默认值
+| useInboundAttachments  |是否将输入消息中的入站附件转换为MIME部分。 | true
+| useOutboundAttachments  |是否将输入消息中的出站附件转换为MIME部分。 | true
+|=========
+
+要使用这些转换器，请确保在您的mule配置中包含“email”命名空间。
+
+
+
+=== 过滤器
+
+可以在端点上设置过滤器来过滤掉任何不需要的消息。电子邮件传输提供了几个过滤器，可以直接使用或扩展以实现自定义过滤规则。
+
+[%header%autowidth.spread]
+|============
+| {过滤{1}}说明
+| org.mule.providers.email.filters.AbstractMailFilter  |必须由任何其他邮件过滤器扩展的基本过滤器实现。
+| org.mule.providers.email.filters.MailSubjectRegExFilter  |将正则表达式应用于邮件主题。
+|============
+
+这是您在Mule配置中定义MailSubjectRegExFilter的方法：
+
+[source, xml, linenums]
+----
+<message-property-filter pattern="to=barney@mule.org"/>
+----
+
+'pattern'属性是一个正则表达式模式。这被定义为java.util.regex.Pattern。
+
+== 交换模式/功能
+
+（见[运输矩阵]）
+
+== 架构参考
+
+您可以查看SMTP电子邮件传输 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_smtp/namespace-overview.html[这里]的完整模式。安全版本是 link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_smtps/namespace-overview.html[命名空间概述]。
+
+==  Java API参考
+
+可以找到此传输的Javadoc http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/email/package-summary.html[这里]。
+
+==  Maven模块
+
+电子邮件传输由mule-transport-email模块执行。您可以在传输/电子邮件中找到电子邮件传输的来源。
+
+如果您使用Maven构建应用程序，请使用以下依赖片段将电子邮件传输包含在您的项目中：
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-email</artifactId>
+</dependency>
+----
+
+====
+无法呈现\ {include}无法使用键找到空格：MULE3INSTALL
+====
+
+= 限制
+
+以下已知的限制会影响电子邮件传输：
+
+*  http://www.mulesoft.org/jira/browse/BL-362[重试策略不适用于电子邮件传输]
+*  http://www.mulesoft.org/jira/browse/BL-126[电子邮件传输不支持超时]
+*  http://www.mulesoft.org/jira/browse/MULE-3662[无法将同一对象发送给不同的电子邮件用户]
+*  http://www.mulesoft.org/jira/browse/MULE-1252[MailSubjectRegExFilter无法处理带有附件的邮件]
+
+到目前为止，所有配置都是静态的，因为您可以定义端点配置中的所有信息。但是，您可以设置连接器属性来控制传出消息的设置。这些属性将覆盖端点属性。如果您始终想要动态设置电子邮件地址，则可以在SMTP端点上忽略`to`属性（或者`address`参数，如果您使用的是URI}。
+
+[TIP]
+*Escape Your Credentials* +
+如果您使用URI风格的端点并且包含用户名和密码，请转义任何对URI不合法的字符。只允许使用字母，数字，"-"，"_"，"."和"+"。例如，如果用户名是`user@myco.com`，则应将其输入为`user%40myco.com`。

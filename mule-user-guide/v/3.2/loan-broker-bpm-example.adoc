@@ -1,0 +1,104 @@
+= 贷款代理BPM示例
+
+BPM示例演示了如何使用业务流程引擎（JBoss jBPM）编排贷款经纪人应用程序。观察流程定义文件（可使用GUI流程编辑器创建和维护）中流程流和决策逻辑的清晰定义，而系统集成和消息传递由Mule处理。
+
+== 运行示例
+
+. 确保您已符合先决条件并根据[说明]安装了Mule。
+. 在命令行中，导航到您的Mule主目录下的`examples/loanbroker-bpm`目录。
+. 将预构建的示例zip复制到应用程序文件夹（`$MULE_HOME/apps`），并在Mule尚未启动时启动它。
+. 在浏览器中转到以下URI以发送贷款请求（有一些内置的默认请求值）：http：// localhost：12081
+. 在Mule日志文件中，您应该看到流程执行并从其中一个库中看到如下所示的响应消息：
++
+----
+ Returning Rate is: ABigBank, rate: 6.379575743481158
+----
+
+. 现在，修改请求的贷款金额，并根据金额查看不同银行的响应：http：// localhost：12081 /？amount = 100
+. 尝试不同的金额（100，10000，20000）。也尝试无效的数字来查看错误处理的行动。
+
+=== 构建示例
+
+从示例源文件夹运行`mvn`。这将编译示例类，生成应用程序zip文件并将其复制到`$MULE_HOME/apps`。
+
+== 穿过Mule配置
+
+配置的核心是一个接收和发送Mule消息的业务流程引擎。接收到的消息将启动或推进流程执行，流程执行将向Mule端点发送消息。
+
+*Process Engine Receives and Generates Events*
+
+[source,xml]
+----
+<flow name="ToBPMS">    <composite-source>        <inbound-endpoint ref="CustomerRequests" />        <inbound-endpoint ref="CreditProfiles" />    </composite-source>    <bpm:process processName="LoanBroker" processDefinition="loan-broker-process.jpdl.xml" /></flow>
+----
+
+
+流程引擎是 http://www.jboss.org/jbpm[JBoss jBPM]的一个实例，并使用默认值进行配置，如下所示。有关更多信息，请参阅 link:/mule-user-guide/v/3.2/bpm-module-reference[BPM模块参考]文档。
+
+*jBPM Process Engine*
+
+[source,xml]
+----
+<bpm:jbpm name="jbpm" />
+----
+
+== 遍历jBPM流程
+
+到达BPM流程的第一条消息将是客户的贷款请求。此消息触发BPMS启动"LoanBroker"进程的新实例。消息有效载荷将被存储到`customerRequest`过程变量中。
+
+*Start State*
+
+[source,xml]
+----
+<mule-receive name="incomingCustomerRequest" endpoint="CustomerRequests" var="customerRequest">
+----
+
+
+下一步是将客户的信息发送给信用机构并获得他们的信用报告。我们发送给信用机构的有效载荷来自我们刚存储为流程变量的`customerRequest`。
+
+*Generate a Message to Credit Agency*
+
+[source,xml]
+----
+<mule-send name="sendToCreditAgency" expr="#{customerRequest.customer}" endpoint="CreditAgency" synchronous="false">
+----
+
+
+对信贷机构的请求是异步的，所以我们现在转换到等待状态，直到收到信用机构的回复。请注意，如果在四小时内未收到回复，该流程会超时并需要人工干预。
+
+*Wait state*
+
+[source,xml]
+----
+<mule-receive name="waitForCreditAgency" endpoint="CreditProfiles" var="creditProfile">    <timer duedate="4 hours" />
+----
+
+
+一旦收到信用机构的信息，下一步就会根据我们迄今收到的两条信息（`customerRequest`和`creditProfile`）准备贷款申请。这将使用jPDL的标准`<java>`活动调用POJO方法。
+
+*Prepare Loan Quote Request*
+
+[source,xml]
+----
+<java name="prepareLoanQuoteRequest" class="org.mule.example.loanbroker.bpm.activity.PrepareLoanQuoteRequest" method="prepareRequest" var="loanRequest">    <arg><object expr="#{customerRequest}"/></arg>    <arg><object expr="#{creditProfile}"/></arg>    <transition to="sendToBanks" /></java>
+----
+
+
+现在有趣的部分是：流程本身决定三家银行中的哪一家（如果有的话）向这位客户申请贷款。贷款金额，客户的信用记录和信用评分都被考虑在内。如果客户没有资格根据这些标准向三家银行的任何一家贷款，则贷款将被拒绝。
+
+*Decision Node*
+
+[source,xml]
+----
+<decision name="sendToBanks">    <transition to="sendToBigBank">        <condition expr="#{customerRequest.loanAmount >= 20000}" />        <condition expr="#{creditProfile.creditHistory >= 24}" />        <condition expr="#{creditProfile.creditScore >= 5}" />    </transition>    <transition to="sendToMediumBank">        <condition expr="#{customerRequest.loanAmount >= 10000}" />        <condition expr="#{creditProfile.creditHistory >= 12}" />        <condition expr="#{creditProfile.creditScore >= 3}" />    </transition>    <transition to="sendToSmallBank">        <condition expr="#{creditProfile.creditHistory >= 6}" />        <condition expr="#{creditProfile.creditScore >= 1}" />    </transition>    <!-- If the credit info. doesn't meet minimum requirements based on the loan amount, the loan is just denied. -->    <transition to="loanDenied" /></decision>
+----
+
+
+来自银行的最终贷款报价将被验证并发回给客户，并且该流程将以两种最终状态之一结束：`loanApproved`或`loanDenied`，具体取决于结果。
+
+*Send Final Response and End Process*
+
+[source,xml]
+----
+<mule-send name="sendCustomerResponse" expr="#{loanQuote}" endpoint="CustomerResponses">    <transition to="loanApproved" /></mule-send>  <end name="loanApproved" /><end name="loanDenied" />
+----

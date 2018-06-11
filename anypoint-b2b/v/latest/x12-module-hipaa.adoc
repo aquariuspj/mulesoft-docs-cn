@@ -1,0 +1,428 @@
+=  X12模块HIPAA
+:keywords: b2b, x12, schema, module, edi
+
+除了基本的X12标准外，X12模块还支持基于X12版本005010的HIPAA（健康保险可移植性和责任法案）标准。
+
+X12模块HIPAA支持包括：
+
+*  X12 HIPAA EDI消息读取，消息验证和消息写入
+* 与DataSense和DataWeave集成
+{0}} 005010X212,005010X214,005010X217,005010X218,005010X220A1,005010X221A1,005010X222A2,005010X223A2的HIPAA消息包。 005010X223A3,005010X224A3和005010X279A1
+* 自定义基本X12 HIPAA模式的能力
+
+与X12模块一起使用HIPAA的大多数方面与使用标准X12相同。主要区别是：
+
+* 模式的形式
+* 执行的验证的范围和类型
+* 数据结构表示
+
+提供的HIPAA模式使用与基本X12模式不同的结构。用于HIPAA的结构反映了在不同目的的事务集中的不同位置使用相同的段的方式，并且通常对代码集和字段用法有不同的要求。为了帮助区分不同的用法，HIPAA模式使用全名作为段密钥。这与基本X12标准使用的方法不同，其中段键与段标签一起使用数字前缀。
+
+HIPAA模式还包括为元素定义的代码集的详细信息。数据在解析和写入事务集时都针对这些代码集进行验证。
+
+此页面有助于提供有关使用X12模块用于HIPAA事务集的详细信息，以及用法与标准X12的不同之处。
+
+== 配置HIPAA使用情况
+
+要为HIPAA事务集使用X12模块连接器，您必须：
+
+* 选择一个或多个要使用的HIPAA模式。
+* 将snipValidationType配置参数设置为'TYPE2_HIPAA'
+
+=== 确定HIPAA架构位置
+
+要使用连接器，您需要知道项目中模式的位置。如果您使用开箱即用的HIPAA架构，而不是自定义任何内容，架构位置将遵循`/hipaa/{version}/{transaction-set}.esl`模式。例如，如果您使用的是`005010X222A2`版本和837交易集，那么您的模式位置是`/hipaa/005010X222A2/837.esl`。
+
+如果您使用的是修改的HIPAA架构，则应该将架构放在src / main / app目录下，并使用`${app.home}`引用该位置。例如，如果您已将HIPAA 837架构置于src / main / app / mypartner / 837.esl之下，则架构位置为`${app.home}/mypartner/837.esl`。
+
+== 配置X12模块
+
+在安装连接器并配置模式之后，您可以开始使用连接器。
+
+=== 可视化编辑器
+
+按照以下步骤在Mule应用程序中创建全局X12模块配置：
+
+. 点击画布底部的全局元素标签，然后点击创建。
+. 在选择全局类型向导中，使用过滤器定位并选择X12模块，然后单击确定。
+. 根据连接器参考配置参数。
+. 单击确定以保存全局连接器配置。
+. 返回到Studio中的消息流选项卡。
+
+===  XML编辑器或独立
+
+确保您已将EDI名称空间包含在配置文件中。
+
+按照以下步骤在应用程序中配置EDI模块。
+
+. 使用以下全局配置代码在流的外部和上方创建全局ServiceNow配置。
++
+[source, xml, linenums]
+----
+<x12-edi:config name="X12_EDI" snipValidationType="TYPE2_HIPAA" doc:name="X12 EDI">
+    <x12-edi:schemas>
+        <x12-edi:schema>/hipaa/005010X212/276.esl</x12-edi:schema>
+    </x12-edi:schemas>
+</x12-edi:config>
+----
++
+. 使用以下指南配置连接器供您的贸易伙伴使用。
+
+在为X12模块设置全局元素后，配置模式，确认，ID和解析器选项。
+
+=== 设置您的架构位置
+
+您只能在Anypoint Studio XML视图中配置模式位置。
+
+使用上面确定的模式位置，通过单击Studio中的配置XML切换到XML视图，并通过为每个文档类型添加一个`edi:schema`元素来修改您的X12模块配置，以包含您希望包含的所有模式的列表：
+
+[source, xml, linenums]
+----
+<x12-edi:config name="X12_EDI" snipValidationType="TYPE2_HIPAA" doc:name="X12 EDI">
+    <x12-edi:schemas>
+        <x12-edi:schema>/hipaa/005010X212/276.esl</x12-edi:schema>
+    </x12-edi:schemas>
+</x12-edi:config>
+----
+
+=== 设置您的X12交换ID
+
+您可以在X12模块连接器配置上为您和贸易伙伴配置交换ID，交换ID限定符和组应用程序ID。
+
+自我识别参数识别您的贸易伙伴关系的一方，而伙伴识别参数识别您的贸易伙伴。在编写EDI消息以提供交换ID，交换ID限定符或组应用程序ID时使用您设置的值，并在接收消息中进行验证。如果您不想限制传入消息，可以将其留空，并在写入操作或实际传出消息上设置传出消息的值。在写入操作上设置的值会覆盖连接器配置，并且直接在消息上设置的值会覆盖连接器配置和写入操作中设置的任何值。
+
+== 了解X12消息结构
+
+该连接器可以将X12文档读入或写入规范的EDI消息结构。此结构表示为Java地图和列表的层次结构，可以使用DataWeave或代码进行操作。每个事务都有自己的结构，如前面概述的模式中所定义的。
+
+该消息本身包含以下键（其中一些仅适用于读操作或写操作，如所示）：
+
+[%header%autowidth.spread]
+|===
+|密钥名称 |说明
+|分隔符（可选） |用于消息的分隔符（基于读取操作处理的最后一个交换进行设置）。如果设置为写入操作，则会覆盖模块配置中的值。字符串中的字符根据位置进行解释，顺序如下：（数据分隔符），（子元素分隔符），（重复分隔符或`U`，如果没有）（段终止符）。
+|错误（只读） |所有错误的列表，包括解析消息时发现的非致命错误。请参阅下面的阅读和验证EDI消息部分中的X12Error结构描述。
+| FunctionalAcksGenerated（只读） |在读取操作期间由模块生成的997或999个确认的列表。要发送确认，请参阅下面的发送确认部分。
+|组（仅写入） |编写组时，GS组页眉段值的映射用作默认值。
+|交换（只写） |编写交换时用作默认值的ISA交换标题段值的映射。
+| InterchangeAcksGenerated（只读） |模块在​​读取操作期间生成的TA1确认列表。
+| InterchangeAcksReceived（只读） |读取操作期间模块接收到的TA1确认的列表。
+| InterchangeAcksToSend（只写） |模块在​​写操作期间发送的TA1确认列表。
+| Transactions  |在读取操作期间由模块读取的或在写入操作期间由模块发送的事务集的层次结构。此顶级密钥的值是标准版本作为密钥的映射，格式为v005010（例如）。例如，如果您使用的是版本号为005010 850和855的交易集，则交易将包含带有密钥v005010的地图。这个密钥的值将是另一个映射，这个映射有两个密钥850和855.其中每个密钥都包含一个单独的850和855事务集列表，然后可以处理。如果您使用的是997个功能确认，则997是997个交易集列表的关键。
+|===
+
+个人交易集有他们自己的地图，具有以下关键字：
+
+[%header%autowidth.spread]
+|===
+|密钥名称 |说明
+|详细信息 |事务集的详细信息部分中的段或循环的映射。值是针对最多发生一次的段或循环的映射，可以重复的值的映射列表。
+|错误（只读） |与事务集关联的错误列表。 （请参阅下面的阅读和验证EDI消息部分中的X12Error类描述。）
+|组 | GS组标题段值的映射。读取消息时，此映射是封闭组中的实际数据（从该组中的所有事务集链接的单个映射）。编写消息时，这些值用于创建封闭组此值不在此映射中填充的值默认为消息级别的组映射中的值。
+|标题 |事务集标题部分中的段或循环的映射。值是至多出现一次的段或循环的映射，以及可能重复的值的映射列表。
+| Id  |交易ID，它必须与包含交易列表的密钥相匹配。
+|交换 | ISA交换标题段值的映射。读取消息时，此地图是封闭交换中的实际数据（从交换中的所有交易集链接的单个地图）。编写消息时，这些值用于创建封闭交换（将具有相同交换值的交易收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值默认为消息级别的交换映射中的值。
+|名称 |交易集名称。
+| SetHeader  | ST事务设置标题段值的映射。这给出了读取操作的实际标题数据，并允许您为写入操作提供配置设置的覆盖。
+|摘要 |事务集摘要部分中的段或循环的映射。值是至多出现一次的段或循环的映射，以及可能重复的值的映射列表。
+|===
+
+与X12模式一样，HIPAA模式不会分为`heading`，`detail`和`summary`部分。他们改为使用可以以各种方式组合的多个区域。有关详情，请参阅下面的区域部分。
+
+生成的997/999功能确认事务与处理交换信息时收到的消息不同：
+
+[%header%autowidth.spread]
+|===
+|密钥名称 |说明
+|交换 | ISA交换标题段值的映射。对于由接收处理生成的功能性确认，此映射是与发送方和接收方标识组件（ISA05 / ISA06和ISA07 / ISA08）互换的包含交换数据的副本。编写消息时，这些值用于创建封闭交换（将具有相同交换值的交易收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值默认为消息级别的交换映射中的值。
+|===
+
+TA1交换确认以表示TA1分段数据的地图形式出现，并与相应交换处的数据相关联：
+
+[%header%autowidth.spread]
+|===
+|密钥名称 |说明
+|交换 | ISA交换标题段值的映射。对于由接收处理生成的TA1确认，此映射是交换数据的副本，它将TA1与发送方和接收方标识组件（ISA05 / ISA06和ISA07 / ISA08）互换。编写消息时，这些值用于创建封闭交换（将具有相同交换值的交易收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值默认为消息级别的交换映射中的值。
+|===
+
+== 时间字段
+
+所有X12和HIPAA时间字段均以毫秒为单位的整数值表示。
+例如，如果消息的值为`024020`，则为其DataWeave映射
+显示为`9620000`毫秒。
+
+值`024020`的格式为"HHMMSS"，因此如果我们将其转换为毫秒，则需要执行以下操作：
+
+[source]
+----
+(02*3600000) + (40*60000) + (20*1000) = 9620000
+----
+
+== 读取和验证HIPAA EDI消息
+
+要阅读HIPAA消息，请在"X12 EDI"的调色板中搜索并将X12模块拖入流中。然后，转到属性视图，选择上面创建的连接器配置并选择读取操作。该操作将任何字节流读入由X12架构描述的结构。
+
+消息验证包括检查信封段ISA，GS，GE和IEA的语法和内容以及消息中的实际事务集。在TA1技术确认段或997确认事务集中，通常会记录并累计和报告错误，并将所有接受的事务集（无错误或非致命错误）作为输出消息Map的一部分传递进行处理。读取输入数据时出错导致抛出异常。
+
+// image:x12-module-4.png[X12模块-4-]
+
+在接收数据映射中输入的错误数据使用X12Error类，它是具有以下属性的只读JavaBean：
+
+[%header%autowidth.spread]
+|===
+|属性 |说明
+|段 |导致错误的段的输入内的从零开始的索引。
+| segTag  |导致错误的段的标记。
+|致命 |标记致命错误，意味着相关联的事务集，组或交换被错误拒绝。
+| errorType  |列举由X12标准定义的不同类型的错误：INTERCHANGE_NOTE，GROUP_SYNTAX，TRANSACTION_SYNTAX，SEGMENT_SYNTAX或ELEMENT_SYNTAX。
+| errorCode  |错误代码，由X12标准针对指定类型的错误定义。
+| errorText  |错误的文本描述。
+| errorLevel  |枚举不同级别的错误：ROOT_LEVEL，INTERCHANGE_LEVEL，GROUP_LEVEL或TRANSACTION_LEVEL。
+| interchangeId  |交换标识符，如果errorLevel为INTERCHANGE_LEVEL或更高。
+| groupId  |组标识符，如果errorLevel为GROUP_LEVEL或TRANSACTION_LEVEL。
+| transactionId  |交换标识符，如果errorLevel为TRANSACTION_LEVEL。
+|===
+
+读取操作将错误数据作为可选列表在数据结构的每个级别使用Errors关键字返回。在事务集级别，此列表包含解析该事务集期间遇到的非致命错误。在交换级别，此列表包含具有致命错误的事务集的错误（包括致命错误和非致命错误）。在读取的根级别，此列表包含交换错误和任何嵌套级别报告的所有其他错误。
+
+== 编写HIPAA EDI消息
+
+要编写外发消息，请按照上述定义的结构构建外发HIPAA EDI消息。例如，此示例创建一个写入文件的传出EDI消息。
+
+[source, xml, linenums]
+----
+  ...
+<x12-edi:write config-ref="Walmart" doc:name="Send 855"/>
+<file:outbound-endpoint responseTimeout="10000" doc:name="File" path="output" outputPattern="ack.edi"/>
+----
+
+== 发送功能确认
+
+与X12一样，为HIPAA发送生成的功能确认（997或999个事务集）与编写任何其他EDI消息相同，只不过您将事务设置为在读取操作期间生成的确认。例如：
+
+[source, xml, linenums]
+----
+<x12-edi:read config-ref="Walmart" doc:name="Read EDI Doc"/>
+  ...
+<dw:transform-message doc:name="Create Outgoing Message">
+            <dw:input-payload doc:sample="InMessage.dwl"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+    TransactionSets: {
+        v005010: {
+            '997' : payload.FunctionalAcksGenerated
+        }
+    }
+}]]></dw:set-payload>
+</dw:transform-message>
+<x12-edi:write config-ref="Walmart" doc:name="Send 997"/>
+<file:outbound-endpoint responseTimeout="10000" doc:name="File" path="output" outputPattern="ack.edi"/>
+----
+
+生成的功能确认具有交换数据，用于发回原始消息的发件人，因此您无需在交易中更改任何内容以进行发送。
+
+如果您使用999个确认，则将自己所需的CTX段自己添加到由X12模块生成的基本结构。
+但是，此连接器不会跟踪对基本事务集结构的实现约定更改。
+
+== 发送交换确认
+
+发送交换确认（TA1段）的作用与X12相同：只需将消息映射中的InterchangeAcksToSend键的值设置为要发送的TA1段映射的列表。生成的TA1段具有交换数据，用于发送回原始消息的发件人，因此您不需要更改段数据中的任何内容以进行发送。
+
+==  HIPAA模式定义
+
+X12模块使用名为ESL（用于EDI模式语言）的YAML格式来表示标准X12和HIPAA模式。 HIPAA标准基于X12，但在几个方面修改相应的X12基本标准，包括：
+
+*  HL（Hierarchical Level）循环的多个专门定义，其中将X12中定义的基本循环结构扩展为多个变体，通常是嵌套的。
+* 模块化循环定义可以在定义中的不同点重用。
+* 通过特定元素中的代码值区分重复段的不同用法。
+* 更改段和段组件的使用要求。
+
+为了表示HIPAA的这些特征，ESL模式定义与标准X12模式有很大不同。以下是部分示例，摘自005010X222A2 837事务集的模式：
+
+[source,yaml, linenums]
+----
+form: HIPAA
+version: '005010X222A2'
+structures: 
+- id: '837'
+  name: 'Health Care Claim'
+  class: 'HC'
+  areas: 
+  - code: '1'
+    items: 
+    - { idRef: 'ST_TransactionSetHeader', position: '0050', usage: M }
+    - { idRef: 'BHT_BeginningOfHierarchicalTransaction', position: '0100', usage: M }
+    - groupId: '1000A_Loop'
+      usage: O
+      items: 
+      - { idRef: 'NM1_SubmitterName', position: '0200', usage: M }
+      - { idRef: 'PER_SubmitterEDIContactInformation', position: '0450', usage: M, count: 2 }
+    - groupId: '1000B_Loop'
+      usage: O
+      items: 
+      - { idRef: 'NM1_ReceiverName', position: '0500', usage: M }
+  - code: '2'
+    items: 
+    - groupId: '2000A_Loop'
+      count: '>1'
+      usage: M
+      items: 
+      - { idRef: 'HL_BillingProviderHierarchicalLevel', position: '0010', usage: I }
+      - { idRef: 'PRV_BillingProviderSpecialtyInformation', position: '0030', usage: O }
+      - { idRef: 'CUR_ForeignCurrencyInformation', position: '0100', usage: O }
+      - groupId: '2010AA_Loop'
+        usage: O
+        items: 
+        - { idRef: 'NM1_BillingProviderName', position: '0150', usage: M }
+        - { idRef: 'N3_BillingProviderAddress', position: '0250', usage: M }
+        - { idRef: 'N4_BillingProviderCityStateZIPCode', position: '0300', usage: M }
+        - { idRef: 'REF_BillingProviderTaxIdentification', position: '0350', usage: M }
+        - { idRef: 'REF_BillingProviderUPINLicenseInformation', position: '0360', usage: O, count: 2 }
+        - { idRef: 'PER_BillingProviderContactInformation', position: '0400', usage: O, count: 2 }
+      - { area: '3', usage: O }
+      - { area: '4', count: '>1', usage: O }
+  - code: '3'
+    items: 
+    - groupId: '2010AB_Loop'
+      usage: O
+      items: 
+      - { idRef: 'NM1_PayToAddressName', position: '0150', usage: O }
+      - { idRef: 'N3_PayToAddressADDRESS', position: '0250', usage: M }
+      - { idRef: 'N4_PayToAddressCityStateZIPCode', position: '0300', usage: M }
+    - groupId: '2010AC_Loop'
+      usage: O
+      items: 
+      - { idRef: 'NM1_PayToPlanName', position: '0450', usage: O }
+      - { idRef: 'N3_PayToPlanAddress', position: '0550', usage: M }
+      - { idRef: 'N4_PayToPlanCityStateZIPCode', position: '0600', usage: M }
+      - { idRef: 'REF_PayToPlanSecondaryIdentification', position: '0650', usage: O }
+      - { idRef: 'REF_PayToPlanTaxIdentificationNumber', position: '0655', usage: M }
+----
+
+=== 区域键
+
+在上述模式部分中，区域键具有单个区域定义的值数组。这些区域类似于将常规X12事务集分解为头，细节和摘要部分，但提供更精细的粒度 - 而不是X12中定义的事务集的三个固定部分，可能会有二十个或更多区域定义在HIPAA交易集。
+
+每个区域都是定义的可重用组件。它由代码字符值标识，按照惯例可以是单个数字或单个字母字符。
+
+引用区域以包含在组件列表中的区域项目的定义中。在X12架构定义中，组或者区域的组件列表可能只包含段，组和被称为包裹的组变量，用于LS / LE循环，以X12术语。在HIPAA模式定义中，组件列表还可能包含区域引用。引用区域的效果与将该区域的所有组件插入到参考点的定义中相同。
+
+回头参考上述模式部分，在区域代码2的组件列表的结尾处，提及区域3和区域4，区域4可选地重复。
+
+HIPAA消息的数据结构将X12划分维护到标题，详细信息和摘要部分。标题总是具有最低排序顺序代码的区域，细节是下一个（包括所有参考区域），并且摘要是最高排序顺序代码。
+
+=== 代码集
+
+下面是上面使用的相同的005010X222A2 837事务集合模式的另一部分，这部分显示了BHT_BeginningOfHierarchicalTransaction段定义：
+
+[source,yaml, linenums]
+----
+- id: 'BHT_BeginningOfHierarchicalTransaction'
+  name: 'Beginning of Hierarchical Transaction'
+  varTag: 'BHT'
+  values: 
+  - { id: '1005', name: 'Hierarchical Structure Code', usage: M, codeSet: { '0019': 'Information Source, Subscriber, Dependent' }, type: ID, length: 4 }
+  - { id: '353', name: 'Transaction Set Purpose Code', usage: M, codeSet: { '00': 'Original', '18': 'Reissue' }, type: ID, length: 2 }
+  - { id: '127', name: 'Originator Application Transaction Identifier', usage: M, type: AN, minLength: 1, maxLength: 50 }
+  - { id: '373', name: 'Transaction Set Creation Date', usage: M, type: DT, length: 8 }
+  - { id: '337', name: 'Transaction Set Creation Time', usage: M, type: TM, minLength: 4, maxLength: 8 }
+  - { id: '640', name: 'Claim or Encounter Identifier', usage: M, codeSet: { 'RP': 'Reporting', 'CH': 'Chargeable', '31': 'Subrogation Demand' }, type: ID, length: 2 }
+----
+
+此段中的第一个，第二个和最后一个元素以键值对的数组形式定义codeSet值。每对中的关键字是HIPAA标准允许的字段的特定值，而关键字的值是来自标准的该值的文本描述。
+
+X12 EDI连接器为HIPAA文档强制执行这些代码集，如果事务集在分析或写入时使用未定义的字段值（即，未在代码集中列出的键值），则表示发生错误。在某些情况下，例如BHT定义的第一个元素，只允许一个值。在其他情况下，可能有很多潜在的价值。
+
+=== 细分变体
+
+下面是同一个005010X222A2 837交易集模式的第三部分，这个模式显示了两个不同的DTP段定义：
+
+[source,yaml, linenums]
+----
+- id: 'DTP_DateAccident'
+  name: 'Date - Accident'
+  varTag: 'DTP'
+  values: 
+  - { id: '374', name: 'Date Time Qualifier', usage: M, varValue: true, codeSet: { '439': 'Accident' }, type: ID, length: 3 }
+  - { id: '1250', name: 'Date Time Period Format Qualifier', usage: M, codeSet: { 'D8': 'Date Expressed in Format CCYYMMDD' }, type: ID, minLength: 2, maxLength: 3 }
+  - { id: '1251', name: 'Accident Date', usage: M, type: AN, minLength: 1, maxLength: 35 }
+- id: 'DTP_DateAcuteManifestation'
+  name: 'Date - Acute Manifestation'
+  varTag: 'DTP'
+  values: 
+  - { id: '374', name: 'Date Time Qualifier', usage: M, varValue: true, codeSet: { '453': 'Acute Manifestation of a Chronic Condition' }, type: ID, length: 3 }
+  - { id: '1250', name: 'Date Time Period Format Qualifier', usage: M, codeSet: { 'D8': 'Date Expressed in Format CCYYMMDD' }, type: ID, minLength: 2, maxLength: 3 }
+  - { id: '1251', name: 'Acute Manifestation Date', usage: M, type: AN, minLength: 1, maxLength: 35 }
+----
+
+这两个定义适用于DTP段的不同实例，作为2300 Claim Information循环的一部分。在交易集结构中，DTP段的这些用途基本上发生在相同的位置，匹配基本X12标准中的重复DTP段的两种可能的出现。但是由于该段的两种用途提供了不同的信息，HIPAA标准为它们提供了不同的名称，并以不同的方式解释了DTP03字段。
+
+在这种情况下，该段的第一个字段中的数据值Date Time Qualifier字段标识段实际使用的是哪个变化。由于为该字段设置的代码对于这些用途中的每一个具有不同的值，因此该字段中存在的值指示分析文档中的DTP段是DTP_DateAccident还是DTP_DateAcuteManifestation（或者DTP_DateAcuteManifestation中的DTP段的其他任何用途相同的位置）。模式定义中的`varValue: true`标志表示以这种方式使用此第一个字段来区分变体。
+
+请注意，即使该字段的值在每次使用段时都得到有效修正，但在写入数据时仍然必须正确设置。如果您为此字段提供不同的值，或者不提供值，则写入时会出现错误。
+
+=== 语法规则
+
+下面是005010X222A2 837事务集模式的最后一个例子，以说明语法规则是如何表示的：
+
+[source,yaml, linenums]
+----
+- id: 'N4_PayerCityStateZIPCode'
+  name: 'Payer City, State, ZIP Code'
+  varTag: 'N4'
+  values: 
+  - { id: '19', name: 'Payer City Name', usage: M, type: AN, minLength: 2, maxLength: 30 }
+  - { id: '156', name: 'Payer State or Province Code', usage: O, type: ID, length: 2 }
+  - { id: '116', name: 'Payer Postal Zone or ZIP Code', usage: O, type: ID, minLength: 3, maxLength: 15 }
+  - { id: '26', name: 'Country Code', usage: O, type: ID, minLength: 2, maxLength: 3 }
+  - { id: '309', name: 'Location Qualifier', usage: U, type: ID, minLength: 1, maxLength: 2 }
+  - { id: '310', name: 'Location Identifier', usage: U, type: AN, minLength: 1, maxLength: 30 }
+  - { id: '1715', name: 'Country Subdivision Code', usage: O, type: ID, minLength: 1, maxLength: 3 }
+  rules: 
+  - { type: E, items: [2, 7] }
+  - { type: C, items: [6, 5] }
+  - { type: C, items: [7, 4] }
+----
+
+在X12和HIPAA中使用语法规则来定义a中的值之间的关系
+段或复合。规则包含在模式中与
+价值清单。规则类型的代码与X12和HIPAA使用的代码相同
+规格和项目列表给出了由规则管理的值的数量。
+
+在上面的例子中，这三条规则说：
+
+*  N402或N407中只有一个可能存在（`{ type: E, items: [2, 7] }`）
+* 如果存在N406，则需要N405（`{ type: C, items: [6, 5] }`）
+* 如果存在N407，则需要N404（`{ type: C, items: [7, 4] }`）
+
+
+== 修改模式
+
+由于标准X12和HIPAA模式之间的差异，使用覆盖模式来修改基础
+HIPAA不支持定义。相反，使用修改的推荐方法是
+从包含在edi-schemas-x12- {version} .jar中提取所提供的HIPAA模式
+连接器（包含标准的X12和HIPAA模式）并修改提取的模式以供使用
+直。与X12架构不同，该架构使用段，复合和元素的基本集合
+定义，HIPAA模式是独立的。这使得更改模式变得很容易
+无需使用多个文件。
+
+==  WEDI推荐的测试类型
+
+* 类型1：EDI语法完整性测试 - 测试EDI文件的有效段，段顺序，元素属性，测试数值数据元素中的数值，验证X12或NCPDP语法以及符合X12和NCPDP规则。这验证了EDI提交的基本语法完整性。
+
+* 类型2：HIPAA语法要求测试 - 测试HIPAA实施指南的特定语法要求，例如重复次数限制，已使用和未使用的限定符，代码，元素和段。此类型还包括测试HIPAA要求或段内情况数据元素，“实施指南”中规定的非医疗代码组测试，以及“实施指南”中通过X12代码列表或表格列出的值和代码。
++
+** 由于连接器无法确定段内情景数据元素的行动方案，因此X12 EDI连接器不包含段内情景数据元素。用户需要在连接器外部设置验证逻辑。
+
+== 另请参阅
+
+*  link:/release-notes/x12-edifact-modules-release-notes[发行说明]。
+*  link:/anypoint-b2b/_attachments/x12-hipaa_5010.zip[X12模块HIPAA Anypoint Studio项目]。
+*  http://www.x12.org/x12-work-products/x12-transaction-sets.cfm[ASC X12事务集]。
+*  https://en.wikipedia.org/wiki/X12_Document_List [X12文档列表]。
+*  http://mulesoft.github.com/edi-module[EDI模块参考]。
+*  https://forums.mulesoft.com [MuleSoft论坛]
+*  https://support.mulesoft.com [联系MuleSoft支持]
+

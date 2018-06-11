@@ -1,0 +1,161 @@
+= 变量变量参考
+:keywords: anypoint studio, studio, mule esb, variable transformer, variables, set variable, edit variable, remove variable
+
+使用*variable transformer*设置或删除消息上的变量。该变量的范围仅限于设置它的流程;当消息离开流程时，变量不会转移到下一个流程或应用程序。 （相比之下，只要消息继续在您的Mule应用程序中处理，无论流量如何，通过 link:/mule-user-guide/v/3.6/session-variable-transformer-reference[会话变量变换器]指定的变量都会持续存在。）要了解有关消息范围的更多信息，请参阅 link:/mule-user-guide/v/3.6/mule-concepts[骡子概念]。
+
+*<<Complete Code Example>>*
+
+变量变量与会话变量变量和属性变量不同。请参阅下表以比较这三台变压器。
+
+[%header%autowidth.spread]
+|===
+|   |变量变量 |会话变量变换器 |属性变量
+| *Use*  |用于设置或删除与当前流程相关的消息变量。 |用于设置或删除与当前流程绑定的变量整个生命周期的消息，跨多个流，应用程序甚至服务器。 |用于设置，删除或复制消息出站范围的属性。
+| *Persistence*  |使用变量变量设置的变量仅保留当前流并且不能跨越传输障碍。 |使用会话变量变量设置的会话变量持续存在整个消息生命周期，无论是否存在传输障碍。 |消息到达出站连接器后，出站作用域中的所有属性都将与消息一起以特定于传输的元数据的形式发送（用于HTTP出站的HTTP标头例如连接器）。
+|===
+
+一旦你设置了一个变量，你可以使用Mule表达式中的**`flowVars`**地图来调用它。例如，如果您已设置名称为"`FVname`"且值为"`FVvalue`"的变量，则可以稍后使用表达式`#[flowVars['FVname']]`调用该变量，该表达式的计算结果为`FVvalue`。
+
+== 配置
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+image:variable_transformer.png[variable_transformer]
+
+[%header%autowidth.spread]
+|===
+|Field |Value |Description |XML
+|*Display Name* |Variable |Customize to display a unique name for the transformer in your application.
+|`doc:name="Variable`
+.2+|*Operation* |Set Variable |Select to set a new variable on your message (as shown in example screenshot above).
+|`<set-variable>`
+|Remove Variable |Select to delete an existing variable from your message. |`<remove-variable>`
+|*Name* |String or Mule Expression |Specify the name for the variable that you are creating or identify the name of the variable that you are removing. If you are removing variables, this field accepts a wildcard "*" character. |`variableName="MyNewVariableName"`
+|*Value* |String or Mule Expression |This field displays only if you are setting a new variable. Specify the value using either a string or a Mule expression. |`value="MyNewVariableValue"`
+|===
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, code, linenums]
+----
+#Set Variable
+      
+<set-variable variableName="MyNewVariableName" value="MyNewVariableValue" doc:name="Variable"/>
+     
+     
+#Remove Variable
+     
+<remove-variable variableName="NameofVariabletoRemove" doc:name="Variable"/>
+----
+
+[%header%autowidth.spread]
+|===
+|Element |Description
+|*set-variable* |Set a new variable on your message (as shown in example above).
+|*remove-variable* |Delete an existing variable from your message.
+|===
+
+[%header,cols="2*"]
+|===
+|Element Attribute |Description
+|*doc:name* a|
+Customize to display a unique name for the transformer in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+
+|*variableName* a|
+The name of the variable that you are setting or removing. Can be a string or a Mule expression.
+
+Note: If you are using the remove-variable element, you may use a wildcard "*" character. For example, a remove-variable transformer with a variable name "http.*" removes all variables with a name that begins with "http." from the message.
+
+|*value* |The value of the variable that you are setting. This attribute is only relevant for the set-variable element. Can be a string or a Mule expression.
+|===
+....
+------
+
+== 示例
+
+在许多情况下，在处理消息之前保留消息的原始有效负载是有用的，以便稍后在流程中使用或在异常策略中使用它。为此，可以将消息的有效内容存储在一个变量中（在下面的示例中命名为"originalRequest"），如果需要，可以稍后检索它。在此示例中，如果HTTP连接器或groovy组件未能处理消息，则流程异常策略中的记录器通过从originalRequest变量中检索失败的请求来记录日志。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+. Place the variable transformer building block after the inbound connector of the flow, before other processing takes place on the message. +
+
++
+image:variable+transformer+example.png[variable+transformer+example]
++
+
+. Configure the variable transformer according to the screenshot below.
++
+image:set+variable.png[set+variable] +
++
+
+. Configure the exception strategy of the flow with a logger that retrieves this variable in the event an exception occurs. +
+
+image:Studio_FlowVars_Logger.png[Studio_FlowVars_Logger] +
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source,xml, linenums]
+----
+<http:listener-config name="listener-config" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+<http:request-config name="request-config" host="localhost" port="8081" doc:name="HTTP Request Configuration"/>
+<flow name="VariableTransformingFlow1" >
+     <http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+     <set-variable variableName="originalRequest" value="#[message.payload]" doc:name="Save Request"/>
+     <http:request config-ref="request-config" path="/" doc:name="HTTP Connector" method="POST"/>
+     <scripting:component doc:name="Groovy">
+         <scripting:script engine="Groovy"/>
+     </scripting:component>
+     <catch-exception-strategy doc:name="Catch Exception Strategy">
+         <logger level="INFO" doc:name="Log Request" message="Error processing #[flowVars['originalRequest']]" />
+     </catch-exception-strategy>
+</flow>
+----
+....
+------
+
+== 完整的代码示例
+
+[source,xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.4.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+ 
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+ 
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+ 
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+----
+
+[source,xml, linenums]
+----
+<http:listener-config name="listener-config" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+<http:request-config name="request-config" host="localhost" port="8081" doc:name="HTTP Request Configuration"/>
+<flow name="VariableTransformingFlow1" doc:name="VariableTransformingFlow1">
+      <http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+      <set-variable variableName="originalRequest" value="#[message.payload]" doc:name="Save Request"/>
+      <http:request config-ref="request-config" path="/" doc:name="HTTP Connector" method="POST"/>
+      <scripting:component doc:name="Groovy">
+         <scripting:script engine="Groovy"/>
+      </scripting:component>
+      <remove-variable variableName="NameofVariabletoRemove" doc:name="Variable"/>
+      <catch-exception-strategy doc:name="Catch Exception Strategy">
+         <logger level="INFO" doc:name="Log Request" message="Error processing #[flowVars['originalRequest']]" />
+      </catch-exception-strategy>
+</flow>
+----
+
+== 另请参阅
+
+* 请参阅 link:/mule-user-guide/v/3.6/mule-concepts[骡子概念]以了解有关消息范围的更多信息。
+* 阅读相关转换器 link:/mule-user-guide/v/3.6/session-variable-transformer-reference[会话变量变换器]和 link:/mule-user-guide/v/3.6/property-transformer-reference[属性变压器]，您可以使用它们为不同范围设置属性和变量。
+* 了解如何使用Mule表达式语言使用`flowVars`地图读取流变量。

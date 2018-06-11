@@ -1,0 +1,185 @@
+=  DotNet连接器用户指南
+
+_标准_
+
+*Overview*
+
+.NET连接器允许您在Mule ESB应用程序中执行本机.NET代码。受支持的方案包括：在不修改的情况下在现有二进制程序集（DLL）中执行代码，或者扩展集成应用程序功能的.NET代码的新开发。
+
+该连接器使用Java Native Interface（JNI）执行.NET代码，该代码提供Java虚拟机（JVM）和在主机操作系统中运行的本机应用程序之间的快速进程间通信。
+
+image:01ConnectorDotNET.png[01ConnectorDotNET]
+
+.NET连接器使用JNI调用Microsoft Common Language Runtime（CLR）中运行的.NET组件。运行的Mule流中的消息在JVM和CLR之间传递，以在现有类中调用.NET方法。
+
+连接器使用以下策略在JVM和CLR之间编组Mule消息，主要依赖于与消息有效负载相关的内容类型：
+
+* 原始类型和Java类被序列化为JSON。
+*  JSON或XML数据直接作为字符串传递，无需数据转换。
+* 二进制数据直接作为字节数组传递，而不进行数据转换。
+
+== 调用罩下方法
+
+只要它是公共的，DotNet连接器将调用现有类中的实例或静态方法。根据名称和数据类型，Mule消息的属性映射到.NET方法中的预期参数。
+
+以下流程演示了连接器如何执行映射：
+
+image:demoflow.png[demoflow]
+
+Set Payload转换器生成JSON内容并将其设置为Mule消息的有效负载：
+
+image:Setpayload.png[Setpayload]
+
+例如，对于URL `http://localhost:8081/?name=foo&age=10`，Mule消息的有效负载设置为：`{"name":"foo", "age":10}`
+
+JSON表示包含名称和年龄的属性，该属性自动将（按名称）映射到.NET方法*ExecuteSimple*的参数：
+
+image:public+object.png[公众+对象]
+
+指定要调用的.NET方法的名称：
+
+image:DOTNET+Method.png[DOTNET +方法]
+
+== 参数映射的高级方案
+
+=== 与属性的映射
+
+Mule消息是通过一个或多个流通过应用程序的数据。该消息由两个主要部分组成：
+
+* 消息头，其中包含有关消息的元数据
+* 消息有效内容，其中包含特定于业务的数据
+
+image:MessageObject.png[MessageObject]
+
+在.NET方面，您可以使用属性来指示从何处映射参数：
+
+[%header,cols="2*"]
+|===
+一个|
+属性
+
+ 为|
+使用
+
+| `MessagePart.FromQuery`  |查询字符串集合
+| `MessagePart.FromBody`  | Mule消息的有效载荷
+| `MessagePart.FromInboundProperty`  |入站属性集合
+| `MessagePart.FromInvocationProperty`  |调用属性集合
+| `MessagePart.FromOutboundProperty`  |出站属性集合
+| `MessagePart.FromSessionProperty`  |会话属性集合
+|===
+
+这些属性不是强制性的。如果未指定属性，则.NET连接器将使用Mule消息的有效内容（`MessagePart.FromBody`）。您可以组合属性以获得更多灵活性。
+
+以下是使用属性组合的方法示例：
+
+image:public+object+execute+complex.png[公众+宾语+执行+复杂]
+
+方法参数：
+
+*  _ person_：从Mule消息的有效内容映射而来，其中包含Person类型的JSON表示
+*  _ id_：从名为“id”的查询字符串映射，如http：// localhost：8081 /？id = 1
+*  _ increment_：从名为“增量”的入站属性映射
+
+=== 映射XML数据
+
+DotNet连接器自动将XML数据映射到XML文档。连接器直接将XML数据作为字符串传递，而不执行序列化。如果调用的.NET方法包含XmlDocument类型的参数，则XML数据将加载到XmlDocument中并传递给该方法。
+
+以下显示了将XML数据传递给.NET Connector的流程：
+
+image:xml+data+tp+dotnet+connector.png[XML +数据+ TP + DOTNET +连接器]
+
+.NET连接器被配置为调用*ExecuteXml*方法。以下显示了该方法的签名：
+
+image:public+object+execute+xml.png[公众+宾语+执行+ XML]
+
+*Note*：如果Mule流中的消息源未将`Content-Type`设置为`text/xml`，那么您必须手动设置。如果未设置，则您的消息将被视为字符串并以转义形式传递给.NET。要手动设置`Content-Type`，请使用以下设置添加一个Property Transformer：
+
+image:set+property-1.png[集+属性-1] +
+
+=== 映射JSON数据
+
+DotNet连接器将原始类型和POJO序列化为JSON。 JSON数据结构的属性会自动按名称映射到.NET方法参数。
+
+=== 在完全信任中执行.NET代码
+
+.NET代码可以在具有有限权限的应用程序域中执行，以避免执行可能影响ESB稳定性的恶意代码。这些限制包括对文件系统的有限访问，本地代码执行，网络调用或注册表访问等等。
+
+默认情况下，.NET连接器被设置为使用完全信任。您可以使用下图中显示的`fullTrust`属性来禁用它：
+
+image:full+trust.png[充分信任+]
+
+=== 执行范围
+
+DotNet连接器支持这些范围：
+
+*  Singleton：跨多个调用共享.NET组件的同一个实例。这对于跨不同调用的类实例成员中存储共享状态很有用。
+* 瞬变：为每个请求创建一个.NET组件的新实例。
+
+使用下面的scope属性来设置.NET组件的作用域：
+
+image:execute+scope.png[执行+范围]
+
+==== 热插拔和部署
+
+连接器支持部署包含.NET组件的新版本程序集，而无需在Mule ESB中重新启动应用程序。
+
+当.NET组件第一次由路由器执行时，文件观察器将开始检测组件部件所在的文件夹中的更改。如果组件检测到更改或新的程序集部署，路由器将开始使用此新版本进行连续调用。
+
+==== 打包的程序集
+
+对于打包的程序集，部署策略有点不同。将位于文件夹`AnypointStudio/.mule/apps/[applicationName]/classes`下的现有.NET程序集替换为新版本。在Mule中重新部署应用程序后使用新的程序集版本。
+
+记录以下消息：
+
+NET汇编位置：+
+  `[path to Anypoint Studio]/.mule/apps/[applicationName]/classes/[assembly name]`
+
+使用此路径来部署新的.NET程序集。
+
+==== 外部程序集
+
+将位于外部位置的旧.NET组件替换为新的。
+
+== 程序集配置
+
+对于从Mule流中引用的.NET程序集，可以使用标准`System.Configuration`类（如ConfigurationManager）访问.NET配置文件中定义的配置设置。组件的配置文件的命名遵循类库的约定，其中名称的格式为：`[AssemblyName].dll.config`。
+
+如果您为程序集使用配置文件，请将配置文件添加到Mule应用程序的`resources`文件夹（`src/main/resources`）。如果您选择包部署模型，则这与您部署程序集本身的位置相同。当引用全局程序集缓存（GAC）中托管的程序集时，Mule还会检查资源目录中的匹配程序集配置文件：
+
+image:transform+dll+config.png[变换+ DLL +配置]
+
+如果您使用Mule应用程序外部的程序集引用路径，请将程序集配置文件与程序集位于同一目录中。
+
+重新加载配置：
+
+* 触摸Mule应用程序`.xml`文件，这会导致ESB服务器热重新载入应用程序（您可以使用`copy filename+,,`命令来触摸Windows文件，该命令会更新最后一次写入时间在文件上）。
+* 触摸程序集配置文件所属的程序集。这会导致应用程序域与新配置一起重新加载。
+
+== 高级集成概念
+
+=== 程序集引用
+
+.NET连接器支持以下部署类型：
+
+*  *Package*：作为应用程序资源嵌入的程序集。将程序集作为应用程序资源添加到应用程序目录下的`src/main/resources`文件夹中：
++
+image:assembly+reference.png[装配+参考]
++
+将程序集的部分名称`[Namespace.ClassName], [Assembly]`和程序集的名称指定为*Assembly Path*。
++
+image:13.png[13]
+
+*   *External*：您可以引用外部程序集。将组件部分名称`[Namespace.ClassName], [Assembly]`和外部程序集的绝对路径指定为*Assembly Path*。 +
+ +
+image:14.png[14]
+
+*  *GAC*：安装在GAC（全局程序集缓存）中的程序集。要引用安装在GAC中的程序集，请使用`Assembly Fully Qualified Name: [Assembly], [Version], [Culture], [PublicKey]`。有关更多信息，请参阅： http://msdn.microsoft.com/en-us/library/dkkx7f79%28v=vs.110%29.aspx[http://msdn.microsoft.com/en-us/library/dkkx7f79(v=vs.110).aspx] +
+ +
+image:dotnet+screenshot.png[DOTNET +截图]
+
+== 另请参阅
+
+* 返回到介绍 link:/mule-user-guide/v/3.5/dotnet-connector[DotNet连接器]的主页面。 +
+* 查看 link:/mule-user-guide/v/3.5/dotnet-connector-faqs[常问问题]。 +
+

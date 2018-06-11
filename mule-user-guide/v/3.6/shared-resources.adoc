@@ -1,0 +1,257 @@
+= 共享资源
+:keywords: anypoint studio, esb, shared resources, domains, multiple applications, share ports, domain project
+
+Mule支持将所选连接器定义为公共资源并将其公开给同一*domain*下部署的所有应用程序的能力。这些资源被称为*shared resources*，要承载这些资源，您必须创建一个*Mule Domain Project*，然后在每个要使用其中的元素的项目上引用它。一旦定义，与特定域相关联的任何Mule应用程序都可以访问此文件中的资源。请注意，Mule应用程序一次只能与一个域相关联。
+
+共享资源允许多个开发团队使用同一组可重用连接器并行工作。将这些连接器定义为域级别的共享资源，可让团队：
+
+* 通过相同的端口在域内公开多项服务
+* 将连接分享到永久存储
+* 通过定义良好的界面在应用程序之间共享服务
+* 确保应用程序发生任何更改时的一致性，因为配置只能在一个位置进行设置
+
+== 假设
+
+本文档假设您使用的是Mule运行时3.6或更新版本的Anypoint Studio，或者您正在Studio之外构建应用程序，并将它们部署到Mule独立版**3.5.0**运行时或更新版本。
+
+== 限制
+
+* 不支持将流，子流或任何消息处理器定义为共享资源。
+* 要将WMQ连接器共享为共享资源，您需要从$ MULE_HOME / lib / mule / per-app /目录中删除mule-transport-wmq-ee  -  <mule-version>。jar文件并在应用程序的$ MULE_HOME / apps / <my-app> / lib /目录中删除所有用于wmq连接的原生jar。相反，将所有这些罐放在$ MULE_HOME / domains / <my-domain> / lib /文件夹中。
+* 在使用共享资源的应用程序的配置文件中添加属性可能会导致问题，因为这些属性将与域中的其他应用程序共享，并且可能存在冲突。您可以改为 link:/mule-user-guide/v/3.6/setting-environment-variables[设置环境变量]。
+* 此时只能将以下连接器和相关规范指定为共享资源：+
+**  HTTP / HTTPS（端点和连接器）
+*  VM
+*  JMS
+*  JMS缓存连接工厂
+* 数据库
+*  WMQ
+*  JBoss事务管理器
+**  Bitronix事务管理器
+
+== 基本解剖学
+
+以下文件是Mule域项目中的关键：
+
+[%autowidth.spread]
+|===
+| *mule-domain-config.xml*  |这是共享资源配置文件。该文件必须具有`mule-domain-config.xml`文件名。
+| */lib*  |该目录可以包含与域相关的库。放置您在此定义为共享资源的数据源的JDBC驱动程序或JMS连接器所需的JMS代理API。
+|===
+
+== 配置
+
+要在您的应用程序中使用共享资源，您必须完成以下任务。
+
+.  <<Creating a New Domain>>
+. 在该域中定义一个或多个共享资源
+.  <<Associating Applications with the Domain>>
+.  <<Referencing Shared Resources>>
+.  <<Deploying with Shared Resources>>域和应用程序。请注意，您也可以在<<Deploying Domain Bundles>>中一起部署域名和应用
+
+以下部分介绍了每个步骤的步骤。
+
+== 创建新域
+
+要在Aypoint Studio中创建新域，请按照以下步骤操作：
+
+. 在顶部菜单栏中选择`File > New > Mule Domain Project` +
+
++
+image:new+domain.png[新+域名] +
++
+
+ +
+. 填写与您使用常规Mule项目相同的字段：
++
+image:create+new+domain.png[创建+全新+域名] +
++
+
+ +
+为项目提供一个名称并选择一个运行时。如果您计划在项目中使用Maven，则可以选择完成Maven设置，如果您计划通过git或github共享此项目，则可以选择创建.gitignore文件。
+
+[NOTE]
+====
+您也可以在Studio外创建一个域项目，这样做可以在文件系统中创建以下文件结构：
+
+image:domain-folders.png[域文件夹]
+
+请注意，`lib`文件夹是可选的。
+====
+
+=== 定义共享资源
+
+您可以通过在**`mule-domain-config.xml`**文件中定义共享资源来配置您刚刚在上一步中创建的域项目。您可以在此配置文件中定义多个资源。在Anypoint Studio中，有两种不同的视图来编辑这个文件。对于在常规Studio Mule项目中用于XML编辑器的用户，`source`视图应该是最熟悉的：
+
+image:design+source.png[设计+源]
+
+至少包含该域的名称空间和XML模式位置，如下所示。请务必使用与您正在创建的资源相匹配的版本*Community*或*Enterprise*。 VM，WMQ和Bitronix事务管理器需要企业版。
+
+*Community*
+
+[cols="2*"]
+|===
+|命名空间a |
+| XML架构位置a |
+|===
+
+*Enterprise*
+
+[cols="2*"]
+|===
+|命名空间a |
+| XML架构位置a |
+|===
+
+为要共享的每个资源添加其他名称空间和模式位置。请参阅下面每个支持的共享资源的示例定义，了解每个支持的全名称空间定义。请注意，为清楚起见，这些示例分为单独的XML配置，但您可以在一个`mule-domain`项目中定义多个共享资源。
+
+=== 将应用程序与Studio中的域相关联
+
+[NOTE]
+应用程序一次只能与一个域相关联。
+
+在Anypoint Studio中，要将现有应用程序与域相关联，请编辑项目中位于根级别的`mule-project.xml`文件。在该文件的图形视图中，您会看到*Domain*字段，该字段默认设置为*default*，该值为每个项目提供独立的域。更改此值，此字段的下拉列表将显示您在当前工作区中创建的所有域。
+
+image:assign+domain.png[分配+域名]
+
+请注意，选择域时，项目的服务器运行时会自动变为域的服务器运行时，因为它们必须始终匹配。
+
+[NOTE]
+====
+如果您要在Studio外创建应用程序，那么要将现有应用程序与域相关联，请编辑`mule-deploy.properties`文件以包含域属性：
+
+`domain= <name of domain folder>`
+
+例如：
+
+`domain=mule-test-domain`
+====
+
+=== 引用共享资源
+
+在以下示例`mule-domain-config.xml`中，HTTP连接器被定义为共享资源。
+
+任何与域相关的Mule应用程序都可以通过在配置中引用它来使用共享资源，就像在项目本身中引用资源一样。在下面的示例中，HTTP侦听器连接器引用名为`HTTP_Listener_Configuration`的共享资源。
+
+在Studio的可视化编辑器中，您只需从连接器属性编辑器的*Connector Configuration*字段中的下拉列表中选择共享资源即可：
+
+image:pick+resource.png[挑+资源]
+
+=== 使用共享资源进行部署
+
+在Anypoint Studio中，当您部署与域关联的应用程序时，默认情况下，Studio将同时部署应用程序和域。此外，在部署域项目时，默认情况下，Studio也会部署与其关联的每个应用程序。您可以通过更改域的运行配置来更改这些默认行为，实际上可以将工作空间中的任何一组应用程序一起部署，即使它们不共享相同的域。
+
+要在Studio中进行设置，请打开播放按钮旁边的下拉菜单，然后选择*Run Configurations*。
+
+image:run+configurations+1.png[运行+构造+ 1]
+
+然后选择*General*选项卡，然后勾选或取消选择要始终与导航菜单上当前选择的应用程序一起部署的项目旁边的框。
+
+image:run+configuration+3.png[运行+构造+ 3]
+
+下面的步骤介绍了如何将您的域项目和Studio以外的应用程序部署到Standalone Mule
+
+. 在Studio中，选择`File > Export`。然后在名为*Mule*的文件夹中选择**Anypoint Studio Project to Mule Deployable Archive (includes Studio metadata)**。这将创建一个可以部署到Standalone Mule的.zip文件。
+
++
+image:export.png[出口]
++
+[NOTE]
+====
+如果您在Studio之外创建了自己的域，请选择`mule-domain-config.xml`文件，然后选择带有其内容的`lib`文件夹，然后将其压缩为单个文件zip文件。用该域的名称命名该zip文件。将压缩文件复制到`MULE_HOME/domains`。
+
+请注意，当Mule解压缩文件时，右键单击文件夹并选择*Compress*会导致将其他文件夹添加到文件夹结构中，这会导致部署问题。使用命令行递归压缩文件，或将您的应用程序打包为Studio中的zip文件。
+====
+
+. 保存，压缩并复制每个将此域引用到`MULE_HOME/apps`文件夹的应用程序的zip文件。
+. 通过命令控制台启动Mule。
+
+当Mule开始时，它首先部署`MULE_HOME/domains`文件夹中找到的任何域，然后将应用程序部署到`MULE_HOME/apps`文件夹中，以便在应用程序启动之前全部启动所有域。
+
+=== 部署域包
+
+您还可以选择将与域中的域相关联的应用程序捆绑在域文件夹中，然后将整个文件夹作为捆绑单元进行部署。为此，请在您的域文件夹结构中包含一个`apps`文件夹，并将应用程序的压缩文件放在该文件夹中。
+
+image:domainBundle.png[domainBundle]
+
+部署行为与单独部署域和应用程序相同：Mule将首先部署域本身，然后部署应用程序。部署域捆绑包可以通过单独删除手动部署应用程序的步骤来简化团队的部署机制。
+
+== 示例Mule域项目
+
+以下代码示例显示示例**`mule-domain-config.xml`**文件，每个文件都配置为共享单个资源。请注意，您可以在`mule-domain-config.xml`文件中定义多个共享资源。
+
+===  HTTP
+
+在域中共享HTTP连接器允许您在属于该域的所有应用程序中重复使用相同的端口。
+
+===  HTTPS
+
+在域中共享HTTPS连接器允许您在属于该域的所有应用程序中重复使用相同的端口。
+
+===  VM
+
+*_Enterprise_*
+
+共享VM连接器允许同一个域内的多个Mule应用程序通过VM队列进行通信。将VM连接器定义为共享资源是消费其他Mule应用程序在同一容器内提供的服务的最佳实践。
+
+===  JMS
+
+共享JMS连接器可创建与多个应用程序之间的代理程序的公共连接，从而最大限度地减少与代理程序的客户端连接数量。
+
+===  JMS缓存连接工厂
+
+Mule为JMS连接提供缓存连接工厂以提高JMS资源利用率。
+
+=== 数据库配置
+
+共享一个`db`配置会在多个应用程序之间创建一个到数据库的公共连接，从而最大限度地减少到数据库的客户端连接数量。
+
+===  WMQ
+
+*_Enterprise_*
+
+共享WMQ连接器可在多个应用程序之间创建与代理的公共连接，从而最大限度地减少与代理的客户端连接数量。
+
+要共享WMQ连接器作为共享资源，您需要从$ MULE_HOME / lib / mule / per-app /文件夹*remove* mule-transport-wmq-ee  -  <mule-version>。jar和{ 2}}应用程序的$ MULE_HOME / apps / <my-app> / lib /目录下的原生wmq jar。改为将所有这些罐放在**$MULE_HOME/domains/<my-domain>/lib/**文件夹中。
+
+例如：
+
+[%header%autowidth.spread]
+|===
+| {之前{1}}之后
+| $ MULE_HOME / LIB /骡/每个应用/骡传输-WMQ-EE  -  <mule-version>罐子 | $ MULE_HOME /域/ <my-domain> / LIB /骡-transport-WMQ-EE  -  <mule-version>罐
+| $ MULE_HOME /应用/ <my-app> / LIB / com.ibm.mq-7.0.jar  | $ MULE_HOME /域/ <my-domain> / LIB / com.ibm.mq -7.0.jar
+| $ MULE_HOME /应用/ <my-app> / LIB / com.ibm.mq.jmqi-7.0.jar  | $ MULE_HOME /域/ <my-domain> / LIB / com.ibm .mq.jmqi-7.0.jar
+| $ MULE_HOME /应用/ <my-app> / LIB / com.ibm.mqetclient-7.0.jar  | $ MULE_HOME /域/ <my-domain> / LIB / com.ibm.mqetclient -7.0.jar
+| $ MULE_HOME /应用/ <my-app> / LIB / com.ibm.mqjms-7.0.jar  | $ MULE_HOME /域/ <my-domain> / LIB / com.ibm.mqjms -7.0.jar
+|===
+
+===  JBoss事务管理器
+
+将JMS连接器和`db`配置定义为域中的共享资源时，可能必须在应用程序中使用XA事务。在这种情况下，您还必须在您的域配置中定义XA事务管理器。
+
+===  Bitronix事务管理器
+
+*_Enterprise_*
+
+将JMS连接器和`db`配置定义为域中的共享资源时，可能必须在应用程序中使用XA事务。在这种情况下，您还必须在您的域配置中定义XA事务管理器。
+
+Bitronix模块集成还提供了一个JMS连接工厂池和一个数据源池，以便在使用XA事务时使用数据源。您可以将其中一个或两个定义为共享资源。
+
+== 提示
+
+* 如果您有在Studio中创建的现有应用程序，并且想要修改它们以使用共享资源，则可以按照上述所有步骤进行操作。
+* 在域级别定义的连接器将自动用作这些域中部署的应用程序的默认连接器。如果在域级别仅定义了一个特定类型的连接器，并且应用程序没有明确包含对同一类型的另一个连接器的引用，则将在域级别定义的连接器用作该应用程序的默认连接器。在这种情况下，使用共享资源的`connector-ref`或`config-ref`属性是可选的。
+* 请注意，虽然共享资源仅限于本文档中所选的连接器和库，但在Mule中可以共享其他配置片段。有关详细信息，请参阅 link:/mule-user-guide/v/3.6/sharing-custom-configuration-fragments[共享自定义配置片段]。
+
+== 另请参阅
+
+访问参考文档：
+
+*   link:/mule-user-guide/v/3.6/vm-transport-reference[VM]
+*  link:/mule-user-guide/v/3.6/database-connector[D B]
+*  link:/mule-user-guide/v/3.6/jms-transport-reference[JMS]
+*   link:/mule-user-guide/v/3.6/http-connector[HTTP连接器]
+*  link:/mule-user-guide/v/3.6/mule-wmq-transport-reference[WMQ]
+*  link:/mule-user-guide/v/3.6/jboss-transaction-manager-reference[JBoss的]
+*  link:/mule-user-guide/v/3.6/setting-environment-variables[设置环境变量]

@@ -1,0 +1,117 @@
+= 使用非MEL表达式
+
+
+[WARNING]
+====
+此页面涉及Mule 3.3之前的表达式。这种类型的表达式仍然受支持，但不推荐。
+
+相反，请参阅 link:/mule-user-guide/v/3.6/mule-expression-language-mel[Mule表达语言MEL]以获取完整的用户指南和参考。
+====
+
+表达式允许您从当前消息中提取信息或确定如何处理消息。表达式对路由器和过滤器非常有用，用于定义路由逻辑和过滤不需要的消息。
+
+Mule ESB提供了多个 link:/mule-user-guide/v/3.6/non-mel-expressions-configuration-reference[默认表达式评估器]，允许您以各种表达式语言嵌入表达式逻辑，或者您可以 link:/mule-user-guide/v/3.6/creating-non-mel-expression-evaluators[创建你自己的评估者]支持其他语言。
+
+本页介绍如何使用表达式。有关如何配置表达式的更多详细信息，请参阅 link:/mule-user-guide/v/3.6/non-mel-expressions-configuration-reference[非MEL表达式配置参考]。
+
+== 消息属性范围
+
+从消息属性操作的Mule 3表达式开始，也支持可选的作用域限定符语法。有关消息范围的更多信息，请参阅 link:/mule-user-guide/v/3.6/mule-concepts[骡子概念]。
+
+== 使用表达式与变形金刚
+
+本节介绍支持表达式的变换器。有关变形金刚的更多信息，请参阅 link:/mule-user-guide/v/3.6/using-transformers[使用变形金刚]。
+
+=== 表达式转换器
+
+表达式转换器在当前消息上执行一个或多个表达式，其中表达式的结果将成为当前消息的有效载荷。
+
+例如，假设你有一个带有消息签名的流程组件，它接受三个参数：
+
+[source, java, linenums]
+----
+public class ShippingService
+{
+    public ShippingConfirmation makeShippingRequest(Customer customer, Item[] items, DataHandler supportingDocumentation)
+    {
+        //do stuff
+    }
+}
+----
+
+传递给你的消息组件如下所示：
+
+[source, java, linenums]
+----
+public interface ShippingRequestMessage
+{
+    public Customer getCustomer();
+    public Item[] getShippingItems();
+   //etc
+}
+----
+
+`<expression-transformer>`可用于从`ShippingRequestMessage`中提取字段以调用`ShippingService`。请注意，我们只能从`ShippingRequestMessage`中获取两个参数：`Customer`和`Item[]`。支持文档可能类似于Microsoft Word或Excel文档，它是`ShippingRequestMessage`的附件。附件可以与Mule中的任何消息相关联。
+
+[source, xml, linenums]
+----
+<expression-transformer>
+    <return-argument evaluator="bean" expression="customer"/>
+    <return-argument evaluator="bean" expression="shippingItems"/>
+    <return-argument evaluator="attachment" expression="supportingDocs" required="false"/>
+</expression-transformer>
+----
+
+这里我们执行三个单独的表达式来获取调用`ShippingService.makeShippingRequest()`方法所需的三个参数。前两个表达式使用`bean`评估器从消息中提取对象。最后一个参数使用`attachment`评估器来获取单个附件。请注意，`supportDocuments`可以为null，因此我们在返回参数上设置`required="false"`。
+
+=== 消息属性变换器
+
+`<message-properties-transformer>`允许您在当前消息上动态或静态地添加，删除或重命名属性。例如：
+
+[source,xml, linenums]
+----
+<message-properties-transformer>
+    <add-message-property key="GUID" value="#[string:#[xpath:/msg/header/ID]-#[xpath:/msg/body/@ref]]"/>
+</message-properties-transformer>
+----
+
+以上表达式提取`<body>`元素上的`<ID>`元素值和`ref`属性，并将结果设置为名为`GUID`的消息属性。
+
+===  XSLT变换器
+
+XSLT转换器通过XSLT处理消息的XML负载。使用表达式，可以将有关当前消息的信息作为参数注入到XSLT中。例如：
+
+[source,xml, linenums]
+----
+<mulexml:xslt-transformer name="xslt" xslFile="./conf/xsl/cd-listing.xsl">
+    <mulexml:context-property key="title" value="#[header:ListTitle]"/>
+    <mulexml:context-property key="rating" value="#[header:ListRating]"/>
+</mulexml:xslt-transformer>
+----
+
+执行时，当前消息中的标题`ListTitle`和`ListRating`将分别作为参数`title`和`rating`添加到XSLT上下文中。您可以使用`<xsl:param>`元素在XSLT中引用这些参数：
+
+== 使用表达式过滤器
+
+可以在基于内容的路由中使用表达式过滤器来断言当前消息的语句并相应地路由消息。表达式过滤器的工作方式与其他类型的Mule过滤器相同，并具有与上面列出的相同的表达式属性。过滤器上的表达式必须评估为true或false。例如：
+
+[source,xml, linenums]
+----
+<expression-filter evaluator="header" expression="my-header!=null"/>
+----
+
+像往常一样，您可以使用AND，OR和NOT过滤器来组合表达式。
+
+[source,xml, linenums]
+----
+<and-filter>
+    <expression-filter evaluator="header" expression="origin-country=USA"/>
+    <expression-filter evaluator="groovy" expression="payload.purchase.amount > 10000"/>
+</and-filter>
+----
+
+请注意，表达式过滤器支持所有表达式评估器的子集，因为过滤器应仅针对当前消息进行评估。例如，在过滤器上使用`function`表达式没有意义。支持的表达式评估器是：bean，自定义，异常类型，groovy，头，jxpath，ognl，有效载荷类型，正则表达式，通配符和xpath。有关表达式评估程序的更多信息，请参阅 link:/mule-user-guide/v/3.6/non-mel-expressions-configuration-reference[非MEL表达式配置参考]。
+
+有关过滤器的更多信息，请参阅使用过滤器。
+
+要详细了解配置表达式，请参阅 link:/mule-user-guide/v/3.6/non-mel-expressions-configuration-reference[非MEL表达式配置参考]。

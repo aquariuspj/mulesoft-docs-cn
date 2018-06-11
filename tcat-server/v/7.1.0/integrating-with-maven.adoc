@@ -1,0 +1,183 @@
+= 与Maven集成
+:keywords: tcat, maven
+
+有两种方法可以与Maven的Tcat控制台的REST API集成。一个使用Maven Antrun插件，另一个使用Maven Publishing插件。本页介绍如何使用每个。
+
+==  Maven Antrun插件持续部署集成
+
+这种将Maven构建与Tcat Server的REST API集成以实现持续部署Web应用程序的方法使用 http://maven.apache.org/plugins/maven-antrun-plugin[Maven Antrun Plugin]将Web应用程序转移到Tcat的控制台存储库中，然后触发新webapp版本的部署。
+
+要下载并尝试Maven POM文件的完整实用示例，请下载 link:_attachments/tcat-console-webapp-upload-maven.zip[Tcat Maven antrun插件示例zip文件]并将其解压缩。执行持续部署的POM文件XML如下所示：
+
+[source, xml, linenums]
+----
+<plugin>
+<artifactId>maven-antrun-plugin</artifactId>
+  <executions>
+    <execution>
+      <id>deploy-to-tcat-server</id>
+      <phase>package</phase>
+      <goals>
+         <goal>run</goal>
+      </goals>
+      <configuration>
+         <tasks>
+            <!-- Properties required for calling the
+                 update-tcat-deployment target. -->
+            <property name="tcat.console.host" value="localhost"/>
+            <property name="tcat.console.port" value="8080"/>
+            <property name="tcat.console.user" value="admin"/>
+            <property name="tcat.console.pass" value="admin"/>
+            <property name="tcat.deployment.id" value="local$2d146fd7-4336-442c-9973-e3239000e475"/>
+            <property name="war.dist.dir" value="${project.build.directory}"/>
+            <property name="war.base.name" value="${project.artifactId}"/>
+            <property name="war.name" value="${war.base.name}.war"/>
+            <property name="war.filename" value="${war.base.name}-${version}.war"/>
+            <!-- Might want to use svn rev number: -->
+            <property name="war.rev.number" value="5"/>
+              ...
+            <!-- Upload (POST) the war file into the
+                 Tcat Server console repository. -->
+            <echo>POST http://${tcat.console.host}:${tcat.console.port}/console/api/registry/Applications/${war.name} rev ${war.rev.number}</echo>
+            <postMethod url="http://${tcat.console.host}:${tcat.console.port}/console/api/registry/Applications/${war.name}"
+               doAuthentication="true">
+               ...
+            </postMethod>
+ 
+            <!-- Retrieve the webapp's deployment metadata
+                 from Tcat's console repository. -->
+            <property name="tcat.deployment.file" value="${war.dist.dir}/.deployment.txt"/>
+            <delete file="${tcat.deployment.file}" failonerror="false"/>
+            <get src="http://${tcat.console.host}:${tcat.console.port}/console/api/deployments/${tcat.deployment.id}"
+                 dest="${tcat.deployment.file}"
+                 username="${tcat.console.user}"
+                 password="${tcat.console.pass}"/>
+ 
+             <!-- Update the deployment metadata with the
+                  new revision number. -->
+             <replaceregexp file="${tcat.deployment.file}"
+                  match="${war.name}/[^&quot;/]+"
+                  replace="${war.name}/${war.rev.number}"
+                  flags="g" byline="true"/>
+ 
+             <!-- PUT the deployment metadata back to the
+                  console, and redeploy the webapp. -->
+             <echo>Updating deployment metadata and redeploying ${war.name}.</echo>
+             <sardine username="${tcat.console.user}"
+                      password="${tcat.console.pass}">
+	             <put url="http://${tcat.console.host}:${tcat.console.port}/console/api/deployments/${tcat.deployment.id}"
+		                  contentType="application/json">
+		              <fileset dir="${war.dist.dir}">
+		                   <include name=".deployment.txt"/>
+		              </fileset>
+	               </put>
+              </sardine>
+            </tasks>
+          </configuration>
+       </execution>
+   </executions>
+   ...
+</plugin>
+----
++
+你可以编辑这个XML来配置它来改变行为，比如构建和插入你自己的webapp版本字符串等。
+
+==  Maven Publishing插件
+
+*  <<Adding the Tcat Server Repository to the POM>>
+*  <<Configuring the Plug-in>>
+*  <<Configuring Security Information>>
+* 其他配置选项
+
+如果您创建Maven项目，则可以使用Maven的Galaxy Publishing插件轻松将您的项目和/或其资源发布到Tcat服务器存储库。要使用该插件，需要将必要的Maven存储库添加到Maven POM中，然后使用POM中的`<configuration>`标签配置该插件。本页的其余部分描述了这些任务。
+
+使用该插件更新应用程序后，您可以安排脚本来侦听这些更新并自动重新部署其软件包。有关示例，请参阅 link:/tcat-server/v/7.1.0/scripting-examples[在工件更新后自动重新部署]。
+
+== 将Tcat服务器存储库添加到POM
+
+第一步是将您的Tcat Server存储库（或快照存储库）添加到Maven POM中。 Tcat服务器存储库包含Apache孵化存储库。您将其添加到`<pluginRepositories>`部分，以便Maven知道从何处获取所需的文件：
+
+[source, xml, linenums]
+----
+<pluginRepositories>
+    <!-- For the Abdera dependencies -->
+    <pluginRepository>
+      <id>apache-incubating</id>
+      <name>Apache Incubating Repository</name>
+      <url>http://people.apache.org/repo/m2-incubating-repository/</url>
+    </pluginRepository>
+</pluginRepositories>
+----
+
+== 配置插件
+
+将Maven存储库添加到POM后，可以按照以下示例配置中所示配置插件，该示例配置会将生成的WAR从Maven发布到您的Tcat存储库：
+
+[source, xml, linenums]
+----
+<build>
+  <plugins>
+     <plugin>
+        <groupId>org.mule.galaxy</groupId>
+        <artifactId>galaxy-maven-publish-plugin</artifactId>
+        <version>2.0.0</version>
+        <configuration>
+          <url>http://localhost:8080/console/api/registry/Applications</url>
+          <username>admin</username>
+          <password>admin</password>
+          <overwrite>true</overwrite>
+ 
+          <!-- Publish generated WAR -->
+          <includes>
+            <include>target/*-${version}.war</include>
+          </includes>
+        </configuration>
+        <executions>
+          <execution>
+            <id>publish-artifacts</id>
+            <phase>package</phase>
+            <goals>
+              <goal>execute</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+...
+----
+
+== 配置安全信息
+
+如果您不想在POM中包含用户名和密码，则可以将其放入您的`~/.m2/settings.xml`文件中。该文件如下所示：
+
+[source, xml, linenums]
+----
+<settings>
+  <servers>
+    <server>
+      <id>myServer</id>
+      <username>admin</username>
+      <password>admin</password>
+    </server>
+  </servers>
+</settings>
+----
+
+要使用此安全信息，请将以下代码添加到您的插件配置中，将`myServer`替换为您在上面的`settings.xml`文件中使用的相同ID：
+
+[source, xml, linenums]
+----
+<configuration>
+  ...
+  <serverId>myServer</serverId>
+  ...
+</configuration>
+----
+
+link:/tcat-server/v/7.1.0/repository-api[<<上一页：*使用REST API管理Tcat存储库*]
+
+link:/tcat-server/v/7.1.0/release-notes[下一页：*发行说明* >>]
+
+== 另请参阅
+
+*  https://www.mulesoft.com/tcat/download [Tcat下载]
+*  https://support.mulesoft.com [联系MuleSoft]

@@ -1,0 +1,190 @@
+// sme：MG，作者：sduke？
+= 迁移到FTP和SFTP连接器
+
+FTP和SFTP传输已完全重写。他们从Mule 3运输模型演变为基于操作的连接器。这启用了许多新功能：
+
+* 与只提供轮询入站端点的旧传输不同，可以按需读取文件或完全列出目录内容。
+* 对常见文件系统操作（如复制，移动，重命名，删除，创建目录等）提供顶级支持。
+* 支持在文件系统级锁定文件。
+* 高级文件匹配功能。
+
+而且，它们被设计成完全对称的。这意味着，除连接配置外，它们的外观和行为都相同，并具有完全相同的功能集。此外，它们还匹配文件连接器的功能和行为。
+
+
+[[whats_covered_here]]
+== 这里涵盖了什么？
+
+*  <<ftp_configs>>
+*  <<ftp_config_refs>>
+*  <<ftp_listener>>
+*  <<ftp_writer>>
+
+
+[[config_ftp_sftp]]
+
+== 连接到FTP或SFTP服务器
+
+=== 迁移FTP连接
+
+.Mule 3示例：使用轮询的FTP入站连接
+
+[source,xml, linenums]
+----
+<ftp:inbound-endpoint host="localhost"
+ port="21" path="path/to/file"
+ user="myusername" password="maypassword"
+ pollingFrequency="4000" responseTimeout="10000"  metadata:id="5571009e-a278-4a01-ac1d-4102113b52ad"
+ doc:name="FTP">
+    <reconnect-forever frequency="3000"/>
+</ftp:inbound-endpoint>
+----
+
+这个例子展示了一个简单的Mule 4 FTP配置。
+
+.Mule 4示例：FTP连接
+[source,xml, linenums]
+----
+<ftp:config name="ftp">
+  <ftp:connection username="anonymous"
+   password="password" host="localhost"
+   port="${ftpPort}" workingDir="${workingDir}"/>
+</ftp:config>
+----
+
+=== 迁移和SFTP连接
+
+.Mule 3示例：SFTP入站端点
+[source,xml, linenums]
+----
+<sftp:inbound-endpoint host="localhost"
+ port="22" path="path/to/file"
+ user="myuser" password="mypassword"
+ responseTimeout="10000"
+ pollingFrequency="2000" fileAge="50"
+ sizeCheckWaitTime="10" doc:name="SFTP"/>
+----
+
+.Mule 4示例：SFTP连接配置
+[source,xml, linenums]
+----
+<sftp:config name="sftp">
+  <sftp:connection username="myusername"
+   password="mypassword"
+   host="localhost"
+   port="${sftpPort}"
+   workingDir="${workingDir}"/>
+</sftp:config>
+----
+
+SFTP连接还支持通过代理进行连接。
+
+.Mule 4示例：通过代理的SFTP连接
+[source,xml, linenums]
+----
+<sftp:config name="sftp">
+  <sftp:connection username="muletest1" password="muletest1"
+   host="127.0.0.100" port="${SFTP_PORT}" workingDir="${workingDir}">
+    <sftp:sftp-proxy-config host="localhost" port="${proxyPort}" protocol="HTTP"/>
+   </sftp:connection>
+</sftp:config>
+----
+
+[[ftp_listener]]
+== 迁移入站端点
+
+在Mule 3中，`<ftp:inbound-endpoint>`和`<sftp:inbound-endpoint>`消息源用于轮询文件目录。对于找到的每个文件，都会触发一条新消息。该消息将保存有效载荷中的文件内容以及作为系统属性的多个文件属性。为了避免重复选择相同的文件，提供了`autoDelete`和`moveTo`参数，以便文件在被挑选后离开被轮询的目录。
+
+Mule 4提供了一个改进的方法。 Studio调色板中的`<ftp:listener>`和`<sftp:listener>`组件（显示为`On New File`）轮询目录并触发新消息，就像它的前身一样。但它具有以下附加功能：
+
+* 您可以使用`<ftp:matcher>`和`<sftp:matcher>`仅接受符合特定条件的文件
+{0}}您不再需要删除或移动该文件，但仍然可以使用该选项。
+* 您可以使用连接器的任何操作来更改已处理文件，使其不再符合匹配条件。
+* 自动支持水印，允许您根据文件的时间戳自动进行过滤。
+
+.Mule 3示例：入站端点
+[source,xml, linenums]
+----
+<flow name="listener">
+  <ftp:inbound-endpoint address="ftp://anonymous:password@localhost:${port1}"
+    pollingFrequency="1000"/>
+  
+  <flow-ref name="processFile" />
+</flow>
+----
+
+.Mule 4示例：在新文件上
+
+[source,xml, linenums]
+----
+<ftp:config name="ftp">
+  <ftp:connection host="localhost" user="anonymous" password="password" workingDir="${workingDir}"/>
+</file:config>
+
+<flow name="listenWithScheduler" initialState="stopped">
+    <ftp:listener config-ref="ftp" directory=".">
+      <scheduling-strategy>
+        <fixed-frequency frequency="1000"/>
+      </scheduling-strategy>
+    </file:listener>
+    
+    <flow-ref name="processFile" />
+</flow>
+----
+
+[[ftp_write]]
+== 迁移和出站端点
+
+Mule 3传输使用`<ftp:outbound-endpoint>`组件将当前有效内容写入文件。 Mule 4连接器使用`<ftp:write>`操作。
+最重要的区别是：
+
+*  `<ftp:outbound-endpoint>`要求将内容写入执行时的消息负载中。 `<ftp:write>`操作允许嵌入生成要写入的内容的DataWeave转换。
+*  Mule 3传输在配置级别设置了`outputAppend`参数，而`<ftp:write>`操作有一个模式参数
+
+.Mule 3示例：出站端点
+
+[source,xml, linenums]
+----
+<ftp:connector name="file" outputAppend="true" />
+
+<flow name="greetings">
+  <http:listener path="greet" method="POST"/>
+  <set-payload value="Hello #[payload.name]" />
+  <ftp:outbound-endpoint path="greet.txt" connector-ref="file" />
+</flow>
+----
+
+.Mule 4示例：写入操作
+
+[source,xml, linenums]
+----
+<flow name="greetings">
+  <http:listener path="greet" method="POST"/>
+  <ftp:write path="greet.txt" mode="APPEND">
+    <ftp:content>#['Hello $(payload.name)']</file:content>
+  </file:write>
+</flow>
+----
+
+要使用SFTP连接器的FTP，只需使用Studio调色板将其添加到您的应用程序中，或者在您的`pom.xml`文件中添加以下依赖项：
+
+[source,XML,linenums]
+----
+<dependency>
+    <groupId>org.mule.connectors</groupId>
+    <artifactId>mule-ftp-connector</artifactId>
+    <version>1.1.0</version> <!-- or newer -->
+    <classifier>mule-plugin</classifier>
+</dependency>
+
+<dependency>
+    <groupId>org.mule.connectors</groupId>
+    <artifactId>mule-sftp-connector</artifactId>
+    <version>1.1.0</version> <!-- or newer -->
+    <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== 另请参阅
+
+*  link:/connectors/ftp-connector[FTP连接器]
+*  link:/connectors/sftp-connector[SFTP连接器]

@@ -1,0 +1,508 @@
+= 扩展运行时管理器代理（混合）
+
+本主题包含如何扩展Runtime Manager Agent的概述。它提供了使用方法恢复字符串来实现完整服务，外部处理程序和内部处理程序的说明。
+
+== 运行时管理器代理可扩展组件
+
+运行时管理器代理包含以下可扩展组件：
+
+* 服务
+* 外部邮件管理员
+* 内部消息处理程序
+
+== 运行时管理器代理自定义组件结构
+
+运行时管理器代理自定义组件应符合以下结构：
+
+*  `/lib`包含组件依赖关系
+*  `/classes`包含已编译的类
+
+自定义组件也应该使用Java 1.7进行编译，使用高版本编译的组件不会被代理程序加载。
+
+对于此示例，为了获取扩展代理所需的库，请将以下依赖关系添加到您的`pom.xml`：
+
+[source,xml, linenums]
+----
+<properties>
+    <maven.compiler.source>1.7</maven.compiler.source>
+    <maven.compiler.target>1.7</maven.compiler.target>
+    <mule.agent.version>1.6.4-mule-3.x</mule.agent.version>
+    <jersey.core.version>2.11</jersey.core.version>
+    <commons.lang.version>2.4</commons.lang.version>
+</properties>
+
+<dependencies>
+        <dependency>
+            <groupId>com.mulesoft.agent</groupId>
+            <artifactId>mule-agent-api</artifactId>
+            <version>${mule.agent.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.jersey.core</groupId>
+            <artifactId>jersey-client</artifactId>
+            <version>${jersey.core.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>commons-lang</groupId>
+            <artifactId>commons-lang</artifactId>
+            <scope>provided</scope>
+            <version>${commons.lang.version}</version>
+        </dependency>
+</dependencies>
+
+<repositories>
+    <repository>
+        <id>mulesoft-ci-releases</id>
+        <name>ci releases</name>
+        <url>https://repository-master.mulesoft.org/nexus/content/repositories/releases-ee/<url>
+    </repository>
+</repositories>
+
+<build>
+    <plugins>
+        <plugin>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <executions>
+                <execution>
+                    <phase>package</phase>
+                    <goals>
+                        <goal>single</goal>
+                    </goals>
+                </execution>
+            </executions>
+            <configuration>
+                <descriptorRefs>
+                    <descriptorRef>jar-with-dependencies</descriptorRef>
+                </descriptorRefs>
+            </configuration>
+        </plugin>
+    </plugins>
+</build>
+----
+
+相应的jar应该被添加到mule-agent插件中的`lib`文件夹下，mule-agent插件包含在Mule实例的`plugins`文件夹中。例如，`$MULE_HOME/plugins/mule-agent/lib/<component name>.jar`。
+
+[[addservice]]
+== 添加新服务
+
+要添加新服务，您必须实现MuleAgentService接口。
+
+定制服务的注意事项：
+
+* 通过使用`@Inject`注释，该服务可以执行在Runtime Manager代理环境中注册的任何内部处理程序。
+* 您不必遵循运行时管理器代理体系结构来创建新服务。
+
+=== 编写您的服务
+
+==== 实施MuleAgentService
+
+[source, java, linenums]
+----
+@Named("my.company.service")
+@Singleton
+public class MyService implement MuleAgentService
+{
+
+    @Inject
+    private Map<String, InternalMessageHandler<List<T>>> handlers;
+
+    @Override
+    public java.util.List<com.mulesoft.agent.handlers.InternalMessageHandler> getInternalHandlers()
+    {
+        // TODO: return List of Internal Handlers
+    }
+
+    @Override
+    public void enable(boolean state) throws AgentEnableOperationException {
+        // TODO: enable the Service
+    }
+
+    @Override
+    public boolean isEnabled() {
+        // TODO: return Service status
+    }
+}
+----
+
+要添加新的服务，只需将包含您的类的jar放在`mule-agent`插件文件夹（例如`$MULE_HOME/mule-agent/lib`）内的`lib`文件夹下。
+
+=== 还原字符串服务示例
+
+如上所述，本文档使用一个简单示例来解释如何编写完整扩展来恢复字符串。第一步是为此添加一项服务。
+
+[source, java, linenums]
+----
+@Named("com.company.service.reverse")
+@Singleton
+public class ReverseService implements MuleAgentService
+{
+
+    @Inject
+    List<InternalMessageHandler<String>> messageHandlerList;
+
+    @Override
+    public List<InternalMessageHandler> getInternalHandlers()
+    {
+        return new ArrayList<InternalMessageHandler>(messageHandlerList);
+    }
+
+    @Override
+    public void enable(boolean b) throws AgentEnableOperationException
+    {
+
+    }
+
+    @Override
+    public boolean isEnabled()
+    {
+        return true;
+    }
+
+    public String getConvertedString(String origString)
+    {
+        String reverted = StringUtils.reverse(origString);
+        for (InternalMessageHandler<String> internalMessageHandler : messageHandlerList)
+        {
+            internalMessageHandler.handle(reverted);
+        }
+
+        return reverted;
+    }
+}
+----
+
+[[extmh]]
+== 添加一个新的外部消息处理程序
+
+要添加新的外部消息处理程序，您必须实施Runtime Manager代理<<Reverse String External Message Handler>>接口。
+
+自定义外部消息处理程序的注意事项：
+
+* 外部消息处理程序将被注入到一个传输中
+* 外部消息处理程序必须是线程安全的
+* 外部消息处理程序由传输器执行，不能与Mule交互。 *Only Services can interact with Mule*
+
+=== 编写您的外部消息处理程序
+
+====  REST
+
+[source, java, linenums]
+----
+
+@Named("my.external.handler")
+@Path("somePath")
+@Singleton
+public class MyRequestHandler implements ExternalMessageHandler
+{
+    @Inject
+    private MuleService muleServiceInTheAPIModule;
+
+    @Override
+    public void enable(boolean state) throws AgentEnableOperationException {
+        // TODO: enable the Handler
+    }
+
+    @Override
+    public boolean isEnabled() {
+        // TODO: return Handler status
+    }
+
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    public List<Component> someRequest()
+    {
+
+    }
+}
+----
+
+==== 的WebSockets
+
+[source, java, linenums]
+----
+@Named("TYPE_OF_MESSAGE_THAT_MUST_DISPATCH")
+@Singleton
+public class MyRequestHandler implements ExternalMessageHandler
+{
+    @Inject
+    private MuleService muleServiceInTheAPIModule;
+ 
+    @Override
+    public void enable(boolean state) throws AgentEnableOperationException {
+        // TODO: enable the Handler
+    }
+ 
+    @Override
+    public boolean isEnabled() {
+        // TODO: return Handler status
+    }
+ 
+}
+----
+
+要添加新的外部消息处理程序，只需将包含您的类的jar放到`mule-agent`插件文件夹（例如`$MULE_HOME/mule-agent/lib`）内的`lib`文件夹下。
+
+=== 反向字符串外部消息处理程序
+
+在反向字符串示例之后，外部处理程序如下所示。
+
+[source, java, linenums]
+----
+@Named("com.company.externalhandler.reverse")
+@Path("revert")
+@Singleton
+public class ReverseExternalHandler implements ExternalMessageHandler
+{
+ 
+    @Inject
+    private ReverseService reverseService;
+ 
+    @Override
+    public void enable(boolean b) throws AgentEnableOperationException
+    {
+ 
+    }
+ 
+    @Override
+    public boolean isEnabled()
+    {
+        return true;
+    }
+ 
+    @GET
+    public String getReversedString(@QueryParam("string") String string)
+    {
+        return reverseService.getConvertedString(string);
+    }
+}
+----
+
+以上代码公开`<your REST transport host>/mule/reverse`下的资源。
+
+[[intmh]]
+== 添加一个新的内部消息处理程序
+
+要添加新的内部消息处理程序，您必须实现<<Internal Message Handler>>接口。
+
+自定义内部消息处理程序的注意事项：
+
+* 内部消息处理程序将根据它处理的消息类型注入到服务中
+* 内部消息处理程序必须是线程安全的
+* 内部消息处理程序由服务执行，不能与Mule交互。 *Only Services can interact with Mule*
+
+=== 编写内部消息处理程序
+
+[source, java, linenums]
+----
+@Named("my.company.internal.handler")
+@Singleton
+public class MyInternalMessageHandler<T> implements InternalMessageHandler<T>{
+ 
+    boolean handle(T t){
+          // TODO handle message
+    }
+ 
+    @Override
+    public void enable(boolean state) throws AgentEnableOperationException {
+        // TODO: enable the Handler
+    }
+ 
+    @Override
+    public boolean isEnabled() {
+        // TODO: return Handler status
+    }
+}
+----
+
+要添加新的内部消息处理程序，只需将包含您的类的jar放在`mule-agent`插件文件夹（例如`$MULE_HOME/mule-agent/lib`）内的`lib`文件夹下。
+
+==== 反向字符串内部消息处理程序
+
+下面的代码显示了反向字符串示例的内部消息处理程序。
+
+[source, java, linenums]
+----
+@Named("com.mulesoft.agent.test.extension.internalHandler")
+@Singleton
+public class ReverseInternalHandler extends BufferedHandler<String>
+{
+ 
+    @Configurable("true")
+    protected boolean enabled;
+ 
+    @Configurable
+    public String host;
+ 
+    @Configurable
+    public String port;
+ 
+    @Inject
+    public ReverseInternalHandler()
+    {
+        super();
+    }
+ 
+    @Override
+    protected boolean canHandle(String t)
+    {
+        return true;
+    }
+ 
+    @Override
+    protected boolean flush(Collection<String> ts)
+    {
+        String tempDir = System.getProperty("java.io.tmpdir");
+        File revertedStringFile = new File(tempDir, "revertedString.txt");
+ 
+        try
+        {
+            FileOutputStream fos = new FileOutputStream(revertedStringFile);
+ 
+            BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(fos));
+ 
+            for (String string : ts)
+            {
+                bw.write(string);
+                bw.newLine();
+            }
+ 
+            bw.close();
+        }
+        catch (IOException e)
+        {
+            System.out.println("Error writing reversed string");
+            return false;
+        }
+        return true;
+    }
+ 
+    @PostConfigure
+    public void postConfigure()
+    {
+    }
+ 
+    @Override
+    public void enable(boolean b) throws AgentEnableOperationException
+    {
+      enabled = b;
+    }
+ 
+    @Override
+    public boolean isEnabled()
+    {
+        return enabled;
+    }
+}
+----
+
+此内部消息处理程序将由服务处理的消息写入名为`revertedString.txt`的文件。
+
+== 运行时管理器代理API接口
+
+===  Mule服务
+
+[source, java, linenums]
+----
+**
+ * <p>
+ * Implementations of this interface provides new functionality to the Runtime Manager Agent. These services handle data from the
+ * Mule server and interact with mule.
+ * </p>
+ *
+ * @see com.mulesoft.agent.handlers.ExternalMessageHandler , InternalMessageHandler
+ * @since 1.0
+ */
+public interface MuleAgentService extends Switcher
+{
+ 
+    public List<InternalMessageHandler> getInternalHandlers();
+ 
+}
+----
+
+=== 外部消息处理程序
+
+[source, java, linenums]
+----
+/**
+ * <p>
+ * Gets  messages coming from an external system and executes {@link com.mulesoft.agent.services.MuleAgentService} based
+ * the request.
+ * </p>
+ * <p>
+ * This is just a marker interface for the communication layer to recognize the interface as a External message receiver
+ * </p>
+ *
+ * @since 1.0
+ */
+public interface ExternalMessageHandler extends Switcher
+{
+ 
+}
+----
+
+=== 内部消息处理程序
+
+[source, java, linenums]
+----
+/**
+ * <p>
+ * Internal messages come generally from mule side. {@link InternalMessageHandler} are use to handle those messages depending on,
+ * for example, the transport.
+ * </p>
+ *
+ * @param <Rq> is the type of the message it must handle
+ * @since 1.0
+ */
+public interface InternalMessageHandler<Rq> extends Switcher
+{
+ 
+    /**
+     * <p>
+     * Process an internal message
+     * </p>
+     *
+     * @param message The message to be processed
+     * @return true if the message could be processed
+     */
+    boolean handle(@NotNull Rq message);
+ 
+}
+----
+=== 切换
+
+[source, java, linenums]
+----
+/**
+ * <p>
+ * All the classes implementing this interface will be able to enable/disable themselves
+ * </p>
+ *
+ * @since 1.0
+ */
+public interface Switcher
+{
+    /**
+     * <p>
+     * Turn the feature on, the class will be behave as expected
+     * <br/>
+     * If the feature is being disabled, any resources it has allocated should be freed and taken again when it is reenabled
+     * </p>
+     * @param state true if enabled, false otherwise
+     * @throws AgentEnableOperationException if the end state is not the requested one
+     */
+    void enable(boolean state) throws AgentEnableOperationException;
+ 
+    /**
+     * <p>
+     * Check the state of the class
+     * </p>
+     *
+     * @return true if it is on, false otherwise
+     */
+    boolean isEnabled();
+ 
+}
+----

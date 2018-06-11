@@ -1,0 +1,102 @@
+= 关于AMQP连接器
+:keywords: amqp, connector, amqp_0_9_1
+
+发行说明： link:/release-notes/connector-amqp[AMQP连接器发行说明]
+
+AMQP连接器使您的应用程序可以使用符合AMQP 0.9.1的代理进行消息传递。其主要特点包括：
+
+* 通过使用私有时间队列进行请求回复消费的RPC模式
+具有可选渠道自我恢复功能的*  SDK交易管理
+* 请求同步消息，超时
+* 交换和队列声明的管理操作。
+* 所有AMQP消息属性，包括自定义标题
+* 回复（发布对默认交换的回复）
+* 自动，骡驱动和手动消息确认
+* 手动拒绝信息
+* 通过错误处理强制和立即发布参数并处理返回的（未传送的）消息。
+* 预取大小并统计"quality of service"设置
+* 无本地和独家消费者
+*  TLS / SSL连接
+*  Message Builder功能类似于JMS Connector提供的功能
+
+[[configuration_settings]]
+== 配置连接器
+
+开箱即用，AMQP连接器带有一组经过精细调整的默认值，用于发布和使用消息。这意味着唯一的要求是您要配置应该使用哪个连接。
+
+本例设置一个到localhost中的代理的最小连接：
+
+[source, xml, linenums]
+----
+<amqp:config name="AMQP_Config">
+  <amqp:connection host="localhost" username="guest" password="guest" />
+</amqp:config>
+----
+
+=== 定义全局默认值
+
+使用AMQP `config`可以定义在使用或发布消息时默认使用的多个参数。这样，您可以为与配置关联的所有操作定义全局默认行为，然后仅在需要自定义行为的操作中覆盖每个参数。
+
+例如，我们可以根据大小和整个消息来定义预取大小窗口。
+
+[source, xml, linenums]
+----
+<amqp:config name="AMQP_Config">
+   <amqp:connection host="localhost" username="guest" password="guest" />
+   <amqp:quality-of-service-config prefetchSize="4" prefetchCount="4" />
+   <amqp:consumer-config ackMode="IMMEDIATE" />
+   <amqp:publisher-config requestBrokerConfirms="true"/>
+</amqp:config>
+----
+
+在这种情况下，与此配置关联的每个`consume`操作或`listener`都将使用`IMMEDIATE`类型的确认模式，而每次我们执行`publish`或{{4} }，即将离任的消息将向经纪人请求确认。
+
+如有需要，所有这些属性都可以在操作级别上覆盖。假设我们需要`publish`个不需要经纪人确认的消息：
+
+[source, xml, linenums]
+----
+<amqp:publish config-ref="AMQP_Config" requestBrokerConfirms="false"/>
+----
+
+== 连接到代理
+AMQP连接由一组适用于任何连接的常规参数定义：
+
+=== 提供身份验证的凭证
+
+为了建立认证连接，您必须设置`connection`元素中的`username`，`password`和`virtualhost`：
+
+[source, xml, linenums]
+----
+<amqp:config name="AMQP_Config">
+  <amqp:connection host="localhost" virtualhost="/" username=g"uest" password="guest" />
+</amqp:config>
+----
+
+=== 为代理设置TLS / SSL连接
+
+使用参数`useTls`，您可以使用默认的TLS上下文创建到代理的安全连接。您还可以按照以下方式将自定义TLS上下文作为连接中的子元素或全局元素提供：
+
+[source, xml, linenums]
+----
+<tls:context name="globalTlsContext">
+  <tls:trust-store path="tls/tlstest-cacerts.jks"
+    password="changeit" />
+  <tls:key-store path="tls/tlstest-keystore.jks"
+    keyPassword="changeit" password="changeit" />
+</tls:context>
+
+<amqp:config name="config">
+  <amqp:connection host="localhost" port="5671"
+    virtualHost="/" username="guest" password="guest" useTls="true"
+    tlsContext="globalTlsContext" />
+ </amqp:config>
+----
+== 另请参阅
+
+*  link:amqp-consume[如何消费信息]
+*  link:amqp-publish[如何发布消息]
+*  link:amqp-listener[如何听新消息]
+*  link:amqp-publish-consume[如何听取答复]
+*  link:amqp-ack[处理消息确认]
+*  link:amqp-transactions[处理AMQP中的事务]
+*  link:amqp-documentation[AMQP连接器技术参考]

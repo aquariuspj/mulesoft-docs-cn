@@ -1,0 +1,571 @@
+=  Mule WMQ运输参考
+:keywords: anypoint studio, connector, endpoint, wmq, transport
+
+_企业_
+
+用于IBM®WebSphere®MQ（Mule WMQ传输）的Mule Enterprise传输提供以下功能：
+
+* 使用本地MQ点对点的WebSphere MQ和Mule JMS之间的双向请求 - 响应消息传递。
+* 使用JMSReplyTo的同步和异步请求 - 响应通信。
+* 支持本地，多资源和XA事务
+* 支持本机MQ消息类型
+* 特定于WebSphere MQ的配置语法，用于消除MQ配置的复杂性
+* 在JMS和本机MQ消息类型中都透明地支持异步请求 - 响应消息传递模式
+* 支持连接重试策略（自我修复），有或没有事务处理
+* 支持IBM特定的标头
+包括JNDI连接的*  JNDI目标支持
+* 每个端点控制目标客户端（本地或JMS兼容）
+
+本页介绍如何配置和使用此传输及其连接器。它假定您已经了解如何配置和使用WebSphere MQ。有关WebSphere MQ的完整信息，请参阅 link:http://www-01.ibm.com/software/integration/wmq/library/[WebSphere MQ信息中心]。
+
+Mule WMQ传输可用于Mule企业版，并包含对WebSphere MQ特定功能的本机支持。
+
+*Note*：社区JMS传输不提供对WebSphere MQ的完全支持，不建议用于生产WebSphere MQ安装。
+
+== 支持的版本
+
+*  WMQ传输支持IBM MQ 8.0,9.0客户端驱动程序，可用于连接到WMQ服务器版本8.0和9.0。
+*  WMQ 7.x正处于IBM的生命周期中。虽然连接器应该与该版本向后兼容，但IBM和MuleSoft都不支持该连接器
+* 此传输与Mule 3.8及更高版本与IBM MQ 8和9兼容。此传输未在Mule 3.7上使用IBM MQ 8或9进行测试。此配置可能有效，但不受支持。
+
+== 设置Mule WMQ传输
+
+在使用Mule WMQ传输之前，必须将以下JAR从WebSphere MQ主目录下的`java/lib`目录复制到您的Mule主目录下的`lib/user`目录中：
+
+*  `com.ibm.mq.allclient.jar`
+*  `com.ibm.mqetclient.jar`（如果使用<<Transactions>>）
+*  `jms.jar`
+
+此外，如果您使用本地绑定（`transportType="BINDINGS_MQ"`），则必须设置以下环境变量：
+
+[source]
+----
+export LD_LIBRARY_PATH=/opt/mqm/java/lib
+----
+
+将此变量设置为随WebSphere MQ服务器安装附带的Java库目录的位置。有关绑定类型的更多信息，请参阅WebSphere MQ文档。
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source, xml, linenums]
+----
+xmlns:wmq="http://www.mulesoft.org/schema/mule/ee/wmq"
+----
+
+XML Schema位置：
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/ee/wmq
+http://www.mulesoft.org/schema/mule/ee/wmq/current/mule-wmq-ee.xsd
+----
+
+== 使用Mule WMQ Transport
+
+在使用传输器运行应用程序之前，请确保您的系统符合以下条件：
+
+*  Mule Enterprise已安装。
+* 安装支持的WebSphere MQ版本（请参阅上面的列表）。
+* 将上面列出的WebSphere MQ客户端库JAR添加到项目构建路径中。
+
+默认情况下，从Mule发送到WebSphere MQ的消息以本机格式发送，并禁止JMS（RFH2）头。此配置通过将参数附加到WebSphere MQ目标URI（`?targetClient=1`）的连接器透明地应用于下面的配置。要强制接收WebSphere MQ上的JMS行为（即使用非本地格式），请在WMQ连接器声明中使用以下属性设置：
+
+[source, xml, linenums]
+----
+<wmq:connector name="..."
+          ...
+     targetClient="JMS_COMPLIANT"
+          ...
+/>
+----
+
+*笔记：
+
+*  Bitronix和JMS不遵守高速缓存连接工厂，并且无论如何重新创建TCP连接
+工厂已设置。
+* 在`targetClient`属性中，当消息有效载荷是对象时，必须将其设置为`JMS_COMPLIANT`。
+
+以下配置示例配置名为`test`的流执行请求回复处理。它从本地WebSphere MQ端点（`wmq://REQUEST.QUEUE`）获取消息，并将它们转发到另一个本地WebSphere MQ端点` wmq://RESPONSE.QUEUE`。当Mule异步处理消息时，`Responder`流等待，并在响应队列中接收消息时附加字符串RESPONSE OK。所有JMS语义都适用，并且会从消息属性中读取诸如replyTo和QoS属性之类的设置，或使用默认值（根据JMS规范）。
+
+其他配置说明：
+
+* 端点的`wmq` URI方案指示应该使用WebSphere MQ传输。
+*  WMQ连接器声明中的`queueManager`属性与之前设置的WebSphere MQ QueueManager相匹配。
+* 本地队列`REQUEST.QUEUE`和`RESPONSE.QUEUE`以前使用`runmqsc`实用程序进行设置。
+* 如果使用远程队列，请使用`channel`属性指定通道，并使用WebSphere MQ实用程序`amqsget`验证是否在远程队列上接收到消息。
+
+骡子配置：
+
+[source, xml, linenums]
+----
+<mule xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" 
+xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" 
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" 
+xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:wmq="http://www.mulesoft.org/schema/mule/ee/wmq"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core 
+      http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/test 
+        http://www.mulesoft.org/schema/mule/test/current/mule-test.xsd
+        http://www.mulesoft.org/schema/mule/http 
+        http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/wmq 
+        http://www.mulesoft.org/schema/mule/ee/wmq/current/mule-wmq-ee.xsd
+        http://www.springframework.org/schema/beans 
+        http://www.springframework.org/schema/beans/spring-beans-current.xsd
+        http://www.mulesoft.org/schema/mule/ee/dw 
+        http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+ 
+    <wmq:connector name="wmqconnector"
+                   hostName="localhost" port="1414"
+                   queueManager="QUEUE_MANAGER"
+                   username="username"
+                   password="password"
+                   transportType="CLIENT_MQ_TCPIP"
+                   specification="1.1"
+                   disableTemporaryReplyToDestinations="true"
+                   numberOfConsumers="1">
+    </wmq:connector>
+    <http:listener-config name="HTTP_Listener_Configuration" host="127.0.0.1" port="8081"/>
+ 
+    <flow name="main">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="in" doc:name="HTTP Connector"/>
+        <request-reply>
+            <wmq:outbound-endpoint queue="REQUEST.QUEUE" connector-ref="wmqconnector"/>
+            <wmq:inbound-endpoint queue="RESPONSE.QUEUE" connector-ref="wmqconnector"/>
+        </request-reply>
+        <wmq:message-info-mapping />
+    </flow>
+ 
+    <flow name="service">
+        <wmq:inbound-endpoint queue="REQUEST.QUEUE" connector-ref="wmqconnector" doc:name="WMQ"/>
+        <logger message="reached REQUEST QUEUE" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+"Response OK"]]></dw:set-payload>
+        </dw:transform-message>
+    </flow>
+</mule>
+----
+
+
+== 定义WMQ XA连接器
+
+通过Spring定义一个连接工厂是可选的，你可以简单地定义一个启用WMQ XA的连接器，如下所示：
+
+[source, xml]
+----
+<wmq:xa-connector ...>
+----
+
+连接器实例化XA连接工厂，而不需要引用显式定义的连接工厂。
+
+但是，在某些情况下，您需要明确定义连接工厂，然后在连接器定义中引用它。如果是这种情况，那么如果使用XA事务，那么Connection Factory类必须是MQXAConnectionFactory。然后WMQ连接器必须引用这个bean，例如：
+
+[source, xml, linenums]
+----
+<spring:bean id="mqXAFactory" class="com.ibm.mq.jms.MQXAConnectionFactory">
+...
+</spring:bean>
+ 
+<wmq:xa-connector ... connectionFactory-ref="mqXAFactory">
+----
+
+== 入站邮件处理
+
+入站消息由连接器接收并传递给组件。如果`useRemoteQueueDefinitons`连接器属性未设置为`true`，并且入站消息类型为`MQMT_REQUEST`，则组件返回的消息将发送到`JMSReplyTo`属性中指定的队列的原始讯息。但是，如果组件中存在出站WebSphere MQ端点，它将覆盖replyto处理程序功能。默认情况下，`useRemoteQueueDefinitons`设置为`false`。
+
+image:inbound-flow.png[入站流量]
+
+== 出站邮件处理
+
+出站端点行为取决于WebSphere MQ消息类型。如果消息类型为`MQMT_REPLY`或`MQMT_DATAGRAM`，则其他属性将从原始消息中复制并将消息分派到队列中。
+
+如果消息类型为`MQMT_REQUEST`，则连接器会检查消息中是否存在`JMSReplyTo`设置。如果未设置，则连接器将创建一个临时队列。如果端点是同步的，则连接器等待响应。超时时间可以使用`responseTimeout`设置进​​行设置。如果连接器收到响应，则由组件返回。
+
+image:outbound-flow.png[出站流]
+
+== 从JNDI中检索连接工厂
+
+为了支持已经配置了JNDI注册表来存储连接工厂的情况，连接器声明应该包含以下参数。这与常规 link:/mule-user-guide/v/3.9/jms-transport-reference[JMS运输]相同。
+
+[source, xml, linenums]
+----
+<wmq:connector ...
+     jndiInitialFactory="com.sun.jndi.ldap.LdapCtxFactory"
+     jndiProviderUrl="ldap://localhost:10389/"
+     connectionFactoryJndiName="cn=ConnectionFactory,dc=example,dc=com"
+----
+
+== 变压器
+
+WMQ传输提供了一个转换器，用于通过提取消息负载将`com.ibm.jms.JMSMessage`或子类型转换为对象。它还提供一个转换器将对象转换回消息。您可以使用`<message-to-object-transformer>`和`<object-to-message-transformer>`元素来配置这些转换器。请注意，仅当`targetClient`设置为`JMS_COMPLIANT`时，对象有效内容才有效。
+
+== 交易
+
+您可以使用标准事务配置元素在WMQ传输端点上配置单资源（本地），多资源和XA事务。例如，您可以在出站端点上配置XA事务，如下所示：
+
+[source, xml, linenums]
+----
+<jbossts:transaction-manager/>
+ 
+<wmq:xa-connector name="wmqConnector" hostName="winter" ...>
+...
+     <wmq:outbound-endpoint queue="out">
+       <xa-transaction action="ALWAYS_BEGIN"/>
+     </wmq:outbound-endpoint
+...<wmq:connector name="wmqConnector" ...>
+  <spring:property name="connectionLostTimeout" value="3000"/>
+  <ee:retry-forever-policy frequency="3000" />
+</wmq:connector>
+----
+
+请注意，如果您正在使用XA事务，并且您要连接到需要队列管理器连接到远程资源的队列，则必须使用来自WebSphere MQ的扩展事务客户机（`mqetclient.jar`）。有关更多信息，请参阅WebSphere MQ 7帮助中的 http://publib.boulder.ibm.com/infocenter/wmqv7/v7r0/topic/com.ibm.mq.csqzaf.doc/cs10270_.htm[什么是扩展交易客户端？]。
+
+有关使用交易的更多信息，请参阅 link:/mule-user-guide/v/3.9/transaction-management[交易管理]。
+
+== 配置重试策略
+
+WMQ传输支持 link:/mule-user-guide/v/3.9/configuring-reconnection-strategies[重试策略]。您可以按如下所示在连接器上配置超时值：
+
+[source, xml, linenums]
+----
+<wmq:connector name="wmqConnector" ...>
+  <spring:property name="connectionLostTimeout" value="3000"/>
+  <ee:retry-forever-policy frequency="3000" />
+</wmq:connector>
+----
+
+随Mule WMQ传输一起提供的示例允许您测试重试策略。有关完整信息，请参阅WMQ发行版中的自述文件。
+
+== 已知限制
+
+以下是使用Mule WMQ传输尚未完全测试的功能或不支持的功能：
+
+* 远程队列（仅在以前的版本中测试过）
+* 退出处理程序支持（未测试）
+* 主题（未经测试）
+*  MQMT_REPORT消息类型支持（不支持）
+* 针对性能吞吐量增益的数据压缩（不支持）
+
+== 配置参考
+
+以下表格描述了以下配置：
+
+*  `wmq:connector`
+*  `wmq:xa-connector`
+*  `wmq:inbound-endpoint`
+*  `wmq:outbound-endpoint`
+*  `wmq:endpoint`
+
+== 连接器
+
+默认的WebSphere MQ连接器。
+
+<connector...>的{​​{0}}属性
+
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+| queueManager  |要使用的QueueManager的名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| hostName  |要使用的QueueManager的主机名。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|端口 |要使用的QueueManager的端口。
+
+*Type*：端口号+
+*Required*：否+
+*Default*：无
+| temporaryModel  |从此连接器创建临时目标时要使用的临时目标模型。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| ccsId  | WebSphere MQ CCS标识。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| transportType |是否使用本地绑定或客户端/服务器TCP绑定。可能的值有：BINDINGS_MQ，CLIENT_MQ_TCPIP，DIRECT_HTTP，DIRECT_TCPIP和MQJD。
+
+*Type*：未指定+
+*Required*：否+
+*Default*：无
+|频道 |用于与队列管理器进行通信的频道名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| {propagateMQEvents {1}}
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+| useRemoteQueueDefinitions  |使用远程队列定义时，WMQ使用JMSReplyTo属性来传递响应。当设置为true时，此属性会导致Mule忽略ReplyTo队列目标，并且不会干扰WMQ的远程队列机制。默认情况下，它设置为false。这也意味着，通过使用WMQ的远程队列定义，当这个属性为真时，不可能使用Mule的一些请求/响应模式。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+| receiveExitHandler  |接收退出处理程序实现的完全限定类名。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| receiveExitHandlerInit  |接收退出处理程序的初始化参数。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| sendExitHandler  |发送出口处理程序实现的全限定类名称。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| sendExitHandlerInit  |发送出口处理程序的初始化参数。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| securityExitHandler  |安全出口处理程序实现的完全限定类名。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| securityExitHandlerInit  |安全出口处理程序的初始化参数。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| targetClient  |指定它是以JMS还是非JMS格式。可能的值有：JMS_COMPLIANT或NONJMS_MQ（默认）。
+
+*Type*：未指定+
+*Required*：否+
+*Default*：无
+|===
+
+无<connector...>的子元素
+
+
+==  XA连接器
+
+用于XA事务的WebSphere MQ连接器。
+
+<xa-connector...>的{​​{0}}属性
+
+
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+| queueManager  |要使用的QueueManager的名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| hostName  |要使用的QueueManager的主机名。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|端口 |要使用的QueueManager的端口。
+
+*Type*：端口号+
+*Required*：否+
+*Default*：无
+| temporaryModel  |从此连接器创建临时目标时要使用的临时目标模型。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| ccsId  | WebSphere MQ CCS标识。
+
+*Type*：整数+
+*Required*：否+
+*Default*：无
+| transportType |是否使用本地绑定或客户端/服务器TCP绑定。可能的值有：BINDINGS_MQ，CLIENT_MQ_TCPIP，DIRECT_HTTP，DIRECT_TCPIP和MQJD。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|频道 |用于与队列管理器进行通信的频道名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| propagateMQEvents  |传播MQ事件。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+| useRemoteQueueDefinitions  |使用远程队列定义时，WMQ使用JMSReplyTo属性来传递响应。当设置为true时，该属性将导致Mule忽略ReplyTo队列目标，并且不会干扰WMQ的远程队列机制。默认情况下，它设置为false。这也意味着，通过使用WMQ的远程队列定义，当这个属性为真时，不可能使用Mule的一些请求/响应模式。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+| receiveExitHandler  |接收退出处理程序实现的完全限定类名。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| receiveExitHandlerInit  |接收退出处理程序的初始化参数。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| sendExitHandler  |发送出口处理程序实现的全限定类名称。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| sendExitHandlerInit  |发送出口处理程序的初始化参数。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| securityExitHandler  |安全出口处理程序实现的完全限定类名。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| securityExitHandlerInit  |安全出口处理程序的初始化参数。
+
+*Type*：类名+
+*Required*：否+
+*Default*：无
+| targetClient  |指定它是以JMS还是非JMS格式。可能的值有：JMS_COMPLIANT或NONJMS_MQ（默认）。
+
+*Type*：未指定+
+*Required*：否+
+*Default*：无
+|===
+
+指定它是以JMS还是非JMS格式。可能的值有：JMS_COMPLIANT或NONJMS_MQ（默认）。
+
+无<xa-connector...>的子元素
+
+
+== 入站端点
+
+接收WMQ消息的端点。
+
+<inbound-endpoint...>的{​​{0}}属性
+
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+|队列 |队列名称。
+
+*Type*：string +
+*Required*：是+
+*Default*：无
+|===
+
+<inbound-endpoint...>的{​​{0}}子元素
+
+[%header,cols="60a,20a,20a"]
+|===
+| {名称{1}}基数 |说明
+
+|骡：响应 | 0..1  |
+|骡：抽象重新传递策略 | 0..1  |
+|骡：抽象事务 | 0..1  |
+|骡：抽象-XA的事务  | 0..1  |
+|骡：抽象安全过滤器 | 0..1  |
+|骡：抽象滤波器 | 0..1  |
+| {选择{1}} 0..1  |
+|===
+
+== 出站端点
+
+WMQ消息发送到的端点。
+
+<outbound-endpoint...>的{​​{0}}属性
+
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+|队列 |队列名称。
+
+*Type*：string +
+*Required*：是+
+*Default*：无
+| disableTemporaryReplyToDestinations  |如果设置为false（默认值），当Mule执行请求/响应调用时，临时目标将自动设置为接收来自远程WMQ调用的响应。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+| correlationId  |客户端可以使用关联ID标头字段将一条消息链接到另一条消息。典型的用例是将响应消息与其请求消息链接起来。 CorrelationID必须是24个字节的字符串。 WebSphere使用零填充较短的值，以便固定长度始终为24个字节。由于WMQ提供商发送的每条消息都分配有消息ID值，因此通过消息ID链接消息很方便。所有消息ID值必须以“ID：”前缀开头。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| messageType  |指示消息类型。每种消息类型都有与之相关的特定行为。定义了以下消息类型：
+
+*  MQMT_REQUEST：该消息需要回复。使用出站路由器的<ReplyTo>元素指定回复队列的名称。 Mule处理底层配置。 MQMT_DATAGRAM：该消息不需要回复。
+*  MQMT_REPLY：该消息是对先前请求消息（MQMT_REQUEST）的回复。该消息必须发送到出站路由器上配置的<ReplyTo>所指示的队列。 Mule自动配置请求以控制如何设置回复的MessageId和CorrelationId。
+*  MQMT_REPORT：该消息报告某些预期或意外事件，通常与某些其他消息（例如，收到包含无效数据的请求消息）相关。将消息发送到原始消息的消息描述符的<ReplyTo>配置所指示的队列。
+
+*Type*：未指定+
+*Required*：否+
+*Default*：无
+| characterSet  |如果设置，则此属性将覆盖目标队列或主题的编码字符集属性。
+
+*Type*：整数+
+*Required*：否+
+*Default*：无
+| persistentDelivery  |如果设置为true，则JMS提供程序会在发送消息时将其记录到稳定存储中，以便在传递失败时可以恢复。如果消息在传输过程中丢失，则应用程序遇到问题时，客户端将消息标记为持久消息。如果偶尔丢失的消息是可容忍的，则客户端将消息标记为非永久消息。客户使用交付模式告诉JMS提供商如何平衡消息传输可靠性/吞吐量。传送模式仅涵盖将消息传送到目的地。持续传送模式不保证在目的地保留消息，直到收到确认为止。客户应该假定消息保留策略是以管理方式设置的。消息保留策略管理从目的地到消息使用者的消息传递的可靠性。例如，如果客户的消息存储空间用尽，则可能会丢弃由特定于站点的消息保留策略定义的一些消息。如果消息的传递模式是持久性的，并且目标具有足够的消息保留策略，则消息只能保证一次由JMS提供程序传递一次。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+| timeToLive  |定义消息系统保留生成的消息的调度时间的默认时间长度（以毫秒为单位）。生存时间默认设置为零（永久）。
+
+*Type*：长+
+*Required*：否+
+*Default*：无
+|优先级 |设置消息优先级。 JMS定义了一个十级优先级值，0作为最低优先级，9作为最高优先级。此外，客户应将优先级0-4视为正常优先级和优先级5-9的等级，作为快速优先级的等级。 JMS不要求提供者严格执行消息的优先级排序。但是，它应该尽最大努力在正常消息之前提供加急消息。
+
+*Type*：substitutablePriorityNumber +
+*Required*：否+
+*Default*：无
+| targetClient  |指定它是以JMS还是非JMS格式。可能的值有：JMS_COMPLIANT或NONJMS_MQ（默认）。
+
+*Type*：未指定+
+*Required*：否+
+*Default*：无
+|===
+
+<outbound-endpoint...>的{​​{0}}子元素
+
+[%header,cols="60a,20a,20a"]
+|===
+| {名称{1}}基数 |说明
+|骡：响应 | 0..1  |
+|骡：抽象重新传递策略 | 0..1  |
+|骡：抽象事务 | 0..1  |
+|骡：抽象-XA的事务  | 0..1  |
+|骡：抽象安全过滤器 | 0..1  |
+|骡：抽象滤波器 | 0..1  |
+| {选择{1}} 0..1  |
+|===
+
+
+还支持：
+
+* 消息对象变换器通过提取消息负载将`com.ibm.jms.JMSMessage`或子类型转换为对象。
+* 对象到消息转换器将对象转换回`com.ibm.jms.JMSMessage`。
+* 事务允许将一系列操作分组在一起，以便在发生故障时可以回滚它们。设置操作（例如ALWAYS_BEGIN或JOIN_IF_POSSIBLE）以及事务的超时设置。
+

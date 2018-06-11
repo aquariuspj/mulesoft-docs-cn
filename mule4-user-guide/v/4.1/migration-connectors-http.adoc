@@ -1,0 +1,619 @@
+// sme：afelisatti，作者：afelisatti
+= 迁移HTTP连接器用途
+
+大多数情况下，HTTP连接器只适用于Mule 4模型：
+
+* 配置属性在适用时已移至连接组件。
+* 消息处理器已被重构为正确的操作。
+* 诸如`http.status`之类的出站属性已被删除，以支持显式属性。
+* 诸如`http.queryParams`的入站属性已被删除，以支持HTTP特定的消息属性。
+* 线程配置已被删除，因为它现在全部在Mule运行时级别处理。
+*  `application/x-www-form-urlencoded`和`multipart/*`媒体类型的特殊处理已被删除，以支持DataWeave。
+*  RAML元数据支持已从HTTP请求操作中移除，以支持REST Connect。
+
+== 这里涵盖了什么？
+
+*  <<http_listener>>
+*  <<http-request>>
+*  <<http-static-resource>>
+*  <<http-basic-authentication>>
+*  <<http-mime-types>>
+
+[[http_listener]]
+==  HTTP侦听器
+
+HTTP侦听器只看到其响应配置的重大变化
+建设者，以及将其配置属性封装成特定的
+连接组件。
+
+=== 配置
+
+现在必须在内部`http:listener-connection`中定义以下属性和组件
+零件：
+
+*  `host`
+*  `port`
+*  `protocol`
+*  `usePersistentConnections`
+*  `connectionIdleTimeout`
+*  TLS上下文
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<http:listener-config name="listenerConfig" host="localhost" port="8081" basePath="api/v2" protocol="HTTPS">
+  <tls:context>
+    <tls:trust-store path="cacerts.jks" password="changeit"/>
+    <tls:key-store path="keystore.jks" keyPassword="changeit" password="changeit"/>
+  </tls:context>
+</http:listener-config>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<http:listener-config name="listenerConfig" basePath="api/v2">
+  <http:listener-connection host="localhost" port="8081" protocol="HTTPS">
+    <tls:context>
+        <tls:trust-store path="cacerts.jks" password="changeit"/>
+        <tls:key-store path="keystore.jks" keyPassword="changeit" password="changeit"/>
+    </tls:context>
+  </http:listener-connection>
+</http:listener-config>
+----
+
+=== 监听器
+
+除`http:response-builder`外，所有HTTP侦听器属性都保持不变
+和`http:error-response-builder`。这些已被重命名为`http:response`
+和`http:error-response`，现在需要通过单个页面定义标题
+表达式，同时删除对隐式出站属性处理的支持。另外，
+它们支持一个新的`http:body`组件，其中可以使用表达式来定义该组件
+传出的HTTP消息体。
+
+.Mule 3的例子
+在以下示例中，会在响应中发送多个`User-Agent`标头
+通过一个隐含的出站属性（`Mule 3.6.0`）设置一个单一的头部引用
+（`Mule 3.7.0`）和表达式引用（`Mule 3.8.0`和`Mule 3.9.0`）。一个错误
+另一方面，响应将包含`Date`标题以及出站
+属性`User-Agent`。
+[source,xml,linenums]
+----
+<flow name="listener">
+  <http:listener config-ref="listenerConfig" path="/">
+    <http:response-builder statusCode="201" reasonPhrase="everything works!">
+      <http:header headerName="User-Agent" value="Mule 3.7.0"/>
+      <{{0}}]"/>
+    </http:response-builder>
+    <http:error-response-builder statusCode="500" reasonPhrase="something went wrong">
+      <{{0}}"/>
+    </http:error-response-builder>
+  </http:listener>
+  ...
+  <set-property propertyName="User-Agent" value="Mule 3.6.0"/>
+</flow>
+----
+
+.Mule 4的例子
+请注意，虽然`statusCode`和`reasonPhrase`属性保持不变，但全部
+现在应该使用DataWeave表达式明确添加标题。这一点很重要
+注意显式`statusCode`和`reasonPhrase`也必须提供给
+替换出站属性`http.status`和`http.reason`的用法。
+[source,xml,linenums]
+----
+<flow name="listener">
+  <http:listener config-ref="listenerConfig" path="/">
+    <http:response statusCode="201" reasonPhrase="everything works!">
+      <http:headers>
+        #[{
+          'User-Agent' : 'Mule 3.6.0',
+          'User-Agent' : 'Mule 3.7.0',
+          'User-Agent' : 'Mule 3.8.0',
+          'User-Agent' : 'Mule 3.9.0'
+          }]
+      </http:headers>
+    </http:response>
+    <http:error-response statusCode="500" reasonPhrase="something went wrong">
+      <http:headers>
+        #[{
+          'User-Agent': 'Mule 3.6.0',
+          'Date': now()
+        }]
+      </http:headers>
+    </http:error-response>
+  </http:listener>
+  ...
+</flow>
+----
+
+==== 属性
+
+在新的Mule Message结构之后，HTTP侦听器现在提供所有请求
+元数据通过特定的HTTP请求属性。在下面你可以找到新的方法
+访问元数据相比，骡3。
+
+[%header,cols=“10%,50%,40%”]
+|===
+|元数据| Mule 3  |  Mule 4
+
+|方法
+|＃[inboundProperties.'http.method']
+|＃[attributes.method]
+
+|路径
+|＃[inboundProperties.'http.listener.path']
+|＃[attributes.listenerPath]
+
+|相对路径
+|＃[inboundProperties.'http.relative.path']
+|＃[attributes.relativePath]
+
+|请求URI
+|＃[inboundProperties.'http.request.uri']
+|＃[attributes.requestUri]
+
+|查询字符串
+|＃[inboundProperties.'http.query.string']
+|＃[attributes.queryString]
+
+|查询参数
+|＃[inboundProperties.'http.query.params']
+|＃[attributes.queryParams]
+
+| URI参数
+|＃[inboundProperties.'http.uri.params']
+|＃[attributes.uriParams]
+
+|版本
+|＃[inboundProperties.'http.version']
+|＃[attributes.version]
+
+|方案
+|＃[inboundProperties.'http.scheme']
+|＃[attributes.scheme]
+
+|集管
+|＃[inboundProperties]
+|＃[attributes.headers]
+
+|远程地址
+|＃[inboundProperties.'http.remote.address']
+|＃[attributes.remoteAddress]
+
+|客户端证书
+|＃[inboundProperties.'http.client.cert']
+|＃[attributes.clientCertificate]
+|===
+
+请注意，尽管HTTP标头直接映射到入站属性，
+现在他们有一个专属对象。您可以在下面找到如何获取的示例
+标题：
+
+*  Mule 3：`#[inboundProperties.'host']`
+*  Mule 4：`#[attributes.headers.'host']`
+
+[[http-request]]
+==  HTTP请求
+
+与HTTP侦听器一样，HTTP请求操作中的大部分更改都涉及配置的封装
+连接组件内的属性和请求构建过程。
+
+=== 配置
+
+现在必须在内部`http:request-connection`中定义以下属性和组件
+零件：
+
+*  `host`
+*  `port`
+*  `protocol`
+*  `usePersistentConnections`
+*  `maxConnections`
+*  `connectionIdleTimeout`
+*  `streamResponse`
+*  `responseBufferSize`
+*  HTTP身份验证
+*  HTTP代理
+*  TLS上下文
+*  TCP客户端套接字属性
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<http:request-config name="requestConfig" host="localhost" port="8081" protocol="HTTPS" enableCookies="false">
+  <tls:context>
+    <tls:trust-store path="trustStore" password="changeit"/>
+    <tls:key-store path="clientKeystore" keyPassword="changeit" password="changeit"/>
+  </tls:context>
+</http:request-config>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<http:request-config name="requestConfig" enableCookies="false">
+  <http:request-connection host="localhost" port="8081" protocol="HTTPS">
+    <tls:context>
+      <tls:trust-store path="trustStore" password="changeit"/>
+      <tls:key-store path="clientKeystore" keyPassword="changeit" password="changeit"/>
+    </tls:context>
+  </http:request-connection>
+</http:request-config>
+----
+
+请注意，RAML元数据支持已被删除，因为REST Connect现在可以生成
+给定RAML的特定连接器，然后可以重新使用。
+
+====  HTTP身份验证
+
+除了现在属于`http:request-connection`组件之外的HTTP
+认证配置必须放置在`http:authentication`组件内。
+这适用于所有支持的认证类型：basic，digest，NTLM和OAuth2。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<http:request-config name="basicConfig" host="localhost" port="8081">
+  <{{0}}" password="#[flowVars.password]" preemptive="#[flowVars.preemptive]" />
+</http:request-config>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<http:request-config name="basicConfig">
+  <http:request-connection host="localhost" port="8081">
+    <http:authentication>
+      <{{0}}" password="#[vars.password]" preemptive="#[vars.preemptive]" />
+    </http:authentication>
+  </http:request-connection>
+</http:request-config>
+----
+
+====  HTTP代理
+
+就像HTTP身份验证组件一样，配置HTTP代理现在需要
+包装`http:proxy-config`组件，用于各种代理。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<http:request-config name="proxyConfig" host="localhost" port="8081" basePath="basePath">
+  <http:proxy host="localhost" port="8082" username="cniehaus" password="324B21" />
+</http:request-config>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<http:request-config name="proxyConfig" basePath="basePath">
+  <http:request-connection host="localhost" port="8081">
+    <http:proxy-config>
+      <http:proxy host="localhost" port="8082" username="cniehaus" password="324B21" />
+    </http:proxy-config>
+  </http:request-connection>
+</http:request-config>
+----
+
+====  TCP客户端套接字属性
+
+在Mule 3中，基于TCP传输定义了TCP客户端套接字属性
+这已经被套筒连接器在Mule 4中所取代，所以现在这是必需的
+配置属性。另外，这些属性必须包装在一个
+`http:client-socket-properties`组件。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<http:request-config name="tcpConfig" host="localhost" port="8081" >
+    <tcp:client-socket-properties connectionTimeout="1000" keepAlive="true"
+                                  receiveBufferSize="1024" sendBufferSize="1024"
+                                  sendTcpNoDelay="true" timeout="1000" linger="1000" />
+</http:request-config>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<http:request-config name="tcpConfig">
+  <http:request-connection host="localhost" port="8081">
+    <http:client-socket-properties>
+        <sockets:tcp-client-socket-properties connectionTimeout="1000" keepAlive="true"
+                                              receiveBufferSize="1024" sendBufferSize="1024"
+                                              sendTcpNoDelay="true" clientTimeout="1000" linger="1000" />
+    </http:client-socket-properties>
+  </http:request-connection>
+</http:request-config>
+----
+
+=== 要求
+
+所有HTTP请求属性保持不变，除了`source`之外
+替换为支持表达式和转换的`http:body`组件
+已被删除的`http:request-builder`。标题，查询和URI参数
+现在应该通过DataWeave表达式明确定义。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<flow name="request">
+  ...
+  <set-property propertyName="Host" value="www.example.com"/>
+  <{{0}}">
+    <http:request-builder>
+      <http:header headerName="Transfer-Encoding" value="chunked" />
+      <{{0}}" />
+      <{{0}}" />
+    </http:request-builder>
+  </http:request>
+  ...
+</flow>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<flow name="request">
+  ...
+  <http:request config-ref="requestConfig" path="song/{id}" method="GET">
+    <http:body>
+      #[vars.customSource]
+    </http:body>
+    <http:headers>
+      #[{
+        'Host': 'www.example.com'
+        'Transfer-Encoding' : 'chunked'
+      }]
+    </http:headers>
+    <http:uri-params>
+      #[{ 'id' : vars.songId }]
+    </http:uri-params>
+    <http:query-params>
+      #[vars.params]
+    </http:query-params>
+  </http:request>
+  ...
+</flow>
+----
+
+==== 属性
+
+与HTTP侦听器一样，HTTP请求现在通过提供所有响应元数据
+特定的HTTP响应属性。在下面你可以找到访问它的新方法
+元数据与Mule 3相比。
+
+[%header,cols=“10%,50%,40%”]
+|===
+|元数据| Mule 3  |  Mule 4
+
+|状态码
+|＃[inboundProperties.'http.status']
+|＃[attributes.statusCode]
+
+|原因短语
+|＃[inboundProperties.'http.reason']
+|＃[attributes.reasonPhrase]
+
+|集管
+|＃[inboundProperties]
+|＃[attributes.headers]
+|===
+
+请注意，标题的处理方式与HTTP侦听器中的相同。
+
+[[http-static-resource]]
+==  HTTP静态资源处理程序
+
+HTTP静态资源处理程序已适应Mule 4的操作模式和
+已重命名为`http:load-static-resource`。 `resourceBase`属性也一直存在
+已重命名为`resourceBasePath`。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<flow name="main-http-root">
+  <http:listener config-ref="listenerConfig" path="*"/>
+  <http:static-resource-handler resourceBase="site" defaultFile="index.html"/>
+</flow>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<flow name="main-http-root">
+  <http:listener config-ref="listenerConfig" path="*"/>
+  <http:load-static-resource resourceBasePath="site" defaultFile="index.html" />
+</flow>
+----
+
+虽然这个操作只能用于HTTP Listener源代码，但我们已经完成了
+还引入了`attributes`属性，您可以在其中引用HTTP请求
+监听器的属性，从而在流的任何点使用操作。
+
+[[http-basic-authentication]]
+==  HTTP基本安全筛选器
+
+除了支持DataWeave as之外，HTTP基本安全筛选器没有更改
+`securityProviders`属性的来源以及`attributes`的引入
+属性，您可以在其中引用侦听器的HTTP请求属性
+从而在流的任何一点使用该操作，就像HTTP负载静态一样
+资源操作。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<flow name="listenerBasicAuth">
+  <http:listener config-ref="listenerConfigBasicAuth" path="/basic" />
+  <http:basic-security-filter realm="mule-realm" securityProviders="provider1,provider2"/>
+  <set-payload value="Ok"/>
+</flow>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<flow name="listenerBasicAuth">
+  <http:listener config-ref="listenerConfigBasicAuth" path="/basic"/>
+  <{{0}}"/>
+  <set-payload value="Ok"/>
+</flow>
+----
+
+[[http-mime-types]]
+==  HTTP MIME类型分析
+Mule 3中的HTTP连接器提供了解析请求和响应的选项
+`application/x-www-form-urlencoded`或`multipart/form-data`（和
+其他亚型）。当出站时碰到遇到的解析对象
+请求和回应，他们被转换回那些类型的机构
+一致性。
+但是，由于DataWeave 2.0现在处理这些MIME类型，所以在Mule 4 HTTP解析中
+已被删除，HTTP组件始终提供并需要二进制数据流。
+您可以在下面找到有关如何迁移以前解析类型的用法的详细信息。
+
+==== 应用程序/ x-WWW窗体-urlencoded
+在Mule 3中，`Map`有效载荷被用作`application/x-www-form-urlencoded`的对应部分
+内容。对于出站流量，这意味着如果存在`Map`有效载荷，那么
+每个键值对都将用于生成`application/x-www-form-urlencoded`
+身体。对于入站流量来说，这意味着该机构的每个键值对都是
+放入`Map`。
+
+现在，DataWeave可以读取和写入`application/x-www-form-urlencoded`内容，
+使得在HTTP中使用不同的MIME类型更容易和更一致。
+
+.Mule 3的例子
+在这个例子中，`song=Snow+Poems&artist=TQP`的有效载荷被发送并返回
+包含保存的ID：`song=Snow+Poems&artist=TQP&id=49`。
+[source,xml,linenums]
+----
+<flow name="urlForm">
+  <set-payload value="#[{'song': 'Snow Poems', 'artist' : 'TQP'}]"/>
+  <http:request config-ref="config" path="song" method="POST" />
+  <set-payload value="#[payload.id]"/>
+</flow>
+----
+
+.Mule 4的例子
+请注意，除了现在，阅读内容的语法保持不变
+我们必须指出输出类型，因为我们实际上正在转换数据。
+[source,xml,linenums]
+----
+<flow name="urlForm">
+  ...
+  <http:request config-ref="config" path="song" method="POST">
+    <http:body>
+      #[
+      %dw 2.0
+      output application/x-www-form-urlencoded
+      ---
+      {
+        song: "Snow Poems",
+        artist: "TQP"
+      }]
+    </http:body>
+  </http:request>
+  <set-payload value="#[output text/plain --- payload.id]"/>
+  ...
+</flow>
+----
+
+可以添加一个键的几个值，只要记住访问该数据所需的值
+使用星形选择器获取所有关联值的集合：`#[payload.*artist]`
+会为歌曲`Under Pressure`返回一个包含`David Bowie`和`Queen`的列表，
+例如。
+
+[[http_multipart]]
+==== 的multipart / *
+
+在Mule 3中使用Mule Message附件作为多部分内容的对应物。
+对于出站流量，这意味着如果附件存在，那么会出现这种情况
+作为`multipart/form-data`主体的一部分使用。对于入站流量来说，这意味着
+该机构的每个部分都将映射到Mule消息附件。
+
+在Mule 4中，Mule消息附件不再存在。相反，你可以阅读和写作
+像使用JSON或XML内容一样，通过DataWeave实现多部分内容。
+
+.Mule 3的例子
+在这个例子中，收到了以{2}个JSON部分为特征的`multipart/form-data`正文，
+订单和生成它的合作伙伴。记录合作伙伴名称后，订单
+保存ID以生成包含简单消息的`multipart/form-data`响应
+确认订单和为其生成的PDF收据。
+[source,xml,linenums]
+----
+<flow name="parts">
+  <http:listener config-ref="listenerConfig" path="orders"/>
+  <set-variable variableName="partner" value="#[message.inboundAttachments.partner.dataSource.inputStream]" mimeType="application/json"/>
+  <dw:transform-message>
+    <dw:set-variable variableName="partnerName"><![CDATA[
+      %dw 1.0
+      %output application/java
+      ---
+      flowVars.partner.name
+    ]]></dw:set-variable>
+  </dw:transform-message>
+  <logger message="Received order from #[flowVars.partnerName]." level="INFO"/>
+  <set-payload value="#[message.inboundAttachments.order.dataSource.inputStream]" mimeType="application/json"/>
+  <dw:transform-message>
+    <dw:set-variable variableName="orderId"><![CDATA[
+      %dw 1.0
+      %output application/java
+      ---
+      payload.id
+    ]]></dw:set-variable>
+  </dw:transform-message>
+  <!-- Generate PDF receipt -->
+  <set-attachment attachmentName="order" value="#['Order ' + flowVars.orderId +' received. Receipt available.']" contentType="text/plain"/>
+  <set-attachment attachmentName="receipt" value="#[payload]" contentType="application/pdf"/>
+</flow>
+----
+
+.Mule 4的例子
+处理附件的所有复杂性现在都消失了，我们只需访问该附件
+部分按名称使用`content`关键字。生成多部分响应
+在使用DataWeave的HTTP响应正文中，您可以轻松地自定义标题。
+[source,xml,linenums]
+----
+<flow name="parts">
+  <http:listener config-ref="listenerConfig" path="orders">
+    <http:response>
+      <http:body><![CDATA[
+      #[
+      %dw 2.0
+      output multipart/form-data
+      ---
+      {
+        parts : {
+          order : {
+            headers : {
+              "Content-Type": "text/plain"
+            },
+            content : "Order " ++ vars.orderId ++ " received. Receipt available."
+          },
+          receipt : {
+            headers : {
+              "Content-Disposition" : {
+                "name" : "receipt",
+                "filename": "receipt.pdf"
+              },
+              "Content-Type" : payload.^mimeType
+            },
+            content : payload
+          }
+        }
+      }]
+    ]]></http:body>
+    </http:response>
+  </http:listener>
+  <logger message="#[output text/plain --- 'Received order from ' ++ payload.parts.partner.content.name]"/>
+  <set-variable variableName="orderId" value="#[output text/plain --- payload.parts.order.content.id]"/>
+  <!-- Generate PDF receipt -->
+</flow>
+----
+需要注意的是，尽管我们正在利用`http:body`功能，
+使用最终变换组件可以实现相同的结果。
+
+== 另请参阅
+
+link:migration-patterns[迁移模式]
+
+link:migration-core[迁移组件]
+
+https://docs.mulesoft.com/anypoint-exchange/to-deploy-using-rest-connect[REST连接]

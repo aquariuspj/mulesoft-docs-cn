@@ -1,0 +1,143 @@
+= 使用Oauth 2.0授权您的连接器
+
+*Open Authorization*（OAuth）是一种开放的授权标准，它使网站或应用程序（*consumers*）可以通过API从*service provider*访问*protected resources*，无需用户透露他们的服务提供者凭据给消费者。换句话说，OAuth允许用户与另一个网站共享存储在一个网站上的私人资源（例如照片，视频，联系人列表），而不必共享其凭据，通常是用户名和密码。
+
+有关OAuth 1工作方式的详细说明，请参阅 http://oauth.net/2[Oauth 2.0规范]。
+
+==  `@OAuth2`注释
+
+如果云连接器或自定义模块要利用DevKit提供的OAuth设施，则需要存在类级别注释`@OAuth2`。一些参数是必需的;其他是可选的，并使用适用于大多数场景的默认值。
+
+此批注触发DevKit创建名为*authorize*和*unauthorize*的消息处理器。使用未授权处理器杀死活动的OAuth会话。
+
+在Mule DevKit3.3.1中，您可以在同一连接器JAR中同时支持OAuth和连接管理作为公共基类的扩展。 Salesforce连接器说明如何构建代码以支持此功能。它也体现了3.3.1的其他新特性。
+
+在同一连接器JAR中支持OAuth和连接管理意味着在同一个XML名称空间中有两个配置元素。 `@Connector`注释的新参数`configElementName`使这成为可能。例如，Salesforce OAuth2连接器将其设置为`config-with-oauth`，而不是默认值`config`。在XML中，这转换为使用`sfdc:config-with-oauth`或`sfdc:config`。
+
+下表介绍了`@OAuth2`参数。
+
+[%header,cols="4*"]
+|===
+|参数+  |描述+  |必需/可选+  |默认值
+| accessTokenUrl +  |服务提供商为获取访问令牌而定义的网址+  |所需的 | 
+服务提供商定义的| authorizationUrl  | URL，资源所有者被重定向到授权给消费者。在配置处理器时，可以通过在配置元素中包含不同的值来覆盖此值。您可以在创建流程时将该值放入authorize元素中，以覆盖该值。 |必需 | 
+| authorizationParameters  |形式@OAuthAuthorizationParameter（name = "xxx"，type = xxx，description = "xxx"）注释的注释列表。该类型不能是集合或复杂类型。 |可选 | 
+| verifierRegex  |用于在资源所有者授权使用者 |之后从服务提供者响应中提取verifer的可选 |代码=（[^＆ +）+
+| accessTokenRegex  |用于从服务提供商响应中提取访问令牌的Java正则表达式+  |可选 | "access_token"："([^&]+?)" +
+| expirationRegex +  |用于从服务提供商响应中提取访问令牌到期时间（以秒为单位）的Java正则表达式。如果在服务提供商响应中未找到此正则表达式（因为正则表达式错误或访问令牌永不过期），则将访问令牌视为永不过期。 |可选{{4} } "expires_in"：（？[^＆] +），
+| refreshTokenRegex +  |用于在授权流程中从回调中提取刷新令牌的Java正则表达式。 |可选 | "\" refresh_token \ {{ 1}}（[^＆] +？）\ ""
+| callbackPath  |如果服务提供商只接受已知的重定向URL，请将此参数分配给域中的路径（由`fullDomain`环境变量表示），该路径将向服务提供商作为重定向网址。如果留空（表示服务提供商接受任何URL作为重定向URL），将使用随机路径。 |可选 | _随机路径_
+|===
+
+== 添加OAuth 2支持
+
+. 从服务提供商的API文档中，获取以下值：
+*  `requestTokenUrl`
+*  `accessTokenUrl`
+*  `authorizationUrl`
+. 根据以下内容添加`@OAuth2`类级别注释：+
++
+
+[source, java, linenums]
+----
+@Module(name = "oauth2module")
+@OAuth2(authorizationUrl = "http://someUrl",
+        accessTokenUrl = "http://someOtherUrl")
+public class OAuth2Module {
+----
+
+. 创建两个字符串实例字段来保存消费者密钥和消费者密钥，然后分别用`@OAuthConsumerKey`和`@OAuthConsumerecret`对其进行注释。还用`@Configurable`对它们进行注释，以便任何使用它的人都可以传入自己的凭据。确保这些实例变量具有公共`getters`和`setters`。 +
++
+
+[source, java, linenums]
+----
+@Module(name = "oauth2module")
+@OAuth2(authorizationUrl = "http://someUrl",
+        accessTokenUrl = "http://someOtherUrl")
+public class OAuth2Module {
+        @Configurable
+        @OAuthConsumerKey
+        private String apiKey;
+        @Configurable
+        @OAuthConsumerSecret
+        private String apiSecret;
+----
+
+. 在访问受保护资源（用`@Processor`注释）的方法中，添加一个String参数并使用`@OAuthAccessToken`对其进行注释。 +
++
+
+[source, java, linenums]
+----
+@Processor
+        public Object accessProtectedResource(@OAuthAccessToken String accessToken, ...) {
+----
+
+当调用包含带`@OAuthAccessToken`注释参数的方法时，会发生以下活动：
+
+* 首次访​​问受保护资源时，用户将被重定向到服务提供商的授权URL，以授予或拒绝消费者访问受保护资源。
+* 在随后的访问请求期间，Mule将请求中*access token*（包含在`@OAuthAccessToken`注释的参数中）包含在服务提供者的请求中。有关更多详细信息，请参阅 http://oauth.net/2[Oauth 2.0规范]。 +
+
+== 访问令牌到期
+
+如果您指定了正确的正则表达式（使用`@OAuth2`批注的`expirationRegex`参数），并且API的访问令牌到期，则DevKit会自动检测到期。在这种情况下，它会再次触发OAuth2流程。
+
+== 授权云连接器
+
+在消费者可以执行任何需要授权的操作之前，资源所有者必须授予对云连接器的访问权限以访问受保护的资源。当它收到授权请求时，Mule将资源所有者的浏览器重定向到服务提供商授权页面。任何后续访问受保护资源的尝试都会填充使用`@OAuthAccessToken`注释的参数。 Mule在请求中包含访问令牌给服务提供者。见下面的例子。
+
+[source, xml, linenums]
+----
+<linkedin:config apiKey="${api.key}" apiSecret="${api.secret}"/>
+ 
+        <flow name="authorize">
+            <http:inbound-endpoint host="localhost" port="8080" path="/authorize"/>
+            <linkedin:authorize/>
+        </flow>
+----
+
+== 配置Mule
+
+首先，通过为服务提供商提供的应用程序传递*consumer key*和*consumer secret*来配置扩展。下面的代码示例说明了这种配置的一个例子。
+
+[source, xml, linenums]
+----
+<oauth2module:config apiKey="${api.key}" apiSecret="${api.secret}"/>
+ 
+        <flow name="sampleFlow">
+            <oauth2module:access-protected-resource />
+        </flow>
+----
+
+然后，配置是访问受保护资源的简单流程。如果云连接器未被OAuth授权，则使用者操作会抛出`NotAuthorizedException`。
+
+== 自定义回拨
+
+当用户授予访问受保护资源的权限时，服务提供商发出*HTTP callback*。该回调传递一个授权代码，Mule稍后使用它来获取访问令牌。
+
+因为Mule动态创建一个HTTP入站端点来处理回调（并且Mule将端点的URL传递给服务提供者），所以您不需要完成任何特定的配置来进行HTTP回调。默认情况下，Mule使用主机和端口（由`fullDomain`环境变量和`http.port`确定）来构建一个URL以发送给服务提供商。如果您需要为主机和端口使用非默认值，请添加以下配置：
+
+[source, xml, linenums]
+----
+<oauth2module:config apiKey="${api.key}" apiSecret="${api.secret}">
+       <oauth2module:oauth-callback-config domain="SOME_DOMAIN" remotePort="SOME_PORT" />
+   </oauth2module:config>
+----
+
+=== 添加安全套接字层（SSL）
+
+当Mule自动启动HTTP入站端点来处理OAuth回调时，它默认使用HTTP连接器。在服务提供商要求*HTTPS*的地方，您可以配置Mule传递您自己的连接器（请参阅下面的示例）。
+
+[source, xml, linenums]
+----
+<https:connector name="httpsConnector">
+    <https:tls-key-store path="keystore.jks" keyPassword="mule2012" storePassword="mule2012"/>
+</https:connector>
+ 
+<oauth2module:config apiKey="${api.key}" apiSecret="${api.secret}">
+    <oauth2module:oauth-callback-config domain="localhost" localPort="${http.port}"           
+                                        remotePort="${http.port}" async="true"
+                                        connector-ref="httpsConnector"/>
+</oauth2module:config>
+----
+
+有关如何配置HTTPS连接器的更多详细信息，请咨询Mule ESB的 link:/mule-user-guide/v/3.3/https-transport-reference[* HTTPS传输*]文档。

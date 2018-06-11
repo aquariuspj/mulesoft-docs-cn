@@ -1,0 +1,1110 @@
+= 电子商店示例
+
+*_Enterprise Edition_*
+
+这个示例应用程序模拟了一个在线商店，它演示了Mule ESB支持常见电子商务用例的能力。
+
+Mule ESB应用程序使最终用户能够浏览在线商店中的产品，将商品添加到在线购物车，然后结账。遵循企业应用程序体系结构的最佳实践，此*E-store*示例应用程序由两部分组成，每部分在Mule ESB中完全实现：
+
+.  *Client-side Frontend Application* +
+客户端应用程序，它接受来自基于AJAX的图形用户界面（GUI）的最终用户请求。此应用程序使用户能够执行以下在线购物任务：
+* 显示产品列表
+* 将产品添加到购物车
+* 显示购物车的内容
+* 结帐（即购买产品）+
+ 此前端应用程序使用AJAX与最终用户的浏览器上的GUI进行交互，JMS与后端应用程序交换 http://en.wikipedia.org/wiki/JSON[JSON格式]中的数据。
+.  *Server-side Backend Application* +
+ 应用层服务器端应用程序，它负责编排内部和外部的服务以完成最终用户请求。后端也根据外部Web服务的需求将数据转换为不同的格式。
+
+要作为一个功能完整的示例进行操作，此应用程序还包含三个模拟外部第三方Web服务提供商的组件：
+
+.  *Barber’s Paradise Store* +
+ 一种RESTful Web服务，E-store后端可与之交互以支持最终用户购物体验（浏览项目，购买产品和履行订单）。
+.  *Van Gogh Paint Store* +
+ 一个SOAP Web服务，E-store后端与之交互以支持最终用户购物体验（浏览项目，购买产品和履行订单）。
+.  *Bank* +
+ 一种对数据执行复杂验证（包括语法和语义验证）的RESTful Web服务，用于授权最终用户付款。
+
+此外，这个Mule ESB示例包含一个基于AJAX的图形用户界面（GUI），终端用户可以通过它与浏览器进行交互。本文档在下面的<<The E-store User Interface>>中进一步描述*E-store User Interface*。
+
+这个例子可以帮助你做出关于使用Mule ESB来建立或支持电子商务交易的明智决定。了解如何：
+
+* 使用AJAX与Mule ESB的Web浏览器进行交互
+* 与Mule ESB进程同步和异步交互
+* 合并来自不同来源的数据，然后应用数据转换逻辑
+* 根据内容路由消息
+* 缓存数据以最大化应用程序的性能
+* 使用Mule表达式语言（MEL）转换数据
+* 使用JDBC连接器与关系数据库管理系统进行交互
+* 公开并使用SOAP，REST和JMS服务
+* 配置ActiveMQ JMS消息代理的嵌入式实例
+* 使用异常策略处理错误
+* 在文件系统上创建输出文件
+
+要更多地了解Mule ESB整合服务和系统的能力，请访问Mule link:/mule-user-guide/v/3.3/mule-examples[例子]并查看其他正在运行的应用程序。
+
+== 假设
+
+本文档假定您熟悉Mule ESB和 link:/mule-user-guide/v/3.3/mule-studio-essentials[Mule Studio界面]。要提高您对Studio的熟悉度，请考虑完成一个或多个 link:/mule-user-guide/v/3.3/mule-studio[Mule Studio教程]。
+
+本文档在Mule ESB的图形用户界面（GUI）*Mule Studio*的上下文中描述了示例的细节。在适当的情况下，XML配置在可扩展部分的Studio界面屏幕截图之后。
+
+== 设置
+
+与此电子商店示例一样，您可以直接在*Mule Studio*中创建模板应用程序。您可以调整这些基于用例的模板的配置，以在Mule中创建您自己的自定义应用程序。
+
+按照以下步骤创建，然后在Mule ESB中运行电子商店应用程序。
+
+. 完成 link:/mule-user-guide/v/3.3/mule-examples[示例和练习]中的过程来创建，然后在Mule Studio中运行电子商店模板。
+. 打开您的Web浏览器。
+. 键入`http://localhost:8090/estore/index.html`，然后按*enter*以显示电子商店客户端用户界面（请参阅下图）。
++
+image:e-store_intro.png[E-store_intro]
+
+== 它是如何工作的
+
+*E-store*应用程序由多个 link:/mule-user-guide/v/3.3/mule-application-architecture[流量和子流量]组成。这些流程集成了处理最终用户请求的Web服务，以搜索并购买产品。您可以在一个Mule流文件（`.mflow`）中构建一个Mule ESB应用程序，并将其组织成多个Mule流（`.mflow`）文件。在像这个*E-store*应用程序这样的大型项目中，您可能希望使用多个`.mflow`文件来构建项目，以便团队中的其他开发人员能够轻松理解和维护。
+
+这个示例应用程序包含六个Mule流文件（参见下图），每个文件包含多个流。根据功能组织，这些流程文件在应用程序中用于不同的目的。 +
+ +
+  image:e-store_flows.png[E-store_flows]
+
+[%header,cols="34,33,33"]
+|===
+|流文件 |角色 |功能描述
+| *bank*  |第三方服务提供商 |公开一个REST Web服务来模拟银行的付款验证和授权活动。
+E-store应用程序 |的| *e-storeBackend*  |服务器端编排服务以实现电子商店的应用程序层业务逻辑。
+电子商店应用程序 |的客户端| *e-storeFrontend*  |实现支持基于Web的最终用户界面的面向用户的AJAX服务。该应用程序的前端部分收集用户会话ID，以识别用户的购物车到服务器端。
+| *initializedatabase*  |数据库表格创建者 |使用必要的表格创建嵌入的 http://db.apache.org/derby/[德比]数据库，以存储购物车内容。 （Mule会在运行应用程序时自动初始化数据库。）您无需在自定义应用程序中创建这部分应用程序来发布Web服务;它存在于这个例子中，所以你可以检查一个功能性的Web服务。
+| *provider-barbersparadise*  |第三方服务提供商 |公开REST Web服务以模拟理发店的Paradise Store Web服务提供商。最终用户可以在电子商店网站上购买理发师乐园产品。
+| *provider-vangoghpaint*  |第三方服务提供商 |公开SOAP Web服务以模拟Van Gogh的Paint Store Web服务提供者。最终用户可以在电子商店网站上购买梵高的油漆产品。
+|===
+
+这个例子的肉是**e-storeBackend**。这组流程编排人员调用外部资源以编制订单并进行采购。在这个应用程序的流程中，*e-storeBackend*就是太阳。
+
+image:e-store_universe.png[E-store_universe]
+
+以下各节提供了电子商店执行的用于处理最终用户请求的活动的基于用例的描述。
+
+[TIP]
+====
+*For Mule Studio Users*
+
+在Mule Studio中，双击 link:/mule-user-guide/v/3.3/studio-building-blocks[积木]打开其*Properties Panel*，然后检查其配置细节。或者，单击*Configuration XML*选项卡检查应用程序的XML配置文件。
+
+image:config_tab.png[config_tab]
+====
+
+== 电子商店活动
+
+在Web浏览器中，用户向电子商店发送请求以执行多项任务。下表描述了*e-storeBackend*在最终用户请求时所编排的活动（即e-storeBackend所做的不同事情）。下图说明了最终用户，电子商店（前端和后端）和第三方服务提供商之间的通信。
+
+[%header,cols="2*"]
+|===
+|用户请求 |电子商店追踪活动
+Barber的Paradise Store Web服务和Van Gogh Store Web服务联系以获取每个产品的所有可用产品列表，然后转换产品列表JSON {{}} | *<<List All Products>>* {{3} 0}}格式。
+| *<<Add Product to Cart>>*  |在最终用户的购物车上注册所选产品。嵌入式的应用程序层Derby数据库维护购物车的状态。
+| *<<View Cart>>*  |向嵌入式Derby数据库查询最终用户购物车中的产品列表，然后联系第三方服务提供商以获取每个产品的最新价格和详细信息。在最终用户的浏览器上显示购物车的当前内容。
+| *<<Checkout>>*  |使用最终用户的信用卡信息来验证银行的付款授权。将每个服务提供商的产品 - 所有Barbers Paradise产品聚集在一起，将所有梵高油漆产品聚集在一起 - 然后向每个提供商提交一份履约订单。
+| *<<Clear Cart Contents>>*  |清除包含最终用户的购物车内容的数据库表的内容。
+|===
+
+image:estore.png[电子商店]
+
+以下小节描述了Mule ESB在处理最终用户请求时的操作（如上表中简述）。但是，在深入讨论用例细节之前，第一小节将提供对基于Web的用户界面的描述。
+
+=== 电子商店用户界面
+
+image:e-store_intro.png[E-store_intro]
+
+电子商店示例应用程序包括由 http://en.wikipedia.org/wiki/JQuery_UI[jQuery的UI]框架支持的基于AJAX的GUI。要检查客户端界面的代码，请访问Mule中的`src/main/app/docroot`文件夹中的`index.html`文件。
+
+[TIP]
+====
+*How Do I Access the Index File?* +
+
+. 在*Package Explorer*中，单击以展开`src`文件夹。
+. 点击展开文件夹以导航至`main`> `app`> `docroot`。
+. 双击`index.html`文件以在Studio的新画布窗格中打开该文件。
+====
+
+GUI上的每个选项卡和按钮（*Welcome*选项卡除外）对应于*e-storeFrontend*流文件中的流程。当用户点击其中一个按钮或标签时，Mule会激活其对应的前端流程以发起对*e-storeBackend*流程的请求（请参阅下面的表格和代码）。
+
+[%header,cols="2*"]
+|===
+| GUI选项卡或按钮 |电子商店前台流程
+|列出所有产品 | e-storeFrontend-listProducts
+|产品 |的e-storeFrontend-listProducts
+|我的购物车 |电子商店前台展示卡
+|添加到购物车 | e-storeFrontend-addToCart
+|查看我的购物车 | e-storeFrontend-showCart
+|清除购物车内容 | e-storeFrontend-clearCart
+| {结帐{1}}的e-storeFrontend-getCartTotal
+|继续结帐 | e-storeFrontend-getCartTotal
+|验证付款并提交订单 | e-storeFrontend-doCheckout
+|===
+
+*View Code for Tabs*
+
+[source, code, linenums]
+----
+tabs = $("#tabs").tabs({selected: 0});
+ 
+$('#tabs').bind('tabsselect', function(event, ui) {
+    if (ui.tab.hash == "#listProducts") {
+        $("#products").empty();
+        $("#products").append("Loading products, please wait...");
+        mule.rpc("/estore/listProducts", "", listProductsResponse);
+    } else if (ui.tab.hash == "#showCart") {
+        $("#cartProducts").empty();
+        $("#cartProducts").append("Loading cart contents, please wait...");
+        mule.rpc("/estore/showCart", "", showCartResponse);
+    } else if (ui.tab.hash == "#checkout") {
+        $("#checkoutTotal").html("0.00");
+        $("#checkoutComments").html("<p>You don't have any items on your cart yet! Add some on the products tab before checkout!</p>");
+        $("#checkoutForm :input").val("");
+        $("#checkoutForm :input").attr("disabled", true);
+        $("#doCheckoutButton").button({ disabled: true});
+        mule.rpc("/estore/getCartTotal", "", prepareCheckoutResponse);
+    }
+});
+----
+
+*View Code for Add to Cart Button*
+
+[source, code, linenums]
+----
+$('#addProductToCartButton').click(function() {
+    var data = {};
+    data['productCode'] = $("#addToCartForm #productCode").val();
+    data['provider'] = $("#addToCartForm #productProvider").val();
+    data['qty'] = $("#addToCartForm #qty").val();
+    data['price'] = $("#addToCartForm #price").val();
+    mule.rpc("/estore/addToCart", JSON.stringify(data), addToCartResponse);
+})
+----
+
+`index.html`文件在HTML标头中导入**Mule.rpc AJAX client**以及Jquery UI脚本（请参阅下面的代码）。客户端使用不同的“通道”将每个用户请求发送到其相应的e-storeFrontend流程。每个流程只能监听一个通道。 Mule以JSON格式将所有数据传入和传出最终用户的浏览器。
+
+*View the Header*
+
+[source, xml, linenums]
+----
+<head>
+  <link href="css/south-street/jquery-ui-1.8.20.custom.css" rel="stylesheet" type="text/css"/>
+  <link href="css/estore.css" rel="stylesheet" type="text/css"/>
+  <script type="text/javascript" src="js/jquery-1.7.2.min.js"></script>
+  <script type="text/javascript" src="js/jquery-ui-1.8.20.custom.min.js"></script>
+  <script type="text/javascript" src="mule-resource/js/mule.js"></script>
+</head>
+----
+
+=== 列出所有产品
+
+电子商店应用程序使用户能够检索在线商店中可供购买的所有产品的列表。下图说明了电子商店检索可用产品列表的活动。
+
+image:model.png[模型]
+
+==== 电子storeFrontend
+
+当最终用户提交请求以列出在电子商店中可供购买的所有产品时，客户端界面会激活`e-storeFrontend.mflow file`中的*e-storeFrontend-listProducts*流（请参阅下图）。
+
+image:Screen+Shot+2012-06-18+at+6.43.27+PM.png[屏幕+镜头+ 2012-06-18 +在+ 6.43.27 + PM]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<flow name="e-storeFrontend-listProducts" doc:name="e-storeFrontend-listProducts">
+        <ajax:inbound-endpoint channel="/estore/listProducts" responseTimeout="10000" connector-ref="ajaxServer" doc:name="/estore/listProducts"></ajax:inbound-endpoint> 
+        <response>
+            <object-to-string-transformer doc:name="Object to String"></object-to-string-transformer> 
+        </response> 
+        <jms:outbound-endpoint exchange-pattern="request-response" queue="estore.listProducts" connector-ref="Active_MQ" doc:name="Request product list to backend"></jms:outbound-endpoint> 
+</flow>
+----
+
+**{{0}}**“收听”来自*/estore/listProducts*频道上*mule.rpc client*的请求（请参阅下图，左侧），并在收到后将请求传递到出站 link:/mule-user-guide/v/3.3/jms-transport-reference[* JMS端点*。] JMS端点将消息发送到eStoreBackend中的JMS队列`estore.listProducts`（请参见右下图）。 Mule使用*Global ActiveMQ Connectors*在电子商店应用程序中实现JMS消息传递。
+
+image:ajax_and_JMS.png[ajax_and_JMS]
+
+[TIP]
+====
+*What is a Global Connector?*
+
+Mule ESB使用*Global Elements*，就像电子商店示例中的*ActiveMQ Connector*一样，指定传输细节并设置可重用配置。
+
+您可以创建一个全局元素来详细说明您的配置或传输细节，而不是重复编写相同的代码以将相同的配置应用于多个消息处理器。然后，您可以指示Mule应用程序中的任意数量的消息处理器引用该全局元素。
+====
+
+*View ActiveMQ Connector Code*
+
+[source, xml, linenums]
+----
+<jms:activemq-connector name="Active_MQ" specification="1.1" brokerURL="vm://localhost" validateConnections="true" doc:name="Active_MQ"/>
+----
+
+==== 电子storeBackend
+
+*listProducts*流中的JMS端点监听来自`estore.listProducts` http://en.wikipedia.org/wiki/Java_Message_Service[JMS队列]上的*e-storeFrontend-listProducts*流的请求（请参阅下图）。
+
+image:listproductsA.png[listproductsA]
+
+image:listproductsB.png[listproductsB]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<flow name="listProducts" doc:name="listProducts">
+        <jms:inbound-endpoint exchange-pattern="request-response" queue="estore.listProducts" connector-ref="Active_MQ2" doc:name="JMS"/>
+        <set-variable variableName="allProducts" value="#\[new java.util.LinkedList()\]" doc:name="Initialize output list"/>
+        <all doc:name="All">
+            <processor-chain>
+                <ee:cache cachingStrategy-ref="listProductsBarbersParadiseCachingStrategy" doc:name="Cache">
+                    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9080" path="barbersparadise/products" method="GET" connector-ref="HttpConnector" doc:name="Fetch products from Barbers Paradise Store"/>
+                </ee:cache>
+                <splitter expression="#[json:]" doc:name="Split received products list"/>
+                <DataMapper:transform config-ref="barbersParadiseToCanonicalJSON" doc:name="Transform to canonical JSON"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <expression-transformer expression="flowVars['allProducts'].add(payload)" doc:name="Add product to output list"/>
+            </processor-chain>
+            <processor-chain>
+                <ee:cache cachingStrategy-ref="listProductsVangoghPaintStoreCachingStrategy" doc:name="Cache">
+                    <flow-ref name="subflow-fetchProductsFromVanGoghPaintStore" doc:name="subflow-fetchProductsFromVanGoghPaintStore"/>
+                </ee:cache>
+                <collection-splitter doc:name="Split received collection"/>
+                <DataMapper:transform config-ref="vanGoghPaintToCanonicalJSON" doc:name="Transform to canonical JSON"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <expression-transformer expression="flowVars['allProducts'].add(payload)" doc:name="Add product to output list"/>
+            </processor-chain>
+        </all>
+        <expression-transformer expression="allProducts" doc:name="Set payload to output list"/>
+    </flow>
+----
+
+该流程使用**{{0}}**在消息上设置新的LinkedList变量（请参阅下图）。此`allProducts`列表为空，即将填入Mule从第三方服务提供商处获取的数据。
+
+image:allProducts.png[所有产品]
+
+接下来，Mule必须向理发店的Paradise和Van Gogh的油漆店发出请求，以检索他们提供的所有产品的清单。为此，Mule使用 link:/mule-user-guide/v/3.3/all-flow-control-reference[*所有路由器*]将请求发送给**{{1}} *and a *{{2}}**。
+
+请求 - 响应HTTP端点使用`GET`方法从Barber的Paradise的RESTful Web服务中获取产品列表（请参见下图）。 Mule **{{0}}**理发师乐园在下次终端用户发出相同请求时重新使用产品列表的响应。缓存响应会减少对服务提供商的调用次数，从而提高应用程序的性能。
+
+image:get_method.png[GET_METHOD]
+
+HTTP端点通过URL `localhost:9080/barbersparadise/products`触发`providers-barbersParadise.mflow file`中的*listOrGETProducts*流。理发师的天堂返回一个JSON格式的产品列表（见下面的代码）。
+
+[source, code, linenums]
+----
+[
+    {
+        "upc": "1827349",
+        "description": "Billy-boy forever-sharp razors",
+        "price": "9.95"
+    },
+    {
+        "upc": "7727362",
+        "description": "Mama Juana aftershave potion",
+        "price": "12.99"
+    },
+    {
+        "upc": "1762738",
+        "description": "Ultrasmooth shave foam",
+        "price": "3.50"
+    },
+    {
+        "upc": "87668334",
+        "description": "UltraQuickHeal scar tissues",
+        "price": "1.95"
+    }
+]
+----
+
+收到该列表后，Mule会使用带有空JSON表达式（`"#[json:]"`）的*Splitter*将数据收集拆分为单个项目，例如下面代码中显示的项目。
+
+[source, code, linenums]
+----
+{
+        "upc": "1827349",
+        "description": "Billy-boy forever-sharp razors",
+        "price": "9.95"
+    }
+----
+
+接下来，Mule使用**{{0}}**将数据从一种格式映射到另一种格式（参见下面的图片和表格）。该映射对数据进行了归一化处理，使其可供E-store应用程序使用（请参阅下面的归一化数据示例）。
+
+image:dataMapping1.png[dataMapping1]
+
+[%header,cols="2*"]
+|===
+|从 |要
+| {UPC {1}}的productId
+| {描述{1}}产品描述
+| _ N / A _  | providerId
+| {价格{1}}价格
+|===
+
+[source, code, linenums]
+----
+{
+        "productId": "1827349",
+        "productDescription": "Billy-boy forever-sharp razors",
+        "providerId": "BARBER",
+        "price": "9.95"
+}
+----
+
+然后Mule使用*Object to String Transformer*将列表数据从Java对象转换为字符串。这个动作准备Mule的内容，将它添加到列表变量中。 *Expression Transformer*使用*expression*将有效载荷添加到`allProducts`变量。
+
+image:expression_transform.png[expression_transform]
+
+Mule用来从Van Gogh的Paint Store获取产品列表的过程略有不同，因为Van Gogh公开了SOAP Web服务。在收到来自选择路由器的消息后，流参考组件将消息引导至*subflow-fetchProductsFromVanGoghPaintStore*子流。 +
+image:fetch_subflow.png[fetch_subflow]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<sub-flow name="subflow-fetchProductsFromVanGoghPaintStore" doc:name="subflow-fetchProductsFromVanGoghPaintStore">
+        <cxf:jaxws-client operation="listProducts" serviceClass="com.mulesoft.example.estore.clients.provider.vangoghpaintstore.B2BStore" port="80" enableMuleSoapHeaders="true" doc:name="Prepare SOAP request"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9081" path="vangoghpaintstore" doc:name="Invoke SOAP request"/>
+    </sub-flow>
+----
+
+**{{0}}**配置HTTP端点向Van Gogh的Web服务发送的客户端请求（请参阅下图）。
+
+image:SOAP_VanGogh.png[SOAP_VanGogh]
+
+子流将Web服务响应（一个集合）注入到Mule缓存数据的主*listProducts*流中。在DataMapper将每个项目映射到E-store应用程序的标准化，可用格式（请参见下表）之前，**{{0}}**将集合拆分为单个项目。
+
+[%header,cols="2*"]
+|===
+|从 |要
+| {UPC {1}}的productId
+| {品牌{1}}产品描述
+| {颜色{1}}产品描述
+| _ N / A _  | providerId
+| {价格{1}}价格
+|===
+
+与理发师的天堂过程一样，Mule将规范化的数据从Java对象转换为字符串，然后将数据添加到`allProducts`变量。 *Set Payload to output list*表达式转换器明确地将消息有效载荷设置为`allProducts`变量allProducts的内容。现在，有效载荷包含了可从Barber's Paradise和Van Gogh's Paint以E-store的JSON格式获得的产品的汇总列表。
+
+Mule将消息返回给*e-storeFrontend-listProducts*流程，该流程使用AJAX将响应发送给最终用户的浏览器。
+
+image:listofproducts.png[listofproducts]
+
+=== 将产品添加到购物车
+
+电子商店应用程序使用户能够将物品添加到虚拟购物车。下图说明了电子商店应用程序将项目添加到购物车的操作。 +
+ +
+  image:model2.png[MODEL2]
+
+==== 电子storeFrontend
+
+当最终用户将GUI中的项目从产品列表拖动到购物车列时，客户端界面会激活`e-storeFrontend.mflow file`中的*e-storeFrontend-addToCart*流程（请参阅下图）。
+
+image:add_to_cart_flow.png[add_to_cart_flow]！
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<flow name="e-storeFrontend-addToCart" doc:name="e-storeFrontend-addToCart">
+        <ajax:inbound-endpoint channel="/estore/addToCart" responseTimeout="10000" doc:name="/estore/addToCart"></ajax:inbound-endpoint> 
+        <set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id"></set-property> 
+        <jms:outbound-endpoint queue="estore.addToCart" connector-ref="Active_MQ" doc:name="Request add product to cart to backend"></jms:outbound-endpoint> 
+    </flow>
+----
+
+在此流程中，AJAX端点在*/estore/addToCart*通道上侦听请求。该请求包含产品代码，提供者名称，数量和价格。 **{{0}} **从*comtd.clien*属性（在消息的入站属性上）提取最终用户的AJAX会话的 http://en.wikipedia.org/wiki/Session_ID[会话ID]。然后，Mule使用 link:/mule-user-guide/v/3.3/mule-expression-language-mel[表达]在消息上设置一个新的*sessionId*变量（参见下图）。 Mule使用这个sessionID变量将特定的最终用户关联到他的购物车，从而确保用户只能看到他自己的购物车的内容。
+
+image:property_variable.png[property_variable]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id">
+----
+
+JMS端点将消息发送到e-storeBackend中的JMS队列`estore.addToCart`。
+
+==== 电子storeBackend
+
+*addToCart*流中的JMS端点监听*e-storeFrontend-addToCart*流发送到`estore.addToCart` JMS队列的请求（请参阅下图）。
++
+image:add_to_cart_flow2.png[add_to_cart_flow2]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<flow name="addToCart" doc:name="addToCart">
+        <jms:inbound-endpoint queue="estore.addToCart" connector-ref="Active_MQ2" doc:name="JMS"/>
+        <jdbc-ee:outbound-endpoint exchange-pattern="one-way" queryKey="query-addToCart" queryTimeout="-1" connector-ref="JDBCConnector" doc:name="Store product on cart table"/>
+    </flow>
+----
+
+此流程中的出站**{{0}} **执行两项任务：
+
+它访问数据库. 
+. 它将数据保存到数据库
+
+为了执行这些任务，JDBC端点与另外两个元素一起工作：*Global JDBC Connector*和*SQL Query*或存储过程。
+
+link:/mule-user-guide/v/3.3/jdbc-transport-reference[* JDBC连接器*]  -  E-store示例应用程序中的全局元素 - 帮助JDBC Endpoint及其任务（上面列出）。
+
+. 作为 link:/mule-user-guide/v/3.3/connecting-using-transports[连接器]，它通过提供有关如何连接它的特定详细信息（例如它存在的位置）来帮助JDBC端点访问数据库（在这种情况下，Derby数据库嵌入到E -store应用程序）以及如何访问它（数据库的用户名和密码）。请参阅下面的图片，顶部。
+. 它存储SQL查询（即存储过程），本流程中的JDBC端点引用其中一个用于将数据保存到数据库（下图右）。 `query-addToCart`将*product code*和*session id*插入到嵌入式Derby数据库的购物车表中。看下面的图片，底部。
++
+image:global_jdbc_all.png[global_jdbc_all]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<spring:beans>
+        <spring:bean id="Derby_Data_Source" class="org.enhydra.jdbc.standard.StandardXADataSource" destroy-method="shutdown">
+            <spring:property name="driverName" value="org.apache.derby.jdbc.EmbeddedDriver"/>
+            <spring:property name="url" value="jdbc:derby:muleEmbeddedDB;create=true"/>
+        </spring:bean>
+    </spring:beans>
+    <jdbc:connector name="JDBCConnector" dataSource-ref="Derby_Data_Source" validateConnections="true" queryTimeout="-1" pollingFrequency="0" doc:name="JDBCConnector">
+        <jdbc:query key="query-addToCart" value="INSERT INTO cart (session_id, product_id, provider, quantity) VALUES (#[header:inbound:sessionId], #[json:productCode], #[json:provider], #[json:qty])"/>
+        <jdbc:query key="query-showCart" value="SELECT * FROM cart WHERE session_id = #[header:inbound:sessionId]"/>
+        <jdbc:query key="query-clearCart" value="DELETE FROM cart WHERE session_id = #[header:inbound:sessionId]"/>
+    </jdbc:connector>
+----
+
+[NOTE]
+====
+*Using Expressions to Extract Values*
+
+Mule使用表达式从消息的不同部分提取值。下表说明了一些Mule从E-store应用程序中的消息中提取的数据。
+
+[%header,cols="34,33,33"]
+|===
+|提取数据 |来源 |表达式
+|会话ID  |消息的入站属性sessionId +
+ （在* e-storeFrontend-addToCart*流中创建） |＃[header：inbound：sessionId]
+|产品代码 |消息属性 |＃[json：productCode]
+|提供商名称 |消息属性 |＃[json：provider]
+|数量 |消息属性 |＃[json：qty]
+|===
+
+Mule根据属性中包含JSON格式数据的消息负载评估表达式。
+====
+
+由于最终用户在将商品添加到购物车时并不期待应用程序的回复，因此应用程序无需发送回复。 *e-storeFrontend-addToCart*流将消息发送到后端流，从而结束其处理; *addToCart*流将数据异步（相对于前端流）插入数据库，从而结束其处理。
+
+=== 查看购物车
+
+电子商店应用程序使用户能够在虚拟购物车中查看物品，包括其成本。下图说明了电子商店应用程序执行的向最终用户显示购物车内容的操作。 +
+ +
+  image:showcart.png[showcart]
+
+==== 电子storeFrontend
+
+当最终用户单击GUI上的*My Cart*选项卡时，客户端界面会激活`e-storeFrontend.mflow file`中的*e-storeFrontend-showCart*流（请参阅下图）。
+
+image:front_show_cart.png[front_show_cart]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<flow name="e-storeFrontend-showCart" doc:name="e-storeFrontend-showCart">
+        <ajax:inbound-endpoint channel="/estore/showCart" responseTimeout="10000" connector-ref="ajaxServer" doc:name="/estore/showCart"></ajax:inbound-endpoint> 
+        <response>
+            <object-to-string-transformer doc:name="Object to String"></object-to-string-transformer> 
+        </response> 
+        <set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id"></set-property> 
+        <jms:outbound-endpoint exchange-pattern="request-response" queue="estore.showCart" connector-ref="Active_MQ" doc:name="Request cart contents to backend"></jms:outbound-endpoint> 
+    </flow>
+----
+
+AJAX端点在*/estore/showCart*通道上侦听请求。与在*e-storeFrontend-addToCart*流程中一样，属性转换器会在消息上设置会话ID变量。然后，JMS端点将消息发送到e-storeBackend中的`estore.showCart`队列。
+
+==== 电子storeBackend
+
+*showCart*流中的JMS端点监听*e-storeFrontend-showCart*流发送到`estore.showCart` JMS队列的请求（请参阅下图）。
+
+image:show_cart_flow.png[show_cart_flow]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<flow name="showCart" doc:name="showCart">
+        <jms:inbound-endpoint exchange-pattern="request-response" queue="estore.showCart" connector-ref="Active_MQ2" doc:name="JMS"/>
+        <flow-ref name="subflow-showCart" doc:name="subflow-showCart"/>
+    </flow>
+----
+
+使用流参考组件，Mule将消息发送到*subflow-showCart*进行处理（参见下图）。因为计算购物车中物品的总价值是最终用户可能经常执行的操作，所以Mule使用子流来检索购物车内容并计算其总价值。这种设计 - 引用频繁计算的子流程的流程 - 遵循计算机编程的 http://en.wikipedia.org/wiki/Package_Principles#Principles_of_Package_Cohesion[通用的重用原则]。
+
+image:subflow_showCart.png[subflow_showCart]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<sub-flow name="subflow-showCart" doc:name="subflow-showCart">
+        <jdbc:outbound-endpoint exchange-pattern="request-response" queryKey="query-showCart" queryTimeout="-1" connector-ref="JDBCConnector" doc:name="Fetch cart contents from database"/>
+        <set-variable variableName="grandTotal" value="#[0]" doc:name="Initialize grand total"/>
+        <set-variable variableName="cartItems" value="#[new java.util.LinkedList()]" doc:name="Initialize cart items list"/>
+        <foreach doc:name="Foreach">
+            <choice doc:name="Choice">
+                <when expression="payload['PROVIDER'].equals('Barber\'s Paradise Store')">
+                    <processor-chain>
+                        <enricher target="#[header:outbound:productDetails]" doc:name="Store product details as message property (enrich)">
+                            <ee:cache cachingStrategy-ref="fetchProductDetailsCachingStrategy" doc:name="Cache">
+                                <core:flow-ref name="subflow-fetchProductDetailsFromBarbersParadise" doc:name="subflow-fetchProductDetailsFromBarbersParadise"/>
+                            </ee:cache>
+                        </enricher>
+                    </processor-chain>
+                </when>
+                <when expression="payload['PROVIDER'].equals('Van Gogh\'s Paint Store')">
+                    <processor-chain>
+                        <enricher target="#[header:outbound:productDetails]" doc:name="Store product details as message property (enrich)">
+                            <ee:cache cachingStrategy-ref="fetchProductDetailsCachingStrategy" doc:name="Cache">
+                                <core:flow-ref name="subflow-fetchProductDetailsFromVanGoghPaintStore" doc:name="subflow-fetchProductDetailsFromVanGoghPaintStore"/>
+                            </ee:cache>
+                        </enricher>
+                    </processor-chain>
+                </when>
+            </choice>
+            <DataMapper:transform config-ref="consolidateProductDetailsOnCart" doc:name="Consolidate cart item info and subtotal">
+                <DataMapper:input-arguments>
+                    <DataMapper:input-argument key="price">#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['productDetails'].toString())).price]</DataMapper:input-argument>
+                    <DataMapper:input-argument key="providerId">#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['productDetails'].toString())).providerId]</DataMapper:input-argument>
+                    <DataMapper:input-argument key="product_id">#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['productDetails'].toString())).productId]</DataMapper:input-argument>
+                    <DataMapper:input-argument key="productDescription">#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['productDetails'].toString())).productDescription]</DataMapper:input-argument>
+                </DataMapper:input-arguments>
+            </DataMapper:transform>
+            <object-to-string-transformer doc:name="Object to String"/>
+            <set-variable variableName="grandTotal" value="#[grandTotal + Float.parseFloat((new groovy.json.JsonSlurper().parseText(payload)).subtotal)]" doc:name="Sum item subtotal to grand total"/>
+            <expression-transformer expression="flowVars['cartItems'].add(payload)" doc:name="Add cart item to list"/>
+        </foreach>
+        <set-property propertyName="cartTotal" value="#[grandTotal]" doc:name="Set cartTotal message property with grand total"/>
+        <expression-transformer expression="cartItems" doc:name="Set payload to cart items list"/>
+    </sub-flow>
+----
+
+首先，JDBC端点使用`query-showCart`查询来检索购物车中每个商品的*productID*和*quantity*，这是Mule通过最终用户的sessionID标识的。
+
+然后Mule使用一对变量变换器在消息上设置两个空变量：`grandTotal`和`cartItems`。该流程的其余部分用于计算`grandTotal`的值，并查找要填充`cartItems`的LinkedList的项目。
+
+Mule将消息传递给**{{0}} **迭代处理器的范围。在Derby数据库中，JDBC端点检索了一组Java地图，每个Java地图都包含一个键值对 - 字段名称和字段值 - 用于购物车表格中的每一行。 Foreach将集合分为单个项目（键值对），然后通过其范围内的每个**{{1}}**对其进行迭代处理（即每次处理一个项目）。
+
+Foreach将集合中的第一个项目传递给使用表达式将项目路由到两个处理分支之一的**{{0}} **：
+
+* 如果项目的有效载荷表明提供者是Barber's Paradise `expression="payload['PROVIDER'].equals('Barber\'s Paradise Store')"`，则在选择路由器中配置的第一个表达式评估为true;穆勒将消息发送给第一个分支
+* 如果项目的有效载荷指示提供者是Van Gogh的Paint `expression="payload['PROVIDER'].equals('Van Gogh\'s Paint Store')"`，则在选择路由器中配置的第二个表达式评估为true;穆勒将消息发送给第二个分支
++
+image:choice_router.png[choice_router]
+
+*View the XML*
+
+两个分支中的每一个都以一个流量参考组件开始，该组件将消息引导至一个单独的子流以供进一步处理。请注意，Mule流程会用两个范围包装每个流量参考组件：
+
+.  **{{0}}**  - 缓存子流处理的结果。
+.  *{{0}}*  - 用数据丰富消息有效载荷。 Mule _enriches_消息有效载荷，而不是_changing_内容，以便应用程序中的其他消息处理器可以访问原始有效载荷。在此流程中，消息richhers将子流程处理的结果存储在消息的`productDetails`出站属性中。
+
+===== 从理发师天堂获取产品详细信息
+
+image:fetch_from_Barbers.png[fetch_from_Barbers]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<sub-flow name="subflow-fetchProductDetailsFromBarbersParadise" doc:name="subflow-fetchProductDetailsFromBarbersParadise">
+        <{{0}}]" doc:name="Fetch product info from Barber's Paradise Store"/>
+        <data-mapper:transform config-ref="barbersParadiseToCanonicalJSON" doc:name="Transform to canonical JSON"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+    </sub-flow>
+----
+
+*subflow-fetchProductDetailsFromBarbersParadise*向Barber的Paradise RESTful Web服务发送HTTP请求，以从供应商那里获取最新的产品定价详细信息。子流中的DataMapper将来自服务提供者的JSON数据映射为E-store应用程序可以使用的标准化JSON格式。最后，Object to String转换器在将数据注入主流*showCart*之前将其转换为字符串格式。
+
+===== 从梵高的油漆中提取产品详细信息
+
+image:fetch_from_VanGoghs.png[fetch_from_VanGoghs]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<sub-flow name="subflow-fetchProductDetailsFromVanGoghPaintStore" doc:name="subflow-fetchProductDetailsFromVanGoghPaintStore">
+        <expression-transformer expression="payload['PRODUCT_ID']" doc:name="Assing product id to payload"/>
+        <flow-ref name="subflow-invokeVanGoghGetProductInfoSOAPService" doc:name="subflow-invokeVanGoghGetProductInfoSOAPService"/>
+        <data-mapper:transform config-ref="vanGoghPaintToCanonicalJSON" doc:name="Transform to canonical JSON"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+    </sub-flow>
+    <sub-flow name="subflow-invokeVanGoghGetProductInfoSOAPService" doc:name="subflow-invokeVanGoghGetProductInfoSOAPService">
+        <cxf:jaxws-client operation="getProductInfo" serviceClass="com.mulesoft.example.estore.clients.provider.vangoghpaintstore.B2BStore" port="80" enableMuleSoapHeaders="true" doc:name="Prepare SOAP request"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9081" path="vangoghpaintstore" doc:name="Invoke SOAP request"/>
+    </sub-flow>
+----
+
+*subflow-fetchProductDetailsFromVanGoghPaintStore*使用表达式转换器来标识消息负载上的产品ID。然后子流程调用_another_ subflow **subflow-invokeVanGoghGetProductInfoSOAPService**来准备，然后向Van Gogh的Paint的Web服务发送一个SOAP请求，该服务从供应商获取最新的产品定价详细信息。 fetchProductDetails子流中的DataMapper将来自服务提供者的JSON数据映射为E-store应用程序可以使用的规范化的JSON格式。最后，Object to String转换器将数据转换为字符串格式，然后将其注入到主*showCart*流中。
+
+====  ...回到showCart流程中
+
+在通过foreach的消息处理器发送集合中的每个项目之后，Mule使用另一个DataMapper来转换和合并更新的产品信息（参见下图）。 DataMapper还通过将产品价格乘以最终用户请求的数量来计算每个项目的小计。 +
+ +
+  image:dataMapper-subflow.png[DataMapper的，子流]
+
+在DataMapper的*Input*窗格中，Mule显示来自有效内容的字段，它们表示Derby数据库中购物车表中的行的名称。 Mule将这些产品详细信息存储为消息属性，当它将Barber's Paradise和Van Gogh's Paint的Web服务称为更新产品详细信息时。这两个消息丰富程序（分别为**Store product details as message property (enrich)**）将产品详细信息存储为属性（请参见下图）。 +
+ +
+  image:enriched_productdetails.png[enriched_productdetails]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<enricher target="#[header:outbound:productDetails]" doc:name="Store product details as message property (enrich)">
+----
+
+在DataMapper的*Output*窗格中，Mule以JSON格式显示合并输出，包括项目小计的计算（请参阅上图中的红色矩形内容）。在Mule映射数据之后，集合中每个项目的消息负载如下所示：
+
+[source, code, linenums]
+----
+{
+        "productId": "1827349",
+        "productDescription": "Billy-boy forever-sharp razors",
+        "providerId": "BARBER",
+        "price": "9.95",
+        "qty": "1",
+        "subtotal": "9.95"
+}
+----
+
+然后，Mule将Java对象（一个映射）转换为一个字符串，以准备总计算的内容。变量转换器使用表达式进行计算，然后在有效负载上设置`grandTotal`变量（请参见下图）。回想一下，Mule在子流的前面创建了一个空的`grandTotal`变量;这个变换器只是填充空变量。 +
+ +
+  image:grandTotal.png[累计]
+
+最后一个表达式转换器在有效负载上设置`cartItems`变量。回想一下，Mule在子流中早些时候创建了一个名为`cartItems`的空LinkedList变量;这个变压器只是填充空的列表。
+
+Mule将消息返回给*e-storeFrontend-showCart*流程，该流程使用AJAX将响应发送给最终用户的浏览器。 +
+ +
+  image:showCart_browser.png[showCart_browser]
+
+=== 结帐
+
+电子商店应用程序使用户能够支付购买并向供应商提交订单。此“结帐”活动涉及两个步骤：
+
+计算. ，然后将最终总计显示给最终用户
+. 处理付款，然后向供应商提交订单
+
+下图说明了电子商店应用程序执行的重新计算总计的操作，然后授权付款并提交供应商订单。 +
+ +
+  image:checkout.png[查看]
+
+==== 电子商店前端 - 总计
+
+当最终用户单击GUI上的*Checkout*选项卡时，客户端界面会激活`e-storeFrontend.mflow file`中的*e-storeFrontend-getCartTotal*流（请参阅下图）。 +
+ +
+  image:getGrandTotal.png[getGrandTotal]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<flow name="e-storeFrontend-getCartTotal" doc:name="e-storeFrontend-getCartTotal">
+        <ajax:inbound-endpoint channel="/estore/getCartTotal" responseTimeout="10000" connector-ref="ajaxServer" doc:name="/estore/getCartTotal"></ajax:inbound-endpoint> 
+        <set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id"></set-property> 
+        <jms:outbound-endpoint exchange-pattern="request-response" queue="estore.showCart" connector-ref="Active_MQ" doc:name="Request cart contents to backend"></jms:outbound-endpoint> 
+        <expression-transformer expression="#[header:inbound:cartTotal]" doc:name="Set cart total property as payload"></expression-transformer> 
+    </flow>
+----
+
+AJAX端点在*/estore/getCartTotal*通道上侦听请求。与在*e-storeFrontend-addToCart*流程中一样，属性转换器会在消息上设置会话ID变量。然后，双向JMS端点将消息发送到e-storeBackend中的`estore.showCart`队列。当它收到e-storeBackend的响应时，JMS端点将消息传递给一个表达式转换器，该转换器将计算的`cartTotal`设置为消息有效负载的属性。
+
+*e-storeFrontend-getCartTotal*流向最终用户的浏览器发送响应，该浏览器在*Checkout*页面上显示购物车的总计。 +
+ +
+  image:grandTotal_browser.png[grandTotal_browser]
+
+====  e-storeBackend  - 总计
+
+*showCart*中的JMS端点侦听*e-storeFrontend-getCartTotal*流发送到`estore.showCart`队列的请求。 Mule重用*showCart*流程（及其在e-storeBackend中的支持子流程）以获取该值，而不是将单独的流程专用于计算最终用户订单的总计。
+
+==== 电子商店前台 - 处理订单
+
+当最终用户在GUI上填充支付信息字段后，单击*Verify payment and submit order*按钮，客户端界面激活`e-storeFrontend.mflow file`中的*estoreFrontend-doCheckout*流（请参阅下图）。
+
+image:doCheckout_flow.png[doCheckout_flow]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<flow name="e-storeFrontend-doCheckout" doc:name="e-storeFrontend-doCheckout">
+        <ajax:inbound-endpoint channel="/estore/doCheckout" responseTimeout="10000" doc:name="/estore/doCheckout"></ajax:inbound-endpoint> 
+        <set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id"></set-property> 
+        <jms:outbound-endpoint exchange-pattern="request-response" queue="estore.doCheckout" connector-ref="Active_MQ" doc:name="Request checkout to backend"></jms:outbound-endpoint> 
+    </flow>
+----
+
+AJAX端点在*/estore/doCheckout*通道上侦听请求。与在*e-storeFrontend-addToCart*流程中一样，属性转换器会在消息上设置会话ID变量。然后，JMS端点将消息发送到e-storeBackend中的`estore.doCheckout`队列。
+
+====  e-storeBackend  - 处理订单
+
+*doCheckout*流中的JMS端点监听*e-storeFrontend-doCheckout*流发送到`estore.doCheckout` JMS队列的请求（请参阅下图）。 +
+ +
+  image:partA.png[A部分] +
+
+
+image:partB.png[B部分] +
+
+  image:partD.png[partD]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<flow name="doCheckout" doc:name="doCheckout">
+        <jms:inbound-endpoint exchange-pattern="request-response" queue="estore.doCheckout" connector-ref="Active_MQ2" doc:name="JMS"/>
+        <enricher doc:name="Enrich message with cart details">
+            <core:flow-ref name="subflow-showCart" doc:name="subflow-showCart"/>
+            <enrich source="#[message.outboundProperties['cartTotal'].toString()]" target="#[header:outbound:grandTotal]"></enrich>
+            <enrich source="#[payload]" target="#[header:outbound:cartContents]"></enrich>
+        </enricher>
+        <enricher doc:name="Enrich message with payment authorization results">
+            <core:flow-ref name="subflow-authorizePayment" doc:name="subflow-authorizePayment"/>
+            <enrich source="#[xpath:/authorizationResponse/result]" target="#[header:outbound:paymentResult]"></enrich>
+            <enrich source="#[xpath:/authorizationResponse/reason]" target="#[header:outbound:paymentReason]"></enrich>
+        </enricher>
+        <choice doc:name="Choice">
+            <when expression="#[header:paymentResult=APPROVED]">
+                <processor-chain>
+                    <set-variable variableName="orders" value="#[new java.util.LinkedList()]" doc:name="Initialize order numbers list"/>
+                    <set-variable variableName="orderSorter" value="#[new com.mulesoft.example.estore.util.OrderSorter((new groovy.json.JsonSlurper().parseText(payload)).cardholderName, (new groovy.json.JsonSlurper().parseText(payload)).deliveryAddress)]" doc:name="Initialize orders sorter"/>
+                    <foreach collection="#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['cartContents'].toString()))]" doc:name="For each item on the cart">
+                        <expression-component doc:name="Classify item in orders sorter">#[flowVars['orderSorter'].sortOrderItem(payload.providerId, new com.mulesoft.example.estore.util.OrderItem(payload.productId, Integer.parseInt(payload.qty)))]</expression-component>
+                    </foreach>
+                    <foreach collection="#[flowVars['orderSorter'].getSortedOrders()]" doc:name="For each order">
+                        <choice doc:name="Choice">
+                            <when expression="#[payload.providerId == 'Barber\'s Paradise Store']">
+                                <processor-chain>
+                                    <DataMapper:transform config-ref="ordertojsonorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9080" path="barbersparadise/placeOrder" doc:name="Place order on Barber's Paradise Store"/>
+                                </processor-chain>
+                            </when>
+                            <when expression="#[payload.providerId == 'Van Gogh\'s Paint Store']">
+                                <processor-chain>
+                                    <DataMapper:transform config-ref="ordertodeliveryorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <flow-ref name="subflow-placeOrderOnVanGoghPaintStore" doc:name="subflow-placeOrderOnVanGoghPaintStore"/>
+                                </processor-chain>
+                            </when>
+                        </choice>
+                        <object-to-string-transformer doc:name="Object to String"/>
+                        <expression-transformer expression="flowVars['orders'].add(&quot;\&quot;&quot; + payload.toString() + &quot;\&quot;&quot;)" doc:name="Add order to orders list"/>
+                    </foreach>
+                    <expression-transformer expression="&quot;{\&quot;result\&quot;: \&quot;APPROVED\&quot;, \&quot;orders\&quot;: &quot; + flowVars[&quot;orders&quot;].toString() + &quot;}&quot;" doc:name="Build checkout sucessful message"/>
+                </processor-chain>
+            </when>
+            <when expression="#[header:paymentResult=FAILED]">
+                <processor-chain>
+                    <expression-transformer expression="&quot;{\&quot;result\&quot;: \&quot;FAILED\&quot;, \&quot;reason\&quot;: \&quot;&quot; + message.outboundProperties[&quot;paymentReason&quot;] + &quot;\&quot;}&quot;" doc:name="Build payment rejected message"/>
+                </processor-chain>
+            </when>
+        </choice>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <expression-transformer expression="&quot;{\&quot;result\&quot;: \&quot;FAILED\&quot;, \&quot;reason\&quot;: \&quot;Unable to process payment with bank due to communication problems or invalid credit card information. Check you're submitting a 16-digit credit card number, a 3-digit security code, a name and an address.\&quot;}&quot;" doc:name="Build error response"/>
+        </catch-exception-strategy>
+    </flow>
+----
+
+使用流参考组件，Mule将消息发送到*subflow-showCart*进行处理，然后使用表达式来丰富具有两个属性的有效内容：`grandTotal`和`cartContents`（请参阅下面的消息丰富图像） 。 +
+ +
+  image:enrich_total_contents.png[enrich_total_contents]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<enrich source="#[message.outboundProperties['cartTotal'].toString()]" target="#[header:outbound:grandTotal]"/>
+<enrich source="#[payload]" target="#[header:outbound:cartContents]"/>
+----
+
+接下来，Mule使用另一个流参考组件来调用**subflow-authorizePayment**。
+
+===== 授权子流程
+
+image:authorization_subflows.png[authorization_subflows]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<sub-flow name="subflow-requestPaymentAuthorizationToBank" doc:name="subflow-requestPaymentAuthorizationToBank">
+        <remove-property propertyName="cartContents" doc:name="Remove cart contents property to call bank"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="10000" path="bank/authorizePayment" doc:name="Request payment authorization to bank"/>
+    </sub-flow>
+    <sub-flow name="subflow-placeOrderOnVanGoghPaintStore" doc:name="subflow-placeOrderOnVanGoghPaintStore">
+        <cxf:jaxws-client operation="placeOrder" serviceClass="com.mulesoft.example.estore.clients.provider.vangoghpaintstore.B2BStore" enableMuleSoapHeaders="true" doc:name="Prepare SOAP request"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9081" path="vangoghpaintstore" doc:name="Invoke SOAP request"/>
+    </sub-flow>
+----
+
+在向银行提交付款授权请求之前，*subflow-authorizePayment*使用DataMapper将最终用户的JSON信用卡数据转换为银行Web服务期望的XML格式。下表描述了Mule映射的数据。
+
+[%header,cols="2*"]
+|====
+|从（JSON） |到（XML）
+| creditCardNumber：string  | ns0：creditCardNumber：string
+| securityCode：string  | ns0：securityCode：string
+| cardholderName：string  | ns0：cardholderName：string
+| grandTotal：字符串 | ns0：decimal：字符串
+|====
+
+Mule将有效载荷从Java对象转换为字符串，然后使用流参考组件将消息发送到另一个子流**subflow-requestPaymentAuthorizationToBank**。
+
+在*PaymentAuthorizationToBank*子流程中，Mule首先通过删除其`cartContent`属性准备向银行发送请求。这可以防止Mule不必要地将购物车内容列表发送到银行（请参阅下面的属性转换器图片）。 +
+ +
+  image:remove_property.png[remove_property]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<remove-property propertyName="cartContents" doc:name="Remove cart contents property to call bank"/>
+----
+
+然后，请求响应HTTP端点向银行的RESTful Web服务发送请求以授权付款。 <<3rd-Party Web Services>>（位于`bank.mflow`文件中）执行以下验证：
+
+*  *syntactic*  - 确认消息的XML格式符合其 http://en.wikipedia.org/wiki/XML_schema[XSD架构];例如，安全码包含三个整数
+*  *semantic*  - 确认数据符合特定业务规则;例如，安全码与信用卡号码相匹配，或者交易金额不超过$ 1000
+
+当它完成处理请求时，银行的Web服务返回三个响应中的一个;请参阅下表。
+
+[%header,cols="5*"]
+|===
+|付款+
+ 授权 |问题 | {responseResult {3}} responseReason  |异常
+|是 |无 | {批准{3}} {无{4}}无
+|否 |语义验证失败 |失败 |  |无
+|否 |句法验证失败 |失败 |无 |
+|===
+
+如果银行的回复包含例外情况（可能是信用卡号码缺少一位数字），Mule将捕获**{{0}}**中的例外情况。异常策略中的表达式转换器（位于*doCheckout*流程的尾部）使用表达式为最终用户准备一个错误。 Mule将错误消息作为对e-storeFrontend流程的响应，然后发送给最终用户的浏览器。 （如果银行的响应涉及语义验证失败，则Mule会在流程中进一步处理错误;请参阅下面的*...Back in the doCheckout Flow*部分。）
+
+*subflow-requestPaymentAuthorizationToBank*将银行的回复发送给*subflow-authorizePayment*，然后将结果发送给主*doCheckout*流。
+
+=====  ...回到doCheckout流程中
+
+浓缩器使用子流处理的结果来丰富具有两个属性的消息：`paymentResult`和`paymentReason`。 +
+ +
+  image:xpath_enricher.png[xpath_enricher]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<enrich source="#[xpath:/authorizationResponse/result]" target="#[header:outbound:paymentResult]"/>
+<enrich source="#[xpath:/authorizationResponse/reason]" target="#[header:outbound:paymentReason]"/>
+----
+
+接下来，Mule在选择路由器中使用表达式来确定如何路由消息：
+
+如果`paymentResult`属性为**`APPROVED`**，则* ，Mule会将消息路由到选择路由器上的第一个分支，以向供应商发起订单
+* 如果`paymentResult`属性为**`FAILED`**，则Mule会将消息路由到选择路由器上的第二个分支，以为最终用户准备“拒绝付款”消息+
+image:choice_sucess_fail.png[choice_sucess_fail]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+            <when expression="#[header:paymentResult=APPROVED]">
+                <processor-chain>
+                    <set-variable variableName="orders" value="#[new java.util.LinkedList()]" doc:name="Initialize order numbers list"/>
+                    <set-variable variableName="orderSorter" value="#[new com.mulesoft.example.estore.util.OrderSorter((new groovy.json.JsonSlurper().parseText(payload)).cardholderName, (new groovy.json.JsonSlurper().parseText(payload)).deliveryAddress)]" doc:name="Initialize orders sorter"/>
+                    <foreach collection="#[(new groovy.json.JsonSlurper().parseText(message.outboundProperties['cartContents'].toString()))]" doc:name="For each item on the cart">
+                        <expression-component doc:name="Classify item in orders sorter">#[flowVars['orderSorter'].sortOrderItem(payload.providerId, new com.mulesoft.example.estore.util.OrderItem(payload.productId, Integer.parseInt(payload.qty)))]</expression-component>
+                    </foreach>
+                    <foreach collection="#[flowVars['orderSorter'].getSortedOrders()]" doc:name="For each order">
+                        <choice doc:name="Choice">
+                            <when expression="#[payload.providerId == 'Van Gogh\'s Paint Store']">
+                                <processor-chain>
+                                    <data-mapper:transform config-ref="ordertojsonorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9080" path="barbersparadise/placeOrder" doc:name="Place order on Barber's Paradise Store"/>
+                                </processor-chain>
+                            </when>
+                            <when expression="#[payload.providerId == 'Van Gogh\'s Paint Store']">
+                                <processor-chain>
+                                    <data-mapper:transform config-ref="ordertodeliveryorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <flow-ref name="subflow-placeOrderOnVanGoghPaintStore" doc:name="subflow-placeOrderOnVanGoghPaintStore"/>
+                                </processor-chain>
+                            </when>
+                        </choice>
+                        <object-to-string-transformer doc:name="Object to String"/>
+                        <expression-transformer expression="flowVars['orders'].add(&quot;\&quot;&quot; + payload.toString() + &quot;\&quot;&quot;)" doc:name="Add order to orders list"/>
+                    </foreach>
+                    <expression-transformer expression="&quot;{\&quot;result\&quot;: \&quot;APPROVED\&quot;, \&quot;orders\&quot;: &quot; + flowVars[&quot;orders&quot;].toString() + &quot;}&quot;" doc:name="Build checkout sucessful message"/>
+                </processor-chain>
+            </when>
+            <when expression="#[header:paymentResult=FAILED]">
+                <processor-chain>
+                    <expression-transformer expression="&quot;{\&quot;result\&quot;: \&quot;FAILED\&quot;, \&quot;reason\&quot;: \&quot;&quot; + message.outboundProperties[&quot;paymentReason&quot;] + &quot;\&quot;}&quot;" doc:name="Build payment rejected message"/>
+                </processor-chain>
+            </when>
+        </choice>
+----
+
+通过批准付款，Mule准备向两个供应商中的每个供应商提交一份产品订单。 （换句话说，Mule汇总了每个供应商的产品清单，以避免向每个供应商发送多个订单。）首先，在选择路由器的第一个分支中的两个变量变量分别在消息上设置两个变量：
+
+.  `orders`  - 一个空的LinkedList变量来捕获订单号码，
+.  `orderSorter`  - 一个简单的Java类，它使用订单对象映射按供应商组织购物车项目（请参阅下面的Java类）。地图的*keys*是供应商的名称; *values*是包含订单项的订单对象。
+
+*View Java Class*
+
+[source, code, linenums]
+----
+public void sortOrderItem(String providerId, OrderItem item) {
+        if (!orders.containsKey(providerId)) {
+            Order order = new Order();
+            order.setCustomerName(this.customerName);
+            order.setDeliveryAddress(this.deliveryAddress);
+            order.setProviderId(providerId);
+            orders.put(providerId, order);
+        }
+        orders.get(providerId).addOrderItem(item);
+    }
+----
+
+在Mule可以对订单商品进行排序之前，它必须先创建它们。 foreach迭代处理器通过表达式组件为每个项目（Java地图）提供数据，以便为每个购物车项目创建一个`OrderItem`对象（请参阅下面的表达式）。
+
+[source, code, linenums]
+----
+#[flowVars['orderSorter'\].sortOrderItem(payload.providerId, new com.mulesoft.example.estore.util.OrderItem(payload.productId, Integer.parseInt(payload.qty)))]
+----
+
+然后Mule使用另一个foreach迭代处理器和另一个选择路由器来拆分`orderItems`的{​​{0}}集合。然后根据供应商将单个项目路由到两个分支之一（请参阅下面的选择路由器映像）。
+
+* 如果`providerID`是`Barber\’s Paradise Store`，Mule会将消息路由到选择路由器的第一个分支
+* 如果`providerID`是`Van Gogh\’s Paint Store`，则Mule将消息路由到选择路由器的第二个分支
++
+image:choice_orderProvider.png[choice_orderProvider]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+                            <when expression="#[payload.providerId == 'Barber\'s Paradise Store']">
+                                <processor-chain>
+                                    <data-mapper:transform config-ref="ordertojsonorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9080" path="barbersparadise/placeOrder" doc:name="Place order on Barber's Paradise Store"/>
+                                </processor-chain>
+                            </when>
+                            <when expression="#[payload.providerId == 'Van Gogh\'s Paint Store']">
+                                <processor-chain>
+                                    <data-mapper:transform config-ref="ordertodeliveryorder" doc:name="Transform internal order repr. to provider repr."/>
+                                    <flow-ref name="subflow-placeOrderOnVanGoghPaintStore" doc:name="subflow-placeOrderOnVanGoghPaintStore"/>
+                                </processor-chain>
+                            </when>
+                        </choice>
+----
+
+在这两个分支中，下一个消息处理器DataMapper将订单（Java对象）转换为供应商所需的格式：
+
+对于理发师的天堂{@ {}}，Mule将对象转换为JSON格式的数据（参见下面的顶部）
+Van Gogh的Paint * ，Mule将对象转换为稍微不同的对象（参见下面的底部）+
+image:mapped_orders.png[mapped_orders]
+
+然后骡将准备好的订单请求发送给两个供应商。对于Barber's Paradise，Mule通过*doCheckout*流中的HTTP端点发送请求;到Van Gogh的Paint，Mule调用*subflow-placeOrderOnVanGoghPaintStore*准备，然后发送一个SOAP请求（参见下图）。 +
+image:place_VanGogh_order.png[place_VanGogh_order]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<sub-flow name="subflow-placeOrderOnVanGoghPaintStore" doc:name="subflow-placeOrderOnVanGoghPaintStore">
+        <cxf:jaxws-client operation="placeOrder" serviceClass="com.mulesoft.example.estore.clients.provider.vangoghpaintstore.B2BStore" enableMuleSoapHeaders="true" doc:name="Prepare SOAP request"/>
+        <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="9081" path="vangoghpaintstore" doc:name="Invoke SOAP request"/>
+    </sub-flow>
+----
+
+每个Web服务提供者都会响应一个订单号，Mule将从一个对象转换为一个字符串。然后，使用表达式转换器，Mule将每个供应商的订单号设置到流中较早创建的`orders` LinkedList变量中（参见下图）。 +
+ +
+  image:add_order_numbers.png[add_order_numbers]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<expression-transformer expression="flowVars['orders'].add(&quot;\&quot;&quot; + payload.toString() + &quot;\&quot;&quot;)" doc:name="Add order to orders list"/>
+----
+
+流中的最后一个消息处理器（一个表达式转换器）使用表达式来准备消息，以在浏览器中显示给最终用户。该消息包含付款授权的结果`APPROVED`以及每个供应商的订单号。
+
+Mule将消息返回给*e-storeFrontend-doCheckout*流程，该流程使用AJAX将响应发送给最终用户的浏览器。 +
+ +
+  image:doCheckout_browser.png[doCheckout_browser]
+
+=== 清除购物车内容
+
+电子商店应用程序使用户能够清除其内容的虚拟购物车。
+
+==== 电子storeFrontend
+
+当用户单击GUI上的*Clear cart contents*按钮时，客户端界面会激活`e-storeFrontend.mflow file`中的*e-storeFrontend-clearCart*流（请参阅下图）。 +
+ +
+  image:clear_cart_flow.png[clear_cart_flow]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<flow name="e-storeFrontend-clearCart" doc:name="e-storeFrontend-clearCart">
+        <ajax:inbound-endpoint channel="/estore/clearCart" responseTimeout="10000" doc:name="/estore/clearCart"></ajax:inbound-endpoint> 
+        <set-property propertyName="sessionId" value="#[flowVars['cometd.client'].toString()]" doc:name="Set session id from AJAX client id"></set-property> 
+        <jms:outbound-endpoint queue="estore.clearCart" connector-ref="Active_MQ" doc:name="Request clear cart to backend"></jms:outbound-endpoint> 
+    </flow>
+----
+
+AJAX端点在*/estore/clearCart*通道上侦听请求。与在*e-storeFrontend-addToCart*流程中一样，属性转换器会在消息上设置会话ID变量。然后，JMS端点将消息发送到e-storeBackend中的`estore.clearCart`队列。
+
+==== 电子storeBackend
+
+*clearCart*流中的JMS端点侦听*e-storeFrontend-clearCart*流发送到`estore.clearCart`队列的请求（请参阅下图）。 +
+image:clearCart_flow.png[clearCart_flow]
+
+*View the XML*
+
+[source, xml, linenums]
+----
+<flow name="clearCart" doc:name="clearCart">
+        <jms:inbound-endpoint queue="estore.clearCart" connector-ref="Active_MQ2" doc:name="JMS"/>
+        <jdbc-ee:outbound-endpoint exchange-pattern="one-way" queryKey="query-clearCart" queryTimeout="-1" connector-ref="JDBCConnector" doc:name="Delete cart contents"/>
+    </flow>
+----
+
+引用全局JDBC连接器时，此流程使用出站JDBC端点执行`clearCart`查询（请参阅下面的图像）。在嵌入式Derby数据库中，此查询将删除与最终用户的会话ID关联的购物车表格的内容。 +
+ +
+  image:clear_cart_query.png[clear_cart_query]
+
+== 第三方Web服务
+
+该示例应用程序包含使E-store应用程序可以运行的流程。 *bank*，**provider-vangoghpaint**和*provider-barbersparadise*流文件由多个流和子流组成，它们共同为来自**e-storeBackend**的Web服务请求提供Web服务响应。
+
+如果没有这些第三方Web服务提供者，那么在E-store示例应用程序中将没有处理Web服务请求的机制。因此，这些流程可以模拟Web服务客户端可能提交请求的各种现实Web服务提供者。
+
+虽然本文没有详细介绍第三方Web服务，但您可以在Mule Studio中查看它们的内容。双击*Package Explorer*中的其中一个第三方`.mflow`文件，在单独的画布选项卡中打开配置（请参见下图）。 +
+ +
+  image:bank_open.png[bank_open]
+
+== 相关主题
+
+* 有关配置Anypoint DataMapper的更多信息，请参阅 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[DataMapper变压器参考]。
+* 有关使用JDBC端点的更多信息，请参阅 link:/mule-user-guide/v/3.3/database-jdbc-endpoint-reference[JDBC端点参考]。
+* 有关此示例中有关捕获异常策略的更多信息，请参阅 link:/mule-user-guide/v/3.3/catch-exception-strategy[捕捉异常策略]。
+* 有关路由消息的更多信息，请参阅 link:/mule-user-guide/v/3.3/choice-flow-control-reference[选择流量控制]。
+* 有关在消息上设置变量的更多信息，请参阅 link:/mule-user-guide/v/3.3/variable-transformer-reference[可变变压器]。
+* 有关缓存Web服务响应的更多信息，请参阅 link:/mule-user-guide/v/3.3/cache-scope[缓存范围]。
+* 有关迭代处理的更多信息，请参阅 link:/mule-user-guide/v/3.3/foreach[的foreach]。
+* 有关配置SOAP组件的更多信息，请参阅 link:/mule-user-guide/v/3.3/soap-component-reference[SOAP组件]。

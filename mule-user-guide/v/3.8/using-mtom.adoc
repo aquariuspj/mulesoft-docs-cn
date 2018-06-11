@@ -1,0 +1,161 @@
+= 使用MTOM
+:keywords: anypoint studio, studio, mtom, wsdl
+
+本页介绍如何在服务中使用W3C消息传输优化机制（MTOM）的基础知识。有关更多信息，请转至CXF的 link:https://cwiki.apache.org/confluence/display/CXF20DOC/MTOM[MTOM文档]。本页中的部分示例来自该指南。
+
+对于WSDL优先服务，一般过程如下：
+
+. 编写您的WSDL
+. 生成您的服务器存根
+. 在Mule中配置CXF端点
+
+== 编写启用了MTOM的WSDL
+
+要开始，像通常一样编写一个WSDL。使用`xsd:base64Binary`模式类型来表示您想发送的任何二进制数据。
+
+通常，在创建二进制数据的XML模式类型时，您可以编写如下的模式类型：
+
+[source,xml, linenums]
+----
+<element name="yourData" type="xsd:base64Binary"/>
+----
+
+要告诉CXF将此二进制类型视为附件，您必须向其添加一个`xmime:expectedContentTypes`属性：
+
+[source,xml, linenums]
+----
+<schema targetNamespace="http://mediStor.org/types/"
+  xmlns="http://www.w3.org/2001/XMLSchema"
+  xmlns:xmime="http://www.w3.org/2005/05/xmlmime">
+ 
+<element name="yourData" type="xsd:base64Binary" xmime:expectedContentTypes="application/octet-stream"/>
+...
+</schema>
+----
+
+== 生成服务器存根和/或客户端
+
+在编写WSDL之后，在其上运行wsdl2java以生成服务器存根和客户端（如果您正在创建出站端点）。为此，请下载CXF分发包，将其解压缩，然后输入以下命令：
+
+[source, code, linenums]
+----
+$ ./apache-cxf-2.1.2-incubator/bin/wsdl2java -d outputDirectory path/to/your.wsdl
+----
+
+== 配置CXF入站端点
+
+以上命令生成一个服务器存根接口。这是你的服务必须实现的接口。每种方法都对应于您的WSDL中的一项操作。如果base64Binary类型是您的某个操作的参数，CXF会生成如下所示的方法：
+
+[source, java, linenums]
+----
+public void yourOperation(DataHandler handler) {
+...
+}
+----
+
+您可以使用DataHandler方法通过调用`handler.getInputStream();`来访问附件数据。
+
+配置CXF服务时，请将`mtomEnabled`属性设置为`true`以启用MTOM：
+
+== 配置CXF客户端
+
+除了您必须指定`mtomEnabled`属性之外，MTOM客户端的配置与正常CXF出站端点的配置完全相同。例如：
+
+[source,xml, linenums]
+----
+<cxf:jaxws-client
+    clientClass="org.mule.example.employee.EmployeeDirectory_Service"
+    operation="addEmployee"
+    wsdlPort="EmployeeDirectoryPort"
+    wsdlLocation="classpath:employeeDirectory.wsdl"
+    mtomEnabled="true"/>
+----
+
+== 配置Web服务使用者
+
+要使用Web服务使用者配置MTOM客户端，您必须指定`mtomEnabled`属性。消息有效负载应包含一个保存与消息一起传输的附件（如文本，图像或应用程序）的子部分。有关附件的更多信息，请参阅 link:/mule-user-guide/v/3.8/attachment-transformer-reference[附件变压器参考]。
+
+== 示例
+
+以下示例使用Dataweave变换为MTOM访问构建代码块。
+
+*  <<Download a File>>
+*  <<Upload a File>>
+
+=== 下载文件
+
+以下示例从测试站点example.com下载文件。
+
+[source,xml,linenums]
+----
+<ws:consumer-config name="Web_Service_Consumer" service="ExampleServerImplService" port="ExampleServerImplPort" serviceAddress="http://127.0.0.1:9999/ws/servicename" wsdlLocation="http://127.0.0.1:9999/ws/servicename?wsdl" doc:name="Web Service Consumer"/>
+<flow name="download-file">
+  ....
+
+  <dw:transform-message doc:name="Transform Message">
+      <dw:set-payload><![CDATA[%dw 1.0
+%namespace ex http://example.com/
+%output application/xml
+---
+ex#downloadFile: { arg0: 'filename.txt' }
+
+]]></dw:set-payload>
+  </dw:transform-message>
+
+  <ws:consumer config-ref="Web_Service_Consumer" operation="downloadFile" mtomEnabled="true" doc:name="Web Service Consumer"/>
+
+  <logger message="This is what we got back #[message]" level="INFO" doc:name="Logger"/>
+
+  <logger message="Attachments are: #[flowVars.cxf_attachments]" level="INFO" doc:name="Logger"/>
+</flow>
+----
+
+Dataweave变换的输出是：
+
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<ex:downloadFile xmlns:ex="http://example.com/">
+  <arg0>filename.txt</arg0>
+</ex:downloadFile>
+----
+
+=== 上传文件
+
+以下示例使用MTOM从测试站点example.com上载文件。
+
+[source,xml,linenums]
+----
+<file:connector name="File" autoDelete="true" streaming="true" validateConnections="true" doc:name="File"/>
+<flow name="upload-file">
+  <file:inbound-endpoint path="/some/path" connector-ref="File" responseTimeout="10000" doc:name="File"/>
+
+  <set-attachment attachmentName="#[message.inboundProperties.originalFilename]" value="#[payload]" contentType="image/jpg" doc:name="Attachment1"/>
+
+  <dw:transform-message doc:name="Transform Message">
+      <dw:set-payload><![CDATA[%dw 1.0
+%namespace ex http://example.com/
+%namespace inc http://www.w3.org/2004/08/xop/include
+%output application/xml
+---
+ex#uploadFile: { arg0: { inc#Include  @(href: 'cid:' ++ flowVars.originalFilename): '' } }
+
+]]></dw:set-payload>
+  </dw:transform-message>
+
+  <ws:consumer config-ref="Web_Service_Consumer" operation="uploadFile" mtomEnabled="true" doc:name="Web Service Consumer"/>
+
+</flow>
+----
+
+Dataweave变换的输出是：
+
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<ex:uploadFile xmlns:ex="http://example.com/">
+  <arg0>
+    <inc:Include xmlns:inc="http://www.w3.org/2004/08/xop/include" href="cid:myfile.txt"></inc:Include>
+  </arg0>
+</ex:uploadFile>
+----

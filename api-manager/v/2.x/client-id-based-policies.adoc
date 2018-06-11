@@ -1,0 +1,98 @@
+= 基于客户端ID的策略参考
+：imagesdir：./_images
+
+您可以在运行时应用客户端ID实施策略来管理您的API版本。该策略只允许授权的应用程序访问已部署的API实现。每个授权的应用程序都配置了凭据：client_id和client_secret。在运行时，授权应用程序向API实现提供每个请求的凭证。
+
+在Mule 3.8.5或更高版本中，这些OAuth 2.0令牌强制策略包括客户端ID强制验证：
+
+使用外部提供商的*  OAuth 2.0访问令牌实施
+*  PingFederate访问令牌执行
+*  OpenID Connect强制访问令牌执行
+
+*Note:*向OAuth提供商请求令牌时，请确保指定的客户端ID和密钥不仅属于您尝试访问的API的Anypoint Platform组织中的客户端应用程序，而且还包含客户端应用程序已注册到（有合同）正在定位的API。如果令牌是使用未从API注册的客户端应用程序颁发的凭证颁发的，则即使令牌有效，策略验证回复状态代码也将为403 / Forbidden。
+
+OpenAM强制执行策略不提供验证。
+
+客户端ID实施策略检查所有请求是否由有效的客户端应用程序进行。强制执行会检查请求中是否包含与提供者匹配的客户端ID和可选密钥。由于此数据位于API Manager中，因此每个Mule Runtime都会保留一个缓存，并定期进行更新。该缓存是持久的，对于性能以及突然失去与平台的连接时非常有用。无论管理平面的状态如何，都会应用强制执行。
+
+基于客户端ID策略的常见用途是：
+
+* 客户端ID和（可选）秘密作为标头。
+* 客户端ID和（可选）秘密作为查询参数。
+* 客户端ID和从消息有效负载中检索的（可选）秘密。
+作为基本访问身份验证标头的* 客户端ID和密码。
+
+在Mule Runtime 4.0中，用于基于客户端ID策略的MEL表达式将被DataWeave表达式所取代。
+
+API Manager提供了几种基于客户端ID的策略：
+
+* 客户端ID执行
+* 限制速率 - 基于SLA
+* 节流 - 基于SLA的
+
+如果要跟踪应用程序对API的访问权限，请应用其中一个策略来处理客户端ID身份验证。确保您的应用程序在向您的API发出的每个请求中提供其客户端ID和客户端密钥。默认情况下，凭据预计为查询参数。为防止拒绝用户请求，请在RAML根目录中创建一个特征，然后在API的每个操作中引用此特征。在API Manager API dasboard的策略列表中，RAML片段链接包含需要添加到RAML的RAML代码。
+
+image::raml-snippet.png[]
+
+== 客户端ID执行策略
+
+在Exchange门户中注册应用程序时，客户端应用程序开发人员将获得您在应用策略时配置的凭据，客户端ID和客户端密钥。
+
+客户端ID实施策略强制要求提供凭证。限制速率 - 基于SLA和限制 - 基于SLA的策略使用客户端ID作为参考，以限制每个应用在一段时间内可以请求的请求数量。
+
+基于一般客户端ID的策略信息== 
+
+这些部分中的信息适用于所有基于客户端ID的策略。
+
+当应用程序调用强制执行基于客户端ID的策略的API时，API Manager会以查询参数的形式预期来自应用程序的client_id和client_secret。默认情况下，查询参数采用本主题的"Required Fields in API Calls"（客户端ID和客户端秘密表达式）部分所述的格式。或者，您可以删除client_secret表达式，并仅在您应用客户端ID调节策略时出现的对话框中提供client_id。在这种情况下，唯一的客户端ID是必需的。
+
+您还可以选择HTTP基本授权标题以使用基本身份验证作为凭据的来源。
+
+image:clientidDefault.png[clientidDefault]
+
+=== 注册应用程序
+
+用户需要发送一个标识，除了一个标识符，每个请求都发送给一个强制实施基于客户端标识的策略的API。要获取ID和令牌，客户端应用程序开发人员使用API​​的门户上的“请求API访问”控件请求API访问。
+
+用户单击Request API Access后，会提示他们选择现有的应用程序或创建一个新的应用程序。对API访问的请求可以被自动批准，或者在基于客户端ID，SLA的策略的情况下，需要API的管理员批准。
+
+在API仪表板上批准来自应用程序的API访问请求。
+
+API调用中的=== 必填字段
+
+根据策略配置，应用程序通常需要通过以下方式之一提供凭据：
+
+* 在HTTP请求的标头中
+* 在URL中作为查询参数
+
+例如，使用以下Mule 3.x表达式将来自应用程序的HTTP头中的client_id和client_secret传递给实施基于客户端ID的策略的API：
+
+*Mule Runtime 3.x Example*
+
+[source,code,linenums]
+----
+#[message.inboundProperties['client_id']]
+#[message.inboundProperties['client_secret']]
+----
+
+例如，使用以下Mule 4.x表达式传递查询参数中的client_id和client_secret以强制执行基于客户端ID的策略：
+
+*Mule Runtime 4.x Example*
+
+[source,code,linenums]
+----
+#[message.attributes.queryParams.id
+#[message.attributes.queryParams.secret
+----
+
+如果证书有效，则策略授予访问部署的API实现的权限;否则，策略拒绝访问。凭据根据API实例授予。如果应用程序获取访问API的v1 / instance 1的凭据，则应用程序不能使用相同的凭据来访问API的v2 / instance 2。即使应用程序凭证与v1 / instance 1的凭据相同，应用程序也需要明确请求访问API的v2 / instance 2。
+
+
+== 另请参阅
+
+*  link:/api-manager/v/2.x/client-id-based-policies[客户端ID执行]
+*  link:/api-manager/v/2.x/rate-limiting-and-throttling-sla-based-policies#rate-limiting-sla-based-policy[限速 - 基于SLA]
+*  link:/api-manager/v/2.x/rate-limiting-and-throttling-sla-based-policies#throttling-sla-based-policy[节流 - 基于SLA的]
+*  link:/api-manager/v/2.x/oauth2-policies-new[关于OAuth 2策略]
+*  link:/api-manager/v/2.x/oauth-policy-implementation-concept[关于OAuth 2策略实施]
+*  link:/api-manager/v/2.x/apply-oauth-token-policy-task[配置到外部OAuth提供商的代理连接]

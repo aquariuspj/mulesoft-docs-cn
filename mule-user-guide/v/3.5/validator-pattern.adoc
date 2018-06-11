@@ -1,0 +1,95 @@
+= 验证器模式
+
+:keywords: anypoint studio, studio, mule esb, validate, message format
+
+处理消息时，总是假定某种格式已被遵守，以便可以检索所需的数据。对于传入消息使用的数据表示，可能并经常需要非常自由：只要您可以找到需要的信息，其余就不重要了。
+
+但有时候，需要对传入消息进行严格的前期验证。这就是Validator配置模式所处理的那种场景。
+
+image:mcp_validator.png[mcp_validator]
+
+== 核心功能
+
+公开SOAP API的服务受益于其主机Web服务框架固有的验证，该框架强制传入消息符合使用WSDL定义的严格契约。对于所有其他类型的服务，Mule的过滤和路由基础设施为进行严格验证提供了所有必要的构建模块。
+
+Validator模式为您提供了执行这种前期验证的框架。它的设计方式是验证是同步执行的，而有效请求的分派是异步执行的。这提供了验证和处理阶段的解耦，当客户更快地生成消息时，这是常见模式。
+
+Validator模式利用Mule广泛的表达框架来构建确认和拒绝消息。它使用Mule的过滤器来表达消息有效的条件。
+
+我们来看看只接受整数的Validator：
+
+*Integer Only Validator*
+
+[source,xml, linenums]
+----
+<pattern:validator name="integer-validator"
+           inboundAddress="vm://validator.in"
+           ackExpression="#[string:GOOD:#[message:payload]@#[context:serviceName]]"
+           nackExpression="#[string:BAD:#[message:payload]@#[context:serviceName]]"
+           outboundAddress="vm://test-service.in">
+  <payload-type-filter expectedType="java.lang.Integer"/>
+</pattern:validator>
+----
+
+假设我们发送123到这个验证器：它将接受消息并用"GOOD:123@integer-validator"进行确认。相反，如果我们发送"abc"，它将拒绝带有"BAD:abc@integer-validator"的消息。
+
+可以使用全局端点和过滤器，并从Validator中引用它们，如下所示：
+
+*Using References*
+
+[source,xml, linenums]
+----
+<pattern:validator name="validator-with-refs"
+           inboundEndpoint-ref="validator-with-refs-channel"
+           ackExpression="#[string:GOOD:#[message:payload]@#[context:serviceName]]"
+           nackExpression="#[string:BAD:#[message:payload]@#[context:serviceName]]"
+           validationFilter-ref="int-payload-filter"
+           outboundEndpoint-ref="test-service-channel" />
+----
+
+也可以将入站和出站端点以及自定义异常策略定义为子元素，这在使用需要复杂配置的端点时非常方便：
+
+*Child Elements*
+
+最后，与所有配置模式一样，Validator元素支持继承。如果您想跨多个验证器共享ack / nack表达式或验证规则，这非常有用：
+
+*Inheritance*
+
+[source,xml, linenums]
+----
+<pattern:validator name="abstract-parent-validator"
+            abstract="true"
+            ackExpression="#[string:GOOD:#[message:payload]@#[context:serviceName]]"
+            nackExpression="#[string:BAD:#[message:payload]@#[context:serviceName]]" />
+ 
+<pattern:validator name="concrete-validator"
+           parent="abstract-parent-validator"
+           inboundAddress="vm://concrete-validator.in"
+           outboundAddress="vm://test-service.in">
+  <payload-type-filter expectedType="java.lang.Integer"/>
+</pattern:validator>
+----
+
+== 出站错误
+
+[WARNING]
+自从Mule 3.0.1
+
+默认情况下，如果在出站调度有效消息期间发生错误，调用者将不知道。在这种情况下，可以使用Mule的异常处理机制来记录错误，存储要发送的有效消息，甚至尝试重新传送。
+
+也就是说，在某些情况下，调用者可能被告知发送其有效消息失败。就此而言，可以使用第三个可选表达式：
+
+*Inheritance*
+
+[source,xml, linenums]
+----
+<pattern:validator name="dispatch-error"
+           inboundAddress="vm://dispatch-error.in"
+           ackExpression="#[string:GOOD:#[message:payload]@#[context:serviceName]]"
+           nackExpression="#[string:BAD:#[message:payload]@#[context:serviceName]]"
+           errorExpression="#[string:ERROR:#[message:payload]@#[context:serviceName]]"
+           outboundAddress="http://acme.com/services/fragile"
+           validationFilter-ref="int-payload-filter" />
+----
+
+使用此配置，如果出站调度失败，errorExpression将用于创建对调用者的响应。请注意，使用此表达式时，出站端点将使用请求 - 响应交换模式。

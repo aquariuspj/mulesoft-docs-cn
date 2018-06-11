@@ -1,0 +1,174 @@
+=  Mule应用程序体系结构
+:keywords: studio, server, architecture, big picture, deploy
+
+[NOTE]
+本页面描述了典型的应用程序体系结构，流程是用来在Mule中构建应用程序的默认结构。但是，请注意，Mule还支持大批量和流式消息的批处理作业。批处理作业可以与同一应用程序中的流程结合使用，但其结构和功能与此处所述的不同。要了解更多信息，请参阅 link:/mule-user-guide/v/3.6/batch-processing[批量处理]。
+
+在最简单的层面上，Mule应用程序一次接受一条消息，按收到消息的顺序处理收到的消息。这种处理可能会导致各种结果。有时，Mule应用程序会向原始邮件的来源返回已更改或替换的邮件。此外或作为替代，应用程序可以将其原始或更改形式的消息发送给一个或多个第三方。在其他情况下，如果Mule没有达到特定的标准，他们可以拒绝处理这些信息。
+
+复杂的Mule应用程序远远超出了这种线性消息处理。高级机制可以以不同的方式处理不同的消息。此外，您可以构建应用程序，利用：
+
+* 各种队列和线程安排来最大化吞吐量
+* 事务性或集群节点来最大化可靠性
+* 对象存储以确保数据持久性
+* 批量作业通过将批量作业分解为记录来处理大量和流式处理的消息
+
+这些仅代表您可以通过Mule应用程序实现的一小部分功能。
+
+以下部分将讨论使用Anypoint Studio内的构建块概念的*flow architecture*。 Building Block与XML配置文件中的XML元素相对应，但为了建模流程和解释概念，本文档使用构建基块和Studio图形表示。
+
+== 流程构建模块
+
+工作室构建块可以分为几个功能类别，其中一些功能类别是由多个构建块本身组成的处理块。
+
+并非所有构建块都可以占用流内的所有位置。通常，建筑砌块相对于其他流动（或与其附近的建筑砌块有关）的位置会大大影响砌块的行为以及必须如何配置。
+
+以下小节详细介绍了可以填充Mule Flow的各种构建块（和处理块）。
+
+=== 消息来源
+
+大多数流程中的第一个构建块是*message source*，它接收来自一个或多个外部源的消息，从而触发*flow instance*。每次它收到另一条消息时，消息源会触发另一个流实例。
+
+通常，消息源以 link:/mule-user-guide/v/3.6/anypoint-connectors[* Anypoint连接器*]的形式出现。
+
+有时消息源立即将传入消息放入队列中。这允许消息源关闭接收消息的接收者线程，并立即打开另一个线程接受另一个消息。刚刚放入队列的消息一直等到它到达队列头部以便通过其余流程进行处理。由于消息由两个不同的线程按顺序处理（在队列内部进行干预等待），因此不可能执行从头到尾的事务处理。
+
+image:Message+source+and+queue.png[消息+源+和+队列]
+
+有时，消息源可以接受来自多个传输通道的传入消息。例如，您可以将HTTP端点和Servlet端点嵌入到复合消息源中。或者，您可以创建一个复合邮件源来接收IMAP和POP3邮件。嵌入式连接器只要收到传入消息就可以触发流量实例。
+
+在某些情况下，流量不需要由消息来源触发。例如， link:/mule-user-guide/v/3.6/flow-reference-component-reference[流量参考组件]可以在同一个应用程序中触发不同的流程。同样， link:/mule-user-guide/v/3.6/async-scope-reference[异步范围]可以触发另一个异步执行的流程（即与原始流程并行）。
+
+=== 消息处理器
+
+通常，*message processors*是以各种方式处理消息的预封装功能单元。消息处理器提供以下优点：
+
+通常* ，它们不必定制编码
+* 多个消息处理器可以组合成各种结构，为您的应用程序提供所需的确切功能
+
+您可以用两种不同的方式将消息处理器组装成应用程序（即流程）序列：
+
+通过在Studio画布上排列图标* 
+通过将XML代码插入到应用程序配置文件中* 
+
+消息处理器分为许多方便的类别，如下表所示：
+
+[%header,cols="2*"]
+|===
+|类别 |简要说明
+| *Connectors*  |它们为Mule应用程序提供了一种与外界沟通的手段。连接器通常用作消息源，但它们也可以出现在流的其他地方，执行需要在流之外进行数据交换的操作，或者定义消息的最终目的地。
+| *Scopes*  |它们以各种方式增强其他消息处理器或称为*Processing Blocks*的消息处理器功能组的功能。
+| *Components*  |它们允许您通过附加日志记录或显示输出等功能来增强流程。或者，他们通过提供针对Mule应用程序的特定于语言的"shells"来使定制编码的业务逻辑可用，从而促进与现有系统的集成。
+| *Transformers*  |它们增强或改变消息有效载荷，属性，变量或附件。
+| *Filters*  |单独和组合，它们确定消息是否可以通过应用程序流进行。
+| *Flow Controls*  |它们指定消息如何在流中各种消息处理器之间路由。它们还可以在将消息路由到其他消息处理器之前处理消息（即聚合，拆分或重新排序）。
+| *Error Handlers*  |它们指定了在各种情况下处理异常的各种程序。
+| *Miscellaneous*  |此特殊类别目前仅包含一个成员：*Custom Business Event*构建基块，您将其放置在其他构建基块之间以记录*Key Performance Indicator*（KPI）信息，您通过Mule控制台进行监控。
+|===
+
+将流程中的各个构建块按正确顺序排列后，可能需要使用以下一个或两个可用选项来配置这些消息处理器：
+
+* 在Studio的图形界面中完成属性编辑器中的文本字段
+* 在XML配置代码中输入属性值。 +
+
+=== 消息处理块
+
+Mule提供了几种将多个消息处理器组合成功能处理块的方法。
+
+例如，*composite source*范围允许您将两个或更多Anypoint连接器嵌入到单个消息源中，每个连接器都可以监听不同的频道。只要其中一个侦听器收到传入消息，它就会触发一个流实例并通过消息处理序列启动消息。
+
+其他构建块*scopes*提供了多种方式将消息处理器组合成方便的功能组，可以：
+
+* 使您的XML代码更易于阅读
+* 执行并行处理
+* 创建可重复使用的构建块序列+
+
+===  Exchange模式
+
+许多Anypoint连接器都是基于端点的，这意味着它们表现为入站端点（始终出现在流的开始处）或出站端点（出现在流的中间或末端），以通过通用协议（HTTP ，FTP，SMTP等）。入站和出站端点可以实现单向或请求响应交换模式。
+
+当基于端点的入站连接器（如HTTP或VM）配置为**request-response exchange pattern**时，它实际上会成为混合入站出站端点。即使存在其他出站端点来从流中执行数据，为请求 - 响应交换模式配置的入站端点也会通过向该消息的原始发件人返回响应来执行数据流。
+
+image:request+response+endpoints.png[请求响应+ +端点]
+
+当出站端点使用请求 - 响应交换模式进行配置时，它们可以与流之外的资源交换数据，或者使用完全在同一Mule应用程序中的一系列消息处理器交换数据。
+
+并非所有端点都可以配置为请求 - 响应交换模式，而且可以将请求响应仅用于其中一些端点的默认交换模式。如果主流中没有任何端点配置为请求 - 响应交换模式，则该流遵循**one-way** *exchange pattern*，在该**one-way**中接收传入消息，但不期望提供任何响应原始发件人。但是，流可能会将数据发送给其他方，例如日志文件，数据库，电子邮件服务器或基于Web的API。
+
+== 处理策略
+
+处理策略决定Mule如何在您的应用程序中执行消息处理器序列。例如，当消息源配置了请求 - 响应交换模式时，Mule将处理策略设置为*synchronous,*，这意味着整个流程将在单个处理线程上执行，从而确保整个消息序列处理器执行，客户端收到响应，如预期的那样。
+
+相比之下，当流程配置为单向交换模式并且是非事务性的（即，不需要对原始消息发送方作出响应，并且不需要验证流程中的所有步骤都已完成） ，Mule将处理策略设置为*queued asynchronous,*，这有可能提高流量吞吐量。在此处理策略下，入站端点在收到传入消息后立即将其放入队列中，然后关闭接收线程。当消息到达队列顶部时，它恢复处理，但这次是在另一个线程上。这意味着，这种处理不能作为事务端到端的限定，因为从一个线程到下一个线程的传输意味着如果抛出异常，处理将无法回滚。
+
+image:processing+strategies.png[处理+策略]
+
+有关更多详细信息，请参阅 link:/mule-user-guide/v/3.6/flow-processing-strategies[流程处理策略]。
+
+== 例外策略
+
+如果在消息处理过程中发生错误，*exception strategy*确定Mule如何响应。在最简单的情况下，错误只是记录到文件中。
+
+您可以配置自定义异常策略，以各种方式响应各种条件。例如，如果在消息转换后引发异常，您可以将消息设置为Mule，以便在消息转换后存在，但紧接在发生错误之前，以便消息不会无意中被处理两次。
+
+Studio提供了四种预先打包的错误处理策略来处理消息处理序列期间在各个点引发的异常。有关详情，请参阅 link:/mule-user-guide/v/3.6/error-handling[错误处理]。
+
+== 流程架构
+
+骡流量非常灵活，所以您可以通过多种方式组合砌块，通常可以达到相同的效果。但是，对于许多用例，某些消息处理器倾向于松散排列的模式。例如，假设您想创建一个应用程序，该应用程序从网页接收产品目录请求，然后将该目录的PDF发回给提交请求的客户端。另外，您希望此流程将客户的客户信息记录到日志文件并记录事务。你的流程可能如下所示：
+
+image:catalog-flow-schematic-2.png[目录流示意-2-]
+
+请注意，您可以将入口端点中的过滤器和变换器嵌入到主流程序列中，但将它们放入主流程序列中可使事件序列更容易在Studio Visual Editor工作区和基于XML的应用程序配置文件中“读取”。
+
+image:mule+application+architecture.png[骡+应用+架构]
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd">
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="Catalog_DownloaderFlow1" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <mulexml:xml-to-object-transformer doc:name="XML to Object"/>
+        <scripting:component doc:name="Groovy">
+            <scripting:script engine="Groovy" file="myScript.groovy"/>
+        </scripting:component>
+        <logger level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+== 流程配置
+
+尽管流程非常灵活，但您不能将_any_构建块放置在流中的_any_位置。一个序列中某些构件的接近或不存在可以确定给定构件是否可以放置在流内的某个点上。最后，根据它驻留在流中的位置，给定构件块（尤其是端点）可以为配置公开一组截然不同的属性。
+
+如果您选择在Anypoint Studio中使用可视化编辑器进行开发，Studio会跟踪所有这些意外情况，并且不会让您在不允许的情况下放置构建块图标。
+
+虽然不可能涵盖可产生可行流程的所有可能的构件块序列，但典型的流程可能会采用以下顺序：
+
+. 由一个或多个入站端点或其他流连接器组成的*message source*会在每次接收到消息时触发流。
+.  A **filter **可能会识别无效的消息并拒绝将其传递给流程的其余部分进行处理。
+.  *transformer*可以将传入消息转换为流中其他消息处理器可以消费的数据格式。
+.  *message enricher*可以为某封邮件添加某些重要信息。例如，如果邮件到达时附有地址，则邮件富集器可能会使用邮政编码查找关联的电话区号，然后将此信息附加到邮件标题用于市场营销目的。
+. 在“准备好”处理消息之后，通常会将其发送给某些预先打包或自定义的业务逻辑（通常称为*component*），以便可以以适合于其特定内容。
+. 流程的最后阶段可能会有很大差异;部分或全部以下情况可能发生：+
+*  Mule向消息的原始发件人返回响应
+*  Mule将业务处理的结果记录到数据库或将它们发送给某个第三方
+
+在整个流程中，您可以执行以下操作：
+
+* 将消息发送到队列（甚至在同一个流程上有多个类型）
+* 指定线程模型
+* 调用各种其他 link:/mule-user-guide/v/3.6/flows-and-subflows[流动] +
+
+== 另请参阅
+
+*  *NEXT STEP:*了解 link:/mule-user-guide/v/3.6/flows-and-subflows[流量和子流量]如何在应用程序中一起使用。
+* 检查显示更复杂的流程体系结构的 link:/mule-user-guide/v/3.6/flow-architecture-advanced-use-case[高级用例]。

@@ -1,0 +1,193 @@
+= 登录Mule
+:keywords: mule, esb, studio, logger, logs, log, notifications, errors, debug
+
+您可以配置记录的内容，记录的位置以及如何编辑位于项目中的配置文件。
+
+Mule在应用程序的流程中记录多条消息和特定元素，以帮助您调试和跟踪事件。您还可以在流中的任何位置包含{{0}，并将其设置为输出您想要的任何消息。通过创建配置文件，您可以定义记录什么类型的消息，以何种方式（异步或同步）以及记录的位置（例如控制台，磁盘，端点或数据库）。
+
+对于日志记录，Mule ESB使用 link:http://www.slf4j.org/[SLF4J]，这是一个记录外观，可以从类路径中发现并使用记录策略，例如 link:http://logging.apache.org/log4j/2.x/[log4j2]或JDK Logger。默认情况下，Mule包含 link:http://logging.apache.org/log4j/2.x/[log4j2]，该文件使用名为`log4j2.xml`的文件进行配置。
+
+Mule服务器的`conf`目录中有`log4j2.xml`，您可以在独立模式下运行服务器时自定义该目录。此外，Mule附带的所有示例在其`conf`目录中都有`log4j2.xml`个文件。
+
+== 同步与异步记录
+
+[NOTE]
+默认情况下，Mule从3.6.0版开始异步记录消息。
+
+同步记录时，正在处理消息的线程的执行会中断，以等待日志消息完全处理，然后才能继续：
+
+image:logger+synch.jpeg[记录仪+同步]
+
+当异步记录时，记录操作发生在一个单独的线程中，因此消息的实际处理将不会被延迟，以等待记录完成：
+
+image:logger+asynch+alternativo.jpeg[记录仪+非同步+ alternativo]
+
+对于大多数情况，建议您使用*asynchronous*日志记录，因为它可以显着改进消息处理的吞吐量和延迟。
+
+在使用异步日志记录的消极方面，您可能会发现系统崩溃后，执行了一些操作但未记录日志，因为日志写入是在独立于其他操作的独立线程上执行的。您还可能发现，有时您无法避免记录某些事情的操作，以免需要回滚事务。查看下面的<<Exception Handling With Asynchronous Logging>>部分，了解如何减轻这些问题。
+
+应用程序日志有时可能需要用作审计跟踪。在这种情况下，您不能丢失任何日志消息，因此您应该将应用程序配置为始终使用*synchronous*日志记录。
+
+要了解同步和异步日志记录之间的性能影响，请考虑下面显示的测试结果。我们使用一个应用程序运行性能测试，该应用程序记录了大约一百万条消息，每次运行时使用的线程数量越来越多（这些线程负责生成消息;线程越多，并发消息越多）。
+
+image:logging-latency-vs-concurrency.png[测井延迟VS-concurrency.png]
+
+上面的图表显示了当我们添加更多并发消息时，延迟增加了多少。请注意，异步记录的结果非常接近于根本不记录任何内容的结果。请注意，每个事务隐含记录1000条消息。
+
+== 配置自定义记录设置
+
+默认情况下，Mule中的日志记录是异步完成的，并且级别大于或等于INFO，因此会在DEBUG或TRACE级别丢弃日志消息。
+
+如果您需要使用同步日志记录，调整日志记录级别或定义自定义类别，则可以通过文件`$MULE_HOME/conf/log4j2.xml`配置这些属性。该文件指定记录器的行为方式。不编辑此XML文件意味着您使用默认属性。
+
+默认配置定义了标准的记录器，正如Mule在引入异步记录之前所做的那样。唯一的区别是新配置将所有记录器（包括根记录器）定义为异步。
+
+您可以在域或应用程序级别覆盖此配置。当部署应用程序时，Mule会按照以下列出的方式查找配置文件，如下所示：
+
+* 在应用程序类路径中查找名为`log4j2-test.xml`的文件
+* 在应用程序类路径中查找名为`log4j2.xml`的文件
+* 在域类路径中查找名为`log4j2-test.xml`的文件
+* 在域类路径中查找名为`log4j2.xml`的文件
+* 在`MULE_HOME/conf`中查找名为`log4j2-test.xml`的文件
+* 在`MULE_HOME/conf`中查找名为`log4j2.xml`的文件
+* 应用默认配置。
+
+以下是log4j2.xml文件的默认配置：
+
+*Example log4j2.xml file*
+
+[source, xml, linenums]
+----
+<Configuration>
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%-5p %d [%t] %c: %m%n"/>
+        </Console>
+    </Appenders>
+
+    <Loggers>
+
+        <!-- CXF is used heavily by Mule for web services -->
+        <AsyncLogger name="org.apache.cxf" level="WARN"/>
+
+        <!-- Apache Commons tend to make a lot of noise which can clutter the log-->
+        <AsyncLogger name="org.apache" level="WARN"/>
+
+        <!-- Reduce startup noise -->
+        <AsyncLogger name="org.springframework.beans.factory" level="WARN"/>
+
+        <!-- Mule classes -->
+        <AsyncLogger name="org.mule" level="INFO"/>
+        <AsyncLogger name="com.mulesoft" level="INFO"/>
+
+        <AsyncRoot level="INFO">
+            <AppenderRef ref="Console"/>
+        </AsyncRoot>
+    </Loggers>
+
+</Configuration>
+----
+
+[TIP]
+有关如何构建此配置文件的更多信息，请参阅 link:http://logging.apache.org/log4j/2.x/manual/configuration.html[log4j 2配置指南]
+
+使用异步记录异常处理== 
+
+如果您使用异步日志记录并遇到可能导致日志不完整的系统崩溃，则会出现一个异常处理程序，旨在帮助您解决这种情况。默认情况下，Mule会注册一个LMAX `ExceptionHandler`，记录将日志事件转储到磁盘的任何问题，并记录到控制台和`logs/mule_ee.log`。或者，您可以通过将系统属性`AsyncLoggerConfig.ExceptionHandler`设置为实现该接口的类的规范名称来提供您自己的异常处理程序。
+
+这是默认异常处理程序类的样子：
+
+[source, java, linenums]
+----
+/*
+ * Copyright (c) MuleSoft, Inc.  All rights reserved.  http://www.mulesoft.com
+ * The software in this package is published under the terms of the CPAL v1.0
+ * license, a copy of which has been included with this distribution in the
+ * LICENSE.txt file.
+ */
+package org.mule.module.launcher.log4j2;
+
+import com.lmax.disruptor.ExceptionHandler;
+
+import org.apache.logging.log4j.status.StatusLogger;
+
+/**
+ * Implementation of {@link com.lmax.disruptor.ExceptionHandler} to be used
+ * when async loggers fail to log their messages. It logs this event
+ * using the {@link org.apache.logging.log4j.status.StatusLogger}
+ *
+ * @since 3.6.0
+ */
+public class AsyncLoggerExceptionHandler implements ExceptionHandler
+{
+
+    private static final StatusLogger logger = StatusLogger.getLogger();
+
+    @Override
+    public void handleEventException(Throwable ex, long sequence, Object event)
+    {
+        logger.error("Failed to asynchronously log message: " + event, ex);
+    }
+
+    @Override
+    public void handleOnStartException(Throwable ex)
+    {
+        logger.error("Failed to start asynchronous logger", ex);
+    }
+
+    @Override
+    public void handleOnShutdownException(Throwable ex)
+    {
+        logger.error("Failed to stop asynchronous logger", ex);
+    }
+}
+----
+
+不幸的是，这不是一个完整的解决方案，因为最终在异步和同步日志记录之间存在性能可靠性的折衷。如果丢失这些日志消息的风险是一个严重问题，那么您别无选择，只能将您的记录器配置为同步。请注意，您不必被迫在所有日志同步或全部异步之间选择，您可以混合使用两者。
+
+==  log4j到log4j2迁移
+
+从Mule运行时3.6.0开始，log4j被log4j2取代为管理日志的后端工具。这意味着一些向后兼容性问题，因为这个新框架中的必要配置文件是不同的。 Log4j2允许异步记录，这是以前不可用的; Mule现在默认实现异步日志记录，因为它意味着性能的显着提高。虽然Mule的政策是不会破坏次要版本的向后兼容性，但这种变化所带来的性能改进的程度远远超过了任何不便之处，并且值得实施变更。
+
+从Mule版本的早于3.6.0迁移的应用程序，但使用默认的日志记录设置将不会遇到任何问题，并保持正常工作（除了日志记录是异步的）。对于早于3.6.0的应用程序，并且包含自定义日志记录配置文件（均带有.xml和.properties扩展名），此文件将不再被识别;在这些情况下，根据默认设置管理日志记录。
+
+[TIP]
+如果您在更新配置文件时遇到问题，请在 link:http://logging.apache.org/log4j/2.x/manual/configuration.html[log4j 2配置指南]中找到更多信息或联系我们的支持。
+
+作为日志机制实现slf4j是非常值得鼓励的，因为Mule项目是使用_slf4j 1.7.7_标准化的。尽管如此，其他API也受支持，并且slf4j网桥包含在Mule发行版中，以确保无论您选择哪个框架，log4j2最终都会通过集中配置来处理每个日志事件。在这种情况下，您必须确保不要在应用程序/扩展中打包任何日志记录库，以避免在这些库和链接到slf4j的网桥之间出现类路径问题。
+
+== 配置重新加载
+
+默认情况下，Mule每60秒轮询一次修改后的配置文件以检查更改。如果这些文件中的任何一个已经改变，则记录器配置将被即时修改。您可以通过设置根元素中的`monitorInterval`属性（检查 link:http://logging.apache.org/log4j/2.x/manual/[log4j2手册]以进一步参考）来自定义此时间间隔。
+
+== 使HTTP连接器更加完美
+
+要调试使用新 link:/mule-user-guide/v/3.6/http-connector[HTTP连接器]的项目，您可能会发现使日志记录比平常更详细，并跟踪项目中`http-listener`和`http-request`连接器的所有行为是有用的。要激活此模式，您必须对log4j2配置文件进行以下添加：
+
+[source, xml, linenums]
+----
+<AsyncLogger name="org.glassfish.grizzly" level="DEBUG"/>
+<AsyncLogger name="org.asynchttpclient" level="DEBUG"/>
+----
+
+== 从JMX控制日志记录
+
+您可以通过在Mule配置文件中配置log4j2 JMX代理来公开JMX上的管理器日志记录配置。有关更多信息，请参阅 link:/mule-user-guide/v/3.6/jmx-management[JMX管理]。
+
+== 排除日志记录故障
+
+=== 我没有看到任何日志输出
+
+确保`log4j2.xml`文件位于类路径的根目录下。有关配置log4j2的更多信息，请参阅Apache的 link:http://logging.apache.org/log4j/2.x/[网站]。
+
+=== 我重新配置了log4j2，但没有发生任何事情
+
+发生这种情况是因为您的类路径中还有另一个`log4j2.xml`文件，在您修改之前会被拾取。要找出log4j2正在使用哪个配置文件，请在启动Mule时添加以下开关（如果您正在嵌入Mule，请添加容器启动脚本）：
+
+[source]
+----
+-M-Dlog4j.debug=true
+----
+
+此参数将log4j2启动信息（包括正在使用的配置文件的位置）写入`stdout`。在修改的配置可以工作之前，您必须删除该配置文件。
+

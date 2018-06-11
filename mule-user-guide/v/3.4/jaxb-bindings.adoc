@@ -1,0 +1,116 @@
+=  JAXB绑定
+:keywords: mule, esb, studio, enterprise, jaxb, xml binding
+
+用于XML绑定的Java体系结构（JAXB）允许Java开发人员将Java类映射为XML表示。 JAXB提供了两个主要特性：能够将Java对象编组到XML中，并且反过来，即将XML反编组回Java对象。换句话说，JAXB允许以任何XML格式存储和检索内存中的数据，而无需为程序的类结构实现一组特定的XML加载和保存例程。
+
+Mule支持绑定框架，如JAXB和 link:/mule-user-guide/v/3.7/json-module-reference[杰克逊]。这些框架使用注释来描述数据如何映射到Java对象模型。例如，假设我们有一个描述一个人的XML文件。当我们收到这个Xml时，我们想把它转换成一个`Person`对象。 XML看起来像这样 - 
+
+[source, xml, linenums]
+----
+<person>
+    <name>John Doe</name>
+    <dob>01/01/1970</dob>
+    <emailAddresses>
+        <emailAddress>
+            <type>home</type>
+            <address>john.doe@gmail.com</address>
+        </emailAddress>
+        <emailAddress>
+            <type>work</type>
+            <address>jdoe@bigco.com</address>
+        </emailAddress>
+    </emailAddresses>
+</person>
+----
+
+我们有一个我们想从XML创建的对象`Person`。我们使用标准JAXB注释来描述如何执行映射（`EmailAddress`对象只是另一个带有JAXB注释的JavaBean） - 
+
+[source, java, linenums]
+----
+@XmlRootElement(name = "person")
+@XmlAccessorType(XmlAccessType.FIELD)
+public class Person
+{
+    private String name;
+    private String dob;
+
+    @XmlElementWrapper(name = "emailAddresses")
+    @XmlElement(name = "emailAddress")
+    private List<EmailAddress> emailAddresses;
+
+    public String getName() { return name; }
+
+    public void setName(String name) { this.name = name; }
+
+    public String getDob() { return dob; }
+
+    public void setDob(String dob) { this.dob = dob; }
+
+    public List<EmailAddress> getEmailAddresses() { return emailAddresses; }
+
+    public void setEmailAddresses(List<EmailAddress> emailAddresses) { this.emailAddresses = emailAddresses; }
+}
+----
+
+此时，Mule可以根据被调用的方法的参数来确定是否执行JAXB转换。例如，要将传入的XML消息转换为`Person`对象 - 
+
+[source, java, linenums]
+----
+public class PersonComponent {
+  public void processPerson(@Payload Person person)
+  {
+    //tickle
+  }
+}
+----
+
+在这里，我们将在JMS队列中接收people.xml，Mule会看到`Person.class`是一个带注释的JAXB对象，并且我们已经从JMS队列接收到XML并执行转换。
+
+=== 生成的JAXB类
+
+大多数情况下，JAXB类是从模式生成的，这对Mule没有什么影响。事实上，如果`Person`是一组生成的类的一部分，Mule会为所有生成的类创建一个JAXBContext，并使该上下文可用于转换。创建上下文时，它会在注释类的包中查找`jaxb.index`文件或`ObjectFactory`类。通常，JAXB代码生成器将为您创建jaxb.in​​dex文件或`ObjectFactory`类。
+
+=== 手动JAXB类
+
+如果您只注释自己的类并且不创建`jaxb.index`或`ObjectFactory`类，则Mule会将所需的类加载到`JAXBContext`中进行转换。
+
+=== 全球JAXBContext
+
+可以定义全局`JAXBContext`;一个将用于应用程序中所有转换的上下文。这个上下文将永远用来代替Mule为你创建一个。如果您需要在上下文中配置特定的属性，这会很有用。要创建一个共享的`JAXBContext`，你可以在你的Mule XML配置文件中创建一个Spring bean  - 
+
+[source, xml, linenums]
+----
+<mule ...>
+
+    <spring:bean name="myJaxb" class="javax.xml.bind.JAXBContext" factory-method="newInstance">
+         <!-- colon-separated (:) list of package names where JAXB classes exist -->
+        <spring:constructor-arg value="org.mule.jaxb.model"/>
+    </spring:bean>
+</mule>
+----
+
+[NOTE]
+====
+*JAXB without annotations* +
+
+目前Mule只识别已注释的JAXB类，这意味着没有发现在`jaxb.xml`描述符中定义的绑定信息。这是功能增强功能，如果您需要此功能，请对 http://www.mulesoft.org/jira/browse/MULE-4974[MULE-4974]进行投票。
+====
+
+拦截JAXB转换。=== 
+
+到目前为止，我们已经讨论了Mule如何执行自动JAXB转换。有时候你可能想要拦截变换，这样做只需使用JAXB类的方法返回或参数类型创建一个变换器 - 
+
+[source, java, linenums]
+----
+@Transformer(sourceTypes = {String.class, InputStream.class})
+public Person toPerson(Document doc, JAXBContext context) throws JAXBException
+{
+    return (Person) context.createUnmarshaller().unmarshal(doc);
+}
+----
+
+将为您创建`JAXBContext`实例，或者将使用您的应用程序的全局上下文。这样做的一个原因是去掉一些XML元素并从接收到的XML子集中创建对象。有关变换的更多信息，请参阅 link:/mule-user-guide/v/3.6/using-transformers[使用变形金刚]部分。
+
+== 使用Mule XML
+
+正如您所期望的那样，您可以在Mule XML中显式配置JAXB转换器。有关更多信息，请参阅 link:/mule-user-guide/v/3.6/jaxb-transformers[JAXB变形金刚]。

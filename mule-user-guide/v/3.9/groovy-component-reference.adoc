@@ -1,0 +1,128 @@
+=  Groovy组件参考
+:keywords: expression component, native code, legacy code, groovy
+
+尽管在Mule中有丰富的元素可供选择，但您可能会发现自己需要组合一些自定义代码来执行复杂任务的一部分，如果您在Groovy中编码舒适，那么Groovy组件是理想的多功能工具，以回落这些案件。 Mule还包括其他语言的等效脚本组件。 Groovy组件在您对现有系统进行现代化时也很方便，因为您可以简单地将旧的代码行放入组件中，而不必通过一系列不同的Mule组件重新构造代码的行为（这从一个不理想的调试和维护的角度来看，虽然）。
+
+Groovy还允许开发人员配置拦截器并更改脚本中特定属性的值或引用。拦截器配置为在消息流经组件时为消息提供附加服务。例如，开发人员可以配置拦截器，以在处理消息时执行特定事件的调度或记录。 Groovy组件还包含一个自定义拦截器，它允许您配置Spring元素的设置。使用*Advanced*标签访问*Script Properties*，然后为脚本中的特定属性定义值和引用。
+
+在使用Groovy时，输入或附加脚本到组件是唯一需要的配置。
+
+[TIP]
+放置Groovy组件实际上与放置 link:/mule-user-guide/v/3.9/script-component-reference[脚本组件]然后选择Groovy引擎相同。
+
+== 配置
+
+常规选项卡=== 
+
+要配置Groovy组件，请从Message Flow画布中双击Groovy图标以打开*Pattern Properties*窗格。使用*General*选项卡指定脚本的文件位置，或者只需在脚本文本窗口中输入脚本即可。脚本引擎是Groovy。
+
+image:groovy-1.png[常规-1]
+
+[%header,cols="2*"]
+|===
+| {面板{1}}说明
+| *Display*  |默认为通用组件名称。将*Display Name*更改为字母数字，以反映组件的特定角色，即`Groovy Script Welcome Page`。
+| *Script*  | *Script Text*：键入组件将直接加载到此空间的脚本。 +
+*Script File*：输入要由组件加载的脚本的位置。该文件可以驻留在类路径或本地文件系统**中。 +
+*Bean*参考**：允许您添加一个Java bean，它将多个对象封装到一个bean中。然后，脚本组件可以在适用时存储和重新使用该Bean。
+|===
+
+=== 高级选项卡
+
+使用*Advanced*选项卡可以选择配置拦截器，并根据拦截器输入Spring值。您还可以选择指定脚本属性，这些属性是用于更改或更改脚本属性的键/值对。有关使用高级选项卡的信息，请参阅 link:/mule-user-guide/v/3.9/script-component-reference[脚本组件参考]页面。
+
+image:groovy_advanced.png[groovy_advanced]
+
+=== 拦截
+
+拦截器修改脚本中特定属性的值或引用。它们被配置为在消息流经组件时为消息提供附加服务。例如，您可以配置拦截器，以在处理消息时执行特定事件的调度或记录。 Script组件还包含一个自定义拦截器，它允许您配置Spring元素的设置。
+
+例如，您可以添加记录事务的拦截器以及每个事务的时间。使用*Add Custom Interceptor*创建一个可以引用Spring对象的自定义拦截器。 *Interceptor Stack*可让您捆绑多个拦截器。使用拦截器堆栈在Groovy组件上应用多个拦截器。拦截器按堆栈中定义的顺序应用。
+
+=== 脚本属性
+
+配置这些参数以定义属性键及其关联值。这使脚本组件能够快速查找与关键字相关联的值。
+
+== 示例
+
+下面的示例使用两个属性并执行直接写入组件的Groovy代码。执行的代码检查有效负载并将字符串"1"的每个实例替换为字符串"x"，这两个值都是在属性中定义的。
+
+[source, xml, linenums]
+----
+<flow name="groovyTransformerWithParameters">
+    <script:transformer name="stringReplaceWithParams">
+            <script:script engine="groovy">
+                <property key="oldStr" value="l" />
+                <property key="newStr" value="x" />
+                <script:text>
+                    return payload.toString().replaceAll("$oldStr", "$newStr")
+                 </script:text>
+            </script:script>
+    </script:transformer>
+</flow>
+----
+
+以下示例使用 link:http://en.wikipedia.org/wiki/Change-making_problem[“贪婪硬币兑换器”算法]将一种货币转换为另一种货币。它使用一些变换器来转换输入数据，然后应用Groovy算法来转换货币。
+
+[source, xml, linenums]
+----
+<http:listener-config name="http_conf" host="localhost" port="8081" doc:name="HTTP Response Configuration"/>
+<flow name="greedy">
+    <http:listener path="/" doc:name="HTTP Connector" config-ref-inbound="http_conf"/>
+    <http:body-to-parameter-map-transformer />
+
+    <set-payload value="#[payload['amount']]" />
+    <transformer ref="StringToNumber" />
+    <transformer ref="DollarsToCents"/>
+
+    <scripting:component doc:name="USD Currency Script">
+        <scripting:script file="greedy.groovy">
+            <property key="currency" value="USD"/>
+        </scripting:script>
+    </scripting:component>
+</flow>
+----
+
+以下示例使用 link:http://en.wikipedia.org/wiki/Change-making_problem[“贪婪硬币兑换器”算法]将一种货币转换为另一种货币。它使用一些变换器来转换输入数据，然后应用Groovy算法来转换货币。
+
+[source, groovy, linenums]
+----
+// Adapted from the Groovy Cookbook
+// https://web.archive.org/web/20150213041152/http://groovy.codehaus.org/Greedy+Coin+Changer+in+Groovy
+
+enum USD {
+    quarters(25), dimes(10), nickels(5), pennies(1)
+    USD(v) { value = v }
+    final value
+}
+
+enum GBP {
+    two_pounds (200), pounds (100), fifty_pence(50), twenty_pence(20), ten_pence(10), five_pence(5), two_pence(2), pennies(1)
+    GBP(v) { value = v }
+    final value
+}
+
+def change(currency, amount) {
+  currency.values().inject([]){ list, coin ->
+     int count = amount / coin.value
+     amount = amount % coin.value
+     list += "$count $coin"
+  }
+}
+
+switch (currency) {
+    case "USD": return change(USD, payload).toString()
+    case "GBP": return change(GBP, payload).toString()
+    default: throw new AssertionError("Unsupported currency: $currency")
+}
+----
+
+
+== 另请参阅
+
+* 参考通用的 link:/mule-user-guide/v/3.9/script-component-reference[脚本组件参考页面]，了解脚本如何处理单向请求响应连接器。
+* 有关详细信息，请参阅 link:/mule-user-guide/v/3.9/scripting-module-reference[脚本模块]。
+
+
+
+

@@ -1,0 +1,305 @@
+编写自定义云连接器= 
+
+link:/anypoint-connector-devkit/v/3.3/devkit-overview[DevKit概述]页面引入了注释的想法。 `@Connector`注释告诉DevKit，后面的Java类声明表示将Mule流连接到外部实体的端点。该实体可能是基于Web的服务，如salesforce.com或LinkedIn，也可能是Intranet上的传统应用程序。
+
+link:/anypoint-connector-devkit/v/3.3/connector-reference[连接器参考]提供有关编写云连接器的参考信息。
+
+link:/anypoint-connector-devkit/v/3.3/your-first-cloud-connector[您的第一个云连接器]提供了一个快速教程。
+
+== 认证
+
+连接器的一个特殊考虑是身份验证。通常，外部实体在第一次连接时需要用户名和密码，然后返回访问令牌供连接器用于后续交互。连接器在呼叫之间保留访问令牌。这种模式被称为*connection management*。 link:/anypoint-connector-devkit/v/3.3/using-connection-management[使用连接管理]提供了关于Mule如何支持连接管理的更多信息。
+
+Mule应用程序可能不是用户，但可能是希望将用户名和密码保密的用户。对于这种情况，业界开发了Mule支持的OAuth标准。
+
+=== 构造连接器代码以支持连接管理和OAuth
+
+有时您可能希望连接到支持连接管理和OAuth的外部实体。作为DevKit版本3.3，Mule提供了一种在单个连接器JAR中支持_both_的方法，所有通用代码都在基类中。不同的连接器类扩展了基类。 +
+
+==== 示例
+
+以下是使用连接管理从Mule连接器到salesforce.com的简化示例：
+
+[source, java, linenums]
+----
+@Connector(name = "sfdc", schemaVersion = "4.0", friendlyName = "Salesforce")
+public class SalesforceModule {
+ 
+    // a lot of @Configurable properties not-related to the connection management
+ 
+    @Connect
+    public synchronized void connect(@ConnectionKey String username, String password, String securityToken) { ... }
+ 
+    @Disconnect
+    public synchronized void destroySession() { ... }
+ 
+    @Processor
+    @InvalidateConnectionOn(exception = SoapConnection.SessionTimedOutException.class)
+    public List<Map<String, Object>> query(@Placement(group = "Query") String query) throws Exception { ... }
+}
+----
+
+以下是使用OAuth从Mule连接器到salesforce.com的类似简化示例：
+
+[source, java, linenums]
+----
+@Connector(name = "sfdc", schemaVersion = "4.0", friendlyName = "Salesforce")
+@OAuth2(authorizationUrl = "https://login.salesforce.com/services/oauth2/authorize",
+        accessTokenUrl = "https://login.salesforce.com/services/oauth2/token")
+public class SalesforceModule {
+ 
+    // a lot of @Configurable properties not-related to OAuth
+ 
+    @Configurable
+    @OAuthConsumerKey
+    private String apiKey;
+     
+    @Configurable
+    @OAuthConsumerSecret
+    private String apiSecret;
+ 
+    @Processor
+    public List<Map<String, Object>> query(@OAuthAccessToken String accessToken,, @Placement(group = "Query") String query) throws Exception { ... }
+}
+----
+
+这是一个结合了连接管理和OAuth的版本：
+
+[source, code, linenums]
+----
+public abstract class BaseSalesforceModule {
+ 
+    // a lot of @Configurable properties not-related to the connection management
+ 
+    @Processor
+    @InvalidateConnectionOn(exception = SoapConnection.SessionTimedOutException.class)
+    public List<Map<String, Object>> query(@Placement(group = "Query") String query) throws Exception { ... }
+}
+ 
+@Connector(name = "sfdc", schemaVersion = "4.0", friendlyName = "Salesforce")
+public class SalesforceModule extends BaseSalesforceModule {
+ 
+    @Connect
+    public synchronized void connect(@ConnectionKey String username, String password, String securityToken) { ... }
+ 
+    @Disconnect
+    public synchronized void destroySession() { ... }
+}
+ 
+@Connector(name = "sfdc", schemaVersion = "4.0", friendlyName = "Salesforce", elementName = "config-with-oauth")
+@OAuth2(authorizationUrl = "https://login.salesforce.com/services/oauth2/authorize",
+        accessTokenUrl = "https://login.salesforce.com/services/oauth2/token")
+public class SalesforceModule extends BaseSalesforceModule {
+ 
+    @Configurable
+    @OAuthConsumerKey
+    private String apiKey;
+     
+    @Configurable
+    @OAuthConsumerSecret
+    private String apiSecret;
+ 
+    @Configurable
+    @OAuthAccessToken
+    private String accessToken;
+}
+----
+
+以下是您可以如何在相同的Mule流程中使用两者的方法：
+
+[source, xml, linenums]
+----
+<sfdc:config name="Salesforce" username="${sfdc.user}" password="${sfdc.pass}" securityToken="${sfdc.token}"/>
+ 
+<sfdc:config-with-oauth name="SalesforceWithOAuth" apiKey="${api.key}" apiSecret="${api.secret}"/>
+ 
+<flow name="main">
+     <sfdc:query config-ref="Salesforce" ... />
+ 
+     <sfdc:query config-ref="SalesforceWithOAuth" ... />
+</flow>
+----
+
+=== 连接和断开连接
+
+当您创建云连接器时，您必须使用`@Connect`注释和具有`@Disconnect`注释的注释完全注解一个方法。 DevKit生成与其中每一个相对应的消息处理器。
+
+创建连接器还需要注释其他两种方法。 `@ValidateConnection`注释标识DevKit在尝试使用@Connect方法建立连接之前是否已建立连接的方法。 `@ConnectionIdentifier`注释标识了一种提供用于记录的标识符的方法。该方法获取，存储并提供连接的唯一ID。
+
+另外，DevKit自动创建名为*authorize*和*unauthorize*的消息处理器。前者授权连接，后者取消授权并丢弃任何保存的访问令牌。
+
+为云连接器指定授权过程时，您必须提供提供授权的外部方的URL。例如，在OAuth2中，您将URL指定为`@OAuth2`注释中的`authorizationUrl`参数。在某些情况下，您可能希望稍后在此过程中更改URL，以便更改环境或使用代理。以下示例（使用salesforce.com连接器作为模型）演示了如何在此过程中稍后更改URL。 +
+
+==== 示例
+
+以下是如何在原始注释中指定URL的方法：
+
+[source, java, linenums]
+----
+@OAuth2(authorizationUrl = "https://login.salesforce.com/services/oauth2/authorize",
+        accessTokenUrl = "https://login.salesforce.com/services/oauth2/token")
+public class SalesforceOAuthConnector extends BaseSalesforceModule {
+----
+
+以下是在创建配置元素时如何指定新的URL：
+
+[source, xml, linenums]
+----
+<sfdc:config-with-oauth authorizationUrl="newUrl"/>
+----
+
+这优先于注释中指定的值。
+
+以下是如何在授权消息处理器中指定新的URL：
+
+[source, xml, linenums]
+----
+<flow name="authorizeFlow">
+<http:inbound-endpoint ... />
+<sfdc:authorize authorizationUrl="newUrl"/>
+</flow>
+----
+
+此值优先于其他两个中的任何一个。
+
+=== 状态参数
+
+OAuth规范使调用方能够包含名为*state*的参数，外部实体通过访问令牌返回该参数。这有助于调用者在请求和回调之间保持状态。
+
+DevKit自动将*state*授权消息处理器的属性。要传递此参数，请按照以下示例设置其值：
+
+[source, xml, linenums]
+----
+<flow name="authorize">
+    <http:inbound-endpoint ... >
+    <sfdc:authorize ... state="xxx"/>
+</flow>
+----
+
+=== 传递额外的授权参数
+
+有时授权需要通过授权URL传递附加参数。 Mule为@OAuth或@ OAuth2注释提供`authorizationParameters`参数。此参数采用授权参数名称和类型的列表，如salesforce.com连接器中的以下示例中所指定的那样：
+
+[source, java, linenums]
+----
+@Connector(name = "sfdc",
+        schemaVersion = "5.0",
+        friendlyName = "Salesforce",
+        minMuleVersion = "3.3",
+        configElementName = "config-with-oauth")
+@OAuth2(authorizationUrl = "https://login.salesforce.com/services/oauth2/authorize",
+        accessTokenUrl = "https://login.salesforce.com/services/oauth2/token",
+        authorizationParameters = {
+                @OAuthAuthorizeParameter(name = "display", type = SalesforceOAuthDisplay.class)
+        })
+public class SalesforceOAuthConnector extends BaseSalesforceModule
+----
+
+上面的示例显示了一个名为`display`的授权参数，该参数的类型为SalesforceOAuthDisplay.class。
+
+您可以使用DevKit支持的任何数据类型，但集合和复杂类型除外。 DevKit生成代码，将额外参数添加到生成的授权URL中作为查询字符串参数。
+
+如果外部实体作为授权过程的一部分返回参数，则DevKit提供了访问它们的便捷方式。在希望用来保存这些参数的Java类的每个成员上使用`@OAuthParameter`注释，如下例所示：
+
+[source, java, linenums]
+----
+@OAuthParameter(regex = "Mule Expression to obtain parameter 1")
+ private String parameter1;
+ 
+@OAuthParameter(regex = "Mule Expression to obtain parameter 2")
+ private String parameter2;
+----
+
+为了与早期术语兼容，该参数被称为`regex`，但不一定是正则表达式。它是 link:/mule-user-guide/v/3.3/mule-expression-language-mel[骡子表达语言（MEL）]中的表达式，可以是正则表达式或任何其他MEL表达式。
+
+=== 刷新无效令牌
+
+Mule提供了一种自动刷新无效访问令牌的方法。这需要一种能够识别令牌无效的方法以及用于从外部实体响应于对更新的令牌的请求而返回的有效载荷中提取新令牌的正则表达式。
+
+如果令牌无效，则`OAuthInvalidateAccessTokenOn`批注将采用指定由访问方法抛出的异常的参数。 DevKit捕获该异常并启动自动创建的子流以获取更新的令牌。然后，它使用更新的令牌重试访问。如果失败，它会抛出一个异常直到主流。
+
+访问例程的注释如下例所示：
+
+[source, java, linenums]
+----
+@Processor
+@OAuthInvalidateAccessTokenOn(exception = RuntimeException.class)
+public void processor() { ... }
+----
+
+
+指定提取更新标记的正则表达式，如下例所示：
+
+[source, java, linenums]
+----
+@Connector(name = "oauth")
+@OAuth2(refreshTokenRegex = "myRegex")
+public class OAuthModule
+----
+
+=== 自动访问令牌管理
+
+OAuth DevKit生成的云连接器具有用于保存和恢复访问令牌的挂钩。这有助于恢复Mule关机状态。在DevKit 3.3中，如果连接器可以识别用户，DevKit会自动保存和恢复访问令牌。
+
+使用`@OAuthAccessTokenIdentifier`注释标记云连接器内的方法，DevKit会在授权完成后调用该方法来标识该用户。
+
+[source, java, linenums]
+----
+@OAuthAccessTokenIdentifier
+public String getUserId() {
+return api.getUserId(myAccessToken);
+}
+----
+
+Mule将用户访问令牌的ID存储为名为`OAuthAccessTokenId`的流变量。流程中的处理器可以将其用作调用受保护资源的参数。以下示例演示如何访问该ID。
+
+[source, xml, linenums]
+----
+<flow name="authorize">
+<http:inbound-endpoint ... />
+<connector:authorize ... />
+<logger level="INFO" message="The user identification is #[flowVars['OAuthAccessTokenId']]"/>
+</flow>
+----
+
+流程必须将此信息保存在例如cookie或会话变量中。
+
+Mule DevKit在每个生成的由OAuth保护的消息处理器中创建一个名为`accessTokenId`的属性。这持有访问令牌的标识符，该标识符用于进行呼叫。请注意，访问令牌ID不是访问令牌本身，并不代表唯一访问令牌。以下示例说明如何设置属性。
+
+[source, xml, linenums]
+----
+<flow name="xxx">
+<connector:my-operation accessTokenId="#[flowVars['OAuthAccessTokenId']]"/>
+</flow>
+----
+
+Mule DevKit坚持重新使用授权连接器所需的以下信息：
+
+* 访问令牌+
+* 访问令牌的秘密（如果它是OAuth 1.0a）+
+* 刷新标记（如果它是OAuth 2.0）+
+* 在服务提供商回调期间提取的任何信息。 +
+
+DevKit将信息存储在默认的用户对象存储中。
+
+[WARNING]
+*Mule DevKit 3.3.0*没有正确设置默认的用户对象存储，因此连接器将初始化而不指定对象存储。 *Mule DevKit 3.3.1*正确设置默认的用户对象存储。
+
+在任何能够自动管理访问令牌的支持OAuth的云连接器的配置元素中，DevKit使用称为`objectStore-ref`的单个属性创建一个名为`oauth-store-config`的元素。该属性的值是对象存储的引用，如以下示例中所示。
+
+[source, xml, linenums]
+----
+<connector:config ... >
+<connector:oauth-store-config objectStore-ref="myObjectStore"/>
+</connector:config>
+----
+
+== 认证后操作
+
+使用OAuth成功验证后，连接器可能需要执行设置任务。使用`@OAuthPostAuthorization`注释标记执行这些任务的方法，如下例所示：
+
+[source, java, linenums]
+----
+@OAuthPostAuthorization
+    public void postAuthorize() throws ConnectionException, MalformedURLException, AsyncApiException { ... }
+----

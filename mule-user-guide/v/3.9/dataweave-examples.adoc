@@ -1,0 +1,2703 @@
+=  DataWeave实例
+:keywords: studio, anypoint, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+== 介绍
+
+以下是一系列演示以 link:/mule-user-guide/v/3.9/dataweave-language-introduction[DataWeave]表示的各种数据转换方法的示例。 DataWeave代码通常写在*Transform Message*组件内，可在Anypoint Studio中访问。
+
+[NOTE]
+要在实际的Mule应用程序中逐步使用基本的DataWeave用例和练习，请参阅 link:/mule-user-guide/v/3.9/dataweave-quickstart[DataWeave快速入门指南]。
+
+[TIP]
+示例中显示的DataWeave代码可以在*input/output metadata*的上下文中理解。可以切换下面的选项卡以查看DataWeave利用的元数据结构来完成转换。
+
+
+== 基本转型
+
+这一基本转换向您展示了如何轻松地将字段从输入映射到输出，而不需要除将XML转换为JSON之外的任何特殊操作。它也改变了一些字段的顺序和名称。
+
+请注意，此转换一次仅处理"order"数据结构的单个实例。如果您想要处理单个Mule消息中的多个订单的集合，则必须使用*map*运算符对它们进行排序，如下例所示。
+
+[TIP]
+link:/mule-user-guide/v/3.9/dataweave-quickstart[DataWeave快速入门指南]向您演示相同的转换，向您展示如何通过拖放UI自动创建它。然后它会调整代码以使其更有趣。
+
+=== 示例转换
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+        address1: payload.order.buyer.address,
+        city: payload.order.buyer.city,
+        country: payload.order.buyer.nationality,
+        email: payload.order.buyer.email,
+        name: payload.order.buyer.name,
+        postalCode: payload.order.buyer.postCode,
+        stateOrProvince: payload.order.buyer.state
+}
+----
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+
+.Input
+[source, xml, linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<order>
+  <product>
+    <price>5</price>
+    <model>MuleSoft Connect 2016</model>
+  </product>
+  <item_amount>3</item_amount>
+  <payment>
+    <payment-type>credit-card</payment-type>
+    <currency>USD</currency>
+    <installments>1</installments>
+  </payment>
+  <buyer>
+    <email>mike@hotmail.com</email>
+    <name>Michael</name>
+    <address>Koala Boulevard 314</address>
+    <city>San Diego</city>
+    <state>CA</state>
+    <postCode>1345</postCode>
+    <nationality>USA</nationality>
+  </buyer>
+  <shop>main branch</shop>
+  <salesperson>Mathew Chow</salesperson>
+</order>
+----
+
+....
+[tab,title="Output: JSON"]
+....
+
+.Output
+[source, json, linenums]
+----
+{
+  "address1": "Koala Boulevard 314",
+  "city": "San Diego",
+  "country": "USA",
+  "email": "mike@hotmail.com",
+  "name": "Michael",
+  "postalCode": "1345",
+  "stateOrProvince": "CA"
+}
+----
+
+....
+------
+
+
+
+== 使用`map`运算符
+
+请继续查看如何使用 link:/mule-user-guide/v/3.9/dataweave-operators#map[`map`]运算符。此示例中还包含`as`运算符。获取XML列表并使用DataWeave输出图书列表的JSON版本。它通过XML输入中的每个`<book>`元素，只需使用`map`运算符即可。
+
+您可以使用`as`运算符（用于强制类型 - 请参阅https://docs.mulesoft.com/mule-user-guide/v/3.9/dataweave）确保转换为每个元素生成正确的类型-operators＃coerce-to-number [`as`运算符示例]）。
+
+[NOTE]
+由于JSON不能接受重复键，因此输入中重复的元素会显示输出端的第一个键。
+
+=== 示例转换
+
+.DataWeave
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+items: payload.books map {
+      type: "book",
+      price: $.price as :number,
+      properties: {
+        title: $.title,
+        author: $.author,
+        year: $.year as :number
+      }
+}
+----
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source, json, linenums]
+----
+{
+    "books": [
+      {
+        "-category": "cooking",
+        "title": {
+          "-lang": "en",
+          "#text": "Everyday Italian"
+        },
+        "author": "Giada De Laurentiis",
+        "year": "2005",
+        "price": "30.00"
+      },
+      {
+        "-category": "children",
+        "title": {
+          "-lang": "en",
+          "#text": "Harry Potter"
+        },
+        "author": "J K. Rowling",
+        "year": "2005",
+        "price": "29.99"
+      },
+      {
+        "-category": "web",
+        "title": {
+          "-lang": "en",
+          "#text": "XQuery Kick Start"
+        },
+        "author": [
+          "James McGovern",
+          "Per Bothner",
+          "Kurt Cagle",
+          "James Linn",
+          "Vaidyanathan Nagarajan"
+        ],
+        "year": "2003",
+        "price": "49.99"
+      },
+      {
+        "-category": "web",
+        "-cover": "paperback",
+        "title": {
+          "-lang": "en",
+          "#text": "Learning XML"
+        },
+        "author": "Erik T. Ray",
+        "year": "2003",
+        "price": "39.95"
+      }
+    ]
+}
+----
+
+....
+[tab,title="Output: JSON"]
+....
+
+.Output
+[source, json, linenums]
+----
+{
+  "items": [
+    {
+      "type": "book",
+      "price": 30.00,
+      "properties": {
+        "title": {
+          "-lang": "en",
+          "#text": "Everyday Italian"
+        },
+        "author": "Giada De Laurentiis",
+        "year": 2005
+      }
+    },
+    {
+      "type": "book",
+      "price": 29.99,
+      "properties": {
+        "title": {
+          "-lang": "en",
+          "#text": "Harry Potter"
+        },
+        "author": "J K. Rowling",
+        "year": 2005
+      }
+    },
+    {
+      "type": "book",
+      "price": 49.99,
+      "properties": {
+        "title": {
+          "-lang": "en",
+          "#text": "XQuery Kick Start"
+        },
+        "author": [
+          "James McGovern",
+          "Per Bothner",
+          "Kurt Cagle",
+          "James Linn",
+          "Vaidyanathan Nagarajan"
+        ],
+        "year": 2003
+      }
+    },
+    {
+      "type": "book",
+      "price": 39.95,
+      "properties": {
+        "title": {
+          "-lang": "en",
+          "#text": "Learning XML"
+        },
+        "author": "Erik T. Ray",
+        "year": 2003
+      }
+    }
+  ]
+}
+----
+....
+------
+
+== 删除字段
+
+在这个例子中，输入包含应该删除的敏感信息。该转换复制入站结构，但使用简单的 link:/mule-user-guide/v/3.9/dataweave-operators#remove[`remove`]运算符来带走特定的键：值对。
+
+该示例使用 link:/mule-user-guide/v/3.9/dataweave-operators#map[`map`]运算符遍历输入中的整个元素集。
+
+=== 示例转换
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+users: {
+      (payload.users map {
+        user: {
+        personal_information: $.personal_information - "ssn",
+        login_information: $.login_information - "password"
+        }
+      })
+}
+----
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+[source, xml, linenums]
+----
+<users>
+    <user>
+        <personal_information>
+            <first_name>Emiliano</first_name>
+            <middle_name>Romoaldo</middle_name>
+            <last_name>Lesende</last_name>
+            <ssn>001-08-84382</ssn>
+        </personal_information>
+        <login_information>
+            <username>3miliano</username>
+            <password>mypassword1234</password>
+        </login_information>
+    </user>
+    <user>
+        <personal_information>
+            <first_name>Mariano</first_name>
+            <middle_name>Toribio</middle_name>
+            <last_name>de Achaval</last_name>
+            <ssn>002-05-34738</ssn>
+        </personal_information>
+        <login_information>
+            <username>machaval</username>
+            <password>mypassword4321</password>
+        </login_information>
+    </user>
+</users>
+----
+....
+[tab,title="Output: XML"]
+....
+
+
+.Output
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<users>
+  <user>
+    <personal_information>
+      <first_name>Emiliano</first_name>
+      <middle_name>Romoaldo</middle_name>
+      <last_name>Lesende</last_name>
+    </personal_information>
+    <login_information>
+      <username>3miliano</username>
+    </login_information>
+  </user>
+  <user>
+    <personal_information>
+      <first_name>Mariano</first_name>
+      <middle_name>Toribio</middle_name>
+      <last_name>de Achaval</last_name>
+    </personal_information>
+    <login_information>
+      <username>machaval</username>
+    </login_information>
+  </user>
+</users>
+----
+....
+------
+
+== 替换值
+
+在此示例中，输入包含与上一个相同的敏感信息，但不是完全删除包含它的键：值对，而是将值替换为字符串。该转换复制入站结构，但使用简单的 link:/mule-user-guide/v/3.9/dataweave-language-introduction#when-otherwise[`when`]运算符在发生特定键时替换值。
+
+该示例使用 link:/mule-user-guide/v/3.9/dataweave-operators#map[`map`]运算符遍历输入中的整个元素集。
+
+=== 示例转换
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+users: { (payload.users map {
+    user: {
+       personal_information: $.personal_information mapObject {
+            ($$): $ unless $$ ~= "ssn" otherwise "****"
+       },
+       login_information: $.login_information mapObject {
+          ($$): $ unless $$ ~= "password" otherwise "****"
+       }
+     }
+}) }
+----
+
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+[source, xml, linenums]
+----
+<users>
+    <user>
+        <personal_information>
+            <first_name>Emiliano</first_name>
+            <middle_name>Romoaldo</middle_name>
+            <last_name>Lesende</last_name>
+            <ssn>001-08-84382</ssn>
+        </personal_information>
+        <login_information>
+            <username>3miliano</username>
+            <password>mypassword1234</password>
+        </login_information>
+    </user>
+    <user>
+        <personal_information>
+            <first_name>Mariano</first_name>
+            <middle_name>Toribio</middle_name>
+            <last_name>de Achaval</last_name>
+            <ssn>002-05-34738</ssn>
+        </personal_information>
+        <login_information>
+            <username>machaval</username>
+            <password>mypassword4321</password>
+        </login_information>
+    </user>
+</users>
+----
+
+....
+[tab,title="Output: XML"]
+....
+
+.Output
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<users>
+  <user>
+    <personal_information>
+      <first_name>Emiliano</first_name>
+      <middle_name>Romoaldo</middle_name>
+      <last_name>Lesende</last_name>
+      <ssn>****</ssn>
+    </personal_information>
+    <login_information>
+      <username>3miliano</username>
+      <password>****</password>
+    </login_information>
+  </user>
+  <user>
+    <personal_information>
+      <first_name>Mariano</first_name>
+      <middle_name>Toribio</middle_name>
+      <last_name>de Achaval</last_name>
+      <ssn>****</ssn>
+    </personal_information>
+    <login_information>
+      <username>machaval</username>
+      <password>****</password>
+    </login_information>
+  </user>
+</users>
+----
+....
+------
+
+
+== 定位一个属性
+
+本示例向您展示了如何将JSON数组对象转换为XML。每个对象代表一本书及其属性。
+
+link:/mule-user-guide/v/3.9/dataweave-operators#map[`map`]运算符对输入数组中的每个元素执行相同的步骤。通过使用@，属性被注入到XML中。
+
+[TIP]
+请参阅 link:/mule-user-guide/v/3.9/dataweave-selectors#attribute-selector-expressions[属性选择器表达式]了解如何在DataWeave中选择XML属性。
+
+=== 示例转换
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  bookstore: { (payload map {
+      book : {
+      title @(lang: "en"): $.item.properties.title,
+      year: $.item.properties.year,
+      price: $.item.price,
+      ($.item.properties.author map
+      author @(loc: "US"): $)
+    }
+  }) }
+}
+----
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+
+.Input
+[source, json, linenums]
+----
+[
+  {
+    "item": {
+      "type": "book",
+      "price": 30,
+      "properties": {
+        "title": "Everyday Italian",
+        "author": [
+          "Giada De Laurentiis"
+        ],
+        "year": 2005
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 29.99,
+      "properties": {
+        "title": "Harry Potter",
+        "author": [
+          "J K. Rowling"
+        ],
+        "year": 2005
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 49.99,
+      "properties": {
+        "title": "XQuery Kick Start",
+        "author": [
+          "James McGovern",
+          "Per Bothner",
+          "Kurt Cagle",
+          "James Linn",
+          "Vaidyanathan Nagarajan"
+        ],
+        "year": 2003
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 39.95,
+      "properties": {
+        "title": "Learning XML",
+        "author": [
+          "Erik T. Ray"
+        ],
+        "year": 2003
+      }
+    }
+  }
+]
+----
+....
+[tab,title="Output: XML"]
+....
+.Output
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<bookstore>
+  <book>
+    <title lang="en">Everyday Italian</title>
+    <year>2005</year>
+    <price>30</price>
+    <author loc="US">Giada De Laurentiis</author>
+  </book>
+  <book>
+    <title lang="en">Harry Potter</title>
+    <year>2005</year>
+    <price>29.99</price>
+    <author loc="US">J K. Rowling</author>
+  </book>
+  <book>
+    <title lang="en">XQuery Kick Start</title>
+    <year>2003</year>
+    <price>49.99</price>
+    <author loc="US">James McGovern</author>
+    <author loc="US">Per Bothner</author>
+    <author loc="US">Kurt Cagle</author>
+    <author loc="US">James Linn</author>
+    <author loc="US">Vaidyanathan Nagarajan</author>
+  </book>
+  <book>
+    <title lang="en">Learning XML</title>
+    <year>2003</year>
+    <price>39.95</price>
+    <author loc="US">Erik T. Ray</author>
+  </book>
+</bookstore>
+----
+....
+------
+
+
+== 根据条件添加可选字段
+
+将某些东西映射到XML格式时，您可能希望根据条件添加某些标签。
+下面的映射仅在输入中存在“保险”标记时插入。
+
+该示例使用 link:/mule-user-guide/v/3.9/dataweave-operators#map[`map`]运算符遍历输入中的整个元素集。它还使用 link:/mule-user-guide/v/3.9/dataweave-language-introduction#when-otherwise[`when`]运算符来仅选择包含“保险”字段的实例。
+
+=== 示例转换
+
+.DataWeave
+[source,dataweave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+users: {
+  (payload map {
+        user: {
+          name: $.name,
+          (insurance: $.insurance) when $.insurance?
+        }
+    })
+}
+----
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source,json, linenums]
+----
+[
+  {
+    "name" : "Julian",
+    "gender" : "Male",
+    "age" : 41,
+    "insurance": "Osde"
+  },
+  {
+    "name" : "Mariano",
+    "gender" : "Male",
+    "age" : 33
+  }
+]
+----
+
+....
+[tab,title="Output: XML"]
+....
+.Output
+[source,xml, linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<users>
+  <user>
+    <name>Julian</name>
+    <insurance>Osde</insurance>
+  </user>
+  <user>
+    <name>Mariano</name>
+  </user>
+</users>
+----
+....
+------
+
+
+== 当这些键存在时重命名键
+
+这个例子接受一个包含多个字段的JSON对象。他们中的大多数必须保持相同，除了可能会出现在有效载荷中的一对，并且如果应该重新命名。这个例子并没有单独引用每个字段，而是特别重命名了两个字段，并在没有任何更改的情况下处理其余字段。
+
+该示例使用 link:/mule-user-guide/v/3.9/dataweave-operators#map-object[`mapObject`]运算符遍历输入中的整个元素集。请注意，它与map操作的不同之处在于map对象处理其输入的键和值，而不仅仅是键。它还使用 link:/mule-user-guide/v/3.9/dataweave-language-introduction#when-otherwise[`when`]运算符和 link:/mule-user-guide/v/3.9/dataweave-operators#and[`和`]来挑选需要更改的特定键以及https://docs.mulesoft.com/mule-user-guide/v/3.9 / dataweave-operators＃将`as`操作符强制为字符串的类型的coerce-to-number [示例用途]。
+
+
+=== 示例转换
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+payload.flights map (flight) -> {
+(flight mapObject (value, key) -> {
+    (emptySeats: value) when key as :string == 'availableSeats',
+    (airline: value) when key as :string == 'airlineName',
+    ((key):value) when (key as :string !='availableSeats') and (key as :string != 'airlineName')
+  })
+}
+----
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source, json, linenums]
+----
+{
+  "flights":[
+  {
+  "availableSeats":45,
+  "airlineName":"Ryan Air",
+  "aircraftBrand":"Boeing",
+  "aircraftType":"737",
+  "departureDate":"12/14/2017",
+  "origin":"BCN",
+  "destination":"FCO"
+  },
+  {
+  "availableSeats":15,
+  "airlineName":"Ryan Air",
+  "aircraftBrand":"Boeing",
+  "aircraftType":"747",
+  "departureDate":"08/03/2017",
+  "origin":"FCO",
+  "destination":"DFW"
+  }]
+}
+----
+
+
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source, json, linenums]
+----
+[
+  {
+    "emptySeats": 45,
+    "airline": "Ryan Air",
+    "aircraftBrand": "Boeing",
+    "aircraftType": "737",
+    "departureDate": "12/14/2017",
+    "origin": "BCN",
+    "destination": "FCO"
+  },
+  {
+    "emptySeats": 15,
+    "airline": "Ryan Air",
+    "aircraftBrand": "Boeing",
+    "aircraftType": "747",
+    "departureDate": "08/03/2017",
+    "origin": "FCO",
+    "destination": "DFW"
+  }
+]
+----
+....
+------
+
+
+== 使用常量指令
+
+此示例将XML输入转换为结构不同的JSON输出，并包含通过连接在 link:/mule-user-guide/v/3.9/dataweave-language-introduction#the-dataweave-header[DataWeave头]中定义几个 link:/mule-user-guide/v/3.9/dataweave-language-introduction#define-constat-directive[常数指令]的输入内容构建的URL链接。该转换还会创建一些有条件的字段，并且只有在它们存在于输入中时才会出现在输出中。
+
+=== 示例转换
+
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+%var baseUrl="http://alainn-cosmetics.cloudhub.io/api/v1.0/"
+%var urlPage="http://alainn-cosmetics.cloudhub.io/api/v1.0/items"
+%var pageIndex=0
+%var requestedPageSize=4
+%var fullUrl="http://alainn-cosmetics.cloudhub.io/api/v1.0/items"
+---
+using (pageSize = payload.getItemsResponse.PageInfo.pageSize) {
+     links: [
+        {
+            href: fullUrl,
+            rel : "self"
+        },
+        {
+            href: urlPage ++ "?pageIndex=" ++ (pageIndex + pageSize) ++ "&pageSize=" ++ requestedPageSize,
+            rel: "next"
+        },
+        ({
+            href: urlPage ++ "?pageIndex=" ++ (pageIndex - pageSize) ++ "&pageSize=" ++ requestedPageSize,
+            rel: "prev"
+        }) when (pageIndex > 0)
+     ],
+     collection: {
+        size: pageSize,
+        items: payload.getItemsResponse.*Item map {
+            id: $.id,
+            type: $.type,
+            name: $.name,
+            (summary: $.summary) when $.summary?,
+            (brand: $.brand) when $.brand?,
+            links: ($.images.*image map {
+                href: trim $,
+                rel: $.@type
+            }) + {
+                href: baseUrl ++ "/" ++ $.id,
+                rel: "self"
+            }
+        }
+     }
+}
+----
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+
+.Input
+
+[source, xml, linenums]
+----
+<ns0:getItemsResponse xmlns:ns0="http://www.alainn.com/SOA/message/1.0">
+    <ns0:PageInfo>
+        <pageIndex>0</pageIndex>
+        <pageSize>20</pageSize>
+    </ns0:PageInfo>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B0015BYNRO</id>
+        <type>Oils</type>
+        <name>Now Foods LANOLIN PURE</name>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/11Qoe774Q4L._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B002K8AD02</id>
+        <type>Bubble Bath</type>
+        <name>Deep Steep Honey Bubble Bath</name>
+        <summary>Disclaimer: This website is for informational purposes only.
+            Always check the actual product label in your possession for the most
+            accurate ingredient information due to product changes or upgrades
+            that may not yet be reflected on our web site. These statements made
+            in this website have not been evaluated by the Food and Drug
+            Administration. The products offered are not intended to diagnose,
+            treat
+        </summary>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/216ytnMOeXL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B000I206JK</id>
+        <type>Oils</type>
+        <name>Now Foods Castor Oil</name>
+        <summary>One of the finest natural skin emollients available</summary>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/21Yz8q-yQoL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B003Y5XF2S</id>
+        <type>Chemical Hair Dyes</type>
+        <name>Manic Panic Semi-Permanent Color Cream</name>
+        <summary>Ready to use, no mixing required</summary>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/51A2FuX27dL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B0016BELU2</id>
+        <type>Chemical Hair Dyes</type>
+        <name>Herbatint Herbatint Permanent Chestnut (4n)</name>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/21woUiM0BdL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+</ns0:getItemsResponse>
+----
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source, json, linenums]
+----
+{
+  "links": [
+    {
+      "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/items",
+      "rel": "self"
+    },
+    {
+      "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/items?pageIndex=20&pageSize=4",
+      "rel": "next"
+    }
+  ],
+  "collection": {
+    "size": "20",
+    "items": [
+      {
+        "id": "B0015BYNRO",
+        "type": "Oils",
+        "name": "Now Foods LANOLIN PURE",
+        "links": [
+          {
+            "href": "http:\/\/ecx.images-amazon.com\/images\/I\/11Qoe774Q4L._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/\/B0015BYNRO",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B002K8AD02",
+        "type": "Bubble Bath",
+        "name": "Deep Steep Honey Bubble Bath",
+        "summary": "Disclaimer: This website is for informational purposes only.\n            Always check the actual product label in your possession for the most\n            accurate ingredient information due to product changes or upgrades\n            that may not yet be reflected on our web site. These statements made\n            in this website have not been evaluated by the Food and Drug\n            Administration. The products offered are not intended to diagnose,\n            treat\n        ",
+        "links": [
+          {
+            "href": "http:\/\/ecx.images-amazon.com\/images\/I\/216ytnMOeXL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/\/B002K8AD02",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B000I206JK",
+        "type": "Oils",
+        "name": "Now Foods Castor Oil",
+        "summary": "One of the finest natural skin emollients available",
+        "links": [
+          {
+            "href": "http:\/\/ecx.images-amazon.com\/images\/I\/21Yz8q-yQoL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/\/B000I206JK",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B003Y5XF2S",
+        "type": "Chemical Hair Dyes",
+        "name": "Manic Panic Semi-Permanent Color Cream",
+        "summary": "Ready to use, no mixing required",
+        "links": [
+          {
+            "href": "http:\/\/ecx.images-amazon.com\/images\/I\/51A2FuX27dL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/\/B003Y5XF2S",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B0016BELU2",
+        "type": "Chemical Hair Dyes",
+        "name": "Herbatint Herbatint Permanent Chestnut (4n)",
+        "links": [
+          {
+            "href": "http:\/\/ecx.images-amazon.com\/images\/I\/21woUiM0BdL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http:\/\/alainn-cosmetics.cloudhub.io\/api\/v1.0\/\/B0016BELU2",
+            "rel": "self"
+          }
+        ]
+      }
+    ]
+  }
+}
+----
+....
+------
+
+
+
+== 执行基本数学
+
+该示例采用XML输入并将其解析为不同的XML排列。复制一个`<header>`元素后， link:/mule-user-guide/v/3.9/dataweave-operators#map[“地图”操作]对每个“项目”执行相同的步骤：几个字段不加任何更改地传递，然后折扣和小计字段通过引用常量在变换的 link:/mule-user-guide/v/3.9/dataweave-language-introduction#the-dataweave-header[标题指令]中定义。通过对"items"数组中的所有项执行 link:/mule-user-guide/v/3.9/dataweave-operators#reduce[*减少*]操作，并执行有时涉及标头中定义的常量的计算，从而创建一组小计，税和总元素。 link:/mule-user-guide/v/3.9/dataweave-operators#as[`as`]运算符也用于强制一个数字，然后对这些数字执行 link:/mule-user-guide/v/3.9/dataweave-operators#basic-math-operations[基础数学]。
+
+=== 示例转换
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+%var tax=0.085
+%var discount=0.05
+---
+invoice: {
+    header: payload.invoice.header,
+    items: { (payload.invoice.items.*item map {
+        item @(index: $$ + 1): {
+            description: $.description,
+            quantity: $.quantity,
+            unit_price: $.unit_price,
+            discount: (discount * 100) as :string { format: "##" } ++ "%",
+            subtotal: $.unit_price * $.quantity * (1 - discount)
+        }
+    }) },
+    totals: using (subtotal = payload.invoice.items reduce ((item, sum1 = 0) -> sum1 + (item.unit_price * item.quantity * (1 - discount)))) {
+        subtotal: subtotal,
+        tax: (tax * 100) as :string { format: "##.#" } ++ "%",
+        total: subtotal * (1 + tax)
+    }
+}
+----
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+[source, xml, linenums]
+----
+<invoice>
+    <header>
+        <customer_name>ACME, Inc.</customer_name>
+        <customer_state>CA</customer_state>
+    </header>
+    <items>
+        <item>
+            <description>Product 1</description>
+            <quantity>2</quantity>
+            <unit_price>10</unit_price>
+        </item>
+        <item>
+            <description>Product 2</description>
+            <quantity>1</quantity>
+            <unit_price>30</unit_price>
+        </item>
+    </items>
+</invoice>
+----
+....
+[tab,title="Output: XML"]
+....
+
+.Output
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<invoice>
+  <header>
+    <customer_name>ACME, Inc.</customer_name>
+    <customer_state>CA</customer_state>
+  </header>
+  <items>
+    <item index="1">
+      <description>Product 1</description>
+      <quantity>2</quantity>
+      <unit_price>10</unit_price>
+      <discount>5%</discount>
+      <subtotal>20</subtotal>
+    </item>
+    <item index="2">
+      <description>Product 2</description>
+      <quantity>1</quantity>
+      <unit_price>30</unit_price>
+      <discount>5%</discount>
+      <subtotal>30</subtotal>
+    </item>
+  </items>
+  <totals>
+    <subtotal>47.5</subtotal>
+    <tax>8.5%</tax>
+    <total>51.5375</total>
+  </totals>
+</invoice>
+----
+....
+------
+
+
+== 分组依据
+
+此示例采用分组的两种类型的XML文件：教师和学生，转换使用 link:/mule-user-guide/v/3.9/dataweave-operators#group-by[*分组按*操作]将其设置为XML，其中顶级分组为"class"。在每门课程中，列出了在其中注册的学生和教师。
+
+该示例使用 link:/mule-user-guide/v/3.9/dataweave-operators#map-object[*地图对象*操作]和 link:/mule-user-guide/v/3.9/dataweave-operators#map[*地图*操作]遍历输入中的整个元素集。请注意，它们的不同之处在于，地图对象处理其输入的键和值，而不仅仅是键。它还使用 link:/mule-user-guide/v/3.9/dataweave-operators#filter[*过滤*操作]仅显示将课堂主题列为业余爱好的与会者。由于每个学生可能有多种兴趣爱好，所以 link:/mule-user-guide/v/3.9/dataweave-selectors#multi-value-selector[*多值*选择器]被用来指代他们。
+
+
+=== 示例转换
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/dw
+---
+classrooms: payload.school.teachers groupBy $.subject mapObject ((teacherGroup, subject) -> {
+    class: {
+      name: subject,
+      teachers: { (teacherGroup map {
+        teacher:{
+            name: $.name,
+            lastName: $.lastName
+        }
+      }) },
+      attendees: { (payload.school.students filter ($.*hobby contains subject) map {
+        attendee: {
+          name: $.name,
+          lastName: $.lastName
+        }
+      }) }
+    }
+})
+----
+
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+[source, xml, linenums]
+----
+<school>
+    <teachers>
+        <teacher>
+            <name>Mariano</name>
+            <lastName>De Achaval</lastName>
+            <subject>DW</subject>
+        </teacher>
+        <teacher>
+            <name>Emiliano</name>
+            <lastName>Lesende</lastName>
+            <subject>DW</subject>
+        </teacher>
+        <teacher>
+            <name>Leandro</name>
+            <lastName>Shokida</lastName>
+            <subject>Scala</subject>
+        </teacher>
+    </teachers>
+    <students>
+        <student>
+            <name>Peter</name>
+            <lastName>Parker</lastName>
+            <hobby>DW</hobby>
+            <hobby>Scala</hobby>
+        </student>
+        <student>
+            <name>Homer</name>
+            <lastName>Simpson</lastName>
+            <hobby>Scala</hobby>
+        </student>
+    </students>
+</school>
+----
+
+....
+[tab,title="Output: JSON"]
+....
+
+.Output
+[source, json, linenums]
+----
+{
+  "classrooms": {
+    "class": {
+      "name": "DW",
+      "teachers": [
+        {
+          "teacher": {
+            "name": [
+              "Mariano"
+            ],
+            "lastName": [
+              "De Achaval"
+            ]
+          }
+        },
+        {
+          "teacher": {
+            "name": [
+              "Emiliano"
+            ],
+            "lastName": [
+              "Lesende"
+            ]
+          }
+        }
+      ],
+      "attendees": [
+        {
+          "attendee": {
+            "name": [
+              "Peter"
+            ],
+            "lastName": [
+              "Parker"
+            ]
+          }
+        }
+      ]
+    },
+    "class": {
+      "name": "Scala",
+      "teachers": [
+        {
+          "teacher": {
+            "name": [
+              "Leandro"
+            ],
+            "lastName": [
+              "Shokida"
+            ]
+          }
+        }
+      ],
+      "attendees": [
+        {
+          "attendee": {
+            "name": [
+              "Peter"
+            ],
+            "lastName": [
+              "Parker"
+            ]
+          }
+        },
+        {
+          "attendee": {
+            "name": [
+              "Homer"
+            ],
+            "lastName": [
+              "Simpson"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
+----
+
+....
+------
+
+
+
+== 多个输入
+
+在这个例子中，有三个不同的输入JSON文件，这三个全部到达一个Mule消息，占用有效载荷和两个 link:/mule-user-guide/v/3.9/dataweave-selectors#flow-variables-from-a-mule-message[流量变量]。有效载荷包含一组书对象，一个流变量具有一组货币汇率，另一个流查询。变换使用第三个输入中传递的条件过滤第一个输入，然后执行 link:/mule-user-guide/v/3.9/dataweave-operators#map[`map`]分别处理剩余的每个对象。在此映射中，它定义了两个变量：*it*和*props*。通过使用@，属性被添加到XML标签中。第一个地图中的第二个地图操作为第二个输入中提供的每种货币计算每本书的价格。另一个映射操作将`author`数组中的每个元素显示为单独的<author> </author>标记。
+
+
+[TIP]
+有关如何访问来自输入的流变量和 link:/mule-user-guide/v/3.9/dataweave-selectors#attribute-selector-expressions[属性选择器表达式]，了解如何访问DataWeave中的XML属性，请参阅 link:/mule-user-guide/v/3.9/dataweave-selectors#flow-variables-from-a-mule-message[流量变量]。
+
+=== 示例转换
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+books: {
+  (payload filter $.item.properties.year > flowVars.filterParameter.publishedAfter map using (it = $.item, props = $.item.properties) {
+    book @(year: props.year): {
+      (flowVars.exchagneRate.USD map {
+        price @(currency: $.currency): $.ratio * it.price
+      }),
+      title: props.title,
+      authors: { (props.author map {
+        author: $
+      }) }
+    }
+  })
+}
+----
+
+[tabs]
+------
+[tab,title="Inputs"]
+....
+
+=== Input 1
+
+.Input 1 - Payload
+[source, json, linenums]
+----
+[
+  {
+    "item": {
+      "type": "book",
+      "price": 30,
+      "properties": {
+        "title": "Everyday Italian",
+        "author": [
+          "Giada De Laurentiis"
+        ],
+        "year": 2005
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 29.99,
+      "properties": {
+        "title": "Harry Potter",
+        "author": [
+          "J K. Rowling"
+        ],
+        "year": 2005
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 49.99,
+      "properties": {
+        "title": "XQuery Kick Start",
+        "author": [
+          "James McGovern",
+          "Per Bothner",
+          "Kurt Cagle",
+          "James Linn",
+          "Kurt Cagle",
+          "Vaidyanathan Nagarajan"
+        ],
+        "year": 2003
+      }
+    }
+  },
+  {
+    "item": {
+      "type": "book",
+      "price": 39.95,
+      "properties": {
+        "title": "Learning XML",
+        "author": [
+          "Erik T. Ray"
+        ],
+        "year": 2003
+      }
+    }
+  }
+]
+----
+
+=== Input 2
+
+.Input 2 - FlowVariable exchangeRate
+[source, json, linenums]
+----
+{
+  "USD": [
+    {"currency": "EUR", "ratio":0.92},
+    {"currency": "ARS", "ratio":8.76},
+    {"currency": "GBP", "ratio":0.66}
+  ]
+}
+----
+
+=== Input 3
+
+.Input 3 - FlowVariable filterParamenter
+[source, json, linenums]
+----
+{
+  "publishedAfter": 2004
+}
+----
+....
+[tab,title="Output: XML"]
+....
+
+.Output
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<books>
+  <book year="2005">
+    <price currency="EUR">27.6</price>
+    <price currency="ARS">262.8</price>
+    <price currency="GBP">19.8</price>
+    <title>Everyday Italian</title>
+    <authors>
+      <author>Giada De Laurentiis</author>
+    </authors>
+  </book>
+  <book year="2005">
+    <price currency="EUR">27.5908</price>
+    <price currency="ARS">262.7124</price>
+    <price currency="GBP">19.7934</price>
+    <title>Harry Potter</title>
+    <authors>
+      <author>J K. Rowling</author>
+    </authors>
+  </book>
+</books>
+----
+....
+------
+
+
+== 合并输入
+
+这个例子处理一个包含有效载荷集合的输入，所有这些都被分组为一个单独的Mule事件。这种输入可以通过在变换组件之前在您的流程中具有分散 - 收集组件来产生。
+
+构成有效载荷的第一项包含由`book id`唯一标识的"price"个对象的数组，构成有效载荷的第二个项包含一个"author"对象数组，也标识了由`book id`。这个DataWeave转换将两个数组合并为一个，书中有作者和价格数据。 `book id`用于匹配这些。
+
+
+=== 示例转换
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/java
+---
+
+ payload[0] map using (id = $.bookId) {
+ 	bookId:		$.bookId,
+ 	title:		$.title,
+ 	year: 		$.year,
+ 	isbn:	 	$.isbn,
+ 	price: 		$.price,
+ 	(payload[1] filter ($.*bookId contains id)  map {
+ 		author:$.author
+     })
+  }
+
+----
+
+[tabs]
+------
+[tab,title="Inputs"]
+....
+
+=== Input 1
+
+.Input 1 - Payload[0]
+[source, json, linenums]
+----
+[
+  { "bookId":"101",
+    "title":"world history",
+    "year":"2017",
+    "isbn":"11111",
+    "price":"19.99"
+  },
+  {
+    "bookId":"202",
+    "title":"the great outdoors",
+    "year":"2016",
+    "isbn":"22222",
+    "price":"15.99"
+  }
+]
+----
+
+=== Input 2
+
+.Input 2 - Payload[1]
+[source, json, linenums]
+----
+[
+  {
+    "bookId":"101",
+    "author":"john doe"
+  },
+  {
+    "bookId":"202",
+    "author":"jane doe"
+  }
+]
+----
+
+....
+[tab,title="Output: JSON"]
+....
+
+.Output
+[source, json, linenums]
+----
+[
+  {
+    "bookId": "101",
+    "title": "world history",
+    "year": "2017",
+    "isbn": "11111",
+    "price": "19.99",
+    "author": "john doe"
+  },
+  {
+    "bookId": "202",
+    "title": "the great outdoors",
+    "year": "2016",
+    "isbn": "22222",
+    "price": "15.99",
+    "author": "jane doe"
+  }
+]
+----
+....
+------
+
+[NOTE]
+Transform消息组件的*sample data*部分不允许您为其提供多个有效负载的集合作为示例。测试这个例子的唯一方法就是运行它。
+
+
+== 删除XML属性
+
+作为更高级的用例，您可能希望从XML标签中删除已知包含敏感数据的特定属性。
+
+该示例在 link:/mule-user-guide/v/3.9/dataweave-language-introduction#dataweave-header[dataweave标题]中定义了一个 link:/mule-user-guide/v/3.9/dataweave-types#functions-and-lambdas[功能]，然后在主体上调用它。它使用 link:/mule-user-guide/v/3.9/dataweave-operators#map-object[`mapObject`]运算符遍历输入中的整个元素集。请注意，它与map操作的不同之处在于map对象处理其输入的键和值，而不仅仅是键。它还使用 link:/mule-user-guide/v/3.9/dataweave-language-introduction#when-otherwise[`当`和`否则`]运算符来挑选只有XML属性存在的实例，否则就不会执行任何操作。
+它也使用 link:/mule-user-guide/v/3.9/dataweave-operators#match[`match`]运算符。
+
+有关如何访问DataWeave中的XML属性，请参阅 link:/mule-user-guide/v/3.9/dataweave-selectors#attribute-selector-expressions[属性选择器表达式]。
+
+=== 示例转换
+
+.DataWeave
+[source,Dataweave,linenums]
+----
+%dw 1.0
+%output application/dw
+%var removeAttribute = (element,attrName) ->
+element mapObject {
+  ($$) @((($$.@ - attrName) when $$.@? otherwise {} ) ) : $ match {
+    :object -> removeAttribute($, attrName),
+    default -> $
+  }
+}
+---
+
+removeAttribute(payload, "password")
+----
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+[source,xml,linenums]
+----
+<users>
+  <user username="Julian" password="1234"/>
+  <user username="Mariano" password="4321"/>
+</users>
+----
+
+
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source,json,linenums]
+----
+{
+  users @(): {
+    user @(
+      username: "Julian"
+    ): "",
+    user @(
+      username: "Mariano"
+    ): ""
+  }
+}
+----
+....
+------
+
+== 输出自我关闭的XML标签
+
+在 link:/mule-user-guide/v/3.9/dataweave-formats#xml[XML]中生成输出时，默认情况下，DataWeave输出封闭在开始和结束标记之间的每个值：
+
+[source,xml,linenums]
+----
+  <parentElement>
+    <emptyElement1>15</emptyElement1>
+    <emptyElement2>1</emptyElement2>
+    <emptyElement3>8</emptyElement3>
+  </parentElement>
+----
+
+如果您的空字段不包含任何值，您可能会发现您想要输出一个自关闭的标签。您可以设置DW输出指令，以便您的变换生成符合每种情况的此样式的输出。您可以通过将`inlineCloseOn`属性设置为"empty"来进行配置。
+
+=== 示例转换
+
+.DataWeave
+[source,Dataweave,linenums]
+----
+%dw 1.0
+%output application/xml inlineCloseOn="empty"
+---
+payload
+
+
+----
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+{ "customer":{
+
+    "userName": "John Doe",
+    "password":{},
+    "status":"active",
+    "lastLogin":{}
+  }
+}
+----
+
+
+....
+[tab,title="Output: XML"]
+....
+.Output
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<customer>
+  <userName>John Doe</userName>
+  <password/>
+  <status>active</status>
+  <lastLogin/>
+</customer>
+----
+....
+------
+
+[TIP]
+See more XML reader and writer properties on link:/mule-user-guide/v/3.9/dataweave-formats#xml[DataWeave formats].
+
+
+== Configure CSV Reader
+
+DataWeave supports CSV inputs and outputs, by configuring the reader and writer properties, you can adapt it to different conventions regarding separations, line breaks, etc. Other formats also allow for this kind of configuration. See link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[To Define Input and Output Structure of a Transformation] for how to do this on the UI, or look at the link:/mule-user-guide/v/3.9/dataweave-xml-reference#reader-configuration[DataWeave XML Reference] for the required XML syntax. You can also see a full reference of the reader properties available with CSV format on link:/mule-user-guide/v/3.9/dataweave-formats#csv[DataWeave formats].
+
+Reader properties are set as part of the XML `dw:transform-message` component, whilst writer properties are specified in the DataWeave code itself, as part of the output directive. You can see a full reference to the writer properties available with CSV format on link:/mule-user-guide/v/3.9/dataweave-formats#writer-properties[DataWeave formats].
+
+This example takes a CSV file that is formatted in a certain way (with `;` as a separator) and outputs another CSV file that is formatted differently (with `,` as a separator, and all values quoted).
+
+=== Example Transformation
+
+.XML
+[source,xml, linenums]
+----
+<dw:transform-message metadata:id="ab7c919b-c57c-47da-a1e7-207a7e571341" doc:name="Transform Message">
+     <dw:input-payload mimeType="application/csv" doc:sample="sample_data/list_csv.csv">
+         <dw:reader-property name="header" value="false"/>
+         <dw:reader-property name="separator" value=";"/>
+     </dw:input-payload>
+     <dw:set-payload>
+       <![CDATA[
+%dw 1.0
+%output application/csv separator = "," , header = false, quoteValues = true
+---
+payload
+      ]]>
+    </dw:set-payload>
+</dw:transform-message>
+----
+
+Note that the code above includes not just the DW transformation, but the XML of the Transform Message component that contains it, to display the reader properties configured in it.
+
+[tabs]
+------
+[tab,title="Input: CSV"]
+....
+
+.Input
+[source, csv, linenums]
+----
+name;address;phone
+George Harrisson; 1234 Abbey Road, London; 12341123
+David Gilmour; 3434 Diamond st., Dark side of the moon; 12341234
+Steven Wilson; 13/16 Raven st., Somewhere but not Here; 1234567
+----
+
+....
+[tab,title="Output: CSV"]
+....
+
+.Output
+[source, xml, linenums]
+----
+"name","address","phone"
+"George Harrisson"," 1234 Abbey Road, London"," 12341123"
+"David Gilmour"," 3434 Diamond st., Dark side of the moon"," 12341234"
+"Steven Wilson"," 13/16 Raven st., Somewhere but not Here"," 1234567"
+----
+
+....
+------
+
+
+== Parse Dates with Different Separators
+
+Suppose that you want to include a date field that admits using different characters as separators between the elements of the date, and want DataWeave to be able to parse them as if they all were the same. For this example, imagine that you want to accept these three formats:
+
+* `26-JUL-2016`
+* `26/JUL/2016`
+* `26.JUL.2016`
+
+To do this, you can normalize the input with the link:/mule-user-guide/v/3.9/dataweave-operators#replace[replace] operator so that they all match a single pattern, and then turn the resulting string to a date with link:/mule-user-guide/v/3.9/dataweave-operators#coerce-to-date[coerce to date].
+
+To improve the clarity in your code, you can easily abstract the normalizing of your string into custom a link:/mule-user-guide/v/3.9/dataweave-types#functions-and-lambdas[function], declaring it only once on your DW header, and then using it as many times as necessary by simply referencing this function.
+
+=== Example Transformation
+
+This is what the function for this example would look like:
+
+.DataWeave
+[source,Dataweave,linenums]
+----
+%function normalize(date) date replace "/" with "-" replace "." with "-"
+----
+
+You can declare this function on the header of a DW script and then simply call it from anywhere in the DW body. The example below shows the full DataWeave transform for doing this:
+
+.DataWeave
+[source,Dataweave,linenums]
+----
+%dw 1.0
+%output text/xml
+%function normalize(date) date replace "/" with "-" replace "." with "-"
+---
+{
+dates : {
+date1: normalize("26-JUL-16") as :date {format: "d-MMM-yy"} as :string {format: "yyyy-MM-dd"},
+date2: normalize("26/JUL/16") as :date {format: "d-MMM-yy"} as :string {format: "yyyy-MM-dd"},
+date3: normalize("26.JUL.16") as :date {format: "d-MMM-yy"} as :string {format: "yyyy-MM-dd"}
+  }
+}
+----
+
+This example only deals with dates that use different separator characters, for a more advanced use case that deals with different date patterns, see <<Conditional Date Parsing>>
+
+== Conditional Date Parsing
+
+Suppose that you want to include a date field that admits different formats, and want DataWeave to be able to parse each accordingly. For this example, imagine that you want to accept these three formats:
+
+* Sun, 06 Nov 1994 08:49:37 GMT = `E, d LLL u H:m:s O`
+* Sun Nov 6 08:49:37 1994 = `cccc, d-LLL-u H:m:s O`
+* Sunday, 06-Nov-94 08:49:37 GMT = `E LLL d H:m:s u`
+
+Start out by writing a regular expression to match each of them:
+
+* Sun, 06 Nov 1994 08:49:37 GMT = `/^[A-z][A-z][A-z],/`
+* Sun Nov 6 08:49:37 1994 = `/^[A-z][A-z][A-z]\s/`
+* Sunday, 06-Nov-94 08:49:37 GMT = This will be the default
+
+
+You can use these regular expressions in a DW link:/mule-user-guide/v/3.9/dataweave-types#functions-and-lambdas[function] that first evaluates a string to see which regular expression it matches, and then converts it through the the corresponding operation. This function should do the following:
+
+. Take the input string as argument
+. Match it with regular expressions in order to determine which format it's in
+. Run the link:/mule-user-guide/v/3.9/dataweave-operators#coerce-to-date[coerce to date] operator with the corresponding properties
+. Return a date time object
+
+=== Example Transformation
+
+This is what the function looks like:
+
+.DataWeave
+[source,Dataweave,linenums]
+----
+%var parseDate = (dateStr) -> dateStr as :localdatetime {format: "E, d LLL u H:m:s O"} when (dateStr contains /^[A-z][A-z][A-z],/) otherwise (dateStr as :localdatetime {format: "E LLL d H:m:s u"} when (dateStr contains /^[A-z][A-z][A-z]\s/) otherwise dateStr as :localdatetime {format: "cccc, d-LLL-u H:m:s O"})
+----
+
+You can declare this function on the header of a DW script and then simply call it from anywhere in the DW body like so:
+
+
+.DataWeave
+[source,Dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+%var parseDate = (dateStr) -> dateStr as :localdatetime {format: "E, d LLL u H:m:s O"} when (dateStr contains /^[A-z][A-z][A-z],/) otherwise (dateStr as :localdatetime {format: "E LLL d H:m:s u"} when (dateStr contains /^[A-z][A-z][A-z]\s/) otherwise dateStr as :localdatetime {format: "cccc, d-LLL-u H:m:s O"})
+---
+date: parseDate(payload.dateString)
+----
+
+
+
+
+
+== Create Mule Config
+
+This example use of DataWeave does not take any input--rather, it simply creates an XML structure out of hard-coded instructions, which reference several external sources using certain namespace directives. What you end up with is a set of XML tags mirroring the structure of a Mule application XML file, including attributes that go inside these tags through the use of `@`. 
+
+[TIP]
+See link:/mule-user-guide/v/3.9/dataweave-selectors#attribute-selector-expressions[Attribute selector expressions] for how to access XML attributes in DataWeave.
+
+[tabs]
+------
+[tab,title="DataWeave Code"]
+....
+
+=== Example Transformation
+
+.DataWeave
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/xml encoding="UTF-8"
+%namespace http http://www.mulesoft.org/schema/mule/http
+%namespace as2 http://www.mulesoft.org/schema/mule/as2
+%namespace spring http://www.springframework.org/schema/beans
+%namespace doc http://www.mulesoft.org/schema/mule/documentation
+%namespace sftp http://www.mulesoft.org/schema/mule/sftp
+---
+
+mule: {
+
+  http#connector @(name:"HTTP_HTTPS",
+                                  cookieSpec:"netscape",
+                                  alidateConnections:"true",
+                                sendBufferSize:"0",
+                                receiveBufferSize:"0",
+                                receiveBacklog:"0",
+                                clientSoTimeout:"10000",
+                                serverSoTimeout:"10000",
+                                    socketSoLinger:"0",
+                                doc#name:"HTTP-HTTPS"
+  ): {},
+
+  http#endpoint @(exchange-pattern:"request-response",
+                                host:"localhost",
+                                    port:"\${http.port}",
+                                connector-ref:"HTTP_HTTPS",
+                                method:"POST",
+                                    name:"http-receive-endpoint",
+                                doc#name:"HTTP"
+  ): {},
+
+  http#endpoint @(exchange-pattern:"request-response",
+                                host:"btsci-dev.cloudapp.net",
+                                    port:"80",
+                                connector-ref:"HTTP_HTTPS",
+                                method:"POST",
+                                name:"http-send-endpoint",
+                                    doc#name:"HTTP",
+                                path:"as2tests/scenario1/BTSHTTPReceive.dll"
+  ): {},
+
+  as2#config @(name:"receive-as2-config",
+                                 httpEndpointRef:"http-receive-endpoint",
+                                     doc#name:"AS2"
+  ): {},
+
+  as2#config @(name:"send-as2-config",
+                                httpEndpointRef:"http-send-endpoint",
+                                    doc#name:"AS2"
+  ): {},
+
+
+  flow @(name:"receive-flow"): {
+
+            as2#receive @(config-ref:"receive-as2-config",
+                                  doc#name:"Receive EDI over AS2",
+                                            keyStorePassword:"passw0rd",
+                                  keyStorePath:"myPartner.p12"): {},
+            sftp#outbound-endpoint @(exchange-pattern:"one-way",
+                                            host:"dev.modusintegration.com",
+                                  port:"22",
+                                  responseTimeout:"10000",
+                                            doc#name:"Save EDI doc",
+                                  password:"pa\$\$w0rd",
+                                  path:"/mule/inbox",
+                                            user:"guest"): {}
+  },
+
+  flow @(name:"send-flow"):{
+          sftp#inbound-endpoint @(host:"dev.modusintegration.com",
+                            port:"22",
+                    responseTimeout:"10000",
+                    doc#name:"Read EDI doc",
+                    password:"\$pa\$\$w0rd",
+                            path:"/mule/outbox",
+                    user:"guest"  ):{},
+
+    as2#send @(config-ref:"send-as2-config",
+                      as2From:"myPartner",
+                            as2To:"myCompany",
+                      doc#name:"Send EDI over AS2",
+                      encrypt:"true",
+                            keyStorePassword:"passw0rd",
+                      keyStorePath:"myPartner.p12",
+                      sign:"true"):{}
+  }
+
+}
+----
+....
+
+[tab,title="Output: XML"]
+....
+.Output
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:as2="http://www.mulesoft.org/schema/mule/as2"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp">
+    <http:connector name="HTTP_HTTPS" cookieSpec="netscape" alidateConnections="true" sendBufferSize="0" receiveBufferSize="0" receiveBacklog="0" clientSoTimeout="10000" serverSoTimeout="10000" socketSoLinger="0" doc:name="HTTP-HTTPS"></http:connector>
+    <http:endpoint exchange-pattern="request-response" host="localhost" port="${http.port}" connector-ref="HTTP_HTTPS" method="POST" name="http-receive-endpoint" doc:name="HTTP"></http:endpoint>
+    <http:endpoint exchange-pattern="request-response" host="btsci-dev.cloudapp.net" port="80" connector-ref="HTTP_HTTPS" method="POST" name="http-send-endpoint" doc:name="HTTP" path="as2tests/scenario1/BTSHTTPReceive.dll"></http:endpoint>
+    <as2:config name="receive-as2-config" httpEndpointRef="http-receive-endpoint" doc:name="AS2"></as2:config>
+    <as2:config name="send-as2-config" httpEndpointRef="http-send-endpoint" doc:name="AS2"></as2:config>
+    <flow name="receive-flow">
+        <as2:receive config-ref="receive-as2-config" doc:name="Receive EDI over AS2" keyStorePassword="passw0rd" keyStorePath="myPartner.p12"></as2:receive>
+        <sftp:outbound-endpoint exchange-pattern="one-way" host="dev.modusintegration.com" port="22" responseTimeout="10000" doc:name="Save EDI doc" password="pa$$w0rd" path="/mule/inbox" user="guest"></sftp:outbound-endpoint>
+    </flow>
+    <flow name="send-flow">
+        <sftp:inbound-endpoint host="dev.modusintegration.com" port="22" responseTimeout="10000" doc:name="Read EDI doc" password="$pa$$w0rd" path="/mule/outbox" user="guest"></sftp:inbound-endpoint>
+        <as2:send config-ref="send-as2-config" as2From="myPartner" as2To="myCompany" doc:name="Send EDI over AS2" encrypt="true" keyStorePassword="passw0rd" keyStorePath="myPartner.p12" sign="true"></as2:send>
+    </flow>
+</mule>
+----
+....
+------
+
+
+== Create Mule POM
+
+This example does not take any input in, it simply creates an XML output out of hard-coded instruction. It references several external sources through namespace directives and defines a version as a constant in the header, that is then referenced in the body. It creates a set of XML tags that replicate the structure of a Mule POM file, including attributes inside these tags that are added through the use of @ and references to a variable.
+
+[TIP]
+See link:/mule-user-guide/v/3.9/dataweave-selectors#attribute-selector-expressions[Attribute selector expressions] for how to access XML attributes in DataWeave.
+
+=== Example Transformation
+
+[tabs]
+------
+[tab,title="DataWeave"]
+....
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+%namespace xsi http://www.w3.org/2001/XMLSchema-instance
+%var modelVersion = "4.0.0"
+---
+{
+    project: {
+
+      modelVersion: modelVersion,
+    groupId: "com.mycompany",
+    version: "1.0.0-SNAPSHOT",
+    packaging: "mule",
+    name: "Mavenito",
+
+    properties: {
+        "project.build.sourceEncoding": "UTF-8",
+      "project.reporting.outputEncoding": "UTF-8",
+      "mule.version": "3.6.0",
+      "mule.tools.version": "1.0"
+    },
+
+    build: {
+        plugins: {
+          plugin: {
+            groupId: "org.mule.tools.maven",
+          artifactId: "mule-app-maven-plugin",
+          version: "\${mule.tools.version}",
+          extensions: true,
+          configuration: {
+                        copyToAppsDirectory: true
+          }
+        },
+        plugin: {
+          artifactId: "maven-assembly-plugin",
+                    version: "2.2.1",
+                  configuration: {
+                            descriptorRefs: {
+                                descriptorRef: "project"
+                }
+             }
+        },
+        plugin: {
+          groupId: "org.mojohaus",
+                     artifactId: "build-helper-maven-plugin",
+                    version:1.7,
+                    executions: {
+                            execution: {
+                                id: "add-resource",
+                                phase: "generate-resources",
+                                goals: {
+                                    goal: "add-resource"
+                                },
+                                configuration: {
+                                        resources: {
+                                            resource: {
+                                                directory: "src/main/app/"
+                                            },
+                                            resource: {
+                                                directory: "mappings/"
+                      }
+                                    }
+                                }
+                            },
+                    configuration: {
+                            resources: {
+                 resource: {
+                         directory: "src/main/api/"
+                                    }
+              }
+          }
+        }
+      },
+      plugin: {
+          groupId: "org.apache.maven.plugins",
+        artifcatId: "maven-dependency-plugin",
+        version: "2.4",
+        executions: {
+              execution: {
+                  id: "copy-clover-plugins",
+              phase: "validate",
+              goals: {
+                  goal: "copy"
+              },
+              configuration: {
+                 overWriteReleases: true,
+                 overWriteSnapshots: true,
+                 overWriteIfNewer: true,
+                 stripVersion: true,
+                 outputDirectory: "\${project.build.testOutputDirectory}"
+              },
+              artifactItems: {
+                                artifactItem: {
+                           groupId: "com.cloveretl",
+                        artifactId: "cloveretl-engine",
+                                        version: "\${mule.version}",
+                                        type: "zip"
+                    }
+                 }
+              }
+        }
+      },
+      plugin: {
+          artifactId: "maven-antrun-plugin",
+                version: "1.7",
+        executions: {
+               execution: {
+                        phase: "compile",
+                        configuration: {
+                            tasks: {
+                                    unzip @(dest: "\${project.build.testOutputDirectory}",
+                          src: "\${project.build.testOutputDirectory}/cloveretl-engine.zip"): {}
+                        }
+           },
+           goals: {
+                            goal: "run"
+           }
+         }
+           }
+      }
+    }
+  },
+
+  dependencies: {
+    dependency: {
+        groupId: "com.mulesoft.muleesb",
+      artifactId: "mule-core-ee",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "com.mulesoft.muleesb.modules",
+      artifactId: "mule-module-spring-config-ee",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.transports",
+      artifactId: "mule-transport-file",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.transports",
+      artifactId: "mule-transport-http",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "com.mulesoft.muleesb.transports",
+      artifactId: "mule-transport-jdbc-ee",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "com.mulesoft.muleesb.transports",
+      artifactId: "mule-transport-jms-ee",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.transports",
+      artifactId: "mule-transport-vm",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.modules",
+      artifactId: "mule-module-scripting",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.modules",
+      artifactId: "mule-module-xml",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "org.mule.tests",
+      artifactId: "mule-tests-functional",
+      version: "\${mule.version}",
+      scope: "provided"
+    },
+    dependency: {
+        groupId: "com.cloveretl",
+      artifactId: "cloveretl-engine",
+      version: "\${mule.version}",
+      scope: "provided"
+    }
+    },
+
+  repositories: {
+      repository: {
+        id: "Central",
+      name: "Central",
+      url: "http://repo1.maven.org/maven2/",
+      layout: "default"
+    },
+    repository: {
+        id: "mulesoft-releases",
+      name: "MuleSoft Releases Repository",
+      url: "http://repository.mulesoft.org/releases/",
+      layout: "default"
+    },
+    repository: {
+        id: "mulesoft-snapshots",
+      name: "MuleSoft Snapshots Repository",
+      url: "http://repository.mulesoft.org/snapshots/",
+      layout: "default"
+    }
+  },
+
+
+  pluginRepositories: {
+    pluginRepository: {
+                id: "mulesoft-release",
+                name: "mulesoft release repository",
+                layout: "default",
+        url: "http://repository.mulesoft.org/releases/",
+                 snapshots: {
+                enabled: false
+                }
+    }
+  }
+
+ }
+}
+----
+....
+[tab,title="Output: XML"]
+....
+.Output
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.mycompany</groupId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>mule</packaging>
+  <name>Mavenito</name>
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <mule.version>3.6.0</mule.version>
+    <mule.tools.version>1.0</mule.tools.version>
+  </properties>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.mule.tools.maven</groupId>
+        <artifactId>mule-app-maven-plugin</artifactId>
+        <version>${mule.tools.version}</version>
+        <extensions>true</extensions>
+        <configuration>
+          <copyToAppsDirectory>true</copyToAppsDirectory>
+        </configuration>
+      </plugin>
+      <plugin>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>2.2.1</version>
+        <configuration>
+          <descriptorRefs>
+            <descriptorRef>project</descriptorRef>
+          </descriptorRefs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.mojohaus</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>1.7</version>
+        <executions>
+          <execution>
+            <id>add-resource</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>add-resource</goal>
+            </goals>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>src/main/app/</directory>
+                </resource>
+                <resource>
+                  <directory>mappings/</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <configuration>
+            <resources>
+              <resource>
+                <directory>src/main/api/</directory>
+              </resource>
+            </resources>
+          </configuration>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifcatId>maven-dependency-plugin</artifcatId>
+        <version>2.4</version>
+        <executions>
+          <execution>
+            <id>copy-clover-plugins</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>copy</goal>
+            </goals>
+            <configuration>
+              <overWriteReleases>true</overWriteReleases>
+              <overWriteSnapshots>true</overWriteSnapshots>
+              <overWriteIfNewer>true</overWriteIfNewer>
+              <stripVersion>true</stripVersion>
+              <outputDirectory>${project.build.testOutputDirectory}</outputDirectory>
+            </configuration>
+            <artifactItems>
+              <artifactItem>
+                <groupId>com.cloveretl</groupId>
+                <artifactId>cloveretl-engine</artifactId>
+                <version>${mule.version}</version>
+                <type>zip</type>
+              </artifactItem>
+            </artifactItems>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>1.7</version>
+        <executions>
+          <execution>
+            <phase>compile</phase>
+            <configuration>
+              <tasks>
+                <unzip dest="${project.build.testOutputDirectory}" src="${project.build.testOutputDirectory}/cloveretl-engine.zip"></unzip>
+              </tasks>
+            </configuration>
+            <goals>
+              <goal>run</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+  <dependencies>
+    <dependency>
+      <groupId>com.mulesoft.muleesb</groupId>
+      <artifactId>mule-core-ee</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.mulesoft.muleesb.modules</groupId>
+      <artifactId>mule-module-spring-config-ee</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.transports</groupId>
+      <artifactId>mule-transport-file</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.transports</groupId>
+      <artifactId>mule-transport-http</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.mulesoft.muleesb.transports</groupId>
+      <artifactId>mule-transport-jdbc-ee</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.mulesoft.muleesb.transports</groupId>
+      <artifactId>mule-transport-jms-ee</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.transports</groupId>
+      <artifactId>mule-transport-vm</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.modules</groupId>
+      <artifactId>mule-module-scripting</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.modules</groupId>
+      <artifactId>mule-module-xml</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mule.tests</groupId>
+      <artifactId>mule-tests-functional</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.cloveretl</groupId>
+      <artifactId>cloveretl-engine</artifactId>
+      <version>${mule.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+  <repositories>
+    <repository>
+      <id>Central</id>
+      <name>Central</name>
+      <url>http://repo1.maven.org/maven2/</url>
+      <layout>default</layout>
+    </repository>
+    <repository>
+      <id>mulesoft-releases</id>
+      <name>MuleSoft Releases Repository</name>
+      <url>http://repository.mulesoft.org/releases/</url>
+      <layout>default</layout>
+    </repository>
+    <repository>
+      <id>mulesoft-snapshots</id>
+      <name>MuleSoft Snapshots Repository</name>
+      <url>http://repository.mulesoft.org/snapshots/</url>
+      <layout>default</layout>
+    </repository>
+  </repositories>
+  <pluginRepositories>
+    <pluginRepository>
+      <id>mulesoft-release</id>
+      <name>mulesoft release repository</name>
+      <layout>default</layout>
+      <url>http://repository.mulesoft.org/releases/</url>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </pluginRepository>
+  </pluginRepositories>
+</project>
+----
+....
+------
+
+
+== Pass Functions as Arguments
+
+
+The following example makes all "keys" lower case. The link:/mule-user-guide/v/3.9/dataweave-language-introduction#the-dataweave-header[DataWeave header] defines a link:/mule-user-guide/v/3.9/dataweave-types#functions-and-lambdas[function] that receives another function as an argument and then calls that function in the body, applying itself to the keys and not the values it processes. The function that is sent as an argument is a simple one that uses the link:/mule-user-guide/v/3.9/dataweave-operators#lower[`lower`] operator to set the specified text to lower case.
+
+The example goes through the whole set of elements in the input using a link:/mule-user-guide/v/3.9/dataweave-operators#map-object[`mapObject`] operator. It also uses the link:/mule-user-guide/v/3.9/dataweave-operators#dataweave-language-introduction#when-otherwise[`when` and `otherwise`] operators to pick out only instances _when_ an XML attribute exists, and do nothing _otherwise_.
+It also uses the link:/mule-user-guide/v/3.9/dataweave-operators#match[`match` ] operator.
+
+////
+mapKeys???????
+////
+
+See link:/mule-user-guide/v/3.9/dataweave-selectors#attribute-selector-expressions[Attribute selector expressions] on how to access XML attributes in DataWeave.
+
+=== Example Transformation
+
+.DataWeave
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/xml
+%function mapKeys(element, func)
+  element match {
+    obj is :object -> obj mapObject {
+      "$(func($$))" @(($$.@ when $.@? otherwise {}) ): mapKeys($, func)
+    },
+    default -> element
+  }
+---
+mapKeys(payload, ((key) ->(lower key)))
+----
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+[source,xml,linenums]
+----
+<CATALOG>
+  <CD>
+    <TITLE name="foo">Empire Burlesque</TITLE>
+    <ARTIST>Bob Dylan</ARTIST>
+    <COUNTRY>USA</COUNTRY>
+    <COMPANY>Columbia</COMPANY>
+    <PRICE>10.90</PRICE>
+    <YEAR>1985</YEAR>
+  </CD>
+  <CD>
+    <TITLE>Hide your heart</TITLE>
+    <ARTIST>Bonnie Tyler</ARTIST>
+    <COUNTRY>UK</COUNTRY>
+    <COMPANY>CBS Records</COMPANY>
+    <PRICE>9.90</PRICE>
+    <YEAR>1988</YEAR>
+  </CD>
+</CATALOG>
+----
+....
+
+
+[tab,title="Output: XML"]
+....
+.Output
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<catalog>
+  <cd>
+    <title name="foo">Empire Burlesque</title>
+    <artist>Bob Dylan</artist>
+    <country>USA</country>
+    <company>Columbia</company>
+    <price>10.90</price>
+    <year>1985</year>
+  </cd>
+  <cd>
+    <title>Hide your heart</title>
+    <artist>Bonnie Tyler</artist>
+    <country>UK</country>
+    <company>CBS Records</company>
+    <price>9.90</price>
+    <year>1988</year>
+  </cd>
+</catalog>
+----
+....
+------
+
+
+== Dynamic Mapping Based on a Definition
+
+Based on a mapping definition, stored for instance in a DB table, you can dynamically execute a transformation. Here you have two inputs, one coming in via the payload, the other from a `flowVariable` called `mapping`.
+
+* The whole set of elements in the input is mapped using a link:/mule-user-guide/v/3.9/dataweave-operators#map[`map`] operator.
+* The example also uses the link:/mule-user-guide/v/3.9/dataweave-language-introduction#default[`default`] operator.
+
+
+[NOTE]
+Note that for this example to work, on the payload input you must set the reader configuration so that the 'nullValueOn' attribute is "empty". See link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[To Define Input and Output Structure of a Transformation].
+
+=== Example Transformation
+
+.DataWeave
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+%var applyMapping = (input, mappingsDef) ->
+{
+  (mappingsDef map ((mappingDef) -> {
+  (mappingDef.target) : input[mappingDef.source] default mappingDef.default
+  }))
+}
+---
+payload.sfdc_users.*sfdc_user map ((user) -> applyMapping(user, mapping))
+----
+
+[tabs]
+------
+[tab,title="Inputs"]
+....
+
+.Input - Payload
+[source,xml, linenums]
+----
+<sfdc_users>
+    <sfdc_user>
+      <sfdc_name>Mariano</sfdc_name>
+      <sfdc_last_name>Achaval</sfdc_last_name>
+      <sfdc_employee>true</sfdc_employee>
+    </sfdc_user>
+    <sfdc_user>
+      <sfdc_name>Julian</sfdc_name>
+      <sfdc_last_name>Esevich</sfdc_last_name>
+      <sfdc_employee>true</sfdc_employee>
+    </sfdc_user>
+    <sfdc_user>
+      <sfdc_name>Leandro</sfdc_name>
+      <sfdc_last_name>Shokida</sfdc_last_name>
+    </sfdc_user>
+</sfdc_users>
+----
+
+.Input - flowVariable Mapping
+[source,json, linenums]
+----
+[
+  {
+    "source": "sfdc_name",
+    "target": "name",
+    "default": "---"
+  },
+  {
+    "source": "sfdc_last_name",
+    "target": "lastName",
+    "default": "---"
+  },
+  {
+    "source": "sfdc_employee",
+    "target": "user",
+    "default": true
+  }
+]
+----
+
+
+....
+
+[tab,title="Output: JSON"]
+....
+.Output
+[source,json,linenums]
+----
+[
+  {
+    "name": "---",
+    "lastName": "---",
+    "user": true
+  }
+]
+----
+....
+------
+
+
+== Conditional list reduction via a function
+
+When presented with nested lists of data, you often need to `flatten` the data for a simplified output, extracting only the values required. Here you have a set of JSON data that returns a nested set of `interests` for a user and within are further nested sets. Certain values from the nested sets `tags` and `contenttypes` are needed to be extracted, with a conditional check to ensure `contenttypes` is present.
+
+* The whole set of elements in the input is mapped using a link:/mule-user-guide/v/3.9/dataweave-operators#map[`map`] operator.
+* This example uses the link:/mule-user-guide/v/3.9/dataweave-operators#reduce[`reduce`] operator.
+* This example also uses the link:/mule-user-guide/v/3.9/dataweave-language-introduction#when-otherwise[`when`] operator to conditionally display the last field.
+* This example also uses the link:/mule-user-guide/v/3.9/dataweave-operators#split-by[`splitBy`] operator to parse the input.
+* Finally this example takes advantage of the ability to define a link:/mule-user-guide/v/3.9/dataweave-types#functions-and-lambdas[`function`] for re-use.
+
+
+=== Example Transformation
+
+.DataWeave
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/json
+%function reduceMapFor(data) data reduce (($$ splitBy ":")[0] ++ "," ++ ($ splitBy ":")[0])
+---
+payload.results map
+	{
+		email: $.profile.email,
+		name: $.profile.firstName,
+	 	tags: reduceMapFor($.data.interests.tags[0]),
+	 	(contenttypes: reduceMapFor($.data.interests.contenttypes[0]))  when (sizeOf $.data.interests.contenttypes[0]) > 0
+	}
+----
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+=== Input - Payload
+
+[source,json, linenums]
+----
+{
+  "results": [
+    {
+      "profile": {
+        "firstName": "john",
+        "lastName": "doe",
+        "email": "johndoe@demo.com"
+      },
+      "data": {
+        "interests": [
+          {
+            "language": "English",
+            "tags": [
+              "digital-strategy:Digital Strategy",
+              "innovation:Innovation"
+            ],
+            "contenttypes": []
+          }
+        ]
+      }
+    },
+    {
+      "profile": {
+        "firstName": "jane",
+        "lastName": "doe",
+        "email": "janedoe@demo.com"
+      },
+      "data": {
+        "interests": [
+          {
+            "language": "English",
+            "tags": [
+              "tax-reform:Tax Reform",
+              "retail-health:Retail Health"
+            ],
+            "contenttypes": [
+              "News",
+              "Analysis",
+              "Case studies",
+              "Press releases"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "objectsCount": 2,
+  "totalCount": 2,
+  "statusCode": 200,
+  "errorCode": 0,
+  "statusReason": "OK"
+}
+----
+
+
+....
+
+[tab,title="Output: JSON"]
+....
+.Output
+[source,json,linenums]
+----
+[
+  {
+    "email": "johndoe@demo.com",
+    "name": "john",
+    "tags": "digital-strategy,innovation"
+  },
+  {
+    "email": "janedoe@demo.com",
+    "name": "jane",
+    "tags": "tax-reform,retail-health",
+    "contenttypes": "News,Analysis,Case studies,Press releases"
+  }
+]
+----
+....
+------
+
+
+== See Also
+
+*  link:/mule-user-guide/v/3.9/dataweave-quickstart[DataWeave quickstart guide]
+*  link:/anypoint-studio/v/6/transform-message-component-concept-studio[About Transform Message Component]
+*  link:/mule-user-guide/v/3.9/dataweave-language-introduction[DataWeave Language Introduction]
+*  link:/mule-user-guide/v/3.9/dataweave-operators[DataWeave Operators]
+*  link:/mule-user-guide/v/3.9/dataweave-types[DataWeave Types]
+*  link:/mule-user-guide/v/3.9/dataweave-formats[DataWeave Formats]
+*  link:/mule-user-guide/v/3.9/dataweave-selectors[DataWeave Selectors]
+*  link:/mule-user-guide/v/3.9/mel-dataweave-functions[MEL DataWeave Functions]

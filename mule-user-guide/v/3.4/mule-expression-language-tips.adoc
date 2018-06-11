@@ -1,0 +1,384 @@
+=  Mule表达式语言提示
+
+本页面提供了使用 link:/mule-user-guide/v/3.4/mule-expression-language-mel[骡子表达语言]（MEL）的快速提示，包括 link:_attachments/refcard-mel.pdf[MEL参考卡]中包含的信息。
+
+== 假设
+
+本文档假定您熟悉 link:/mule-user-guide/v/3.4/mule-expression-language-mel[骡子表达语言（MEL）]，并且您使用的是Mule 3.4.0或更高版本。
+
+== 变量，整数和字符串
+
+* 作为捷径，Mule接受诸如`&#x0023;[payload]`的表达式，而不是`&#x0023;[message.payload]`，因为它知道自动评估消息上下文对象的表达式。此快捷方式仅适用于`payload`字段。
++
+
+*  Mule假定Mule Expression中包含的任何未加引号的字符串是一个流变量。要将流变量'foo'的值设置为'bar'，表达式`&#x0023;[foo == bar]`实际上会评估为：
++
+[source]
+----
+$[flowVars['foo'] == flowVars['bar']]
+----
+
+* 要访问流变量，请使用以下表达式之一：
++
+[source]
+----
+#[flowVars['foo']]
+----
++
+[source]
+----
+#[foo]
+----
+
+* 创建一个整数：
++
+[source]
+----
+#[12]
+----
+
+* 创建一个字符串：
++
+[source]
+----
+#['mystring']
+----
+
+== 测试
+
+* 如果来自HTTP入站端点的`lastname`查询字符串参数不为null，则返回true：
++
+[source]
+----
+#[message.inboundProperties['http.query.params']['lastname'] != null]
+----
+
+* 返回`http.method`中元素的数量：
++
+[source]
+----
+#[message.inboundProperties['http.query.params'].size()]
+----
+
+* 如果地图`http.query.params`中元素的数量大于50，则返回`true`：
++
+[source]
+----
+#[message.inboundProperties['http.query.params'].size() > 50]
+----
+
+*  *Testing for Emptiness*：特殊文字`empty`测试值的空白。它根据上下文返回一个空值。 `empty`计算结果为：+
+** 空
+** 布尔值为false
+** 空字符串或只包含空格的字符串
+** 零
+** 个空集合
++
+如果`foo`值满足任何虚拟要求，则表达式`&#x0023;[foo == empty]`的计算结果为true。
++
+*  *Testing for NullPayload*：如果消息有效负载为空，则返回true：
++
+
+[source]
+----
+#[message.payload == null]
+----
+
+==  MEL和DataMapper
+
+在Mule 3.4.0之前的版本中，当将空值映射到地图输出时，DataMapper既不创建密钥也不复制值。当您尝试使用不存在的密钥访问产生的地图时，这会导致异常。
+
+* 要访问可能的空值，请使用以下等效的MEL表达式之一：
++
+[source]
+----
+#[map-payload:someNullableElement?]
+----
++
+[source]
+----
+#[message.payload.?someNullableElement]
+----
+
+* 在DataMapper中设置Null：在DataMapper中，您还可以使用`isnull()`函数在映射中保留键并将空值转换为非空值，如下面的代码所示。
++
+[source]
+----
+(isnull($in.0.someNullableElement) ? '' : $in.0.someNullableElement);
+----
+
+（在Mule 3.4.0和更高版本中，您可以通过单击DataMapper视图的“输出”窗格的“属性”图标来使用*Set Null Values*功能。）
+
+== 链接元素
+
+给定链式方法或属性，即使在'c'为空值的情况下，表达式`&#x0023;[a['b']['c'] == 'foo']`也会正确计算。但是如果'b'是一个空值，你将会得到一个NullPointer异常。
+
+例如，表达式正确评估并根据`http.headers`中的`Host`的值返回true或false。
+
+[source]
+----
+message.inboundProperties['http.headers']['Host'] == 'localhost'
+----
+
+尝试引用`http.headers`中不存在的键的值也会返回null，如下面的表达式所示。
+
+[source]
+----
+payload['http.headers']['non-existent'] == 'localhost'
+----
+
+但是，下面的表达式返回一个NullPointer异常：
+
+[source]
+----
+payload['non-existent']['Host'] == 'localhost'
+----
+
+== 流和会话变量
+
+流量变量和会话变量可用作顶级变量。
+
+* 要创建一个名为`sessionId`的会话变量，其值为当前消息ID "@"和Mule实例节点ID的连接，请使用`set-session-variable`或MEL代码，两者都显示在下文中：
++
+[source, xml, linenums]
+----
+<set-session-variable variableName="sessionId" value="#[message.id+'@'+mule.nodeId]" />
+<expression-component>sessionVars.sessionId = message.id+'@'+mule.nodeId;</expression-component>
+----
+
+* 以下显示了如何根据从具有`getTargetService()`访问器的bean有效载荷中获取值创建的名称，从注册表中动态检索bean：
++
+
+[source, xml, linenums]
+----
+<set-variable variableName="beanName" value="#[message.payload.targetService+'Processor']" />
+<set-variable variableName="bean" value="#[app.registry[beanName]]" />
+----
+
+== 有效负载和附件
+
+* 要将当前有效负载复制到名为`originalPayload`的流变量中，然后将其恢复：
++
+[source, xml, linenums]
+----
+<set-variable variableName="originalPayload" value="#[message.payload]" />
+<set-payload value="#[originalPayload]" />
+----
+
+* 要使用Mule的自动转换功能以特定格式检索邮件有效内容，请使用`payloadAs`：
++
+[source, xml]
+----
+<logger message="#[message.payloadAs(java.lang.String)]" />
+----
+
+* 要提取所有*.txt and * .xml附件，请使用过滤投影：
++
+[source, xml]
+----
+<expression-transformer expression="#[($.value in message.inboundAttachments.entrySet() if $.key ~= '(.*\\.txt|.*\\.xml)')]" />
+----
+
+* 要求空有效载荷：
++
+[source, code, linenums]
+----
+#[payload is NullPayload]
+----
+
+== 正则表达式支持
+
+正则表达式帮助函数根据匹配检索`null`，一个值或一组值。采用mel `Expression`参数的表单将正则表达式应用于其评估结果，而不是`message.payload`。
+
+[source]
+----
+regex(regularExpression [, melExpression [, matchFlags]])
+----
+
+例如，要选择以`To:`，`From:`或`Cc:`开头的所有有效内容行，请使用：
+
+[source]
+----
+regex('^(To|From|Cc):')
+----
+
+==  XPath支持
+
+XPath帮助函数返回DOM4J节点。默认情况下，除非指定了`xmlElement`，否则将在`message.payload`上评估XPath表达式：
+
+[source]
+----
+xpath(xPathExpression [, xmlElement])
+----
+
+获取元素或属性的文本内容：
+
+[source, code, linenums]
+----
+#[xpath('//title').text]
+#[xpath('//title/@id').value]
+----
+
+==  JSON处理
+
+MEL没有直接支持JSON。 `json-to-object-transformer`可以将JSON负载转换为简单数据结构的层次结构，这些结构可以使用MEL轻松解析。例如，以下内容使用过滤投影构建`$..[? (@.title=='Moby Dick')].price` JSON路径表达式的等效项：
+
+[source, xml, linenums]
+----
+<json:json-to-object-transformer returnClass="java.lang.Object" />
+<expression-transformer
+    expression='#[($.price in message.payload if $.title =='Moby Dick')[0]]" />
+----
+
+杂项操作
+
+* 为变量`lastname`分配消息入站属性`lastname`的值：
++
+[source]
+----
+#[lastname=message.inboundProperties['lastname']]
+----
+
+* 将一个字符串附加到消息负载：
++
+[source]
+----
+#[message.payload + 'mystring']
+----
+
+* 调用一个静态方法：
++
+[source]
+----
+#[java.net.URLEncoder.encode()]
+----
+
+* 创建一个哈希映射：
++
+[source]
+----
+#[new java.util.HashMap()]
+----
+
+== 备忘单示例
+
+*  在系统的临时目录中创建一个名为`target`的目录，并将其设置为当前有效负载：
++
+[source, xml, linenums]
+----
+<expression-component>
+    targetDir = new java.io.File(server.tmpDir, 'target');
+    targetDir.mkdir();
+    payload = targetDir    
+</expression-component>
+----
+
+* 根据入站消息属性在运行时设置HTTP端点的用户名和密码：
++
+[source, xml, linenums]
+----
+<https:outbound-endpoint address="https://#[message.inboundProperties.username]:#[message.inboundProperties.password]@api.acme.com/v1/users" />
+----
+
+*  Java互操作性，例如创建一个随机UUID并将其用作XSL-T参数：
++
+[source, xml, linenums]
+----
+<mulexml:context-property key="transactionId"
+                           value="#[java.util.UUID.randomUUID().toString()]" />
+----
+
+* 安全bean属性导航，_ _例如仅当`name`对象不为null时才检索`fullName`：
++
+
+[source, xml, linenums]
+----
+<set-variable variableName="fullName" value="#[message.payload.?name.fullName]" />
+----
+
+* 局部变量assignment_，_在此分割表达式中将行中的多线荷载拆分并删除第一行：
++
+[source, code, linenums]
+----
+splitter expression='#[rows=StringUtils.split(message.payload,'\n\r');
+                       ArrayUtil.subarray(rows,1,rows.size())]" />
+----
+
+*  "Elvis"运算符，返回值列表的第一个非空值：
++
+[source]
+----
+#[message.payload.userName or message.payload.userId]
+----
+
+== 全局配置
+
+在全局配置元素中定义全局导入，别名和全局函数。全局函数可以从文件系统，URL或类路径资源中加载。
+
+[source, xml, linenums]
+----
+<configuration>
+  <expression-language autoResolveVariables="false">
+    <import class="org.mule.util.StringUtils" />
+    <import name="rsu" class="org.apache.commons.lang.RandomStringUtils" />
+    <alias name="appName" expression="app.name" />
+    <global-functions file="extraFunctions.mvel">
+      def reversePayload() { StringUtils.reverse(payload) }
+      def randomString(size) { rsu.randomAlphanumeric(size) }
+    </global-functions>
+  </expression-language>
+</configuration>
+----
+
+== 高级提示
+
+=== 访问缓存
+
+您可以通过充当高速缓存存储库的对象存储来访问 link:/mule-user-guide/v/3.4/cache-scope[骡子缓存]。根据对象存储的性质，您可以对条目进行计数，列出，移除或执行其他操作。
+
+下面的代码显示了使用自定义对象存储类的缓存作用域的XML表示。
+
+[source, xml, linenums]
+----
+<ee:object-store-caching-strategy name="CachingStrategy">
+  <custom-object-storeclass="org.mule.util.store.SimpleMemoryObjectStore" />
+</ee:object-store-caching-strategy>
+----
+
+上面的对象存储是一个ListableObjectStore的实现，它允许您获取它包含的条目列表。您可以通过在`app.registry`的`CachingStrategy`属性上调用`getStore`方法来访问缓存的内容。
+
+下面的表达式通过调用返回可迭代列表的`allKeys()`来获得缓存的大小。
+
+[source]
+----
+#[app.registry['CachingStrategy'].getStore().allKeys().size()]"
+----
+
+如果您需要在Java类中操作注册表，则可以通过`muleContext.getRegistry()`来访问它。
+
+=== 布尔操作陷阱
+
+* 布尔评估有时会返回意外的响应，特别是当变量的值包含"garbage"时。见下表。
++
+[%header,cols="34,33,33"]
+|===
+| *Expression*  | *When value of `var1` is...*  | *... the expression evaluates to...*
+一个| `#[var1 == true]`
+| `'true'`  | `true`
+一个| `#[var1 == true]`
+| `'True''false' `  | `false`
+一个| `#[var1 == true]`
+| `'u5hsmg930'`  | `true`
+|===
++
+[%header,cols="4*"]
+|===
+| *Expression*  | *When the value of `something` is...*  | *... and the value of `abc` is...*  | *... MEL successfully evaluates the expression.*
+| `#[payload.something.abc == 'b']`  | `'something'`  | `'null'`  |✔
+| `#[payload.something.abc == 'b']`  | `'null'`  | `'b'`  | *X* +
+产生一个NullPointer异常
+|===
+
+== 另请参阅
+
+* 有关完整的MEL参考，包括运算符列表，导入的Java类，上下文对象等，请参阅 link:/mule-user-guide/v/3.4/mule-expression-language-reference[Mule表达式语言参考]。

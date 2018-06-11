@@ -1,0 +1,222 @@
+// sme：PLG，Shoki ?,作者：sduke？
+= 从DataWeave版本1迁移到2
+
+//一般地解释Mule 3和Mule 4之间如何以及为什么会发生变化。
+
+*  <<dw_header>>
+*  <<dw_flow_control>>
+*  <<dw_type_references>>
+*  <<dw_object_coercion>>
+*  <<dw_cond_key_value_parens>>
+
+[[dw_header]]
+==  DataWeave标题内容
+
+DataWeave中的大部分标题指令都已更改。 `%dw`指令是一个例外。在大多数情况下，MuleSoft删除了`%`，并且在某些情况下缩短了关键字。
+
+[%header,cols=“1,1”]
+|===
+| DataWeave 1.0  | DataWeave 2.0  |
+| `%dw 1.0`     | `%dw 2.0` |
+| `%output`     | `output`  |
+| `%var`        |  `var`    |
+| `%function`   |  `fun`    |
+| `%namespace`  |  `ns`     |
+|===
+
+[[dw_flow_control]]
+== 流量控制
+
+DataWeave 2中的流量控制有所变化。
+
+[[dw_flow_control_when_otherwise]]
+=== 否则
+
+例如，`when otherwise`语句被`if else`取代：
+
+.Mule 3示例：DataWeave 1
+[source, linenums]
+----
+{
+    orderStatus: "complete" when flowVars.purchaseOrderStatus == "C" otherwise "incomplete"
+}
+----
+
+.Mule 4示例：DataWeave 2
+[source, linenums]
+----
+{
+    orderStatus: if(vars.purchaseOrderStatus == "C") "complete" else "incomplete"
+}
+----
+
+
+[[dw_flow_control_pattern_matcher]]
+=== 模式匹配器
+
+在DataWeave 2中，模式匹配发生了变化。它添加了关键字`case`和`else`（而不是`default`）。您也不再使用逗号（`,`）分隔个案，因为它们现在由`case`关键字明确分隔。
+
+.Mule 3示例：DataWeave 1
+[source, linenums]
+----
+'world' match {
+    :string -> true,
+    default -> false
+  }
+----
+
+.Mule 4示例：DataWeave 2
+[source, linenums]
+----
+'world' match {
+    case is String -> true
+    else -> false
+  }
+----
+
+对于类型模式匹配器，需要设置is关键字。
+
+[[dw_type_references]]
+== 键入引用
+
+`:`已从类型引用中移除，现在全部为驼峰式，因此`:string`现在为`String`
+
+[[dw_object_coercion]]
+== 对象强制
+
+在DataWeave 1.0中，从对象中选择一个键值对需要你做这样的事情：
+
+.Mule 3示例：DataWeave 1
+[source,linenums]
+----
+%var payload = {a: 1, b:2}
+---
+payload.a as :object
+----
+
+上面的DataWeave 1.0表达式返回`{a:1}`。因为这是一种强制，它也包含在自动强制机制中，并产生不希望的或意想不到的结果。
+
+在DataWeave 2.0中，强制被删除，并引入一个新的选择器（`&`）来选择键值对括号。
+// TODO：从对象或类似的东西中选择一个键值对？
+
+.Mule 3示例：DataWeave 2
+[source, linenums]
+----
+var payload = {a: 1, b:2}
+---
+payload.&a
+----
+
+该表达式还返回`{a:1}`。
+
+[[dw_cond_key_value_parens]]
+== 有条件的键值圆括号
+
+在DataWeave 1.0中，条件键值对用`when`关键字声明。
+
+.Mule 3示例：DataWeave 1
+[source, linenums]
+----
+{
+    (a: 1) when payload.product == "Mule"
+}
+----
+
+在DateWeave 2.0中，您使用`if`。
+
+.Mule 4示例：DataWeave 2
+[source, linenums]
+----
+{
+    (a: 1) if payload.product == "Mule"
+}
+----
+
+////
+DataWeave 2.0（作为Mule Runtime 4.0的一部分打包）对以前版本引入了以下语法修改：
+
+* 从Object到Array中移除了自动强制（例如，暗示`map`函数不再适用于Object）。
+// TODO：他们应该使用mapObject吗？也许我们应该举一个例子。
+* 将版本标题更新为`%dw 2.0`。
+* 从所有其他指令中删除了`%`。
+* 更改了所有类型名称格式，如前所述，这些格式现在不带冒号和大写字母（例如，`String`而不是`:string`）编写，例如：{{ 3}}返回`"1"``。
+* 所有运算符现在都是函数（例如，`upper()`，`typeOf()`）。因此，他们必须在括号内包括他们的论点，例如`upper("hello")`和`typeOf("hello")`。
+// TODO：对于所有人来说这是真的，还是只针对那些只有一个参数的人？我们习惯了所有的功能操作员。
+* 自定义函数通过关键字`fun`在DataWeave标题中声明，而不是`function`。例如，`fun funName(args) = body`
+*  `..`运算符不再用于选择范围（但仍作为子代选择器）。其功能由`to`取代。例如：`[2 to 15]`。
+*  `when`，`unless`和`otherwise`不再用于条件逻辑。它们已被`if`和`else`取代。这要求你改变表达式的顺序。例如：`if payload is(String) uppercase(payload)`。
+* 二进制函数（带两个参数）支持替代中缀符号（arg1函数arg2）。例如，`payload.*items contains "3"`而不是`contains(payload.*items, "3")`。
+* 新的键值对选择器（`.&`）返回所有匹配的键和值。它将它们作为包含这些对象的单个对象返回。
+* 新的名称空间选择器（`.#`）返回使用的名称空间。
+* 函数`groupBy`被重载以对对象进行操作。
+* 新函数`filterObject`可用于过滤对象。
+* 函数`map`，`mapObject`和`filter`支持空输入（在这种情况下，它们返回null）。
+* 使用数组时`match`支持的新语法`[head ~ tail]`
+* 名称空间前缀不能再包含字符`-`。
+* 多个函数不再被封装为核心功能模块的一部分。它们所属的包必须手动导入标题中才能被调用。
+* 索引参数：在`mapObject`，`pluck`，`filter`和`groupBy`中添加`index`作为第三个参数。
+* 已关闭的对象：对于已声明的类型，添加了管道（`|`）语法来指定一个已关闭（或精确）的对象。例如，如果将`{|a: String|}`指定为函数的返回类型，则该函数不能返回`{a: String, b: Number}`。
+* 有序对象：为有序对象添加了连字符（`-`），例如：`{- a: String, b: Number -}`。这些字段必须按照指定的顺序。
+* 重复字段：为对象中的重复字段添加星号（`\*`），例如：`{ a*: String}`。这主要是XML所需要的，子元素的名称可以重复使用，与Java和JSON对象中的键不同。
+* 对于平面文件，内容类型为`application/flatfile`，而不是`text\plain`。
+////
+
+////
+TODO在单独的主题，指向DW类型页面。
+声明DW类型
+声明变量类型或函数参数或返回值的类型，例如，
+fun foo（arg1：{| a：String |}）：String = arg1.a
+`{|a: String|}`是arg1的类型
+
+var message：String = "foo"
+var user：{name *：String} = {name："Mariano"，name："Leandro"}
+var a：Array <Number> = [1,2,3]
+
+例如，我们的`map`函数
+有趣的地图<T,R>（lhs：Array <T>，rhs：（T，Number） - > R）：Array <R>
+这个签名表示它有2个类型参数，T和R.
+
+`lhs`是`Array<T>`类型的参数（已编辑）
+
+这是一个`something`的数组
+
+这将在用户调用该函数时定义
+
+`rhs`是一个lambda函数，它有2个输入（T，Number）并返回R类型（已编辑）
+
+并且`map`函数返回类型为`Array<R>`的内容
+////
+
+
+////
+在URI参数中传递数据：
+当您通过URI参数传递数据时，您需要使用该格式对它们进行编码
+如果你有例如
+`` {`
+   "key1"：["value"，"value@"]，
+   "key 2"："value 1"，
+   "key3"："value"，
+   "key 4 her%"：null
+}
+
+必须格式化为
+```键1 =值KEY1 =值％40＆键+ 2 =的值+ 1＆KEY3 =值＆键+ 4 +她的25％
+```
+当用作URI参数时
+
+您将`application/x-www-form-urlencoded`作为输出格式
+在脚本中标题为`output application/x-www-form-urlencoded`
+////
+
+////
+* 更改模式匹配...如何？
+* 更好地解释`[head ~ tail]`
+////
+
+== 另请参阅
+
+link:intro-dataweave2[Mule 4：DataWeave 2.0简介]
+
+link:migration-patterns[迁移模式]
+
+// link:migration-components[迁移组件]

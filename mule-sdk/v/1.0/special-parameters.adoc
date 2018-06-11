@@ -1,0 +1,159 @@
+= 特殊参数
+:keywords: mule, sdk, operation, source, MIME, MIME Type, Encoding, Typed Value, Parameter Resolver, literal
+
+==  {的TypedValue {1}}
+
+<<operations#, Operations>>和<<sources#, Sources>>的常见用例是接收媒体类型信息以及参数的值，例如：
+
+。示例：操作
+[source, Java, linenums]
+----
+public void receiveContent(InputStream content) {
+  // operation logic
+}
+----
+
+在下面的Mule应用程序示例中，您可以看到您正在接收`JSON`值，但上面的操作代码未指示MIME类型或`content`参数的编码。
+
+。示例：Mule应用程序
+[source, xml, linenums]
+----
+<flow name="mediaTypeFlow">
+    <set-payload value="#[output application/json --- { key : 'value'}]">
+    <cool-extension:receive-content content="#[payload]" />
+</flow>
+----
+
+要检索媒体类型信息（MIME类型和编码），只需将参数类型包装到`TypedValue<OriginalType>`中即可。
+
+本示例使用与`TypedValue`参数相同的Mule应用程序：
+
+。媒体类型友好参数
+[source, Java, linenums]
+----
+public void receiveContent(TypedValue<InputStream> content) {
+    DataType dataType = content.getDataType();
+    MediaType mediaType = dataType.getMediaType();
+    boolean streamType = dataType.isStreamType();
+    Long lenght = content.getLength().orElse(-1L);
+
+    InputStream theContent = content.value(); // The proper value
+
+    System.out.println(mediaType);  // application/json; UTF-8
+    System.out.println(streamType); // true
+    System.out.println(lenght);     // 18
+}
+----
+
+对于用例，强烈建议使用`TypedValue`参数
+需要`MIME Type`信息才能与依赖于此的其他系统进行通信，或者如何处理参数值。
+
+[[literal]]
+==  {字面{1}}
+
+`Literal<Type>`参数允许您在写入时获取值
+在骡子应用程序。这意味着如果最终用户编写诸如`\#[attributes.queryParams]`的表达式，则操作将能够使用表达式`#[attributes.queryParams]`检索`String`。这可以防止Mule运行时解析表达式或应用任何转换。当评估需要由第三方执行时，这很有用。
+
+在配置和连接提供者的情况下，使用文字
+参数<<static-dynamic-configs#, allows the configuration to be treated as a static one, instead of a dynamic one>>。这是因为即使文字是表达式，文字值也是不变的。运行时不会自动评估它，所以它被扩展名视为一个静态值。
+
+如果该值是作为表达式提供的，则该类将提供该表达式，但无法评估该表达式。您需要使用<<parameter-resolver, parameter resolvers>>。
+
+[source, xml, linenums]
+----
+<flow name="literalFlow">
+    <cool-extension:literal-value content="#[payload]" />
+</flow>
+----
+
+.Literal参数
+[source, Java, linenums]
+----
+public void literalValue(Literal<InputStream> literal) {
+    System.out.println(literal.getLiteralValue().get());  // #[payload]
+    System.out.println(literal.getType()); // java.io.InputStream
+}
+----
+
+重要提示：您需要考虑泛型类型。根据此接口的使用派生的参数将根据泛型类型设置其类型。通用不是可选的。
+
+[[parameter-resolver]]
+==  {ParameterResolver {1}}
+
+`ParameterResolver<Type>`允许您推迟表达式的分辨率。当需要将表达式作为值的参数不是必需的时，这非常有用。您可以通过在连接器的代码中根据需要解析这种表达式来提高性能，而不是自动解析它。
+
+与<<literal, `Literal<Type>`>>参数相比，无论该值是否已解析，带有表达式的`ParameterResolver<Type>`参数都将继续视为动态参数。
+
+=== 解析表达式
+
+当收到`ParameterResolver<Type>`来解析表达式值时，必须调用`resolve()`方法来返回表达式的结果。
+
+警告：表达式解析被推迟到需要时，所以`resolve()`可能由于表达式无效而失败。
+
+=== 获取表达式值
+
+`ParameterResolver<Type>`参数可以传递用于参数的表达式。它返回一个`Optional<String>`，因为该参数可以用表达式来配​​置。如果未配置表达式，则会返回`Optional.empty()`。
+
+==== 示例：使用表达式
+
+配置一个表达式
+[source, xml, linenums]
+----
+<flow name="expressionParameterResolver">
+  <cool-extension:add-products products="#[{Potatoes : 2 , Oranges : 4}]"/>
+</flow>
+----
+
+。示例：来源
+[source, Java, linenums]
+----
+public void addProducts(ParameterResolver<Map<String,Integer>> products) {
+    System.out.println(products.getExpression().get());  // #[{Potatoes : 2 , Oranges : 4}]
+    System.out.println(products.resolve()); // {Potatoes=2, Oranges=4}
+}
+----
+
+==== 示例：没有表达式
+
+没有表达式配置
+[source, xml, linenums]
+----
+<flow name="noExpressionParameterResolver">
+    <cool-extension:add-products>
+        <cool-extension:products>
+          <cool-extension:product key="Potatoes" value="2"/>
+          <cool-extension:product key="Oranges" value="4"/>
+        </cool-extension:product>
+    </cool-extensions:add-products>
+</flow>
+----
+
+[source, Java, linenums]
+----
+public void addProducts(ParameterResolver<Map<String,Integer>> products) {
+    System.out.println(products.getExpression().isPresent());  // false
+    System.out.println(products.resolve()); // {Potatoes=2, Oranges=4}
+}
+----
+
+== 堆叠类型
+
+您可能需要同时使用上述多个参数。例如，您可能想要接收给定值的媒体类型并推迟其分辨率。
+
+要做到这一点，您只需将泛型堆叠到所需的功能上即可。
+
+[source, xml, linenums]
+----
+<flow name="stackedTypes">
+  <cool-extension:add-products products="#[output application/json --- {Potatoes : 2 , Oranges : 4}]"/>
+</flow>
+----
+
+[source, Java, linenums]
+----
+public void addProducts(ParameterResolver<TypedValue<InputStream>> products) {
+    System.out.println(products.getExpression().get());  // #[output application/json --- {Potatoes : 2 , Oranges : 4}]
+    TypedValue<InputStream> content = products.resolve();
+    System.out.println(content.getValue()); // {"Potatoes" : "2", "Oranges" : "4"}
+}
+----

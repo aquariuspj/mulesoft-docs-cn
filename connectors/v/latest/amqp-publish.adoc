@@ -1,0 +1,148 @@
+= 发布消息
+:keywords: amqp, connector, publish
+：TOC：
+：TOC标题：
+
+该操作允许您创建新的AMQP消息并将其发送到指定的交换机。然后，您不仅可以配置消息的内容，还可以配置AMQP消息中的所有标题，属性和信封。
+
+== 发送邮件到Exchange
+
+当以默认形式使用时，连接器将发布消息有效载荷中的任何内容：
+
+[source, xml, linenums]
+----
+<amqp:publish config-ref="AMQP_Config" exchangeName="targetExchange"/>
+----
+
+但是如果有效载荷的格式不正确，你实际上需要进行转换会发生什么？您可以在`publish`操作之前放置DataWeave转换，但这会导致消息负载发生变化并影响`publish`操作之后的操作。
+
+为了避免这种不希望的影响，您现在可以将转换放置在`publish`操作中：
+
+[source, xml, linenums]
+----
+<amqp:publish config-ref="Amqp_Config" exchangeName="targetExchange">
+	<amqp:message>
+		<amqp:body>
+		<![CDATA[#[%dw 2.0
+			output application/json
+			---
+			payload.payments
+		]]]></amqp:body>
+	</amqp:message>
+</amqp:publish>
+----
+
+现在，转换可用于生成将发布的内容，而不会对传输中的消息产生副作用。
+
+== 覆盖或设置消息的路由键
+
+您可能需要设置或覆盖该属性的路由键。路由密钥由AMQP消息的属性表示：
+
+[source, xml, linenums]
+----
+<amqp:publish config-ref="Amqp_Config" exchangeName="targetExchange">
+	<amqp:message>
+		<amqp:body>
+		<![CDATA[#[%dw 2.0
+			output application/json
+			---
+			payload.payments
+		]]]></amqp:body>
+	</amqp:message>
+	<amqp:routing-keys >
+		<amqp:routing-key value="routingKey1" />
+		<amqp:routing-key value="routingKey*" />
+	</amqp:routing-keys>
+</amqp:publish>
+----
+
+
+== 声明一个答复目的地
+
+对于需要对正在发送的消息进行异步回复的情况，AMQP `publish`操作允许我们声明任何`reply-to`目标。该目的地将作为AMQP消息属性传达给消息的消费者。它代表我们应该期望回复被发送的目的地。
+
+要声明`reply-to`目标，我们将其添加到消息属性中：
+
+[source, xml, linenums]
+----
+<amqp:publish config-ref="AMQP_config" exchangeName="#[vars.targetExchange]">
+	<amqp:message>
+		<amqp:properties replyTo="replyToQueue" />
+	</amqp:message>
+</amqp:publish>
+----
+
+== 请求经纪人确认
+
+如果您需要代理确认发布操作，则可以设置`requestBrokerConfirms`参数。设置此参数时，发布操作中的通道将设置为确认模式，并且连接器将期望来自代理的`basic.ack`。该参数可以在全局发布者配置中或在操作级别进行设置。
+
+[source, xml, linenums]
+----
+<amqp:publish config-ref="AMQP_config" exchangeName="#[vars.targetExchange]" requestBrokerConfirms="true">
+	<amqp:message>
+		<amqp:properties replyTo="replyToQueue" />
+	</amqp:message>
+</amqp:publish>
+----
+
+如果没有确认信息，则会出现`AMQP:PUBLISHING`错误，表明代理商未能就确认消息达成一致。
+
+== 返回消息处理
+
+该连接器支持强制和即时发布标志，如下所述。
+
+如果使用此连接器发送的消息无法传递，AMQP代理将异步返回它。
+
+AMQP连接器可以将这些返回的消息分发到交换机进行自定义处理。
+
+您可以在连接器级别定义负责处理返回消息的端点。这里是一个例子：
+
+[source, xml, linenums]
+----
+<amqp:publish config-ref="AMQP_config" exchangeName="#[vars.targetExchange]" returnedMessageExchange="exchange" mandatory="true" immediate="true" />
+----
+
+== 在发布操作中声明Exchange
+
+默认情况下，如果定义的交换不存在`AMQP:EXCHANGE_NOT_FOUND`错误，则`publish`操作将失败。
+
+对于必须申报交易所的情况，应该对实体的定义进行引用或内联定义，以便声明交易所。
+
+[source, xml, linenums]
+----
+<amqp:publish config-ref="Amqp_Config" exchangeName="targetExchange">
+	<amqp:fallback-exchange-definition removalStrategy="SHUTDOWN" type="DIRECT"/>
+</amqp:publish>
+----
+
+交换也可以被定义为高级元素：
+
+[source, xml, linenums]
+----
+<amqp:exchange-defintiion name="targetExchangeDefinition" removalStrategy="SHUTDOWN" type="DIRECT" />
+
+<amqp:publish config-ref="Amqp_Config" exchangeName="targetExchange" fallbackExchangeDefinition="targetExchangeDefinition" />
+----
+
+== 如何避免更改AMQP地形
+
+您可以设置`createFallbackExchange`全局配置以防止由于回退交换的定义而导致对AMQP拓扑的更改，请参阅 link:amqp-topography[如何避免更改AMQP地形]。
+
+== 传播相关标识
+
+通过`publish`操作，您可以为传出消息配置`correlationId`。
+
+首先，您需要配置在使用`sendCorrelationId`参数发布消息时是否要发送`correlationId`。可以将此参数设置为`ALWAYS`（始终发送标头），`NEVER`（永远不会发送标头）或`AUTO`（默认情况下，使用应用程序配置）。
+然后，您可以使用发送消息的事件的`correlationId`，也可以在消息生成器中配置自己的自定义`correlationId`：
+
+[source, xml, linenums]
+----
+<amqp:publish config-ref="AMQP_config" sendCorrelationId="ALWAYS"  exchangeName="#[vars.targetExchange]">
+	<amqp:properties correlationId="#[attributes.properties.correlationId]" />
+</amqp:publish>
+----
+
+
+== 另请参阅
+
+link:amqp-publish-consume[收听答复]

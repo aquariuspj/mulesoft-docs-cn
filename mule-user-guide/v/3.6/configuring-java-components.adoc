@@ -1,0 +1,138 @@
+= 配置Java组件
+:keywords: connectors, anypoint, studio, java, java components, components
+
+Java是Mule中的默认组件类型。 Mule提供了两个 http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/api/component/JavaComponent.html[JavaComponent]实现：
+
+*  `DefaultJavaComponent`，您可以使用`component `元素进行配置
+
+*  `PooledJavaComponent`，其中添加了池功能，并使用`pooled-component`元素进行配置。
+
+这两个实现提供了以下功能和配置选项：
+
+* 使用*ObjectFactory*来获取Java组件实现。
+
+可以配置*  *EntryPointResolvers*来定义在处理消息时Mule流应该如何调用组件方法。
+
+* 自定义*LifecycleAdaptor*可以配置为定制组件实现初始化和处置的方式。
+
+可以将*  *Bindings*配置为将组件接口方法绑定到端点。然后在调用方法时同步调用这些端点。
+
+当您直接在`component`或`pooled-component`元素上指定类时，缺省情况下会使用`PrototypeObjectFactory`，并为每个调用创建一个新实例，或者创建一个新的共用组件`PooledJavaComponent`的情况。
+
+例：
+
+[source, xml, linenums]
+----
+<component class="org.my.CustomComponent"/>
+..
+<pooled-component class="org.my.CustomComponent"/>
+----
+
+或者，您可以使用对象工厂指定实现。
+
+例：
+
+[source, xml, linenums]
+----
+<component>
+    <singleton-object class="org.my.CustomComponent"/>
+</component>
+...
+<component>
+    <spring-object bean="myCustomComponentBean"/>
+</component>
+----
+
+所有其他组件配置元素都配置为`component`或`pooled-component`元素的子元素。
+
+== 对象工厂
+
+对象工厂在Mule实例化实例的情况下管理对象创建，或者通过单个API从另一个容器（如Spring）查找对象。以下对象工厂包含在Mule中，可以使用Mule的核心模式进行配置。
+
+[%autowidth.spread]
+|===
+| <prototype-object class=..."/>  | http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/object/PrototypeObjectFactory.html[PrototypeObjectFactory]
+| <singleton-object class=..."/>  | http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/object/SingletonObjectFactory.html[SingletonObjectFactory]
+| <spring-object bean=..."/>  | http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/config/spring/util/SpringBeanLookup.html[SpringBeanLookup]
+|===
+
+对象工厂还允许您设置属性，这些属性是在创建新对象实例时注入的。
+
+例：
+
+[source, xml, linenums]
+----
+<component>
+    <singleton-object class="org.my.SingletonObject">
+        <property key="myKey" value="theValue"/>
+        <property key="myKey2" value="theValue2"/>
+    </singleton-object>
+</component>
+----
+
+有关使用`<spring-object/>`的真实示例，请参阅 link:/mule-user-guide/v/3.6/using-spring-beans-as-flow-components[使用Spring Beans作为流程组件]。
+
+您可以轻松实现其他对象工厂以与其他容器集成，或者简单地以不同方式创建对象实例。
+
+注意：对象工厂在以前版本的Mule中替换ContainerContexts。
+
+== 入口点解析器
+
+您可以配置入口点解析器，以确定在流接收到消息时如何调用组件。有关其功能的更详细说明，请参阅 link:/mule-user-guide/v/3.6/developing-components[开发组件]。
+
+要配置入口点解析器，您可以配置入口点解析器_set_或独立配置单个入口点解析器。当使用入口点解析器_set_时，解析器配置的顺序是它们在运行时给出的优先顺序。
+
+例：
+
+[source, xml, linenums]
+----
+<component class="org.my.PrototypeObjectWithMyLifecycle">
+    <entry-point-resolver-set>
+        <array-entry-point-resolver/>
+        <callable-entry-point-resolver/>
+    </entry-point-resolver-set>
+</component>
+----
+
+[source, xml, linenums]
+----
+<component class="org.my.PrototypeObjectWithMyLifecycle">
+    <reflection-entry-point-resolver/>
+</component>
+----
+
+== 生命周期适配器工厂
+
+您可以将Java组件配置为使用自定义生命周期适配器。如果您未配置自定义实现，则将使用默认实现，这将允许根据实现的Mule生命周期接口将Mule的生命周期可选地传播到您的组件。
+
+例：
+
+[source, xml, linenums]
+----
+<component class="org.my.PrototypeObjectWithMyLifecycle">
+    <custom-lifecycle-adapter-factory class="org.my.MyLifecycleMuleAdapterFactory"/>
+</component>
+----
+
+有关生命周期的更多信息，请参阅 link:/mule-user-guide/v/3.6/developing-components[开发组件]。
+
+== 绑定
+
+组件可以在执行期间使用绑定来调用外部服务。用于Java组件的绑定将Java接口或单一接口方法绑定到出站端点。被调用的外部服务应该实现相同的接口，并且组件应该封装对该接口的引用，该引用在引导阶段由Mule配置构建器初始化。该引用将使用反射代理类进行初始化。
+
+绑定可用于Java组件和脚本组件。有关更多信息，请参阅 link:/mule-user-guide/v/3.6/component-bindings[组件绑定]。
+
+== 配置池化Java组件
+
+池化的Java组件将维护一个将被重用的对象实例池，其中一个线程在任何时候都使用一个实例。组件池的配置独立于对象工厂，允许您使用任何您需要的对象工厂。
+
+您可以使用嵌套的`pooling-profile`元素配置池，如下所示：
+
+[source, xml, linenums]
+----
+<pooled-component class="org.my.PrototypeObject">
+    <pooling-profile exhaustedAction="WHEN_EXHAUSTED_FAIL" initialisationPolicy="INITIALISE_ALL" maxActive="1" maxIdle="2" maxWait="3" />
+</pooled-component>
+----
+
+有关合并配置选项的池和参考文档的更多信息，请参阅 link:/mule-user-guide/v/3.6/tuning-performance[调整性能]。

@@ -1,0 +1,292 @@
+=  Microsoft MSMQ连接器
+：imagesdir：./_images
+
+_选择_
+
+Microsoft消息队列（MSMQ）连接器使用具有两层的典型客户端 - 服务器体系结构，在Mule运行时中运行的连接器或客户端以及在服务器端运行的Windows网关。后者公开了用于发送或接收MSMQ消息的HTTP Web API。
+
+== 先决条件
+
+本文档假定您熟悉MSMQ，Mule，Anypoint连接器，Anypoint Studio，Mule概念，Mule流中的元素以及全局元素。
+
+您需要登录凭据来测试您的目标资源连接。
+
+针对硬件和软件要求以及兼容性
+信息，请参阅连接器发行说明。
+
+要在Maven中使用此连接器，请查看中的pom.xml依赖关系信息
+任意点Exchange中的依赖项片段。
+
+*Important*：在安装和配置MSMQ之前安装Windows网关服务。查看本文档的另请参阅部分以获取指向Windows网关的链接
+服务指南。
+
+以下是解决方案架构的高级图：
+
+image:msmq-windows-gateway.png[Windows网关服务]
+
+== 此连接器的新增功能
+
+第一次发布Mule 4。
+
+== 在Design Center中进行连接
+
+. 单击一个触发器，例如HTTP侦听器或计划程序。
+. 选择加号以添加组件。
+. 选择连接器作为组件。
+. 左键单击设置
+. 配置这些字段：
++
+image:msmq-global-config.png[MSMQ连接器发件人配置]
++
+** 网关服务地址：Windows网关的URL。
+** 网关访问令牌：Windows网关的访问令牌。
+** 队列名称：您打算发送消息的队列。
+** 消息格式化程序：所需的消息格式。
++
+. 点击保存
+. 配置这些字段：
++
+image:msmq-operation-config.png[发送操作配置]
++
+* 队列名称。您打算发送消息的队列（如果未设置）
+* 消息格式化程序。所需的消息格式（如果未设置）
+* 到达队列的时间。 MSMQ服务器在网关中收到消息后可以达到的最大秒数。默认是不超时（InfiniteTimeout）。
+* 收到时间。消息在为第三方应用程序出队之前可保留在队列中的秒数。默认是不超时（InfiniteTimeout）。
+
+== 关于用例
+
+MSMQ连接器支持两种主要用例：
+
+* 向MSMQ发送（HTTP POST）单个消息
+* 从MSMQ接收（HTTP GET）一条或多条消息
+
+== 用例：HTTP POST
+
+在POST方案中，Mule运行时使用连接器将当前流中Mule消息的原始表示使用HTTP发送到MSMQ，并将其发送到Windows网关。该消息作为HTTP POST发送。 HTTP请求的有效载荷是Mule消息的序列化有效载荷（二进制或文本）。 Web API在Windows网关上运行，并使用MSMQ将消息转发到队列。
+
+以下消息显示HTTP POST请求的结构。
+
+===  POST请求消息
+
+[source, code, linenums]
+----
+POST: https://localhost:9333/msmq
+Authorization: mule test-token
+Mule-Msmq-Queue-Name: .\private$\qout
+Mule-Api-Version: 1
+Body: THIS IS A SAMPLE MESSAGE
+----
+
+POST回应消息
+
+[source]
+----
+Http /1.1 201 Created
+----
+
+== 用例：HTTP GET
+
+在GET方案中，Mule Runtime使用连接器从MSMQ接收一条或多条消息。这是作为Windows网关的HTTP GET完成的。 Web API在网关中运行，并返回MSMQ队列中的可用消息。这些消息使用MIME `multipart/mixed`内容类型在单个HTTP响应中返回。
+
+以下消息说明了HTTP GET请求的结构。
+
+===  GET请求消息
+
+[source, code, linenums]
+----
+GET: https://localhost:9333/msmq?count=50
+Authorization: mule test-token
+Mule-Msmq-Queue-Name: .\private$\out
+Mule-Api-Version: 1
+----
+
+===  GET响应消息
+
+[source, code, linenums]
+----
+Transfer-Encoding: chunked
+Content-Type: multipart/mixed; boundary="42c5468b-f831-900d-d099-a123ef456dcc7"
+
+28
+--42c5468b-f831-900d-d099-a123ef456dcc7
+
+218
+Content-Type: application/octet-stream
+mule-msmq-acknowledgment-type: None
+mule-msmq-acknowledgment: None
+mule-msmq-attach-sender-id: True
+mule-msmq-body-type: 0
+mule-msmq-connector-type: 0
+mule-msmq-correlation-id: 00000000-0000-0000-0000-000000000000\0
+mule-msmq-id: 12ab345c-6d7e-900d-d099-89f012a345bc\6789
+mule-msmq-label:
+mule-msmq-lookup-id: 288230376151717889
+mule-msmq-message-type: Normal
+mule-msmq-priority: Normal
+mule-msmq-source-machine: win-dt3v2pm5d7l
+mule-msmq-extension:
+mule-msmq-app-specific: 0
+
+11
+THIS IS A MESSAGE
+2C
+
+--42c5468b-f831-900d-d099-a123ef456dcc7--
+
+0
+----
+
+用于向网关服务发送消息和从网关服务接收消息的HTTP标头在本文后面会详细讨论。
+
+== 关于消息传递
+
+MSMQ连接器可以使用两阶段协议来确保与网关之间的零消息丢失通信，或者当您希望实现高吞吐量并且不需要确保接收每条消息时，可以将其设置为使用无确认协议至少一次。
+
+消息传递可以从两个不同的选项中选择。消息传递配置设置建立消息传递工作模式。下面介绍每种可用选项的详情。
+
+=== 关于无确认
+
+在传统方案中，在网关中读取消息后，将从队列中删除消息。如果在ESB中存在连接故障或其他问题以阻止读取消息，那么该消息会丢失（可通过在相应的配置设置中选择NoAcknowledgement值来设置此消息传递模式）。尽管如此，这种交付模式是最快的，如果你不需要每条消息至少交付一次，你应该选择它。
+
+=== 至少关于一次（默认）
+
+在使用两阶段提交协议的场景中，从主队列中读取的消息保存在从属队列中作为备份。连接器收到消息副本后，会向网关发送一个附加请求，以从子队列中删除该消息。当此提交操作未完成时，消息仍保留在子队列中。经过一段时间后，下级队列中的消息（被视为孤儿）将被移回其父级队列，在那里进行重试。清楚的是，除非流在提交阶段完成之前中断（可以通过在相应的配置设置中选择AtLeastOnce值来设置此消息传递模式），否则此机制不应受流中发生的外部异常的影响。
+
+如上所述，消息传递模式取决于消息传递配置设置，如果要确保使用两个阶段提交协议，则该设置应设置为`AtLeastOnce`（默认）。如果您将此参数设置为`NoAcknoledgment`，则每个消息都会被传递给mule，而不会从其接收到确认。
+
+== 在Anypoint Studio 7中连接
+
+您可以先在Anypoint Studio中使用此连接器，然后从Exchange下载它
+并根据需要进行配置。
+
+=== 在Studio中安装连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索此连接器并单击安装。
+. 按照提示安装此连接器。
+
+当Studio有更新时，右下角会显示一条消息，
+您可以单击该按钮来安装更新。
+
+=== 在Studio中进行配置
+
+. 将HTTP侦听器拖放到Studio画布。
++
+image:msmq-any-listener.png[Studio中的MSMQ演示流程]
++
+. 设置路径。
+. 单击绿色加号来配置侦听器。
+. 将MSMQ连接器拖放到Studio画布。
+. 单击绿色加号为连接器添加配置。
+. 填写以下字段：
++
+image:msmq-any-config.png[全局元素属性]
++
+** 网关服务地址：Windows网关的URL。
+** 网关访问令牌：Windows网关的访问令牌。
+** 队列名称：您打算发送消息的队列。
+** 消息格式化程序：所需的消息格式。
++
+. 单击确定
+. 配置这些字段：
++
+image:msmq-any-send.png[MSMQ属性屏幕]
++
+** 消息格式化程序（如果未设置）：所需的消息格式
+** 有效负载：消息的内容
+** 达到队列的时间：消息在网关中收到后可以到达MSMQ服务器的最大秒数。默认是不超时（InfiniteTimeout）。
+** 接收时间：消息在为第三方应用程序出队之前可保留在队列中的秒数。默认是不超时（InfiniteTimeout）。
+
+== 用例：Studio
+
+image:msmq-flow-example.png[Listener，Logger，Send和DataWeave的Studio流图标]
+
+== 用例：XML
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" 
+xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+xmlns:msmq="http://www.mulesoft.org/schema/mule/msmq"
+xmlns:http="http://www.mulesoft.org/schema/mule/http" 
+xmlns="http://www.mulesoft.org/schema/mule/core" 
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core 
+http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http 
+http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/msmq 
+http://www.mulesoft.org/schema/mule/msmq/current/mule-msmq.xsd
+http://www.mulesoft.org/schema/mule/ee/core 
+http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/file 
+http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+
+<http:listener-config name="HTTP_Listener_config" 
+doc:name="HTTP Listener config" basePath="/">
+    <http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+
+<configuration-properties file="gateway-connection.properties" />
+
+<http:request-config name="HTTP_Request_configuration" 
+doc:name="HTTP Request configuration"/>
+<msmq:msmq-sender-config name="MSMQ_Connector_Msmq_sender_config" 
+messageFormatter="None" doc:name="MSMQ Connector Msmq sender config">
+    <msmq:msmq-connection serviceAddress="${msmqConfig.serviceAddress}"
+     accessToken="${msmqConfig.accessToken}" 
+     queueName="${msmqConfig.rootQueueName}" 
+     ignoreSSLWarnings="true" />
+</msmq:msmq-sender-config>
+<msmq:msmq-receiver-config name="MSMQ_Connector_Msmq_receiver_config" 
+messageCount="1" pollingFrequency="1" messageFormatter="None" 
+doc:name="MSMQ Connector Msmq receiver config" 
+messageDelivery="AtLeastOnce" >
+    <msmq:msmq-connection serviceAddress="${msmqConfig.serviceAddress}"
+     accessToken="${msmqConfig.accessToken}" 
+     queueName="${msmqConfig.rootQueueName}" 
+     ignoreSSLWarnings="true" />
+</msmq:msmq-receiver-config>
+<flow name ="Parse-template">
+    <http:listener doc:name="Listener" 
+    config-ref="HTTP_Listener_config" path="/"/>
+    <parse-template doc:name="Parse Template"
+    location="form.html"/>
+
+</flow>
+<flow name="msmq-demo-send-operation">
+<http:listener doc:name="Listener" 
+config-ref="HTTP_Listener_config" path="/send"/>
+<logger level="INFO" doc:name="Logger"
+message="#[payload]"/>
+<msmq:send doc:name="Send"
+ config-ref="MSMQ_Connector_Msmq_sender_config" 
+ messageFormatter="None" queueName="${msmqConfig.rootQueueName}">
+    <msmq:payload ><![CDATA[#[attributes.queryParams.message]]]></msmq:payload>
+</msmq:send>
+<ee:transform doc:name="Transform Message" >
+    <ee:message >
+                <ee:set-payload ><![CDATA[%dw 2.0
+output text/plain
+---
+"Message sent successfully"]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+    <flow name="msmq-demo-receive-source" >
+    <msmq:msmq doc:name="Msmq" config-ref="MSMQ_Connector_Msmq_receiver_config" />
+        <logger level="INFO" doc:name="Logger" message="#[payload]"/>
+    </flow>
+</mule>
+----
+
+== 另请参阅
+
+*  link:/release-notes/msmq-connector-release-notes[Microsoft MSMQ连接器发行说明]
+*  link:/connectors/windows-gw-services-guide[Windows网关服务指南]
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。

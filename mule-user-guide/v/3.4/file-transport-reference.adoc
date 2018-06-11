@@ -1,0 +1,564 @@
+= 文件传输参考
+:keywords: anypoint studio, esb, connectors, files, file connector, endpoints
+
+文件传输允许读取和写入本地文件系统上的文件。连接器可以配置为过滤它读取的文件以及写入文件的方式，例如输出是放置在新文件中还是放在后面。
+
+== 传输信息
+
+[%header%autowidth.spread]
+|===
+|功能|值|说明
+|传输 |文件 |传输的名称/协议
+|文档 | link:http://www.mulesoft.org/docs/site/current3/apidocs/org/mule/transport/file/package-summary.html[的JavaDoc]， link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_file/namespace-overview.html[SchemaDoc]  | Javadoc和Schema doc
+|入站 | image:check.png[查]  |传输是否可以接收入站事件并可用于入站端点。
+|出站 | image:check.png[查]  |传输是否可以生成出站事件并与出站端点一起使用。
+|请求  | image:check.png[查]  |该端点是否可以通过请求调用直接查询（通过MuleClient或EventContext）。
+|交易 | image:error.png[错误]  |交易是否受交通支持。支持事务的传输可以在本地或分布式两阶段提交（XA）事务中进行配置。
+|流式传输 | image:check.png[查]  |此传输是否可以处理输入流中传入的消息。这可以非常有效地处理大数据。
+|重试 | image:error.png[错误]  |此传输是否支持重试策略。请注意，所有传输都可以配置Retry策略，但只有这里标记的传输才是MuleSoft官方支持的。
+| MEP  |单向 |此传输所支持的消息交换模式。
+|默认MEP  |单向 |使用此传输的端点的默认MEP未明确配置MEP
+| Maven Artifact  | org.mule.transport：transportmule-transport-file  |此传输的组名称和工件名称位于 http://maven.apache.org/[Maven的]
+|===
+
+== 命名空间和语法
+
+====  XML命名空间
+
+[source, xml, linenums]
+----
+xmlns:file="http://www.mulesoft.org/schema/mule/file"
+----
+
+====  XML模式位置
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.4/mule-file.xsd
+----
+
+==== 连接器语法
+
+[source, xml, linenums]
+----
+<!-- Typical Connector for Inbound Endpoint: Read files -->
+<file:connector name="input" fileAge="500" autoDelete="true" pollingFrequency="100" moveToDirectory="/backup" moveToPattern="#[message.inboundProperties['originalFilename']].backup"/>
+ 
+<!-- Typical Connector for Outbound Endpoint: Write files -->
+<file:connector name="output" outputAppend="true" outputPattern="#[server.dateTime]-#[message.inboundProperties['originalFilename']]" />
+----
+
+==== 端点语法
+
+文件终结点可以使用标准的File URI语法来表示：
+
+----
+file://<path>[MULE:?params]
+----
+
+例如，连接到一个名为/ temp / files的目录。
+
+*Unix Syntax*
+
+----
+file:///temp/files
+----
+
+*Note*：额外的斜杠表示从根（绝对路径）的路径。
+
+*Windows Syntax*
+
+----
+file:///C:/temp/files
+----
+
+如果映射到单个驱动器（从一个Mule开始），则Unix样式在Windows中工作。
+
+要指定相对路径使用：
+
+----
+file://./temp
+----
+
+要么：
+
+----
+file://temp
+----
+
+*Note*：协议只使用两个斜杠，所以它是一个相对路径。
+
+[NOTE]
+在Unix中，相对路径是相对于根目录（/）的。例如，指定`file://temp`表示目录`/temp`。在Windows中，相对路径与Mule所在的驱动器相关，例如`C:\`。
+
+[NOTE]
+要指定Windows相对路径，请使用反斜杠\，例如，如果Mule驻留在驱动器`C:\`中，则`\temp`指定`C:\temp`。
+
+要么：
+
+----
+file://?address=./temp
+----
+
+连接到Windows网络驱动器：
+
+----
+file:192.168.0.1/temp/
+----
+
+*Inbound Endpoint*
+
+[source, xml, linenums]
+----
+<file:inbound-endpoint connector-ref="input" path="/tmp/input"/>
+----
+
+*Outbound Endpoint*
+
+[source, xml, linenums]
+----
+<file:outbound-endpoint connector-ref="output" path="/tmp/output"/>
+----
+
+== 注意事项
+
+可以看出，Mule ESB提供了许多可以使用的功能，只需通过更改XML文件即可进行修改。每个人都知道如何用他们的编程语言来处理文件，但是当需要高级功能时，编码变得复杂。 Mule ESB很容易让您重命名和归档文件，并处理输入文件完全生成时验证的不舒服任务。
+
+* 此传输应用于读取和写入文件系统中的文件。使用入站端点在每个特定时间段内读取文件，通过不同的名称模式过滤输入文件，并删除，移动或保留文件，因为文件一旦处理完毕。出站端点允许您生成新文件（文件名可以在运行时定义）或将内容附加到现有文件。
+* 考虑到运行mule的帐户（独立模式下，启动Mule ESB服务器的用户，如果不是，运行应用程序服务器的用户）应该对配置的目录具有读取和/或写入权限为这个运输。
+* 请注意不要永久删除或覆盖输入/输出文件。使用时要小心，例如_autoDelete_和_moveToDirectory_属性。
+* 检查下面的示例，了解如何将文件从一个目录复制到另一个目录，处理输入文件，同时保存输入文件的备份并创建具有特定名称的新文件。
+* 尽管大多数配置参数可以在连接器中全局定义，但它们可以在端点配置中被覆盖。
+* 如果启用流式传输，则将`ReceiverFileInputStream`用作处理的每个文件的有效负载。此输入流的`close()`方法负责移动文件或将其删除。流通过读取输入流的变换器关闭。如果您在自己的组件实现中处理流，请务必在阅读完毕后正确关闭流。
+* 当配置为使用工作目录时，Mule将两个属性添加到消息中，以指示文件读取源：+
+**  `sourceFileName`：包含与未配置workDirectory时Mule使用的originalFilename属性相同的值
+**  `sourceDirectory`：包含与mule在未配置workDirectory时使用的originalDirectory属性相同的值。
+
+== 特点
+
+* 以常规轮询间隔读取文件
+* 写入文件
+
+== 用法
+
+要在您的Mule配置中使用文件传输，请<<Schema>>并使用`<file`：`connector>`，`<file`：`inbound-endpoint>`和/或`<file`： `outbound-endpoint>`个元素。请参阅下面的<<Example Configurations>>。
+
+您可以在属性中使用以下表达式：
+
+* ＃[函数：邮戳]
+* ＃[功能：邮戳：DD-MM-yy]所
+* ＃[函数：SYSTIME]
+* ＃[功能：UUID]
+* ＃[报头：originalFilename]
+* ＃[功能：计数]
+* ＃[message.inboundProperties ['_ messagepropertyname'_]
+
+对于使用Mule 3.4添加到MEL的dateTime函数，请参阅MEL日期和时间函数。
+
+== 示例配置
+
+以下简单示例将文件从_ / tmp / input_ copies复制到_ / tmp / output_❹每1秒（1000毫秒）❷。由于输入文件不会被删除❶它们每次都会被处理。将*autoDelete*更改为*true*只是移动文件。
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xsi:schemaLocation="
+         http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd
+         http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.4/mule-file.xsd">
+ 
+    <file:connector name="input" autoDelete="false" ❶ pollingFrequency="1000" ❷ />
+ 
+    <file:connector name="output" outputAppend="false"/>
+     
+    <flow name="copyFile">
+        <file:inbound-endpoint connector-ref="input" path="/tmp/input"/> ❸
+        <file:outbound-endpoint connector-ref="output" path="/tmp/output"/> ❹
+    </flow>
+</mule>
+----
+
+以下示例每5秒（5000毫秒）将文件❶从_ / tmp / input_移动到_ / tmp / output_，将原始文件的备份文件（带有扩展备份）保存在_ / tmp / backup_❹中。新文件将以当前日期和时间重新命名为前缀❺。请注意，*fileAge*可防止移动仍在生成的文件，因为文件必须至少保留半秒❷。
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xsi:schemaLocation="
+         http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd
+         http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.4/mule-file.xsd">
+ 
+    <file:connector name="input" autoDelete="true" ❶ fileAge="500" ❷ pollingFrequency="5000" ❸ />
+ 
+    <file:connector name="output" outputAppend="false"/>
+     
+    <flow name="moveFile">
+        <file:inbound-endpoint connector-ref="input" path="/tmp/input"
+                      moveToDirectory="/tmp/backup"
+                      moveToPattern="#[message.inboundProperties['originalFilename']].backup"/>
+        <file:outbound-endpoint connector-ref="output" path="/tmp/output"
+                      outputPattern="#[function:datestamp]-#[message.inboundProperties['originalFilename']]"/>
+    </flow>
+</mule>
+----
+
+以下示例显示了不同的连接器配置。第三个示例覆盖传输实现的一部分，并且在处理之后不删除文件。入站端点将其移至一个目录进行归档处理后。
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.4/mule-file.xsd
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd">
+ 
+    <file:connector name="sendConnector" outputAppend="true" outputPattern="[TARGET_FILE]" />
+ 
+    <file:connector name="receiveConnector" fileAge="500" autoDelete="true" pollingFrequency="100" />
+ 
+    <file:connector name="inboundFileConnector" pollingFrequency="10000"
+              streaming="false" autoDelete="false"> ❶
+        <service-overrides messageFactory="org.mule.transport.file.FileMuleMessageFactory"
+            inboundTransformer="org.mule.transformer.NoActionTransformer" /> ❷
+        <file:expression-filename-parser />
+    </file:connector>
+ 
+    <flow name="RefreshFileManager">
+        <file:inbound-endpoint connector-ref="inboundFileConnector"
+            path="C:/temp/filewatcher/inbox" moveToDirectory="C:/temp/filewatcher/history"
+            moveToPattern="#[function:datestamp]-#[message.inboundProperties['originalFilename']]" /> ❸
+ 
+        ...
+    </flow>
+     
+    ...
+</mule>
+----
+
+== 配置选项
+
+文件传输*inbound endpoint*属性：
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明 |缺省
+| *autoDelete*  |如果您不希望Mule在处理文件 | `true`后删除文件，请将此属性设置为{{1}
+因为Mule在读取此文件之前等待，直到文件上次修改时间戳为止，设置此值（以毫秒为单位处理文件的最小年限）非常有用表示该文件比此值旧 | `true`
+| *moveToDirectory*  |使用此参数让Mule保存它读取的文件的备份副本。 *Note*：如果文件已存在于目录中，则moveToDirectory只将文件移动到目录一次。随后尝试将相同的文件移动到目录会导致Mule抛出异常。 | 
+| *moveToPattern*  |将此参数与`moveToPattern`一起用于重命名备份文件 | 
+的副本
+| *pollingFrequency*  |设置检查读目录 | `0`的频率（以毫秒为单位）
+| *recursive*  |使用此参数，以便在读取目录时Mule递归 | `false`
+| *streaming*  |如果您希望有效内容是字节数组而不是FileInputStream，请将此参数设置为`false`  | `true`
+| *workDirectory*† |如果您在输入文件被Mule处理之前需要移动输入文件，则使用该参数 | 
+分配一个工作目录（在同一文件系统中）
+| *workFileNamePattern*  |与*workDirectory*一起使用此参数在处理它们之前重命名输入文件 | 
+|===
+
+†当配置为使用工作目录时，Mule向消息添加两个属性以指示文件读取源：
+
+*  `sourceFileName`：包含与未配置workDirectory时Mule使用的originalFilename属性相同的值
+*  `sourceDirectory`：包含与mule在未配置workDirectory时使用的originalDirectory属性相同的值。
+
+文件传输*outbound endpoint*属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明 |缺省
+| *outputAppend*  |如果要写入的文件已经存在，请将此参数设置为true以追加新内容而不是覆盖文件。 | `false`
+| *outputPattern*  |将文件写入磁盘时使用的模式。 | 
+|===
+
+== 连接器
+
+文件连接器配置引用连接器的文件端点的默认行为。如果只配置一个文件连接器，则所有文件终结点均使用该连接器。
+
+=== 连接器的属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| writeToDirectory  |文件在调度时应该写入的目录路径。该路径通常被设置为调度事件的端点，但是这允许您显式强制连接器的单个目录。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| readFromDirectory  |应从中读取文件的目录路径。此路径通常设置为入站端点，但是这允许您显式强制连接器的单个目录。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| autoDelete  |如果设置为true（默认值），它将导致文件在读取后被删除。如果打开流式传输，则会在文件的InputStream关闭时发生。否则，文件被读入内存并立即删除。要访问java.io.File对象，请将此属性设置为false，并为连接器指定NoActionTransformer转换器。 Mule不会删除该文件，因此完成后由组件删除它。如果设置了moveToDirectory，则首先移动文件，然后将移动文件的File对象传递给组件。建议在关闭autoDelete时指定moveToDirectory。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`true`
+| outputAppend  |输出是否应附加到现有文件。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`false`
+| serialiseObjects  |确定是否应将对象序列化到文件。如果`false`（默认），则写入原始字节或文本。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：无
+| streaming  |是否应将FileInputStream作为消息负载（如果为true）或字节数组发送。 （如果`false`）。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`true`
+| workDirectory  |（从Mule 2.1.4开始）在处理之前应将文件移动到的目录路径。工作目录必须与读取目录位于同一文件系统中。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| workFileNamePattern  |（作为Mule 2.1.4）将文件移动到由workDirectory属性确定的新位置时使用的模式。您可以使用为此连接器配置的文件解析器支持的模式。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+|递归 |当目录被读取时是否递归+
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`false`
+| pollingFrequency  |应检查读取目录的频率（以毫秒为单位）（默认值为0）。请注意，读取目录由监听组件的端点指定。 +
+*Type*：`long` +
+*Required*：否+
+*Default*：无
+| fileAge  |要处理文件的最小年龄（毫秒）。这在消耗大文件时非常有用。它告诉Mule在消耗文件之前等待一段时间，以便在处理文件之前完全写入文件。 +
+*Type*：`long` +
+*Required*：否+
+*Default*：无
+| moveToPattern  |将读取文件移动到由moveToDirectory属性确定的新位置时使用的模式。这可以使用为此连接器配置的文件解析器所支持的模式。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| moveToDirectory  |读取文件后应写入的目录路径。如果没有设置，文件被读取后被删除。 *Note*：如果文件已经存在且名称相同，moveToDirectory只能移动一次文件。小心不要永久删除或覆盖输入/输出文件。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| outputPattern  |将文件写入磁盘时使用的模式。这可以使用为此连接器配置的文件解析器所支持的模式。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+|===
+
+连接器的=== 子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| abstract-filenameParser  | 0..1  | abstract-filenameParser元素是文件名解析器元素的占位符。文件解析器在将文件写入目录时使用的连接器上设置。解析器使用解析器和当前消息将outputPattern属性转换为字符串。使用的默认实现是expression-filename-parser，但您也可以指定一个自定义文件名解析器。
+|===
+
+== 相关元素
+
+== 端点
+
+=== 端点的属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+|路径 |文件目录位置。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| pollingFrequency  |应检查读取目录的频率（以毫秒为单位）（默认值为0）。请注意，读取目录由监听组件的端点指定。 +
+*Type*：`long` +
+*Required*：否+
+*Default*：无
+| fileAge  |要处理文件的最小年龄（毫秒）。这在消耗大文件时非常有用。它告诉Mule在消耗文件之前等待一段时间，以便在处理文件之前完全写入文件。 +
+*Type*：`long` +
+*Required*：否+
+*Default*：无
+| moveToPattern  |将读取文件移动到由moveToDirectory属性确定的新位置时使用的模式。这可以使用为此连接器配置的文件解析器所支持的模式。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| moveToDirectory  |读取文件后应写入的目录路径。如果没有设置，文件被读取后被删除。 *Note*：如果目录中已存在文件，moveToDirectory只将文件移动到目录一次。随后尝试将相同的文件移动到目录会导致Mule抛出异常。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+|比较器 |使用指定的比较器对传入文件进行排序，如comparator = "org.mule.transport.file.comparator.OlderFirstComparator"。该类必须实现java.util.Comparator接口。 +
+*Type*：`class` +
+*ame*，必填+
+*no*，默认：无
+| reverseOrder  |是否应该颠倒比较器顺序。默认为false。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：无
+| outputPattern  |将文件写入磁盘时使用的模式。这可以使用为此连接器配置的文件解析器所支持的模式。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+|===
+
+`endpoint`没有子元素。
+
+
+== 入站端点
+
+入站端点的=== 属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+|路径 |文件目录位置。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| pollingFrequency  |应检查读取目录的频率（以毫秒为单位）（默认值为0）。请注意，读取目录由监听组件的端点指定。 +
+*Type*：`long` +
+*Required*：否+
+*Default*：无
+| fileAge  |要处理文件的最小年龄（毫秒）。这在消耗大文件时非常有用。它告诉Mule在消耗文件之前等待一段时间，以便在处理文件之前完全写入文件。 +
+*Type*：`long` +
+*Required*：否+
+*Default*：无
+| moveToPattern  |将读取文件移动到由moveToDirectory属性确定的新位置时使用的模式。这可以使用为此连接器配置的文件解析器所支持的模式。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| moveToDirectory  |读取文件后应写入的目录路径。如果没有设置，文件被读取后被删除。 *Note*：如果目录中已存在文件，moveToDirectory只将文件移动到目录一次。随后尝试将相同的文件移动到目录会导致Mule抛出异常。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+|比较器 |使用指定的比较器对传入文件进行排序，如comparator = "org.mule.transport.file.comparator.OlderFirstComparator"。该类必须实现`java.util.Comparator`接口。 +
+*Type*：`class name` +
+*Required*：否+
+*Default*：无
+| reverseOrder  |是否应该颠倒比较器顺序。默认为false。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`false`
+|===
+
+`inbound-endpoint`没有子元素。
+
+== 出站端点
+
+<outbound-endpoint...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|=====
+| {名称{1}}输入 |必 |缺省 |说明
+|路径 |字符串 |否 |   |文件目录位置。
+| outputPattern  |字符串 |否 |   |将文件写入磁盘时使用的模式。这可以使用为此连接器配置的文件解析器所支持的模式。
+|=====
+
+没有<outbound-endpoint...>的子元素
+
+== 文件到字节数组转换器
+
+文件到字节数组转换器元素配置一个将java.io.File的内容读入字节数组（byte []）的转换器。
+
+没有<file-to-byte-array-transformer...>的子元素
+
+
+== 文件到字符串转换器
+
+文件到字符串变换器元素配置一个将java.io.File的内容读入java.lang.String的变换器。
+
+没有<file-to-string-transformer...>的子元素
+
+
+*Note*：此转换器不关闭文件流。这可以防止在流程异步时删除或移动文件。如果您为异步端点启用了流式传输，请改用ObjectToString转换器。
+
+== 文件名通配符筛选器
+
+filename-wildcard-filter元素配置一个过滤器，可用于通过将通配符表达式应用于文件名来限制正在处理的文件。例如，输入以下内容即可只读取.xml和.txt文件：<file:filename-wildcard-filter pattern="**.txt,**.xml"/>
+
+没有<filename-wildcard-filter...>的子元素
+
+
+== 文件名正则表达式过滤器
+
+filename-regex-filter元素配置一个过滤器，可用于通过将Java正则表达式应用于文件名来限制正在处理的文件，如pattern = "myCustomerFile(.*)"。
+
+没有<filename-regex-filter...>的子元素
+
+== 表达式文件名解析器
+
+expression-filename-parser元素配置ExpressionFilenameParser，它可以使用Mule支持的任何表达式语言为当前消息构造一个文件名。表达式可以是xpath，xquery，ognl，mvel，头文件，函数等等。
+
+没有<expression-filename-parser...>的属性
+
+没有<expression-filename-parser>的子元素。
+
+例如，可以定义一个XPath表达式来将消息ID从XML消息中提取出来，并将其用作文件名，如下所示：
+
+----
+#[xpath:/message/header/@id]
+----
+
+以下是使用解析器的示例：
+
+[source,xml, linenums]
+----
+<file:connector name="FileConnector" >
+  <file:expression-filename-parser/>
+</file:connector>
+...
+<file:outbound-endpoint path="file://temp"
+outputPattern="#[message.inboundProperties['originalFilename']]--#[function:datestamp].txt"/>
+----
+
+该解析器取代了之前版本Mule的`<legacy-filename-parser>`。以下演示如何在`<legacy-filename-parser>`上使用`<expression-filename-parser>`时实现相同的结果。
+
+* ＃[日期]：＃[函数：dateStamp]
+* ＃[日期：dd-MM-yy]：＃[函数：datestamp：dd-MM-yy]
+* ＃[SYSTIME]：＃[function：systime]
+* ＃[UUID]：＃[功能：uuid]
+* ＃[ORIGINALNAME]：＃[message.inboundProperties.originalFilename]
+* ＃[COUNT]：＃[function：count]  - 注意这是一个全局计数器。如果你想为每个文件连接器设置一个本地计数器，那么你应该使用legacy-filename-parser。
+* ＃[消息属性名称]：＃[message.inboundProperties ['_ messagepropertyname_']
+
+*Note*：OGNL在Mule 3.6中已弃用，并将在Mule 4.0中删除。
+
+== 自定义文件名解析器
+
+custom-filename-parser元素允许用户指定一个自定义的文件名解析器。该实现必须实现org.mule.transport.file.FilenameParser。
+
+<custom-filename-parser...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|=====
+| {名称{1}}输入 |必 |缺省 |说明
+|类 |字符串 |是 |   |实现org.mule.transport.file.FilenameParser的实现类名称。
+|=====
+
+<custom-filename-parser>没有子元素。
+
+== 摘要filenameParser
+
+abstract-filenameParser元素是文件名解析器元素的占位符。文件解析器在将文件写入目录时使用的连接器上设置。解析器使用解析器和当前消息将outputPattern属性转换为字符串。使用的默认实现是expression-filename-parser，但您也可以指定一个自定义文件名解析器。
+
+没有<abstract-filenameParser>的属性。
+
+<abstract-filenameParser>没有子元素。
+
+== 架构
+
+访问文件传输的 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_file/namespace-overview.html[模式文件]。
+
+==  Javadoc API参考
+
+用于文件传输的 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/file/package-summary.html[的Javadoc]。
+
+== 的Maven
+
+文件传输可以包含以下依赖项：
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-file</artifactId>
+</dependency>
+----
+
+== 扩展此模块或传输最佳实践
+
+如果读取输入路径中直接生成的输入文件，请在连接器或端点中配置_fileAge_属性。通过这种方式，Mule在完成写入磁盘后处理这些文件。
+

@@ -1,0 +1,104 @@
+= 元数据键参数
+:keywords: mule, sdk, metadata, datasense, keys, type
+
+// TODO：1.1只？没有1.0版本？
+要描述动态元数据结构，您需要知道要表示的类型。此类型引用通过在操作中定义一个`@MetadataKeyId`参数来完成，该参数包含将传递给为该参数定义的元数据解析程序的类型的标识（例如Account）。
+
+这意味着，例如，如果您的操作可以将通用记录保存到远程系统，但您希望通过描述支持的类型`Account`和`Organization`来提供更好的设计时体验，的操作参数将是包含ID `Account`或ID `Organization`的类型引用。
+此参数将用于描述要保存到存储区的记录的帐户结构或组织结构，具体取决于最终用户决定使用的内容。
+
+== 提供元数据键列表
+
+解析动态元数据时最常见的情况是具有动态元数据
+识别要解决的每种可能类型的一组键。在设计时，最终用户将配置连接器，选择一个操作，然后从该组中选择一个动态填充的密钥，并且所选密钥将成为元数据解析的`MetadataKeyId`。
+
+实现动态密钥的解析以`TypeKeysResolver`开头：
+
+[source,java,linenums]
+----
+public class RecordKeysResolver implements TypeKeysResolver {
+
+  @Override
+  public String getCategoryName() {
+    return "Records";
+  }
+
+  @Override
+  public Set<MetadataKey> getKeys(MetadataContext context) throws MetadataResolvingException, ConnectionException {
+     // First we need to obtain the key IDs that will be used.
+     // This is where you'd normally use `context.getConfig()`
+     // or `context.getConnection()` to obtain the entity id's
+     // from a remote service, for this demo the keys will be fixed
+     List<String> keyIds = Arrays.asList("Author_id", "BookList_id", "Book_id");
+
+     HashSet<MetadataKey> keys = new HashSet<>();
+     for (String id: keyIds){
+       // For each possible if, we create a new MetadataKey with that ID
+       MetadataKeyBuilder builder = MetadataKeyBuilder.newKey(id);
+
+       // Then, we add a DisplayName to that MetadataKey,
+       // this will be the name shown in the UI
+       builder.withDisplayName(StringUtils.removeEnd(id, "_id"));
+
+       //finally, add the key to the Set of known MetadataKeys
+       keys.add(builder.build());
+     }
+
+     return keys;
+  }
+
+}
+----
+
+上面，创建一组动态MetadataKeys所需的所有元素。要实现的方法是`getKeys`，它会输出用户可用的所有密钥。
+
+与`Author_id`一样，`id`元素在内部使用，对于要在所有解析器中表示的每个结构而言，该元素必须是唯一的。 `displayName`是向用户显示该密钥的名称，因此预计会更加便于用户阅读。
+
+// _TODO修复损坏的图像
+// image::metadata/keys_single_drop.png[元数据密钥单级下拉菜单]
+
+一旦解析器被定义，您就可以使用它的操作或源，将解析器关联到给定的`MetadataKeyId`参数（请参阅<<user_metadatakey, User-Defined MetadataKey>>）。
+
+[source,java,linenums]
+----
+  public class OperationWithMetadataKey {
+
+    public void create(@MetadataKeyId(RecordKeysResolver.class) String type,
+                       @Config MyConfig config){
+        //...
+    }
+  }
+----
+
+
+[source,java,linenums]
+----
+@MetadataScope(keysResolver = RecordKeysResolver.class)
+public class DocsMetadataSource extends Source<Map<String, Object>, Void> {
+
+    @MetadataKeyId
+    @Parameter
+    public String type;
+
+    //...
+  }
+----
+
+// TODO多级元数据键
+
+[user_metadatakey]
+== 用户定义的元数据密钥
+
+用户定义的`MetadataKey`是由最终用户自由提供的，您并未将其定义为List的可能元素之一。
+
+例如，在使用整个查询的查询中，这是一个非常常见的情况
+最终用户希望以`MetadataKey`身份执行。
+
+为了声明它，您只需使用`@MetadataKeyId`注释参数，但不提供`TypesKeyResolver`。
+
+[source,java,linenums]
+----
+  public void query(@MetadataKeyId String query){
+      //...
+  }
+----

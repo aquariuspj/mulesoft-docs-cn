@@ -1,0 +1,289 @@
+=  MUnit数据库服务器
+：version-info：3.7.0及更高版本
+:keywords: munit, testing, unit testing
+
+== 概述
+
+测试生产代码的主要问题之一是外部系统连接。如果我们创建一个连接数据库服务器的代码的测试，我们需要在我们的本地环境中安装一个数据库服务器以运行测试。另一个选择是只有一个外部数据库服务器用于测试，但这种方法的主要问题是我们的Maven项目不能移植 - 我们无法将它发送给第三方，因为他们无法编译它没有首先安装数据库服务器。
+
+为了使您能够避免此问题，MUnit允许您在本地环境中实施数据库服务器。
+
+==  Maven依赖关系
+
+注意：本页假定您在`pom.xml`中定义了以下属性：`<munit.version></munit.version>`。
+
+从Maven运行时，需要将以下工件添加到您的`.pom`：
+
+[source,console]
+.DB服务器模块Maven依赖
+----
+<dependency>
+  <groupId>com.mulesoft.munit.utils</groupId>
+  <artifactId>dbserver</artifactId>
+  <version>${munit.version}</version>
+  <scope>test</scope>
+</dependency>
+----
+
+== 定义MUnit数据库服务器
+
+为了本文档的目的，我们将假设我们正在测试以下Mule代码：
+
+[source, xml, linenums]
+。测试代码
+----
+<spring:bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+  <spring:property name="driverName" value="${db.driver}" />
+  <spring:property name="url" value="${db.url}" />
+  <spring:property name="user" value="${db.user}" />
+  <spring:property name="password" value="${db.password}" />
+</spring:bean>
+
+<jdbc:connector name="jdbcConnectorInbound" dataSource-ref="jdbcDataSource">
+  <jdbc:query key="lookupJob" value="SELECT * FROM jobtitlelookup WHERE jobtitleid = #[variable:jobid]" />
+</jdbc:connector>
+
+<flow name="exampleFlow">
+
+  <jdbc:outbound-endpoint connector-ref="jdbcConnectorInbound" queryKey="lookupJob" exchange-pattern="request-response" />
+
+  <choice>
+    <when expression="#[payload.size()>0]">
+      <set-payload value="#[payload[0].get('jobtitle')]"/>
+    </when>
+    <otherwise>
+      <set-payload value="#['HIR']"/>
+    </otherwise>
+  </choice>
+
+  <set-variable value="job" variableName="#[payload]"/>
+
+</flow>
+----
+
+=== 定义数据库服务器
+我们从定义数据库服务器参数开始：
+
+[source, xml, linenums]
+。定义数据库服务器
+----
+<munit:config mock-inbounds="false" mock-connectors="false"/>           //<1>
+
+<dbserver:config  name="DB_Server" database="DATABASE_NAME" sqlFile="FILE_NAME.sql" />    //<2>
+----
+<1>定义MUnit配置。请注意，`mock-connectors`设置为`false`。
+<2>定义数据库服务器配置。
+
+
+[%header%autowidth.spread]
+.DB服务器配置参数
+|===
+|属性名称 |描述
+
+| `name`
+|定义此数据库服务器的配置名称。必须是唯一的。
+
+| `database`
+|定义内存数据库的名称。
+
+| `sqlFile`
+|指定定义DB结构/内容的SQL文件的路径。该参数用于在启动时创建数据库。
+
+| `csv`
+|指定用于定义数据库结构/内容的逗号分隔文件的路径。该参数用于在启动时创建数据库。
+
+|===
+
+在本文档的示例中，文件`FILE_NAME.sql`定义了一个名为`jobtitlelookup`的表格，其中包含一条记录。
+
+==== 数据库服务器连接参数
+
+MUnit数据库服务器具有以下默认连接参数集：
+
+[source,console]
+.MUnit数据库连接属性
+----
+db.driver=org.h2.Driver
+db.url=jdbc:h2:mem:DATABASE_NAME;MODE=MySQL
+db.user=
+db.password=
+----
+
+`db.user`和`db.password`参数的值有意空白。
+
+==== 定义数据库结构
+
+有两种不同的方式来定义数据库的结构和内容：
+
+*  SQL
+*  CSV
+
+注：MUnit数据库服务器基于H2。复杂的结构，索引和连接命令可能无法正常工作。
+
+===== 从SQL文件中定义数据库结构
+
+要从SQL文件中定义数据库结构和内容，请提供一组有效的ANSI SQL DDL（数据定义语言）说明。
+
+[source,xml,linenums]
+。从SQL创建数据库
+----
+<dbserver:config  name="DB_Server" database="DATABASE_NAME" sqlFile="FILE_NAME.sql" />
+----
+
+===== 从CSV文件中定义数据库结构
+
+您可以从CSV文件创建数据库。
+
+* 表的名称是文件的名称（在下面的示例中为`customers`）。
+
+* 列的名称是CSV文件的标题。
+
+[source,xml,linenums]
+。从CSV创建数据库
+----
+<dbserver:config name="DB_Server" database="DATABASE_NAME" csv="customers.csv"/>
+----
+
+您也可以在多个CSV文件中拆分您的数据库结构。在这种情况下，请将文件名称作为以分号分隔的列表，如下所示。
+
+[source,xml,linenums]
+。从几个CSV创建数据库
+----
+<dbserver:config name="DB_Server" database="DATABASE_NAME" csv="customers.csv;qbsyncjobs.csv"/>
+----
+
+=== 启动数据库服务器
+
+为了运行，必须在`before-suite`中启动数据库服务器。使用`start-db-server`消息处理器启动服务器。
+
+[source, xml, linenums]
+。启动数据库服务器
+----
+<munit:before-suite name="before.suite" description="Starting DB server">
+  <dbserver:start-db-server config-ref="DB_Server"/>
+</munit:before-suite>
+----
+
+=== 运行测试
+
+一旦我们的DB服务器启动并运行，我们就可以运行我们的测试。
+
+[source, xml, linenums]
+测试数据库示例
+----
+<munit:test name="testDBServer" description="Data must be stored in the DB server">
+  <flow-ref name="exampleFlow" />             //<1>
+  <munit:assert-on-equals expectedValue="#['Culinary Team Member']" actualValue="#[flowVars['job']]" />  //<2>
+</munit:test>
+----
+
+<1>运行生产代码。
+<2>声明产品代码返回的有效内容，该代码应来自我们的内存数据库。
+
+正如你所看到的，我们没有使用任何新的消息处理器，因为数据库已经被初始化并加载了正确的数据。因此，我们只是验证在生产代码中运行的查询是否正确，并且返回的负载是预期的负载。
+
+=== 其他MUnit数据库服务器消息处理器
+
+MUnit数据库服务器还提供了本节中概述的其他一些功能。
+
+==== 执行SQL指令
+
+因此，MUnit数据库服务器允许您在内存数据库上执行指令
+您可以在测试之前添加或删除注册表，并检查您的数据是否为
+正确存储。
+
+[source, xml, linenums]
+。执行SQL指令示例
+
+[source, xml, linenums]
+----
+<dbserver:execute config-ref="DB_Server" sql="INSERT INTO some_table..."/>
+----
+
+==== 执行SQL查询
+
+MUnit数据库服务器允许您执行SQL查询。结果值是一张地图列表。
+
+[source, xml, linenums]
+。执行SQL查询
+
+[source, xml, linenums]
+----
+<dbserver:execute-query config-ref="DB_Server" sql="SELECT * FROM some_table"/>
+----
+
+==== 验证SQL查询结果
+
+MUnit数据库服务器允许您验证查询结果是否符合预期。
+
+为此，请使用`validate-that`标签。将`results`属性设置为CSV，并用换行符（`\n`）分隔行，如下所示。
+
+[source, xml, linenums]
+.Validate SQL查询
+[source, xml, linenums]
+----
+<dbserver:validate-that config-ref="DB_Server"
+  query="SELECT * FROM jobtitlelookup WHERE JOBTITLE='Developer';"
+  returns='"JOBTITLE","EECSALARYORHOURLY","JOBTITLEID"\n"Developer","SALARY","10"'/>
+----
+结果应该是一个CSV文本。
+
+=== 停止数据库服务器
+
+要正常停止数据库服务器，需要使用`stop-db-server`消息处理器在`after-suite`中停止。
+
+[source, xml, linenums]
+.Stop数据库服务器
+----
+<munit:after-suite name="after.suite" description="Stopping DB server">
+  <dbserver:stop-db-server config-ref="DB_Server"/>
+</munit:after-suite>
+----
+
+== 执行环境
+
+您可能已经注意到，我们的产品代码示例在以下示例中广泛使用了某些参数的占位符，例如`driverName`，`url`等：
+
+[source, xml, linenums]
+。参数化生产代码
+----
+<spring:bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+  <spring:property name="driverName" value="${db.driver}" />
+  <spring:property name="url" value="${db.url}" />
+  <spring:property name="user" value="${db.user}" />
+  <spring:property name="password" value="${db.password}" />
+</spring:bean>
+----
+
+原因是属性允许我们创建更具可配置性的代码。比较上面的例子：
+
+[source, xml, linenums]
+。编码的生产代码
+----
+<spring:bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+  <spring:property name="driverName" value="org.mule.fake.Driver" />
+  <spring:property name="url" value="192.168.0.3" />
+  <spring:property name="user" value="myUser" />
+  <spring:property name="password" value="123456" />
+</spring:bean>
+----
+
+第二个示例代码是无法测试的，即使没有MUnit也是如此。如果我们需要在投入生产之前测试这些代码，我们总是用真实的证书打印生产数据库服务器，这带来了风险。
+
+另一方面，第一个示例代码允许我们定义两个不同的属性文件：
+
+* 一个用于测试环境
+* 一个用于生产环境
+
+这与Mule属性占位符结合使用，如下面的`${env}`所示：
+
+[source,xml,linenums]
+。参数化生产代码
+----
+<global-property value="mule.${env}.property"/>
+----
+
+在上例中，使用`${env}`可以让我们利用执行环境。因此，例如，我们可以定义两个单独的属性文件`mule.test.properties`和`mule.prod.properties`，它们包含相同的属性，其值根据我们希望使用的环境而定。
+
+提示：要从Maven运行测试并从命令行发出env参数，可以运行：`mvn -DargLine="-Dmule.env=test" clean test`。
+

@@ -1,0 +1,56 @@
+<mule xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit-soap="http://www.mulesoft.org/schema/mule/apikit-soap" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+http://www.mulesoft.org/schema/mule/apikit-soap http://www.mulesoft.org/schema/mule/apikit-soap/current/mule-apikit-soap.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+  <http:listener-config name="api-httpListenerConfig" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+  <apikit-soap:config name="/TshirtService/TshirtServicePort/api-config" wsdlUrl="tshirt2.wsdl" serviceName="TshirtService" portName="TshirtServicePort" doc:name="APIkit SOAP: Configuration"/>
+  <flow name="api-main">
+    <http:listener path="/TshirtService/TshirtServicePort" config-ref="api-httpListenerConfig" doc:name="/TshirtService/TshirtServicePort" />
+    <apikit-soap:router config-ref="/TshirtService/TshirtServicePort/api-config" doc:name="SOAP Router"/>
+  </flow>
+  <flow name="OrderTshirt:/TshirtService/TshirtServicePort/api-config">
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://mulesoft.org/tshirt-service
+---
+{
+  ns0#OrderTshirtResponse: {
+    orderId: "I got a request from "
+    ++ payload.ns0#OrderTshirt.name
+    ++ ", using the following auth header "
+    ++ inboundProperties['soap.AuthenticationHeader'].ns0#AuthenticationHeader.apiKey
+  }
+}]]></dw:set-payload>
+            <dw:set-property propertyName="soap.APIUsageInformation"><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://mulesoft.org/tshirt-service
+---
+{
+  ns0#APIUsageInformation: {
+    apiCallsRemaining: 10
+  }
+}]]></dw:set-property>
+        </dw:transform-message>
+
+  </flow>
+  <flow name="ListInventory:/TshirtService/TshirtServicePort/api-config">
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://mulesoft.org/tshirt-service
+---
+{
+  ns0#TshirtFault: {
+    errorStuff: 500
+  }
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <apikit-soap:fault config-ref="/TshirtService/TshirtServicePort/api-config" faultType="ListInventory||TshirtFault" doc:name="SOAP Fault"/>
+
+  </flow>
+  <flow name="TrackOrder:/TshirtService/TshirtServicePort/api-config">
+    <set-payload value="&lt;soap:Fault xmlns:soap=&quot;http://www.w3.org/2003/05/soap-envelope&quot;&gt;&lt;faultcode&gt;soap:Server&lt;/faultcode&gt;&lt;faultstring&gt;Operation [TrackOrder:/TshirtService/TshirtServicePort/api-config] not implemented&lt;/faultstring&gt;&lt;/soap:Fault&gt;" doc:name="Set Payload"/>
+  </flow>
+</mule>

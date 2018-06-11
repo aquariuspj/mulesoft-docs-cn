@@ -1,0 +1,776 @@
+=  DataWeave平面文件模式
+:keywords: b2b, edi, schema, dataweave, yaml, language, reference
+
+link:dataweave[DataWeave]允许您处理多个不同的 link:dataweave-formats[数据类型]。对于大多数这些类型，您可以导入描述输入结构的模式，以便在设计时访问有价值的元数据。请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+DataWeave使用名为*FFD (for Flat File Definition)*的YAML格式来表示平面文件模式。 FFD格式非常灵活，可支持各种用例，但基于*elements*，*composites*，*segments*，*groups*和*structures* 。
+
+
+架构必须使用平面文件架构语言编写，扩展名为{{0}。该语言与Anypoint Studio也接受的EDI模式语言（ESL）非常相似。
+
+在DataWeave上，您可以通过属性将输入或输出绑定到平面文件模式。有关如何通过Studio用户界面执行此操作的说明，请参阅 link:/anypoint-studio/v/6/transform-message-component-concept-studio[关于变换消息组件]。如果您想通过代码执行此操作，请参阅 link:dataweave-formats#flat-file[DataWeave格式]了解更多信息，并记住这些属性的设置方式取决于您是在定义输入还是输出。
+
+
+[TIP]
+====
+如果您打算使用固定宽度格式，则可以通过Transform Message组件的UI中的编辑器直接设置结构，只需选择`Fixed Width`类型即可。请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+====
+
+
+
+模式中的== 组件类型
+
+以下是构成平面文件模式的不同类型的组件，从最基本到最复杂。 *Elements*和*Segments*为*always required*，而根据<<Top-level structure of an FFD Document, top level structure of your document>>可能需要复合，组和结构。
+
+*  *element*  - 元素是一个基本数据项，它具有关联的类型和固定的宽度，以及用于读写数据值的格式选项。
+*  *composite*  - （可选）一组元素。它也可以包含其他儿童合成物。
+*  *segment*  - 一行数据，由可能重复的任意数量的元素和/或组合构成。
+*  *group*  - （可选）组合在一起的几个段。它也可以包括其他儿童组。
+*  *structure*  - 分段组织结构，要求分段具有唯一标识码作为其数据的一部分。
+
+
+
+////
+如果您在FFD中具有单个结构或分段定义，则只要您将FFD用作 link:dataweave[DataWeave]变换器的元数据，就会自动使用该结构或分段定义。
+////
+
+
+
+
+
+==  FFD文档的顶层结构
+
+
+FFD文档中的顶层定义以模式的形式开始，在这种情况下，它必须总是"FLATFILE"（"COPYBOOK"和"FIXEDWIDTH"作为{{3} }）。其余部分取决于文件中存在的定义形式，并提供以下替代方法：
+
+*  *single segment*  - 直接在顶层分割信息（包括提供分段元素和/或复合细节的_values_键）
+
+*  *multiple segments*  - 带有多个子对象的_segments_键，每个子对象定义一个段
+
+*  *multiple structures*  - 具有多个子对象的_structures_键，每个子对象定义一个结构
+
+
+
+////
+*  *single structure*  - 直接在顶层构建信息（包括一个给出结构段细节的_data_键）
+////
+
+
+=== 单段
+
+如果您只使用一种类型的记录，则只需在FFD中为该记录类型定义一个段定义。
+
+image::dataweave-flat-file-schemas-22788.png[]
+
+以下是只有一个细分的简单模式：
+
+[source,yaml, linenums]
+----
+form: FLATFILE
+id: 'RQH'
+tag: '1'
+name: Request Header Record
+values:
+- { name: 'Organization Code', type: String, length: 10 }
+- { name: 'File Creation Date', type: Date, length: 8 }
+- { name: 'File Creation Time', type: Time, length: 4 }
+----
+
+这个例子只是简单地定义了一个单独的段中的元素列表，它没有合成的组合。
+
+[TIP]
+简化形式仅仅是为了方便。即使您只有一个子分段定义，也可以使用_segments_键。
+
+=== 多个细分
+
+如果您在同一个转换中使用多种类型的记录，则需要使用结构定义来控制这些不同记录的组合方式。
+
+image::dataweave-flat-file-schemas-680c6.png[]
+
+以下是一个多段模式的例子：
+
+[source,yaml, linenums]
+----
+form: FLATFILE
+segments:
+- id: 'RQH'
+  tag: '1'
+  name: Request Header Record
+  values:
+  - { name: 'Organization Code', type: String, length: 10 }
+  - { name: 'File Creation Date', type: Date, length: 8 }
+  - { name: 'File Creation Time', type: Time, length: 4 }
+- id: 'RSH'
+  tag: '1'
+  name: Response Header Record
+  values:
+  - { name: 'Organization Code', type: String, length: 10 }
+  - { name: 'Company Name', type: String, length: 30 }
+  - { name: 'Customer Account Name', type: String, length: 22 }
+  - { name: 'Transaction Number', type: String, length: 15 }
+- id: 'BCH'
+  tag: '2'
+  name: Batch Header Record
+  values:
+  - { name: 'Company Name', type: String, length: 30 }
+  - { name: 'Organization Code', type: String, length: 10 }
+  - { name: 'Expiration Date', type: String, length: 8 }
+  - { name: 'Account Number', type: String, length: 17 }
+----
+
+这个例子包含3段，每段都有一个定义的元素列表。然后它定义每个引用的元素，每个元素都有一个id，名称类型和长度。
+
+=== 多个结构
+
+如果您在FFD中有多个结构或分段定义，那么当您将模式应用到 link:dataweave[转换消息组件]上的元数据描述时，您需要指定要使用哪一个。
+
+image::dataweave-flat-file-schemas-4e1eb.png[]
+
+
+以下是具有多个结构的模式的顶层结构可能如下所示：
+
+[source,yaml, linenums]
+----
+form: FIXEDWIDTH
+structures:
+- id: 'BatchReq'
+  name: Batch Request
+  tagStart: 0
+  tagLength: 1
+  data:
+  - { idRef: 'RQH' }
+  - groupId: 'Batch'
+    usage: O
+    count: '>1'
+    items:
+    - { idRef: 'BCH' }
+    - { idRef: 'TDR', count: '>1' }
+    - { idRef: 'BCF' }
+  - { idRef: 'RQF' }
+- id: 'BatchRsp'
+  name: Batch Response
+  tagStart: 0
+  tagLength: 1
+  data:
+  - { idRef: 'RSH' }
+  - groupId: 'Batch'
+    usage: O
+    count: '>1'
+    items:
+    - { idRef: 'BCH' }
+    - { idRef: 'TDR', count: '>1' }
+    - { idRef: 'BCF' }
+  - { idRef: 'RSF' }
+segments:
+- id: 'RQH'
+  …
+----
+
+上面定义了两种不同的结构，即*BatchReq*结构和*BatchRsp*结构。这些结构中的每一个都使用特定的片段序列和片段组。两个结构中重复组"batch"。批次组由单个BCH行，多个TDR行和单个BCF行组成。
+
+请注意，此示例并不完整，您最终需要<<Segment Definitions, define each of the referenced segments>>。请参阅<<Referenced vs in-lined Definitions>>以了解在此示例中如何引用这些细分受众群。
+
+
+
+////
+=== 单一结构
+
+
+如果此架构仅包含其中一个结构，例如*BatchReq*结构，则可以使用更简单的形式：
+
+[source,yaml, linenums]
+----
+form: FLATFILE
+id: 'BatchReq'
+name: Batch Request
+tagStart: 0
+tagLength: 1
+data:
+- { idRef: 'RQH' }
+- groupId: 'Batch'
+  usage: O
+  count: '>1'
+  items:
+  - { idRef: 'BCH' }
+  - { idRef: 'TDR', count: '>1' }
+  - { idRef: 'BCF' }
+- { idRef: 'RQF' }
+…
+----
+////
+
+
+
+== 元素定义
+
+元素定义是应用程序数据的基本处理器，由标准特性的基本键值对组成。这里有几个元素定义：
+
+[source,yaml, linenums]
+----
+  - { id: 'OrgCode', name: 'Organization Code', type: String, length: 10 }
+  - { id: 'CreatDate', name: 'File Creation Date', type: Date, length: 8 }
+  - { id: 'CreatTime', name: 'File Creation Time', type: Time, length: 4 }
+  - { id: 'BatchTransCount', name: 'Batch Transaction Count', type: Integer, format: { justify: zeroes }, length: 6 }
+  - { id: 'BatchTransAmount', name: 'Batch Transaction Amount', type: Integer, format: { justify: zeroes }, length: 10 }
+----
+
+[TIP]
+请注意，如果要在段定义内联定义元素（而不是在文档的ond处定义它们并引用它们），则不需要'id'字段。
+
+元素定义可能具有以下属性：
+
+[%header,cols="2*"]
+|===
+| {名称{1}}说明
+| id  |元素标识符（未用于内联定义，<<Referenced vs in-lined Definitions, referenced definitions>>必需）
+|名称 |元素名称（可选）
+|键入 |值类型代码，如下所示
+|格式 |类型特定的格式信息
+|长度 |值的列数
+|===
+
+用于定义元素的允许*types*如下所示：
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+|布尔值 |布尔值
+|日期 |包含年，月和日组件的非分区日期值（可能不会全部以文本形式显示）
+|日期时间 |使用年，月，日，小时，分钟，秒和毫秒分量的非分区日期/时间值（可能不会全部以文本形式显示）
+|十进制 |十进制数值，可能包含或不包含文本形式的显式小数点
+|整数 |整数值
+|打包 |打包十进制数字值的十进制表示形式
+|时间 |使用小时，分钟，秒和毫秒组件分解时间值（可能不会全部以文本形式显示）
+|字符串 |字符串值
+|===
+
+值类型支持一系列影响值的文本形式的格式选项。以下是主要选项以及它们适用的类型：
+
+
+[%header%autowidth.spread]
+|===
+|键 |描述 |适用于
+|隐式 |隐式小数位数（用于文本形式中无小数的定点值） |小数
+|证明 |字段中的理由（左，右，无或零，最后仅限数字） |除Packed外的所有
+|模式 |对于数字值，用于解析和写入的java.text.DecimalFormat模式;对于日期/时间值，java.time.format.DateTimeFormatter模式 | Date，DateTime，Decimal，Integer，Time
+|符号 |数字值的使用符号（UNSIGNED，NEGATIVE_ONLY，OPTIONAL，ALWAYS_LEFT，ALWAYS_RIGHT） |十进制，整数
+|===
+
+
+
+== 复合定义
+
+复合材料有助于引用一组通常一起呈现的元素，例如'name'和'surname'可以被捆绑在一起成为一个复合物，因为它们可能被称为集合。
+
+复合定义与段定义非常相似，由标准特性的一些键值对和值列表组成。复合材料可能包含*references to elements*或其他*nested composites*。以下是复合定义的示例：
+
+[source,yaml, linenums]
+----
+- id: 'DateTime'
+  name: 'Date/Time pair'
+  values:
+   - { name: 'File Creation Date', type: Date, length: 8 }
+   - { name: 'File Creation Time', type: Time, length: 4 }
+----
+
+复合定义可能具有以下属性：
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| id  |组合标识符（不用于内联定义，<<Referenced vs in-lined Definitions, referenced definitions>>必需）
+|名称 |复合名称（可选）
+|值 |合成内的元素和合成列表
+|===
+
+值列表采用与段定义中的值列表相同的形式。
+
+
+== 细分定义
+
+段描述了数据中的一种类型的行。它们主要由*references to elements*和*composites*组成，以及一些描述该段的键值对。在一个稍微复杂的模式中，您可能有一个包含两个不同细分市场的结构，其中一个描述了诸如日期和负责人之类的物料清单的单个标题中的字段，而另一个细分市场描述了重复出现的字段进入材料清单中的每个实际项目。
+
+以下是一个示例细分定义，其中包含一个松散元素和一个包含两个元素的组合：
+
+[source,yaml, linenums]
+----
+- id: 'RQH'
+  tag: '1'
+  name: Request Header Record
+  values:
+   - { name: 'Organization Code', type: String, length: 10 }
+   - id: 'DateTime'
+     name: 'Date/Time pair'
+     values:
+      - { name: 'File Creation Date', type: Date, length: 8 }
+      - { name: 'File Creation Time', type: Time, length: 4 }
+----
+
+细分定义可能包含以下属性：
+
+[%header%autowidth.spread]
+|===
+| {节{1}}说明
+| id  |段标识符（未用于内联定义，<<Referenced vs in-lined Definitions, referenced definitions>>必需）
+|标记 |段的唯一标识符标记（如果直接使用段而不是结构的一部分，则忽略）
+|姓名 |细分名称（可选）
+|值 |段中的元素和合成列表
+|===
+
+'values'字段可以通过它们的id给出定义内联或列表引用，元素和组合（使用紧凑的YAML语法显示，其中每个引用的值由逗号分隔的键值对在大括号中）。与引用一起使用的值是：
+
+[%header%autowidth.spread]
+|===
+| {节{1}}说明
+| idRef  |引用的元素或合成标识
+|名称 |段中的值的名称（默认情况下使用的可选，元素或复合名称）
+|用法 |使用代码，可能是M代表强制性，O代表可选，或者U代表未使用（可选，如果未指定则"Mandatory"）
+| count  |最大重复计数值，可以是任意数字或特殊值'> 1'，表示任意重复次数（可选，如果未指定，则使用计数值1）
+|===
+
+内联值定义使用参考表单中的_name_，_usage_和_count_键值对，并结合下面定义的组合或元素键值对。
+
+每个细分受众群都需要包含一个*tag*数字值，解析器需要这个数字来标识当前细分受众群。然后将这些数值添加到开始每个段的输出中。
+
+
+
+== 结构定义
+
+结构定义由*references to segments*和*group definitions*组成，以及一组标准特征的键值对。分段可以被进一步组织为由潜在重复的分段序列组成的组。
+
+这里是一个示例结构定义：
+
+[source,yaml, linenums]
+----
+structures:
+- id: 'Check'
+  name: My Check
+  tagStart: 0
+  tagLength: 1
+  data:
+  - { idRef: 'HeaderFile' }
+  - groupId: 'Data'
+    count: '>1'
+    items:
+    - { idRef: 'Ticket' }
+    - { idRef: 'Check', count: '>1' }
+  - { idRef: 'EndFile' }
+segments:
+- id: 'HeaderFile'
+  …
+----
+
+此示例包含对两个段（HeaderFile和Endfile）的直接引用，以及包含对其他段（Ticket和Check）的引用的组定义。请注意，要使此结构生效，需要在下面定义每个<<Segment Definition, referenced segments>>。请参阅<<Referenced vs in-lined Definitions>>以了解在此示例中片段的引用方式。
+
+结构定义可以包含以下属性：
+
+[%header%autowidth.spread]
+|===
+|结构键/部分 |说明
+| id  |结构标识符
+|名称 |结构名称（可选）
+| tagStart  |启动段标识符标记的列号（与结构中每个段关联的唯一值）。对于平面文件结构是必需的，只支持值0。
+| tagLength  |段标识符标签中的列数
+|数据 |结构中的分段（和组）的列表
+|===
+
+[NOTE]
+当使用平面文件结构时，*tagStart*参数是必需的。使用它和tagLength一起是解析器区分不同片段的唯一方法。现在唯一支持的tagStart值是0。
+
+段列表中的每个项目都是段引用（或内联定义）或组定义（始终内联）。
+
+
+=== 细分引用
+
+段引用使用紧凑的YAML语法显示，其中每个引用的值都以逗号分隔的键值对的形式给出，并用大括号括起来。其可能的价值是：
+
+[%header,cols="2*"]
+|===
+|细分属性 |说明
+| idRef  |引用的段ID
+|用法 |使用代码，可能是M表示强制，O表示可选，或者U表示未使用（__可能会更改为release__）（可选，如果未指定，则为必需）
+|计数 |最大重复计数值，可能是一个数字或特殊值'> 1'，表示任意重复次数（可选，默认情况下使用计数值1）
+|===
+
+内联段定义使用_usage_和_count_键值对作为引用，并将它们与<<Segment Definitions, segment definition>>键值对结合使用。
+
+
+=== 组定义
+
+在最后一个示例中，组定义以展开的形式显示，键值对位于不同的行上。组定义可能具有以下属性：
+
+[%header%autowidth.spread]
+|===
+|值| 说明
+| groupId  |组标识符
+|用法 |使用代码，可能是M代表强制性，O代表可选，或者U代表未使用（可选，默认为M）
+| count  |最大重复计数值，可能是一个数字或特殊值'> 1'，表示任意数量的重复（可选，如果未指定，则使用计数值1）
+|项 |构成组的分段列表（以及潜在的嵌套组）
+|===
+
+
+
+
+== 引用与内联定义
+
+除了选择顶层表单之外，当涉及表示结构，分段或组合的组件时，您也可以选择。您可以在使用点上内联定义组件段，组合件和元素，或者可以在表中定义它们并从任何地方引用它们。内联定义更简单，更紧凑，但表格形式允许重用定义。表格示例必须包含一个_id_值，并且对该定义的每个引用都使用_idRef_。以下是一个示例，显示了这适用于组成结构的细分：
+
+[source,yaml, linenums]
+----
+  form: FLATFILE
+  structures:
+  - id: 'Check'
+    name: My Check
+    tagStart: 0
+    tagLength: 1
+    data:
+    - { idRef: 'HeaderFile' }
+    - groupId: 'Data'
+      count: '>1'
+      items:
+      - { idRef: 'Ticket' }
+      - { idRef: 'Check', count: '>1' }
+    - { idRef: 'EndFile' }
+  segments:
+  - id: 'HeaderFile'
+    name: Header File
+    values:
+    - { idRef: 'Identifier'}
+    - { idRef: 'PriorityCode'}
+    - { idRef: 'PresentationDate'}
+    - { idRef: 'PresentationTime'}
+    - { idRef: 'FileIdentifier'}
+    - { idRef: 'RecordSize'}
+    - { idRef: 'BlockFactor'}
+    - { idRef: 'FormatCode'}
+  - id: 'Ticket'
+    name: Ticket
+    values:
+    - { idRef: 'Identifier'}
+    - { idRef: 'TicketTransactionCode'}
+    - { idRef: 'DepositBank'}
+    - { idRef: 'TicketReserved'}
+    - { idRef: 'DepositAccount'}
+    - { idRef: 'Amount'}
+    - { idRef: 'TypeAndID'}
+    - { idRef: 'ZipCode'}
+    - { idRef: 'ExchangePoint'}
+    - { idRef: 'AdditionalRecords'}
+    - { idRef: 'TraceNumber'}
+  - id: 'Check'
+    name: Check
+    values:
+    - { idRef: 'Identifier'}
+    - { idRef: 'Bank'}
+    - { idRef: 'Office'}
+    - { idRef: 'TicketZipCode'}
+    - { idRef: 'Check'}
+    - { idRef: 'AccountCheck'}
+    - { idRef: 'Amount'}
+    - { idRef: 'TicketAccount'}
+    - { idRef: 'OtherMotives'}
+    - { idRef: 'TraceNumber'}
+  - id: 'EndFile'
+    name: End File
+    values:
+    - { idRef: 'Identifier'}
+    - { idRef: 'NumberOfBatchs'}
+    - { idRef: 'NumberOfBlocks'}
+    - { idRef: 'EndFileNumberOfRecords'}
+    - { idRef: 'Controls'}
+    - { idRef: 'SumOfDebits'}
+    - { idRef: 'SumOfCredits'}
+    - { idRef: 'EndFileReserved'}
+  elements:
+    - { id: 'Identifier', name: 'Identifier', type: Integer, length: 1 }
+    - { id: 'PriorityCode', name: 'Priority Code', type: Integer, length: 2 }
+    - { id: 'PresentationDate', name: 'Presentation Date', type: Integer, length: 6 }
+    - { id: 'PresentationTime', name: 'Presentation Time', type: Integer, length: 4 }
+    - { id: 'FileIdentifier', name: 'File Identifier', type: String, length: 1 }
+    - { id: 'RecordSize', name: 'Record Size', type: Integer, length: 3 }
+    - { id: 'BlockFactor', name: 'Block Factor', type: Integer, length: 2 }
+    - { id: 'FormatCode', name: 'Format Code', type: Integer, length: 1 }
+    - { id: 'TransactionCode', name: 'Transaction Code', type: Integer, length: 3 }
+    - { id: 'TransactionCode', name: 'Transaction Code', type: Integer, length: 3 }
+    - { id: 'TicketTransactionCode', name: 'Transaction Code', type: Integer, length: 2 }
+    - { id: 'DepositBank', name: 'Deposit Bank', type: Integer, length: 8 }
+    - { id: 'TicketReserved', name: 'Reserved', type: Integer, length: 1 }
+    - { id: 'DepositAccount', name: 'Deposit Account', type: Integer, length: 17 }
+    - { id: 'Amount', name: 'Amount', type: Integer, length: 10 }
+    - { id: 'TypeAndID', name: 'Type And ID', type: Integer, length: 15 }
+    - { id: 'ZipCode', name: 'Zip Code', type: String, length: 6 }
+    - { id: 'ExchangePoint', name: 'Exchange Point', type: String, length: 16 }
+    - { id: 'AdditionalRecords', name: 'Additional Records', type: Integer, length: 1 }
+    - { id: 'TraceNumber', name: 'Trace Number', type: Integer, length: 15 }
+    - { id: 'Bank', name: 'Bank', type: Integer, length: 3 }
+    - { id: 'Office', name: 'Office', type: Integer, length: 3 }
+    - { id: 'TicketZipCode', name: 'Zip Code', type: Integer, length: 4 }
+    - { id: 'Check', name: 'Check', type: Integer, length: 8 }
+    - { id: 'AccountCheck', name: 'Account Check', type: Integer, length: 11 }
+    - { id: 'TicketAccount', name: 'Ticket Account', type: Integer, length: 11 }
+    - { id: 'OtherMotives', name: 'Other Motives', type: String, length: 26 }
+    - { id: 'Controls', name: 'Controls', type: Integer, length: 10 }
+    - { id: 'SumOfDebits', name: 'Sum Of Debits', type: Integer, length: 12 }
+    - { id: 'SumOfCredits', name: 'Sum Of Credits', type: Integer, length: 12 }
+    - { id: 'NumberOfBatchs', name: 'Number Of Batchs', type: Integer, length: 6 }
+    - { id: 'NumberOfBlocks', name: 'Number Of Blocks', type: Integer, length: 6 }
+    - { id: 'EndFileNumberOfRecords', name: 'Number Of Records', type: Integer, length: 8 }
+    - { id: 'EndFileReserved', name: 'Reserved', type: String, length: 35 }
+----
+
+在上面的例子中，*Check*结构引用_data_定义部分中的段。然后每个段都在架构顶层的_segments_部分中定义，然后这些部件又引用稍后在_elements_部分中定义的元素。
+
+以下是相同结构的内联定义：
+
+[source,yaml, linenums]
+----
+  form: FLATFILE
+  structures:
+  - id: 'Check'
+    name: My Check
+    tagStart: 0
+    tagLength: 1
+    data:
+    - { idRef: 'HeaderFile' }
+    - groupId: 'Data'
+      count: '>1'
+      items:
+      - { idRef: 'Ticket' }
+      - { idRef: 'Check', count: '>1' }
+    - { idRef: 'EndFile' }
+  segments:
+  - id: 'HeaderFile'
+    name: Header File
+    tag: '0'
+    values:
+    - { name: 'Priority Code', type: Integer, length: 2 }
+    - { name: 'Presentation Date', type: Date, length: 8 }
+    - { name: 'Presentation Time', type: Time, length: 4 }
+    - { name: 'File Identifier', type: String, length: 1 }
+    - { name: 'Block Factor', type: Integer, length: 2 }
+    - { name: 'Format Code', type: Integer, length: 1 }
+  - id: 'Ticket'
+    name: Ticket
+    tag: '1'
+    values:
+    - { name: 'Transaction Code', type: Integer, length: 2 }
+    - { name: 'Deposit Bank', type: String, length: 8 }
+    - { name: 'Reserved', type: String, length: 1, usage: O }
+    - { name: 'Deposit Account', type: String, length: 17 }
+    - { name: 'Amount', type: Integer, length: 10 }
+    - { name: 'Type And ID', type: String, length: 15 }
+    - { name: 'Zip Code', type: String, length: 6 }
+    - { name: 'Exchange Point', type: String, length: 16 }
+    - { name: 'Additional Records', type: Integer, length: 1 }
+    - { name: 'Trace Number', type: Integer, length: 15 }
+  - id: 'Check'
+    name: Check
+    tag: '2'
+    values:
+    - { name: 'Bank', type: Integer, length: 3 }
+    - { name: 'Office', type: Integer, length: 3 }
+    - { name: 'Zip Code', type: String, length: 6 }
+    - { name: 'Check', type: Integer, length: 8 }
+    - { name: 'Account Check', type: Integer, length: 11 }
+    - { name: 'Amount', type: Integer, length: 10 }
+    - { name: 'Ticket Account', type: String, length: 11 }
+    - { name: 'Other Motives', type: String, length: 26 }
+    - { name: 'Trace Number', type: Integer, length: 15 }
+  - id: 'EndFile'
+    name: End File
+    tag: '3'
+    values:
+    - { name: 'Number Of Batchs', type: Integer, length: 6 }
+    - { name: 'Number Of Blocks', type: Integer, length: 6 }
+    - { name: 'Number Of Records', type: Integer, length: 8 }
+    - { name: 'Controls', type: Integer, length: 10 }
+    - { name: 'Sum Of Debits', type: Integer, length: 12 }
+    - { name: 'Sum Of Credits', type: Integer, length: 12 }
+    - { name: 'Reserved', type: String, length: 35, usage: O }
+----
+
+
+== 完整示例模式
+
+[source,yaml, linenums]
+----
+  form: FLATFILE
+  structures:
+  - id: 'Check'
+    name: My Check
+    tagStart: 0
+    tagLength: 1
+    data:
+    - { idRef: 'HeaderFile' }
+    - groupId: 'Data'
+      count: '>1'
+      items:
+      - { idRef: 'Ticket' }
+      - { idRef: 'Check', count: '>1' }
+    - { idRef: 'EndFile' }
+  segments:
+  - id: 'HeaderFile'
+    name: Header File
+    tag: '0'
+    values:
+    - { name: 'Priority Code', type: Integer, length: 2 }
+    - { name: 'Presentation Date', type: Date, length: 8 }
+    - { name: 'Presentation Time', type: Time, length: 4 }
+    - { name: 'File Identifier', type: String, length: 1 }
+    - { name: 'Block Factor', type: Integer, length: 2 }
+    - { name: 'Format Code', type: Integer, length: 1 }
+  - id: 'Ticket'
+    name: Ticket
+    tag: '1'
+    values:
+    - { name: 'Transaction Code', type: Integer, length: 2 }
+    - { name: 'Deposit Bank', type: String, length: 8 }
+    - { name: 'Reserved', type: String, length: 1, usage: O }
+    - { name: 'Deposit Account', type: String, length: 17 }
+    - { name: 'Amount', type: Integer, length: 10 }
+    - { name: 'Type And ID', type: String, length: 15 }
+    - { name: 'Zip Code', type: String, length: 6 }
+    - { name: 'Exchange Point', type: String, length: 16 }
+    - { name: 'Additional Records', type: Integer, length: 1 }
+    - { name: 'Trace Number', type: Integer, length: 15 }
+  - id: 'Check'
+    name: Check
+    tag: '2'
+    values:
+    - { name: 'Bank', type: Integer, length: 3 }
+    - { name: 'Office', type: Integer, length: 3 }
+    - { name: 'Zip Code', type: String, length: 6 }
+    - { name: 'Check', type: Integer, length: 8 }
+    - { name: 'Account Check', type: Integer, length: 11 }
+    - { name: 'Amount', type: Integer, length: 10 }
+    - { name: 'Ticket Account', type: String, length: 11 }
+    - { name: 'Other Motives', type: String, length: 26 }
+    - { name: 'Trace Number', type: Integer, length: 15 }
+  - id: 'EndFile'
+    name: End File
+    tag: '3'
+    values:
+    - { name: 'Number Of Batchs', type: Integer, length: 6 }
+    - { name: 'Number Of Blocks', type: Integer, length: 6 }
+    - { name: 'Number Of Records', type: Integer, length: 8 }
+    - { name: 'Controls', type: Integer, length: 10 }
+    - { name: 'Sum Of Debits', type: Integer, length: 12 }
+    - { name: 'Sum Of Credits', type: Integer, length: 12 }
+    - { name: 'Reserved', type: String, length: 35, usage: O }
+----
+
+这个例子包含：
+
+* 名为“Check”的单个<<Structure Definitions, structure>>，其中定义了两个名为*HeaderFile*和*EndFile*的细分受众群和一个名为*Data*的小组。
+
+* 名为*Data*的<<Group Definitions, group>>，用于指定组成正文的细分的顺序和布局。
+
+*  4 <<Segment Definitions, segments>>，每个都有几个元素。 `tagStart=0`和`tagLength=1`值指定每行的第一个字符标识段类型。 0代表*HeaderFile*，1代表*Ticket*代码段，2代表每个*Ticket*代码段中的*Check*代码行，以及3代表{{8} } 分割。
+
+* 多个<<Element Definitions, elements>>，每个都有一个名称，类型和长度。
+
+*Check*结构定义数据将包含
+
+* 与段*HeaderFile*相对应的单行
+* 与段*Ticket*对应的一行或多行
+* 对于每一条*Ticket*行，都有一个或多个*Check*类型的行
+* 与段*EndFile*相对应的单行
+
+具有相应检查的票证组成一个组，并且该组可以在消息内重复任意次数，而HeaderFile和EndFile段仅出现一次并标记消息的开始和结束。
+
+下面是一个适用于这个数据结构定义的例子：
+
+
+[source, csv, linenums]
+----
+0 1201604221027A 21
+122AB000012 XAC00120034838565     15600CD0013289375938 98034ABC       1375860          38038
+2123456 38495    1736     385768      2247ABC   38577                                    87356
+2123457 38456    1737     385768      4447ABC   38577                                    87357
+122AB000013 XAC00120034838566     15600CD0013289375937 98034ABD       1375861          38039
+2123458 38495    1736     385768      2247ABC   38577                                    87358
+2123459 38456    1737     385768      4447ABC   38577                                    87359
+3     2     2       6        22       12345       34567
+----
+
+示例中的各行与以下列出的已定义结构匹配：
+
+*  1 `HeaderFile`  - 以ID `0`开始，作为第一个字符。
+*  2 `Ticket`  - 以ID `1`开头。这是第一个Ticket细分市场。
+*  3 `Check`  - 以ID `2`开头。此和下一个支票细分是之前票证细分的子项。
+*  4 `Check`
+*  5 `Ticket`  - 以ID `1`开头。这是第二个票据段。
+*  6 `Check`  - 以ID `2`开头。接下来的两个Check段是第二个Ticket段的子元素。
+*  7 `Check`
+*  8 `EndFile`  - 以ID `3`开头，表示它是*EndFile*段。
+
+
+
+== 将架构应用为元数据
+
+这是一个快速的一步一步的例子 - 一旦你建立了完整的模式，你可以很容易地将它应用到Transform Message组件的输入元数据。本示例使用描述Cobol Copybook格式的平面文件架构。
+
+. 下载示例模式文件 link:_attachments/Check.ffd[这里]。
+
+. 在Anypoint Studio中，点击*File*> *New*> *Mule Project*创建一个新项目，并为其指定任何名称并点击*Finish*。
+. 将调色板中的 link:http-connector[HTTP连接器]拖到您的空画布上，然后是*Transform Message Component*。
++
+image::dataweave-flat-file-schemas-3f67f.png[]
+
+
+
+. 单击HTTP连接器以打开其属性编辑器，然后单击绿色箭头图标为其创建新配置。保留默认的所有字段，然后点击*OK*。
++
+image::dataweave-quickstart-a56f0.png[]
+
+. 在*path*字段中写`get-copybook`。一旦部署完成，这将使端点可以通过'+0.0.0.0：8081 / get-copybook +'
+. 选择*Metadata*选项卡并点击*Set Metadata*按钮。
++
+image::dataweave-quickstart-702fd.png[]
+. 点击Payload元素旁边的*Edit*图标
+. 点击绿色加号图标以添加新的元数据类型并将其命名为'my-flat-file-type'
+
+. 选择*Flat File*作为类型，在*Schema*字段中将其指向模式文件的位置。然后点击*Select*以使用此元数据类型。
++
+image::dataweave-flat-file-schemas-814e1.png[]
+
+. 请注意，如果您打开“转换消息”组件，则输入部分应显示将在传入有效内容中出现的字段。
++
+image::dataweave-flat-file-schemas-a677a.png[]
+
+. 为输出部分设置元数据（可以通过在流中的变换消息组件之后配置元素来完成），可以将元素从输入结构中拖放到输出中以创建映射。
+
+按照上面的步骤，你的Mule项目的XML应该如下所示：
+
+[source,xml,linenums]
+----
+
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+
+    <http:listener-config name="HTTP_Listener_Configuration1" host="0.0.0.0" port="8081" basePath="get-copybook" doc:name="HTTP Listener Configuration"/>
+    <flow name="clean-slateFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration1" path="/" metadata:id="94520bfe-4bad-4c48-8073-241e512c8335" doc:name="HTTP"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+}]]></dw:set-payload>
+        </dw:transform-message>
+    </flow>
+</mule>
+----
+
+[NOTE]
+请注意HTTP连接器如何包含`metadata:id`属性，这指向您配置的元数据。这个元数据的规范存在于Stuio中，而不是在你的项目的XML上，这样它可以被其他Mule项目引用。

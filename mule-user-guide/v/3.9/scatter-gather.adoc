@@ -1,0 +1,316 @@
+= 散射收集
+:keywords: anypoint studio, scatter, gather, scatter-gather, aggregation, routing, all processor
+
+路由消息处理器*Scatter-Gather*同时向多个目标发送请求消息。它收集来自所有路由的响应，并将它们汇总为一条消息。
+
+Scatter-Gather取代了在{Mule 3.5.0}中弃用的 link:/mule-user-guide/v/3.9/routers#All[所有]消息处理器。请注意，与All不同，Scatter-Gather并行地执行路由，而不是按顺序执行。并行执行路由可大大提高应用程序的效率，并提供比顺序处理更多的信息。有关您所期望的差异的更多信息，请参阅下面的<<Migrating to Scatter-Gather from the All Message Router>>。
+
+== 先决条件
+
+本文假定您熟悉Mule应用程序和 link:/mule-user-guide/v/3.9/message-processors[消息处理器]，特别是 link:/mule-user-guide/v/3.9/routers[路由消息处理器]。
+
+== 分散收集行为和例外
+
+image:scatter-gather.png[分散 - 集中]
+
+Scatter-Gather路由器向所有配置的路由发送并发处理消息。执行拥有路由器的流的线程将等待所有路由完成或超时。
+
+如果没有失败，Mule会将每个路由的结果聚合到一个消息集合（MessageCollection类）中。一条路由中的故障不会阻止Scatter-Gather将消息发送到其他配置的路由，因此很可能所有路由都会同时失败。
+
+默认情况下，如果任何路由失败，Scatter-Gather将执行以下操作：
+
+* 为每个路由设置相应的异常负载。
+* 抛出一个CompositeRoutingException，它使用顺序路由ID将每个异常映射到其对应的路由。
+
+捕获CompositeRoutingException允许您收集有关所有失败路线的信息。
+
+===  CompositeRoutingException
+
+CompositeRoutingException扩展了Mule MessagingException，以在单个消息路由器的上下文中聚合来自不同路由的异常。例外情况通过顺序ID与每条路线相关联。
+
+此例外公开了两种方法，可让您获取失败路线的ID和每条路线返回的例外。
+
+*  `getExceptions`方法返回一个映射，其中的键是一个标识失败路由索引的整数，该值本身就是异常。
+*  `getExceptionForRouteIndex(int)`方法返回请求的路由标识的异常。
+
+=== 自定义聚合策略
+
+Scatter-Gather允许您定义覆盖默认聚合策略的自定义聚合策略。除其他外，自定义收集策略允许您：
+
+* 放弃留言回复
+* 合并源自不同路由的消息属性
+* 丢弃失败的消息而不引发异常
+* 从多个回复中只选择一个
+
+== 配置
+
+[NOTE]
+====
+Scatter-Gather通过两条或更多处理路线引导消息。使用Scatter-Gather通过一条处理路线引导消息将引发异常。
+
+如果Scatter-Gather配置了少于两条处理路径，则应用程序不会启动。
+====
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+=== Modeling Scatter-Gather in a Flow
+
+Add a *scatter-gather* element to your flow, then, inside the dashed-line scope area of the scatter-gather element, drag and drop two or more message processors or connectors, placing them parallel to one another, as shown.
+
+image:studio-scattergather.png[scatter-gather]
+
+=== General Tab
+
+image:scatterconf.png[scatter-gather]
+
+[%header,cols="25a,50a,25a"]
+|===
+|Field |Description |Example XML
+|*Display Name* |Customize to display a unique name for the splitter in your application. Default is `Scatter-Gather`. |
+[source]
+----
+doc:name="Scatter-Gather"
+----
+|*Aggregation Strategy* |
+Specify an aggregation strategy to use:
+
+* *Default*: Use Mule's default strategy.
+* *From Class*: Provide the canonical name of a class that defines a custom aggregation strategy.
+* *From Reference*: Provide the name of a spring bean that implements a custom aggregation strategy.
+Default is `Default`. |
+
+[source]
+----
+<custom-aggregation-strategy class= "org.my.CustomAggregationStrategy"/>
+----
+
+|===
+
+=== Advanced Tab
+
+image:sg-adv_tab.png[scatter-gather]
+
+[%header,cols="25a,50a,25a"]
+|===
+|Field |Description |Example XML
+|*Timeout* |Sets the timeout for responses from sent messages, in milliseconds. A value of 0 or lower than 0 means no timeout. Default is `0`. |
+
+[source]
+----
+timeout="6000"
+----
+
+|*Threading Profile* |Optionally, use to customize the threading profile. Refer to link:/mule-user-guide/v/3.9/tuning-performance[Tuning Performance] for a description of the configurable attributes. For a brief discussion of threading profiles in Scatter-Gather, see the section below. Default is `Default threading profile`. |
+
+[source]
+----
+<threading-profile maxBufferSize="100"/>
+----
+
+|===
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:tcp="http://www.mulesoft.org/schema/mule/tcp" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/tcp http://www.mulesoft.org/schema/mule/tcp/current/mule-tcp.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+    <http:request-config name="HTTP_Request_Configuration" host="localhost" port="8081" doc:name="HTTP Request Configuration"/>
+    <jms:connector name="JMS" username="me" password="metoo" validateConnections="true" doc:name="JMS"/>
+    <flow name="scatter-gather-Flow">
+        <scatter-gather timeout="6000" doc:name="Scatter-Gather">
+            <custom-aggregation-strategy class="org.my.CustomAggragationStrategy"/>
+            <threading-profile maxThreadsActive="1" poolExhaustedAction="WAIT" maxBufferSize="100"/>
+            <http:request config-ref="HTTP_Request_Configuration" path="/" method="GET" doc:name="HTTP"/>
+            <tcp:outbound-endpoint exchange-pattern="request-response" host="localhost" port="80" responseTimeout="10000" doc:name="TCP"/>
+            <jms:outbound-endpoint doc:name="JMS" address="127.0.0.1" connector-ref="JMS"/>
+        </scatter-gather>
+    </flow>
+</mule>
+----
+
+[%header,cols="10a,90a",width=90%]
+|===
+|Element |Description
+|*scatter-gather* |Sends a request message to multiple targets concurrently. It collects the responses from all routes, and aggregates them into a single message.
+|===
+
+[%header,cols="4*a"]
+|===
+|Attribute |Description |Default Value |Required?
+|*timeout* |Sets the timeout for responses from sent messages, in milliseconds. A value of 0 or lower than 0 means no timeout. |`0` |
+|===
+
+[%header,cols="10a,90a",width=90%]
+|===
+|Optional Child Element |Description
+|*custom-aggregation-strategy*  |Allows you to define a custom gathering strategy using either a custom class or a reference to a spring bean. Note that you cannot set `class` and `ref` at the same time. Doing so results in an exception when starting the application. See the xref:codex[Complete Code Example] below.
+|===
+
+[%header,cols="4*a"]
+|===
+|Attribute |Description |Default Value |Required?
+|*class* |A string with the canonical name of a class that implements the aggregation strategy. That class is required to have a default constructor. |- |
+|*ref* |The name of a registered bean that implements the aggregation strategy. |- |
+|===
+
+[%header,cols="10a,90a",width=90%]
+|===
+|Optional Child Element |Description
+|*threading-profile* |Allows you to configure the underlying thread pool. Refer to link:/mule-user-guide/v/3.9/tuning-performance[Tuning Performance] for a list of configurable attributes, all of which can be applied here. For a brief discussion of threading profiles in Scatter-Gather, see the section below.
+|===
+....
+------
+
+== 分散聚集线程配置文件
+
+Scatter-Gather的默认线程配置文件旨在用于大多数场景，其中Scatter-Gather组件通常配置有三到六条路线。如果默认线程配置文件不是最适合您的需求，Scatter-Gather允许您为该组件定义自定义线索配置文件。
+
+Scatter-Gather的线程配置文件是特定于Scatter-Gather路由器的，并且没有为整个Mule应用程序定义线程配置文件;但是，每个Scatter-Gather路由器启动的线程将在所有通过该流的消息之间共享。这意味着在Scatter-Gather中配置的大量线程并不一定能保证足够的处理能力可用于满足所有消息的要求。例如，假设两条消息在具有20个路由和20个线程的Scatter-Gather组件中相距两毫秒。第一条消息有权访问20个线程，并立即执行，而第二条消息具有高延迟，同时等待第一条消息释放这些线程。
+
+最终，最佳线程配置文件取决于每个应用程序。对于大多数场景，MuleSoft建议Scatter-Gather中的线程数量应该是路由数量乘以Scatter-Gather所在流量的`maxThreadsActive`值的结果。
+
+Scatter-Gather的*  `maxThreadsActive`是分散收集* `maxThreadsActive`中用于流的路线数量
+
+但是，在某些情况下，上述建议可能会导致大量线程耗用大量内存和处理能力。如果是这种情况，则需要尝试找到最佳调谐点，即在开始成为瓶颈之前并行性提供最大增益的确切点。
+
+对于路由执行速度非常快（每个路由几毫秒）的情况，执行顺序处理可能会更好。
+
+有关设置线程配置文件的详细信息，请参阅 link:/mule-user-guide/v/3.9/tuning-performance[调整性能]。
+
+== 从全部消息路由器迁移到Scatter-Gather
+
+如果您目前在您的应用程序中使用 link:/mule-user-guide/v/3.9/routers#All[所有]路由器，则可能希望将它们替换为Scatter-Gather路由器。本节详细介绍了在考虑迁移时需要注意的差异。
+
+=== 为什么迁移？
+
+对 link:/mule-user-guide/v/3.9/routers#All[所有]路由器的支持贯穿Mule 3.x系列。但是，MuleSoft建议迁移到Scatter-Gather，主要有两个原因：
+
+对于大多数情况，* 分散聚集是更好的选择
+* 迁移到Scatter-Gather现在有助于过渡到Mule 4
+
+分散收集和全路由器之间的差异=== 
+
+link:/mule-user-guide/v/3.9/routers#All[所有]路由器实现顺序组播以通过指定的路由发送消息。这在一些情况下运行良好，如下所示：
+
+* 其中，路由_n_依赖于路由_n-1_在目标系统上生成的副作用
+* 路由_n_中的异常应阻止Mule发送消息来路由_n + 1_
+
+但是，在上述情况不适用的情况下，顺序组播的唯一影响是降低应用效率。在这些情况下，最好将消息同时发送到所有路由。分散 - 收集路由消息处理器正是这样做的，即同时执行所有消息路由。它允许你：
+
+* 将多条路由并行传输一条消息
+* 配置超时后，失败的路由会导致应用程序抛出异常
+如果路由失败，* 组异常
+
+image:scatter_gather2d.png[分散 - 集中]
+
+下表比较了All和Scatter-Gather消息路由器之间的三个主要区别。
+
+[%header,cols="3*a"]
+|===
+| {比较{1}}全部 |分散聚集
+| *Processing*  |使用串行处理和单个线程来发送当前Mule消息到所有指定的路由。因此，要访问路由返回的所有响应，应用程序必须等到所有路由完成执行。 |在线程池中使用并行处理来并发执行所有路由。因此，要访问路由返回的所有响应，应用程序只需等到最慢的路由完成执行。
+| *Error handling*  |如果路由失败，则不会执行连续的路由。同样，如果路由_n_失败，则无法获取有关路由_n-1_的信息。您只能获取有关失败路由的信息。 |并行执行意味着即使一条或多条路由失败，仍然执行其余的分配路由。如果一个或多个路由抛出异常，scatter-gather将抛出`CompositeRoutingException`，这允许应用程序检索关于失败和成功路由的信息。
+| *Customization*  |如果成功，所有路由器总是返回一个MuleMessageCollection，这是您可以从中获得的唯一信息。 | Scatter-Gather使用聚合器结合所有路线的回应。为了提供向后兼容性，默认情况下，Scatter-Gather会返回一个MuleMessageCollection，从而便于希望利用改进性能的用户进行迁移。但是，Scatter-Gather还允许您定义自己的自定义聚合策略（请参阅下面的<<Complete Code Example>>）。
+|===
+
+[[codex]]
+== 完整的代码示例
+
+在这个例子中，旅行预订应用程序选择用户选择的城市之间的直飞航线。该应用程序联系航空公司经纪人名单以获得可用航班，然后选择最便宜的航班。它使用Scatter-Gather将消息同时发送给每个航空公司经纪人，然后等待所有航线完成。在选择最便宜的航班之前，应用程序需要消除（过滤掉）返回错误的路线。为此，它使用自定义聚合策略，该策略使用Scatter-Gather中的`custom-aggregation-strategy`属性进行调用。完整的Scatter-Gather XML如下所示。
+
+[source, xml, linenums]
+----
+<scatter-gather timeout="5000">
+    <custom-aggregation-strategy class="org.myproject.CheapestFlightAggregationStrategy" />   
+    <flow-ref name="flightBroker1" />
+    <flow-ref name="flightBroker2" />
+    <flow-ref name="flightBroker3" />
+</scatter-gather>
+----
+
+在上面的代码中，scatter-gather的`custom-aggregation-strategy`调用public class `org.myproject.CheapestFlightAggregationStrategy`，其中包含下面显示的代码，用于过滤失败的路由。
+
+[source, java, linenums]
+----
+public class CheapeastFlightAggregationStrategy implements AggregationStrategy {
+ 
+    @Override
+    public MuleEvent aggregate(AggregationContext context) throws MuleException {
+        MuleEvent result = null;
+        long value = Long.MAX_VALUE;
+        for (MuleEvent event : context.collectEventsWithoutExceptions()) {
+            Flight flight = (Flight) event.getMessage().getPayload();
+            if (flight.getCost() < value) {
+                result = DefaultMuleEvent.copy(event);
+                value = flight.getCost();
+            }
+        }
+         
+        if (result != null)  {
+            return result;
+        }
+         
+        throw new  RuntimeException("no flights obtained");
+    }
+}
+----
+
+[WARNING]
+====
+注意这行：
+
+[source]
+----
+result = DefaultMuleEvent.copy(event);
+----
+
+运行Mule 3.5.0的用户需要复制事件而不是简单地引用它。原因是该事件是在处理流程的线程之外的线程中创建的。因此，在Scatter-Gather完成其执行后修改消息的任何尝试都会导致`IllegalStateException`，因为出于安全原因，Mule不允许修改除创建它之外的线程中的事件。
+
+在Mule 3.5.1及更新版本中，Scatter-Gather自动处理消息，为您节省手动复制任务。
+====
+
+具有分散收集功能的== 串行多播
+
+本页的前面部分讨论了在并发执行所有消息路由时需要顺序多播的一些情况。如果您需要在您的应用程序中使用顺序多播，则可以通过配置Scatter-Gather使用仅包含一个线程的自定义线索配置文件来实现它，如下面的*Max Active Threads*字段所示。
+
+image:sg-adv_tab2.png[分散 - 集中]
+
+在上述<<Complete Code Example>>的上下文中，XML将如下所示：
+
+[source, xml, linenums]
+----
+<scatter-gather timeout="5000">
+  <threading-profile maxThreadsActive="1"/>
+  <custom-aggregation-strategy class="org.myproject.CheapestFlightAggregationStrategy" />
+  <flow-ref name="flightBroker1" />
+  <flow-ref name="flightBroker2" />
+  <flow-ref name="flightBroker3" />
+</scatter-gather>
+----
+
+与全路由器一样，此配置可确保按顺序调用路由。但是，有一点不同：与全路由器不同，使用此配置时，如果一条路由失败，后续路由仍将被调用。
+
+[NOTE]
+在某些情况下，仅定义一个线程的线程配置文件可能会产生低于标准的性能结果，因为Scatter-Gather使用的单个线程在流中的所有消息之间共享。如果您发现这种情况，可能需要重新使用全路由器进行顺序处理。从Mule版本3.6.0开始，此问题已修复。
+
+== 另请参阅
+
+* 详细了解 link:/getting-started/content-based-routing[基于内容的路由]
+
+
+
+

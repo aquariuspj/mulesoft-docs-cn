@@ -1,0 +1,134 @@
+=  Mule 4：Java集成简介
+
+表达式与代码== 
+有经验的Mule用户会注意到，Mule 4对于如何构造应用程序采取了更加自以为是的方法，这限制了通过表达式语言可以完成的工作。目的是在流程逻辑和应该通过代码提取的业务逻辑之间提供明确的分离。
+
+如果您想提取，查询，转换或处理流中的数据，则推荐使用DataWeave表达式和变换。如果您想编写自定义逻辑，实例化Java对象或调用任意方法，MuleSoft建议您将此代码封装到可轻松注入和测试的脚本或类中。
+
+这就是为什么MuleSoft移除了表达式组件和表达式转换器，而不是鼓励你把你的逻辑清理成脚本或Java类。
+
+== 从DataWeave调用静态Java方法
+
+当您想调用Java逻辑来帮助格式化或解析数据时，DataWeave现在允许您调用静态方法。考虑这个Java方法：
+[source,Java,linenums]
+----
+package org.acme;
+public class MyCompanyUtils {
+  public static String reformat(String input) {
+    return …;
+  }
+}
+----
+您可以通过以下DataWeave代码调用它：
+[source,DataWeave,linenums]
+----
+import java!org::acme::MyCompanyUtils
+---
+{
+  date: MyCompanyUtils::reformat(payload.input)
+}
+----
+
+== 脚本模块
+
+脚本模块取代了Mule 3脚本组件。 Mule 4模块使您能够在Mule流中嵌入Groovy，Ruby，Python或JavaScript脚本。您可以使用新的`parameters`配置属性将来自Mule消息的数据注入到您的代码中。
+
+[source,XML,linenums]
+----
+<script:execute engine="groovy">
+    <script:code>
+         return "$payload $prop1 $prop2"
+    </script:code>
+    <script:parameters>
+         #[{prop1: "Received", prop2: payload.body}]
+    </script:parameters>
+</script:execute>
+----
+
+要使用脚本模块，只需使用Studio调色板将其添加到您的应用中，或者在您的`pom.xml`文件中添加以下依赖项：
+
+[source,XML,linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-scripting-module</artifactId>
+  <version>1.1.0</version> <!-- or newer -->
+  <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+有关此模块的更多详细信息，请参阅 link:/connectors/scripting-module[脚本模块文档]。
+
+==  Java模块
+
+虽然脚本模块是一个非常强大的工具，可以通过执行任意随机指令来与Java进行互操作，但通常只需要实例化一个类或执行一种方法即可。虽然Mule 3通常依赖于MEL，但Java模块是在Mule 4中引入的，以允许这些用例。 Java模块相比Scripting模块的其他优点是：
+
+* 对 link:/anypoint-studio/v/7.1/datasense-explorer[DataSense]的支持：每次执行方法时，都会为输出类型和方法的输入参数获取DataSense。
+*  UI支持：您可以根据每个课程可用的方法，自动完成等获得视觉帮助。
+
+=== 创建一个新的Java实例
+
+在骡子3：
+
+[source,XML,linenums]
+----
+<set-payload value="#[new com.foo.AppleEater()]" />
+<set-payload value="#[new com.foo.AppleEater('some string arg', flowVars.apple)]" />
+----
+
+在骡子4：
+
+[source,XML,linenums]
+----
+<java:new class="com.foo.AppleEater" constructor="MyClass()"/>
+
+<java:new class="com.foo.AppleEater" constructor="MyClass(String, Apple)">
+  <java:args>#[{name: 'some string arg', apple: vars.apple}]</java:args>
+</java:new>
+----
+
+=== 调用实例方法
+
+在骡子3：
+
+[source,XML,linenums]
+----
+<expression-component>
+  flowVars.appleEater.chew(500)
+</expression-component>
+----
+
+在骡子4：
+
+[source,XML,linenums]
+----
+<java:invoke class="com.foo.AppleEater" method="chew(Integer)" instance="#[vars.appleEater]">
+  <java:args>
+    #[{chewingTime: 500}]
+  </java:args>
+</java:invoke>
+----
+
+DataWeave函数也可以使用`invoke`功能：
+
+[source,XML,linenums]
+----
+<set-payload value="#[Java::invoke('com.foo.AppleEater', 'chew(Integer)', vars.appleEater, {childs: {chewingTime: 500})]"/>
+----
+
+要使用Java模块，只需使用Studio调色板将其添加到应用程序中，或将以下依赖项添加到您的`pom.xml`文件中：
+
+[source,XML,linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-java-module</artifactId>
+  <version>1.0.0</version> <!-- or newer -->
+  <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== 另请参阅
+
+*  link:/connectors/scripting-module[脚本模块文档]
+*  link:/connectors/java-module[Java模块文档]

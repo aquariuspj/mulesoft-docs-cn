@@ -1,0 +1,760 @@
+=  TCP传输参考
+
+以下Mule传输提供对TCP连接的访问​​：
+
+* 本页讨论的TCP传输使用基本的TCP传输。
+* 使用TCP和套接字级安全性的 link:/mule-user-guide/v/3.9/ssl-and-tls-transports-reference[SSL和TLS传输]。
+
+除了使用的套接字类型之外，这些传输的行为都非常相似。
+
+TCP传输允许通过TCP连接发送或接收消息。 TCP是一个基于IP的层，用于实现许多其他可靠的协议，如HTTP和FTP。但是，如果您需要特定协议来读取这些更高级协议之一不支持的消息负载，则可能需要直接使用TCP传输。在与不支持Web服务的传统或本机系统应用程序进行通信时，通常会出现这种情况。
+
+== 传输信息
+
+[%header,cols="20a,30a,50a"]
+|===
+|功能 |值 |说明
+|传输 |多播 |传输的名称/协议
+|文档 | link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/transport/multicast/package-summary.html[的JavaDoc] +
+link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_multicast/namespace-overview.html[SchemaDoc]
+|指向传输的JavaDoc和SchemaDoc的链接
+|入站 | image:check.png[查]  |传输是否可以接收入站事件并可用于入站端点。
+|出站 | image:error.png[查]  |传输是否可以生成出站事件并与出站端点一起使用。
+|请求 | image:check.png[查]  |是否可以通过请求调用直接查询此端点（通过MuleClient或EventContext）
+|交易 | image:error.png[错误]  |交易是否受交通支持。支持事务的传输可以在本地或分布式两阶段提交（XA）事务中进行配置。
+|流式传输 | image:error.png[错误]  |此传输是否可以处理输入流中传入的消息。这可以非常有效地处理大数据。有关更多信息，请参阅流式传输。
+|重试 | image:error.png[错误]  |此传输是否支持重试策略。请注意，所有传输都可以配置Retry策略，但只有这里标记的传输才是MuleSoft官方支持的。
+| MEP  |单向，请求 - 响应 |此传输所支持的消息交换模式。
+|默认MEP  |请求响应 |使用此传输的端点的默认MEP不会明确配置MEP。
+| Maven Artifact  | org.mule.transport：mule-transport-multicast  |组在 link:http://maven.apache.org/[Maven的]中为此传输命名工件名称。
+|===
+
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source, xml]
+----
+xmlns:tcp="http://www.mulesoft.org/schema/mule/tcp"
+----
+
+XML架构位置：
+
+[source, code]
+----
+http://www.mulesoft.org/schema/mule/tcp http://www.mulesoft.org/schema/mule/tcp/current/mule-tcp.xsd
+----
+
+连接器语法：
+
+[source, xml, linenums]
+----
+<tcp:connector name="tcpConnector" receiveBufferSize="1024" receiveBacklog="50" sendTcpNoDelay="false"
+                reuseAddress="true" clientSoTimeout="0" serverSoTimeout="0" socketSoLinger="0"
+                keepSendSocketOpen="false" keepAlive="true" dispatcherFactory-ref="dispatcherBean">
+    <tcp:PROTOCOL-TYPE/>
+</tcp:connector>
+<tcp:polling-connector name="tcpConnector" receiveBufferSize="1024" receiveBacklog="50" sendTcpNoDelay="false"
+                reuseAddress="true" clientSoTimeout="0" serverSoTimeout="0" socketSoLinger="0"
+                keepSendSocketOpen="false" keepAlive="true" timeout="10000" pollingFrequency="30000"
+                dispatcherFactory-ref="dispatcherBean">
+    <tcp:PROTOCOL-TYPE/>
+</tcp:polling-connector>
+----
+
+=== 协议类型
+
+PROTOCOL-TYPE定义了如何从数据包中重构Mule中的消息。协议类型是：
+
+[source, xml, linenums]
+----
+<tcp:direct-protocol payloadOnly="true" rethrowExceptionOnRead="true"/>
+ 
+<tcp:eof-protocol payloadOnly="true" rethrowExceptionOnRead="true"/>
+ 
+<tcp:length-protocol payloadOnly="true" maxMessageLength="1024" rethrowExceptionOnRead="true"/>
+ 
+<tcp:xml-protocol rethrowExceptionOnRead="true"/>
+ 
+<tcp:xml-eof-protocol rethrowExceptionOnRead="true"/>
+ 
+<tcp:streaming-protocol rethrowExceptionOnRead="true"/>
+ 
+<tcp:safe-protocol payloadOnly="true" maxMessageLength="1024" rethrowExceptionOnRead="true"/>
+ 
+<tcp:custom-class-loading-protocol classLoader-ref="classLoaderBean" payloadOnly="true" maxMessageLength="1024" rethrowExceptionOnRead="true"/>
+ 
+<tcp:custom-protocol class="com.mycompany.MyProtocol" rethrowExceptionOnRead="true"/>
+----
+
+如果没有指定协议，则使用`safe-protocol`。
+
+=== 端点语法
+
+你可以用两种不同的方式来定义你的端点。
+
+. 前缀端点：
++
+[source, xml]
+----
+<tcp:inbound-endpoint host="localhost" port="65433"/>
+----
++
+. 没有前缀的URI：
++
+[source, xml]
+----
+<inbound-endpoint address="tcp://localhost:65433"/>
+----
+
+有关更多信息，请参阅下面的部分。
+
+== 注意事项
+
+TCP是互联网上使用的标准通信协议之一，支持通过互联网和局域网内的通信。 Mule TCP传输使用本地Java套接字支持，不会增加java.net中的类的通信开销，同时允许在Mule配置中指定TCP编程的许多高级功能，而不是使用Java编码。
+
+使用低级别TCP连接进行通信时使用此传输。要确定这是否合适，可以使用以下决策树：
+
+* 与使用低级别不安全TCP连接的外部服务通信？如果是这样，请使用TCP协议。
+
+* 您是否与始终位于相同Mule应用程序实例中的流进行通信？如果是这样，请考虑使用 link:/mule-user-guide/v/3.9/vm-transport-reference[VM传输]。
+
+* 消息在被处理之前是否被保留是重要的？如果是这样，请考虑使用持久性传输，如 link:/mule-user-guide/v/3.9/jms-transport-reference[JMS]或 link:/mule-user-guide/v/3.9/file-transport-reference[文件]。
+
+* 建立在TCP之上的更高级协议是否有优势，例如 link:/mule-user-guide/v/3.9/deprecated-http-transport-reference[HTTP]的请求响应功能或 link:/mule-user-guide/v/3.9/email-transport-reference[电子邮件]的存储转发功能？如果是这样，请使用该协议的传输。
+
+* 性能是主要关注的问题，消息是否以正确的顺序传递并不重要，或者如果丢失了消息，通知发件人？如果是这样，请改用轻量级的 link:/mule-user-guide/v/3.9/udp-transport-reference[UDP传输]。
+
+* 是否应该保护消息？如果是这样，请使用 link:/mule-user-guide/v/3.9/ssl-and-tls-transports-reference[SSL传输]。
+
+* 如果你得到这个目标，TCP是一个很好的候选人。
+
+如以下示例所示，TCP传输可用于：
+
+*  <<Creating a TCP Server>> TCP服务器
+*  <<Sending Messages to a TCP Server>>消息到TCP服务器
+来自TCP服务器的*  <<Polling from a TCP Server>>
+
+== 特点
+
+TCP模块允许Mule应用程序通过TCP连接发送和接收消息，并声明性地自定义TCP的以下功能（在适用的情况下使用每个功能的标准名称）：
+
+* 阻止套接字操作的超时。这可以针对客户端和服务器操作单独声明。 （SO_TIMEOUT）
+* 打开套接字以等待发送完成多久。 （SO_LINGER）
+* 是否立即发送可用数据而不是缓冲它。 （TCP_NODELAY）
+* 是否立即重用套接字地址（SO_REUSEADDR）
+* 是否使用保持活动来检测何时不再可以访问远程系统（SO_KEEPALIVE）。
+* 网络缓冲区的大小（以字节为单位）（SO_SNDBUF）。
+* 允许的挂起连接请求的数量。
+* 是否在发送消息后关闭客户端套接字。
+
+协议表。=== 协议表
+
+另外，由于TCP和SSL是面向流的，而Mule是面向消息的，因此需要一些应用协议来定义每条消息在流中的开始和结束位置。下表列出了内置协议，描述如下：
+
+* 用于指定它们的XML标记
+* 任何XML属性
+* 阅读时如何定义消息
+* 写入消息时执行的任何处理
+
+[%header,cols="5*"]
+|===
+| XML标记 |选项 |阅读 |撰写 |备注
+| <tcp:custom-class-loading-protocol>  | rethrowExceptionOnRead，payloadOnly，maxMessageLength，classLoader-ref  |期望消息以4字节长度开始（以DataOutput.writeInt（）格式）{ {4}}以4字节长度（以DataOutput.writeInt（）格式）之前的消息 |与长度协议类似，但指定用于反序列化对象的类加载器
+| <tcp:custom-protocol>  | rethrowExceptionOnRead，class，ref  |各不相同 |变化 |允许用户编写的协议与现有的TCP服务。
+| <tcp:direct-protocol>  | rethrowExceptionOnRead，payloadOnly  |所有当前可用字节 |无 |没有明确的消息边界。
+| <tcp:eof-protocol>  | rethrowExceptionOnRead，payloadOnly  |在套接字关闭前发送的所有字节 |无 | 
+| <tcp:length-protocol>  | rethrowExceptionOnRead，payloadOnly，maxMessageLength  |期望消息以4字节长度开头（以DataOutput.writeInt（）格式） |以4字节长度（DataOutput.writeInt（）格式）之前的消息 | 
+rethrowExceptionOnRead，payloadOnly，maxMessageLength期望消息以字符串"You are using SafeProtocol"开头，后跟4字节长度（DataOutput.writeInt（）格式）  |期望消息前面是字符串"You are using SafeProtocol"，后面跟着4字节的长度（DataOutput.writeInt（）格式） |在字符串{{2} }后面跟着一个4字节的长度（DataOutput.writeInt（）格式） |由于额外的检查，比长度协议安全一些。如果没有指定协议，这是默认值。
+| <tcp：streaming-protocol  | rethrowExceptionOnRead  |在套接字关闭前发送的所有字节 |无 | 
+| <tcp:xml-protocol>  | rethrowExceptionOnRead  |消息是以XML声明开头的XML文档 |无 | XML声明必须出现在所有消息
+| <tcp:xml-eof-protocol>  | rethrowExceptionOnRead  |消息是一个XML文档，以XML声明开头，或以EOF保留的任何内容 |无 | XML声明必须出现在所有消息中
+|===
+
+。协议属性
+[%header,cols="4*"]
+|===
+|姓名 |值 |默认值 |注释
+| class  |实现自定义协议的类的名称 |   |有关编写自定义协议的示例，请参阅{{0}
+| classLoader-ref  |对包含自定义类加载器 |   | 
+的Spring bean的引用
+| maxMessageLength  |允许的最大消息长度 | 0（没有最大值） |长度超过最大值的消息会引发异常。
+| payloadOnly  | true  |如果为true，则只发送或接收Mule消息有效载荷。如果为false，则发送或接收整个Mule消息。 |不支持此属性的协议始终处理有效载荷
+| ref  |对实现自定义协议的Spring bean的引用 |   | 
+| rethrowExceptionOnRead  |是否重新尝试从套接字 |中读取发生的异常 |将此设置为"false"可避免在远程套接字意外关闭
+|===
+
+== 用法
+
+TCP端点可以通过以下三种方式之一使用：
+
+* 要创建一个接受传入连接的TCP服务器，请声明一个带有`tcp:connector`的入站tcp端点。这将创建一个TCP服务器套接字，它将读取来自客户端套接字的请求并可选地将其写入响应。
+* 要从TCP服务器轮询，请使用`tcp:polling-connector`声明入站tcp端点。这将创建一个TCP客户端套接字，用于从服务器套接字读取请求并可选地将响应写入服务器套接字
+* 要写入TCP服务器，请使用 link:http://tcpconnector[TCP：连接器]创建出站端点。这将创建一个TCP客户端套接字，它将向服务器套接字写入请求并可选择读取响应。
+
+要使用TCP端点，请按照以下步骤操作：
+
+. 将MULE TCP命名空间添加到您的配置中：
++
+* 使用`xmlns:tcp="http://www.mulesoft.org/schema/mule/tcp"`定义tcp前缀
+* 使用链接定义模式位置：http：//www.mulesoft.org/schema/mule/tcp [http://www.mulesoft.org/schema/mule/tcp +
+] http://www.mulesoft.org/schema/mule/tcp/3.8/mule-tcp.xsd
+. 为TCP端点定义一个或多个连接器。
+
+=== 创建一个TCP服务器
+
+要充当侦听并接受来自客户端的TCP连接的服务器，请创建入站端点使用的简单TCP连接器：
+
+[source, xml]
+----
+<tcp:connector name="tcpConnector"/>
+----
+
+=== 从TCP服务器轮询
+
+要充当反复打开TCP服务器连接并从中读取数据的客户端，请创建入站端点使用的轮询连接器：
+
+[source, xml]
+----
+<tcp:polling-connector name="tcpConnector"/>
+----
+
+=== 将消息发送到TCP服务器
+
+要在TCP连接上发送消息，请创建出站端点使用的简单TCP连接器：
+
+[source, xml]
+----
+<tcp:connector name="tcpConnector"/>
+----
+
+. 配置每个创建的连接器的功能。 +
+* 首先选择要发送或接收的每封邮件的协议。
+* 对于每个轮询连接器，请选择轮询的频率以及等待连接完成的时间。
+* 考虑其他连接器选项。例如，如果检测远程系统何时无法访问很重要，请将`keepAlive`设置为`true`。
+. 创建TCP端点。 +
+* 邮件在入站端点上收到。
+* 邮件被发送到出站端点。
+* 这两种端点均由主机名和端口标识。
+
+默认情况下，TCP端点使用请求 - 响应交换模式，但它们可以显式配置为单向。这个决定应该是直截了当的：
+
+[%header,cols="4*"]
+|===
+|消息流 |连接器类型 |端点类型 | Exchange模式
+| Mule接收来自客户端的消息，但未发送任何响应 | tcp：连接器 |入站 |单向
+| Mule接收来自客户端的消息并发送响应 | tcp：connector  |入站 |请求响应
+| Mule从服务器读取消息，但未发送任何响应 | tcp：polling-connector  |入站 |请求响应
+| Mule从服务器读取消息并发送响应 | tcp：polling-connector  |入站 |请求响应
+| Mule将消息发送到服务器，但未收到响应 | tcp：连接器 |出站 |单向
+| Mule将消息发送到服务器并接收响应 | tcp：connector  |出站 |请求响应
+|===
+
+== 示例配置
+
+[%header%autowidth.spread]
+|===
+^ | *Standard TCP connector in flow*
+
+一个| [source，xml，linenums]
+----
+<tcp:connector name="connector">
+    <tcp:eof-protocol payloadOnly="false"/> ❹
+</tcp:connector> ❶
+ 
+<flow name="echo">
+    <tcp:inbound-endpoint host="localhost" port="4444" > ❷
+    <tcp:outbound-endpoint host="remote" port="5555" /> ❸
+</flow>
+----
+|===
+
+这显示了如何在Mule中创建一个TCP服务器。 ❶处的连接器定义将创建一个服务器套接字来接受来自客户端的连接。从连接中读取完整的mule消息（直接协议）将成为Mule消息的有效载荷（因为有效载荷仅为false）。 endpoint处的端点应用这些定义在本地主机的端口4444上创建服务器。然后从那里读取的消息被发送到位于❸的远程tcp端点。 +
+ 流版本使用eof协议（❹），以便在连接上发送的每个字节都是同一个Mule消息的一部分。
+
+[%header%autowidth.spread]
+|===
+^ | *Polling TCP connector in flow*
+
+一个| [source，xml，linenums]
+----
+<tcp:polling-connector name="pollingConnector"
+             clientSoTimeout="3000" pollingFrequency="1000">
+    <tcp:direct-protocol payloadOnly="true" />
+</tcp:polling-connector> ❶
+ 
+<flow name="echo">
+    <tcp:inbound-endpoint host="localhost" port="4444" /> ❷
+    <vm:outbound-endpoint path="out"  connector-ref="queue" /> ❸
+</flow>
+----
+|===
+
+这显示了如何创建一个从TCP服务器重复读取的TCP端点。 ❶处的连接器定义了每秒都会尝试连接，这将等待最多三秒完成。从连接（直接协议）读取的所有内容都将成为Mule消息的有效载荷（仅限有效载荷）。 endpoint处的端点将这些定义应用到本地主机上的端口4444。然后从那里读取的消息被发送到位于❸的VM端点。
+
+[%header%autowidth.spread]
+|===
+^ | *Polling TCP connector in flow*
+
+一个| [source，xml，linenums]
+----
+<tcp:connector name="TCP_length_protocol" validateConnections="true" sendBufferSize="1024" receiveBufferSize="1024" receiveBacklog="10" clientSoTimeout="10000" serverSoTimeout="10000" socketSoLinger="0">
+    <tcp:length-protocol payloadOnly="true" />
+</tcp:connector>❶
+ 
+<byte-array-to-string-transformer name="byteToString" doc:name="Byte Array to String" />
+ 
+<flow name="socketFlow1" doc:name="socketFlow1">
+    <tcp:inbound-endpoint host="localhost" exchange-pattern="request-response" port="8888" transformer-refs="byteToString" />❷
+    <vm:outbound-endpoint path="out" connector-ref="queue" /> ❸
+</flow>
+----
+|===
+
+❶处的连接器定义将创建一个服务器套接字，该套接字接受来自客户端的连接，并使用长度协议进行配置。 endpoint处的端点应用这些定义以在本地主机上的端口8888处创建服务器。然后从那里读取的消息被发送到位于❸的VM端点。
+
+== 配置选项
+
+.TCP连接器属性
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}说明 |缺省
+| clientSoTimeout  |从TCP服务器套接字读取时等待数据可用的时间量（以毫秒为单位） |系统默认值
+| keepAlive  |是否发送保持活动消息以检测远程套接字何时无法访问 | false
+| keepSendSocketOpen  |是否在发送邮件后保持套接字打开 | false
+| receiveBacklog  |可以未完成的连接尝试次数 |系统默认
+| receiveBufferSize  |这是用于接收消息的网络缓冲区的大小。在大多数情况下，不需要设置它，因为系统默认设置是足够的 |系统默认设置
+| reuseAddress  |是否重用当前处于TIMED_WAIT状态的套接字地址。这可以避免触发套接字不可用的错误 | true
+| sendBufferSize  |网络发送缓冲区的大小 |系统默认值
+| sendTcpNoDelay  |是否尽快发送数据，而不是等待更多时间来节省发送的数据包数 | false
+| socketSoLinger  |等待套接字关闭以等待所有待处理数据流逝的时间（以毫秒为单位） |系统默认值
+| serverSoTimeout  |从客户端套接字 |系统默认值读取时等待数据可用的时间量（以毫秒为单位）
+|===
+
+.Polling TCP连接器特定的属性
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}说明 |缺省
+| pollingFrequency  |连接到TCP服务器的次数（以毫秒为单位） | 1000毫秒
+| timeout  |等待连接完成 |系统默认值多长时间（以毫秒为单位）
+|===
+
+== 配置参考
+
+=== 元素列表
+
+===  TCP传输
+
+TCP传输使事件能够通过TCP套接字发送和接收。
+
+=== 连接器
+
+将Mule连接到TCP套接字以通过网络发送或接收数据。
+
+。<connector...>的属性
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| sendBufferSize  |整数 |否 |   |发送数据时使用的缓冲区大小（以字节为单位），在套接字本身设置。
+| receiveBufferSize  |整数 |否 |   |接收数据时使用的缓冲区大小（以字节为单位），在套接字本身上设置。
+| receiveBacklog  |整数 |否 |   |传入连接的最大队列长度。
+| sendTcpNoDelay  |布尔值 |否 |   |如果设置，传输的数据不会一起收集以提高效率，而是立即发送。
+| reuseAddress  |布尔值 |否 |   |如果设置为（默认值），则在绑定之前在服务器套接字上设置SO_REUSEADDRESS。这有助于在重新使用套接字时减少"address already in use"错误。
+| connectionTimeout  |整数 |否 |  2秒 |成功创建到远程服务器的出站连接等待的毫秒数。
+| clientSoTimeout  | integer  | no  |   |当套接字用作客户端时，它设置SO_TIMEOUT值。在读取失败之前，从套接字读取会阻塞达到这么长的时间（以毫秒为单位）。值为0（默认值）将导致读无限期地等待（如果没有数据到达）。
+| serverSoTimeout  |整数 |否 |   |设置套接字用作服务器时的SO_TIMEOUT值。在读取失败之前，从套接字读取会阻塞达到这么长的时间（以毫秒为单位）。值为0（默认值）将导致读无限期地等待（如果没有数据到达）。
+| socketSoLinger  |整数 |否 |   |设置SO_LINGER值。这与套接字将关闭多长时间（以毫秒为单位）有关，以便正确传输任何剩余数据。
+| keepSendSocketOpen  |布尔值 |否 |   |如果设置，发送邮件后套接字未关闭。此属性仅适用于通过套接字（客户端）发送数据时。
+| keepAlive  |布尔值 |否 |   |在打开的套接字上启用SO_KEEPALIVE行为。这会自动检查长期打开但未使用的套接字连接，并在连接不可用时关闭套接字连接。这是套接字本身的一个属性，由服务器套接字使用，以控制与服务器的连接在再循环之前是否保持活动状态。
+| socketMaxWait  |整数 |否 |   |设置套接字池在投掷之前应该阻止等待套接字的最长时间（以毫秒为单位）例外。当小于或等于0时，它可能无限期地被阻塞（默认）。
+| failOnUnresolvedHost  |布尔值 |否 |   |如果设置为（默认值），则在套接字创建过程中，如果端点上设置的主机不能解决。但是，它可以设置为false以允许未解析的主机（这对于通过代理连接等某些情况很有用）。
+| dispatcherFactory-ref  |字符串 |否 |   |允许定义一个自定义消息分派器工厂
+|===
+
+。<connector...>的子元素
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+| abstract-protocol  | 0..1  |协议处理程序的类名称。这控制着原始数据流如何转换为消息。默认情况下，消息按接收到的dara构建，不会更正多个数据包或碎片。通常，更改此值，或使用包含HTTP等协议的传输。
+|===
+
+=== 入站端点
+
+入站端点元素配置收到消息的端点。
+
+。<inbound-endpoint...>的属性
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|主机 |字符串 |否 |   | TCP套接字的主机。
+|端口 |端口号 |否 |   | TCP套接字的端口。
+|===
+
+无<inbound-endpoint...>的子元素
+
+
+=== 出站端点
+
+出站端点元素配置消息发送的端点。
+
+。<outbound-endpoint...>的属性
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|主机 |字符串 |否 |   | TCP套接字的主机。
+|端口 |端口号 |否 |   | TCP套接字的端口。
+|===
+
+无<outbound-endpoint...>的子元素
+
+
+=== 端点
+
+端点元素配置全局TCP端点定义。
+
+。<endpoint...>的属性
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|主机 |字符串 |否 |   | TCP套接字的主机。
+|端口 |端口号 |否 |   | TCP套接字的端口。
+|===
+
+无<endpoint...>的子元素
+
+
+=== 轮询连接器
+
+将Mule连接到TCP套接字以通过网络发送或接收数据。
+
+。<polling-connector...>的属性
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| sendBufferSize  |整数 |否 |   |发送数据时使用的缓冲区大小（以字节为单位），在套接字本身设置。
+| receiveBufferSize  |整数 |否 |   |接收数据时使用的缓冲区大小（以字节为单位），在套接字本身上设置。
+| receiveBacklog  |整数 |否 |   |传入连接的最大队列长度。
+| sendTcpNoDelay  |布尔值 |否 |   |如果设置，传输的数据不会一起收集以提高效率，而是立即发送。
+| reuseAddress  |布尔值 |否 |   |如果设置为（默认值），则在绑定之前在服务器套接字上设置SO_REUSEADDRESS。这有助于在重新使用套接字时减少"address already in use"错误。
+| connectionTimeout  |整数 |否 | 无 |成功创建到远程服务器的出站连接之前等待的毫秒数。
+| clientSoTimeout  | integer  | no  |   |当套接字用作客户端时，它设置SO_TIMEOUT值。在读取失败之前，从套接字读取会阻塞达到这么长的时间（以毫秒为单位）。值为0（默认值）将导致读无限期地等待（如果没有数据到达）。
+| serverSoTimeout  |整数 |否 |   |设置套接字用作服务器时的SO_TIMEOUT值。在读取失败之前，从套接字读取会阻塞达到这么长的时间（以毫秒为单位）。值为0（默认值）将导致读无限期地等待（如果没有数据到达）。
+| socketSoLinger  |整数 |否 |   |设置SO_LINGER值。这与套接字将关闭多长时间（以毫秒为单位）有关，以便正确传输任何剩余数据。
+| keepSendSocketOpen  |布尔值 |否 |   |如果设置，发送邮件后套接字未关闭。此属性仅适用于通过套接字（客户端）发送数据时。
+| keepAlive  |布尔值 |否 |   |在打开的套接字上启用SO_KEEPALIVE行为。这会自动检查长期打开但未使用的套接字连接，并在连接不可用时关闭套接字连接。这是套接字本身的一个属性，由服务器套接字使用，以控制与服务器的连接在再循环之前是否保持活动状态。
+| socketMaxWait  |整数 |否 |   |设置套接字池在投掷之前应该阻止等待套接字的最长时间（以毫秒为单位）例外。当小于或等于0时，它可能无限期地被阻塞（默认）。
+| failOnUnresolvedHost  |布尔值 |否 |   |如果设置为（默认值），则在套接字创建过程中，如果端点上设置的主机不能解决。但是，它可以设置为false以允许未解析的主机（这对于通过代理连接等某些情况很有用）。
+| dispatcherFactory-ref  |字符串 |否 |   |允许定义一个自定义消息分派器工厂
+|超时 |长 |否 |   |数据来自服务器的等待时间（以毫秒为单位）
+| pollingFrequency  | long  |否 |   |每个请求到TCP服务器之间等待的时间（以毫秒为单位）。
+|===
+
+。<polling-connector...>的子元素
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+| abstract-protocol  | 0..1  |协议处理程序的类名称。这控制着原始数据流如何转换为消息。默认情况下，消息是在接收数据时构建的，不会修正多个数据包或碎片。通常，更改此值，或使用包含HTTP等协议的传输。
+|===
+
+=== 流协议
+
+TCP不保证写入套接字的数据是在单个数据包中传输的，因此如果您想要可靠地传输整个Mule消息，则必须指定一个附加协议。但是，这不是流式传输的问题，因此流协议元素是"direct"（空）协议的别名。
+
+。<streaming-protocol...>的属性
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| rethrowExceptionOnRead  |布尔 |否 |   |如果读取失败，则重新发起异常
+|===
+
+无<streaming-protocol...>的子元素
+
+
+===  XML协议
+
+TCP不保证写入套接字的数据是在单个数据包中传输的，因此如果您想要可靠地传输整个Mule消息，则必须指定一个附加协议。 xml-protocol元素配置XML协议，该协议使用XML语法将消息从接收到的字节流中分离出来，因此它只能与格式良好的XML一起工作。
+
+。<xml-protocol...>的属性
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| rethrowExceptionOnRead  |布尔 |否 |   |如果读取失败，则重新发起异常
+|===
+
+无<xml-protocol...>的子元素
+
+
+===  Xml eof协议
+
+与xml协议类似，xml-eof-protocol元素配置XML协议，但它也将使用套接字闭包来终止消息（即使XML格式不正确）。
+
+。<xml-eof-protocol...>的属性
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| rethrowExceptionOnRead  |布尔 |否 |   |如果读取失败，则重新发起异常
+|===
+
+无<xml-eof-protocol...>的子元素
+
+
+===  EOF协议
+
+TCP不保证写入套接字的数据是在单个数据包中传输的，因此如果您想要可靠地传输整个Mule消息，则必须指定一个附加协议。 eof-protocol元素配置一个协议，该协议简​​单地累积所有数据，直到套接字关闭并将其放入单个消息中。
+
+。<eof-protocol...>的属性
+[%header,cols="5*"]
+|=====
+| {名称{1}}输入 |必 |缺省 |说明
+| rethrowExceptionOnRead  |布尔 |否 |   |如果读取失败，则重新发起异常
+| payloadOnly  |布尔值 |是 |   |仅发送有效负载，而不是整个Mule消息对象或其属性。当协议没有明确指定时（当使用安全协议时），默认为true。
+|=====
+
+无<eof-protocol...>的子元素
+
+
+=== 直接协议
+
+TCP不保证写入套接字的数据在单个数据包中传输。使用direct-protocol元素来配置"null"协议不会改变正常的TCP行为，因此可能会发生消息碎片。例如，单个发送的消息可以以几个片段接收，每个都作为单独的接收到的消息。通常，Mule中的消息传递并不是一个好的选择，但可能需要与外部的基于TCP的协议进行交互。
+
+。<direct-protocol...>的属性
+[%header,cols="5*"]
+|=====
+| {名称{1}}输入 |必 |缺省 |说明
+| rethrowExceptionOnRead  |布尔 |否 |   |如果读取失败，则重新发起异常
+| payloadOnly  |布尔值 |是 |   |仅发送有效负载，而不是整个Mule消息对象或其属性。当协议没有明确指定时（当使用安全协议时），默认为true。
+|=====
+
+无<direct-protocol...>的子元素
+
+
+=== 安全协议
+
+与长度协议类似，安全协议也包含一个前缀。验证前缀可以检测到不匹配的协议，并避免将"random"数据解释为消息长度（这可能会导致内存不足错误）。这是Mule 2.x中的默认协议。
+
+。<safe-protocol...>的属性
+
+[%header,cols="5*"]
+|====
+| {名称{1}}输入 |必 |缺省 |说明
+| rethrowExceptionOnRead  |布尔 |否 |   |如果读取失败，则重新发起异常
+| payloadOnly  |布尔值 |是 |   |仅发送有效负载，而不是整个Mule消息对象或其属性。当协议没有明确指定时（当使用安全协议时），默认为true。
+| maxMessageLength  |整数 |否 |   |单个消息中字节数的可选最大长度。大于此值的消息会在接收器中触发一个错误，但它保证不会发生内存不足错误。
+|====
+
+无<safe-protocol...>的子元素
+
+
+=== 自定义类加载协议
+
+使用特定类加载器从流加载对象的长度协议
+
+。<custom-class-loading-protocol...>的属性
+[%header,cols="5*"]
+|====
+| {名称{1}}输入 |必 |缺省 |说明
+| rethrowExceptionOnRead  |布尔 |否 |   |如果读取失败，则重新发起异常
+| payloadOnly  |布尔值 |是 |   |仅发送有效负载，而不是整个Mule消息对象或其属性。当协议没有明确指定时（当使用安全协议时），默认为true。
+| maxMessageLength  |整数 |否 |   |单个消息中字节数的可选最大长度。大于此值的消息会在接收器中触发一个错误，但它保证不会发生内存不足错误。
+| classLoader-ref  |字符串 |否 |   |允许为类加载定义Spring bean
+|====
+
+无<custom-class-loading-protocol...>的子元素
+
+
+=== 长度协议
+
+长度协议元素配置长度协议，在每个消息之前使用发送的字节数来配置，以便可以在接收到的消息上构建完整的消息。
+
+。<length-protocol...>的属性
+[%header,cols="5*"]
+|====
+| {名称{1}}输入 |必 |缺省 |说明
+| rethrowExceptionOnRead  |布尔 |否 |   |如果读取失败，则重新发起异常
+| payloadOnly  |布尔值 |是 |   |仅发送有效负载，而不是整个Mule消息对象或其属性。当协议没有明确指定时（当使用安全协议时），默认为true。
+| maxMessageLength  |整数 |否 |   |单个消息中字节数的可选最大长度。大于此值的消息在接收器中触发错误，但它保证不会发生内存不足错误。
+|====
+
+无<length-protocol...>的子元素
+
+=== 自定义协议
+
+自定义协议元素允许您配置自己的协议实现。
+
+。<custom-protocol...>的属性
+[%header,cols="5*"]
+|=====
+| {名称{1}}输入 |必 |缺省 |说明
+| rethrowExceptionOnRead  |布尔 |否 |   |如果读取失败，则重新发起异常
+|类 |类名 |否 |   |实现TcpProtocol接口的类。
+| ref  | name（no spaces） | no  |   |引用一个实现TcpProtocol接口的spring bean。
+|=====
+
+无<custom-protocol...>的子元素
+
+
+=== 客户端套接字属性
+
+用于设置客户套接字属性的配置元素
+
+。<client-socket-properties...>的属性
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|名称 |字符串 |否 |   |此属性对象的名称，以便配置元素可以引用它。
+| sendBufferSize  |整数 |否 |   |发送数据时使用的缓冲区大小（以字节为单位），在套接字本身设置。
+| receiveBufferSize  |整数 |否 |   |接收数据时使用的缓冲区大小（以字节为单位），在套接字本身上设置。
+| sendTcpNoDelay  |布尔值 |否 | true  |如果设置，传输的数据不会一起收集以提高效率，而是立即发送。
+|超时 |整数 |否 | 0  |这会设置客户端套接字上的SO_TIMEOUT值。在读取失败之前，从套接字读取会阻塞达到这么长的时间（以毫秒为单位）。值为0（默认值）将导致读无限期地等待（如果没有数据到达）。
+|逗留 |整数 |否 |  -  1  |设置SO_LINGER值。这与套接字将关闭多长时间（以毫秒为单位）有关，以便正确传输任何剩余数据。值为-1（默认值）会禁用套接字中的逗留。
+| keepAlive  |布尔值 |否 |   |在打开的套接字上启用SO_KEEPALIVE行为。这会自动检查长期打开但未使用的套接字连接，并在连接不可用时关闭套接字连接。这是套接字本身的一个属性，由服务器套接字使用，以控制与服务器的连接在再循环之前是否保持活动状态。
+| connectionTimeout  |整数 |否 | 30000  |成功创建到远程服务器的出站连接之前等待的毫秒数。
+|===
+
+无<client-socket-properties...>的子元素
+
+
+=== 服务器套接字属性
+
+设置服务器套接字属性的配置元素。
+
+。<server-socket-properties...>的属性
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|名称 |字符串 |否 |   |此属性对象的名称，以便配置元素可以引用它。
+| sendBufferSize  |整数 |否 |   |发送数据时使用的缓冲区大小（以字节为单位），在套接字本身设置。
+| receiveBufferSize  |整数 |否 |   |接收数据时使用的缓冲区大小（以字节为单位），在套接字本身上设置。
+| sendTcpNoDelay  |布尔值 |否 | true  |如果设置，传输的数据不会一起收集以提高效率，而是立即发送。
+|超时 |整数 |否 | 0  |这会设置客户端套接字上的SO_TIMEOUT值。在读取失败之前，从套接字读取会阻塞达到这么长的时间（以毫秒为单位）。值为0（默认值）将导致读无限期地等待（如果没有数据到达）。
+|逗留 |整数 |否 |  -  1  |设置SO_LINGER值。这与套接字将关闭多长时间（以毫秒为单位）有关，以便正确传输任何剩余数据。值为-1（默认值）会禁用套接字中的逗留。
+| keepAlive  |布尔值 |否 |   |在打开的套接字上启用SO_KEEPALIVE行为。这会自动检查长期打开但未使用的套接字连接，并在连接不可用时关闭套接字连接。这是套接字本身的一个属性，由服务器套接字使用，以控制与服务器的连接在再循环之前是否保持活动状态。
+| reuseAddress  |布尔值 |否 | true  |如果设置为（默认值），则在绑定之前在服务器套接字上设置SO_REUSEADDRESS。这有助于在重新使用套接字时减少"address already in use"错误。
+| receiveBacklog  |整数 |否 |   |传入连接的最大队列长度。
+| serverTimeout  |整数 |否 | 0  |设置套接字用作服务器时的SO_TIMEOUT值。这是适用于"accept"操作的超时。值为0（默认值）将导致accept无限期地等待（如果没有连接到达）。
+|===
+
+无<server-socket-properties...>的子元素
+
+
+=== 架构
+
+该架构可以在 link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_tcp/namespace-overview.html[这里]中找到。
+
+==  Javadoc API参考
+
+这个模块的Javadoc可以在这里找到：
+
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/transport/tcp/package-summary.html[TCP]
+
+=== 的Maven
+
+TCP模块可以包含以下依赖项：
+
+[source, code, linenums]
+----
+ <dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-tcp</artifactId>
+  <version>3.6.0</version>
+</dependency>
+----
+
+== 扩展此传输
+
+当使用TCP与外部程序进行通信时，可能需要编写一个自定义的Mule协议。第一步是获得外部程序如何在TCP流内分隔消息的完整描述。接下来是将协议实现为Java类。
+
+* 所有协议都必须实现接口`org.mule.transport.tcp.TcpProtocol`，其中包含三种方法：
+**  `Object read(InputStream is)`从TCP套接字读取消息
+**  `write(OutputStream os, Object data)`将消息写入TCP套接字
+**  `ResponseOutputStream createResponse(Socket socket)`创建一个可以写入响应的流。
+
+* 处理字节流而不是序列化Mule消息的协议可以通过继承`org.mule.transport.tcp.protocols.AbstractByteProtocol`继承许多有用的基础结构此类
+** 实现`createResponse`
+** 处理将消息转换为字节数组，允许子类仅实现更简单的方法`writeByteArray(OutputStream os, byte[] data)`
+** 提供了方法`safeRead(InputStream is, byte[] buffer)`和`safeRead(InputStream is, byte[] buffer, int size)`，用于处理当从TCP套接字进行非阻塞读取时数据当前不可用的情况
+
+假设我们要与具有简单协议的服务器进行通信：所有消息都由**>>>**终止。协议类看起来像这样：
+
+[source, java, linenums]
+----
+package org.mule.transport.tcp.integration;
+ 
+import org.mule.transport.tcp.protocols.AbstractByteProtocol;
+ 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+ 
+public class CustomByteProtocol extends AbstractByteProtocol
+{
+ 
+    /**
+     * Create a CustomByteProtocol object.
+     */
+    public CustomByteProtocol()
+    {
+        super(false); // This protocol does not support streaming.
+    }
+ 
+    /**
+     * Write the message's bytes to the socket,
+     * then terminate each message with '>>>'.
+     */
+    @Override
+    protected void writeByteArray(OutputStream os, byte[] data) throws IOException
+    {
+        super.writeByteArray(os, data);
+        os.write('>');
+        os.write('>');
+        os.write('>');
+    }
+ 
+    /**
+     * Read bytes until we see '>>>', which ends the message
+     */
+    public Object read(InputStream is) throws IOException
+    {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        int count = 0;
+        byte read[] = new byte[1];
+ 
+        while (true)
+        {
+            // if no bytes are currently available, safeRead()
+            // will wait until some arrive
+            if (safeRead(is, read) < 0)
+            {
+                // We've reached EOF.  Return null, so that our
+                // caller will know there are no
+                // remaining messages
+                return null;
+            }
+            byte b = read[0];
+            if (b == '>')
+            {
+                count++;
+                if (count == 3)
+                {
+                    return baos.toByteArray();
+                }
+            }
+            else
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    baos.write('>');
+                }
+                count = 0;
+                baos.write(b);
+            }
+        }
+    }
+}
+----
+
+== 注意事项
+
+TCP和SSL是非常低级的传输，因此通常用于调试它们的工具（例如，在它们到达时记录消息）可能是不够的。一旦消息成功发送和接收，事情就会在很大程度上起作用。可能需要使用软件（或硬件），而不是在数据包级别跟踪消息，特别是在使用自定义协议时。或者，您可以通过在所有入站端点上临时使用直接协议进行调试，因为它在接收时接受（然后您可以记录）字节。

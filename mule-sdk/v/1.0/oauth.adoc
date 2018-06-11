@@ -1,0 +1,224 @@
+= 的OAuth
+:keywords: mule, sdk, security, oauth
+
+OAuth是许多API使用的身份验证协议，允许应用程序代表用户而不共享用户的凭据。如果您对协议不熟悉，请参阅 link:https://oauth.net/2/[https://oauth.net/2/]。
+
+SDK为构建_OAuth enabled_的模块提供支持，这意味着它们建立通过OAuth协议进行身份验证的连接。这使您可以隐藏OAuth协议的大部分复杂性（即
+一个_very_复杂），并提供更简单，更简单的体验，不会强制用户通过OAuth的学习曲线。
+
+SDK提供的OAuth支持仅限于：
+
+*  OAuth版本2。
+* 仅支持授权授予类型。
+
+== 开发启用OAuth的模块
+
+通过`@AuthorizationCode`注释在`ConnectionProvider`级别添加了OAuth支持。
+
+以下是Salesforce连接器的一个简化的`ConnectionProvider`示例：
+
+[source, java, linenums]
+----
+@AuthorizationCode(
+    authorizationUrl = "https://login.salesforce.com/services/oauth2/authorize",
+    accessTokenUrl = "https://login.salesforce.com/services/oauth2/token")
+public class SalesforceOAuthConnectionProvider<C> implements ConnectionProvider<SalesforceClient> {
+
+   @Parameter
+   @Optional(defaultValue = "34.0")
+   private Double apiVersion;
+
+  /**
+   * Tailors the login page to the user's device type.
+   */
+  @OAuthParameter
+  private String display;
+
+  /**
+   * Avoid interacting with the user
+   */
+  @OAuthParameter
+  @Optional(defaultValue = "false")
+  private boolean immediate;
+
+  /**
+   * Specifies how the authorization server prompts the user for reauthentication and reapproval
+   */
+  @OAuthParameter
+  @Optional(defaultValue = "true")
+  private boolean prompt;
+
+  @OAuthCallbackValue(expression = "#[payload.instance_url]")
+  private String instanceId;
+
+  @OAuthCallbackValue(expression = "#[payload.id]")
+  private String userId;
+
+  private AuthorizationCodeState state;
+
+  @Override
+  public SalesforceClient connect() throws ConnectionException {
+    if (state.getAccessToken() == null) {
+      throw new SalesforceException(MessageFormat.format(COULD_NOT_EXTRACT_FIELD, "accessToken"));
+    }
+
+    if (instanceId == null) {
+      throw new SalesforceException(MessageFormat.format(COULD_NOT_EXTRACT_FIELD, "instanceId"));
+    }
+
+    return new SalesforceClient(state.getAccessToken(), instanceId, apiVersion);
+  }
+
+  public void disconnect(SalesforceClient connection) {
+    connection.close();
+  }
+
+  @Override
+  public ConnectionValidationResult validate(SalesforceClient connection) {
+    return success();
+  }
+}
+----
+
+该类实现`ConnectionProvider`，就像SDK中的其他连接一样。通过对象进行身份验证的操作对提供程序返回的`SalesforceClient`对象进行操作。这是一个重要的设计考虑因素，因为它允许您将操作与所使用的身份验证方法分离，因为连接器可以定义另一个使用普通旧式基本身份验证的`ConnectionProvider`，并且所有操作都将保持完全兼容。
+
+==  @ AuthorizationCode
+
+此注释表示此连接提供程序需要使用授权码授权类型进行OAuth舞蹈。注释具有以下属性：
+
+[source, java, linenums]
+----
+public @interface AuthorizationCode {
+
+  /**
+   * @return The Url of the endpoint which provides the access tokens
+   */
+  String accessTokenUrl();
+
+  /**
+   * @return The url of the authorization endpoint which starts the OAuth dance
+   */
+  String authorizationUrl();
+
+  /**
+   * @return Expression to be used on the response of {@link #accessTokenUrl()} to extract the access token
+   */
+  String accessTokenExpr() default "#[payload.access_token]";
+
+  /**
+   * @return Expression to be used on the response of {@link #accessTokenUrl()} to extract the access token expiration
+   */
+  String expirationExpr() default "#[payload.expires_in]";
+
+  /**
+   * @return Expression to be used on the response of {@link #accessTokenUrl()} to extract the refresh token
+   */
+  String refreshTokenExpr() default "#[payload.refresh_token]";
+
+  /**
+   * @return The default set of scopes to be requested, as a comma separated list. Empty string means no default scopes.
+   */
+  String defaultScopes() default "";
+
+}
+----
+
+== 连接管理策略
+
+上例中的提供者没有实现`ConnectionProvider`接口的任何专门化，这意味着OAuth机制可以与其他连接管理策略结合使用。连接对象可以合并，
+缓存或每次从头创建，具体取决于使用哪个接口（`PoolingConnectionProvider`，`CachedConnectionProvider`，`ConnectionProvider`等）。有关连接管理的更多信息，请参阅<<connections#, connectivity reference>>。
+
+请注意在这种情况下使用vanilla（通用）`ConnectionProvider`接口的语义。在常规的“非oauth”连接提供者中，使用vanilla接口意味着每次组件需要连接时，都会创建一个新连接，并且在组件完成时会被销毁。尽管OAuth案例仍然如此，但这并不意味着OAuth舞会再次进行。新的连接对象将被创建，但只要保持有效，相同的访问令牌将被重用。
+
+== 常规参数与OAuth参数
+
+与其他连接提供商一样，此`ConnectionProvider`可以有参数。但是，您必须将常规参数与`@OAuthParameter`的概念区分开来。
+
+包含`OAuthParameter`作为执行OAuth舞蹈时的自定义参数。因此，例如，虽然`apiVersion`参数是连接提供程序用来创建`SalesforceClient`的内容，但实参参数实际上是通过OAuth请求发送给服务提供商的。
+
+从模块的角度来看，这只是用户提供价值的另一个参数。您可以将这些参数与`@Optional`，`@Expression`以及您可以与传统`@Parameter`批注一起使用的所有其他批注组合使用。在DSL中，常规和oauth参数一起出现。模块的最终用户不应该注意到任何区别。
+
+=== 请求别名
+
+某些自定义oauth参数可能包含Java中不支持的字符。例如"Api-Key"。由于您无法将"-"用作字段名称的一部分，因此`@OAuthParameter`注释具有一个名为`requestAlias`的可选参数，例如：
+
+[source, java, linenums]
+----
+@OAuthParameter(requestAlias = "api-key")
+private String apiKey;
+----
+
+==  @ OAuthCallbackValue
+
+回调值是从服务提供商通过OAuth回调发送的响应中提取的。虽然大多数服务提供商只是返回标准项目（例如访问和刷新令牌，到期信息等），但其他一些服务提供商会返回其他项目。在Salesforce的情况下，他们返回用户和实例ID。
+
+该注释包含应用于响应以提取值的表达式。然后将该值分配给连接提供程序使用的字段。当`connect()`，`validate()`或`disconnect()`方法被调用时，这些字段被设置并可用。
+
+==  @ AuthorizationCodeState
+
+用`AuthorizationCode` *MUST*注释的每个`ConnectionProvider`都包含一个`AuthorizationCodeState`类型的字段（且只有一个）。
+
+这是一个简单的不可变的POJO，它包含有关OAuth舞蹈结果的信息。它包含以下信息：
+
+[source, java, linenums]
+----
+public interface AuthorizationCodeState {
+
+  /**
+   * @return The obtained access token
+   */
+  String getAccessToken();
+
+  /**
+   * @return The obtained refresh token
+   */
+  Optional<String> getRefreshToken();
+
+  /**
+   * @return The id of the user that was authenticated
+   */
+  String getResourceOwnerId();
+
+  /**
+   * @return The access token's expiration. The actual format of it depends on the OAuth provider
+   */
+  Optional<String> getExpiresIn();
+
+  /**
+   * @return The OAuth state that was originally sent
+   */
+  Optional<String> getState();
+
+  /**
+   * @return The url of the authorization endpoint that was used in the authorization process
+   */
+  String getAuthorizationUrl();
+
+  /**
+   * @return The url of the access token endpoint that was used in the authorization process
+   */
+  String getAccessTokenUrl();
+
+  /**
+   * @return The OAuth consumer key that was used in the authorization process
+   */
+  String getConsumerKey();
+
+  /**
+   * @return The OAuth consumer secret that was used in the authorization process
+   */
+  String getConsumerSecret();
+
+  /**
+   * @return The external callback url that the user configured or {@link Optional#empty()} if none was provided
+   */
+  Optional<String> getExternalCallbackUrl();
+}
+----
+
+通过此对象，提供商可以访问OAuth舞蹈期间获得的`accessToken`和其他标准信息。回到最初的Salesforce示例，您可以看到`connect()`方法如何使用
+这个POJO来创建客户端。
+
+== 下一步
+
+<<oauth-configuring#, Configuring an OAuth enabled module>>

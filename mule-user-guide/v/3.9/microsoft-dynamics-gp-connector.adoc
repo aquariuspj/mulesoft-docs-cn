@@ -1,0 +1,586 @@
+=  Microsoft Dynamics GP连接器
+:keywords: anypoint studio, connector, endpoint, dynamics-gp
+：imagesdir：./_images
+
+_选择_
+
+Microsoft Dynamics GP连接器使Mule应用程序能够与Microsoft Dynamics Great Plains（GP）Web服务进行交互。
+
+阅读本用户指南以了解如何使用连接器设置和配置基本流程。使用 link:/release-notes/microsoft-dynamics-gp-connector-release-notes[连接器发行说明]跟踪每个版本的连接器的功能添加，兼容性，限制和API版本更新。
+
+使用https://mulesoft.github.io/mule-microsoft-dynamics-gp-connector/[Technical Reference]查看连接器的操作和功能。
+
+
+== 先决条件
+
+本文档假定您熟悉Mule，Anypoint连接器，
+Anypoint Studio基本要素，骡流中的元素以及全局元素。
+
+
+=== 硬件和软件要求
+
+有关硬件和软件要求，请访问 link:/mule-user-guide/v/3.9/hardware-and-software-requirements[硬件和软件要求]页面。
+
+该连接器与Dynamics GP Web服务进行交互。为了与Mule平台集成，Dynamics GP实例必须通过
+Dynamics GP Web服务。有关Web服务配置的信息可以在 http://download.microsoft.com/download/3/8/D/38D2BF76-1A06-46BA-B9CD-4283FEDD7447/WSInstallAdminGuide.pdf[Web服务安装和管理指南“]中找到。
+
+Java加密扩展（JCE）用于认证过程*required*。 JCE-7可以从 link:http://www.oracle.com/technetwork/java/javase/downloads/jce-7-download-432124.html[Java加密扩展（JCE）]下载。
+
+
+=== 兼容性
+
+Microsoft Dynamics GP连接器与以下设备兼容：
+
+[options="header"]
+|===
+|应用/服务|版本
+| Mule Runtime EE  | 3.7.x或更高版本
+| Java | 7或更高版本
+| MS动态GP  |  2010 R2，2013（版本12），2013 R2，2015（版本14），2015 R2
+|===
+
+== 安装此连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+== 配置连接器全局元素
+
+要在Mule应用程序中使用Dynamics GP连接器，请配置全局
+Dynamics GP元素，可供应用程序中的所有Dynamics GP连接器使用。全球元素可以有两种类型：
+
+.  Kerberos身份验证：使用本机Kerberos身份验证与内部部署Microsoft Dynamics GP建立连接。
++
+Kerberos协议定义了客户端如何与网络身份验证服务进行交互。客户端从Kerberos密钥分发中心（KDC）获取票据，并在建立连接时将这些票据呈现给服务器。 Kerberos票据代表客户端的网络凭证。
++
+.  NTLM身份验证：使用旧版NTLM身份验证与内部部署Microsoft Dynamics GP建立连接。
++
+Windows质询/响应（NTLM）是在包括运行Windows操作系统的系统和独立系统的网络上使用的身份验证协议。 NTLM凭据基于在交互式登录过程中获得的数据，并由域名，用户名和用户密码的单向散列组成。
+
+===  Kerberos身份验证
+
+对于Kerberos配置，请确保将服务器配置为使用Kerberos身份验证。更多信息可以在 http://download.microsoft.com/download/3/8/D/38D2BF76-1A06-46BA-B9CD-4283FEDD7447/WSInstallAdminGuide.pdf[Web服务安装和管理指南“]第8章找到。
+
+. 点击全局元素标签。
+. 点击创建弹出全局类型对话框。
+. 在搜索文本框中，输入GP并填写所需的参数。
++
+image:gp-kerberos-connection-config.png[Kerberos配置，500,500]
++
+. 单击测试连接以确保连接正常工作。
+. 连接成功后，单击确定。
+
+[%header,cols="20a,80a"]
+|===
+| {参数{1}}说明
+|用户名 |连接到Dynamics GP的Windows用户名。
+|密码 |用户连接到Dynamics GP的密码。
+|端点URL  | SOAP服务以http：// <Server>：<WebServicePort> / Dynamics / GPService / GPService +形式公开的基本URL。 +
+
+ 示例：+ http：//主机名：7047 / Dynamics / GPService / GPService +
+| SPN  |标识服务实例的服务主体名称
+|登录Conf。位置 | Kerberos登录模块的路径。
+ 示例：C：\ kerberos \ login.conf
+| Krb5 Conf。位置 | Kerberos配置文件的路径。
+
+ 示例：C \ kerberos \ krb5.conf
+|===
+
+以下是Kerberos配置文件的示例：
+
+[source,example,linenums]
+----
+[libdefaults]
+default_realm = MYREALM.COM
+
+[realms]
+MYREALM.COM = {
+ kdc = mydomaincontroller.myrealm.com
+ default_domain = MYREALM.COM
+}
+
+[domain_realm]
+.myrealm.com = MYREALM.COM
+myrealm.com = MYREALM.COM
+----
+
+领域和default_domain区分大小写，并且必须完全按照Active Directory中的定义进行指定。在测试连接期间接收到错误，指出“消息流已修改（41）”表示域名未正确形成。
+
+有关如何创建Kerberos配置文件的更多信息可以在 link:http://web.mit.edu/kerberos/krb5-devel/doc/admin/conf_files/krb5_conf.html[MIT Kerberos文档]中找到。
+
+通过定义JAAS登录配置文件，Kerberos登录模块（Krb5LoginModule）可以通过特定于场景的配置进行调整。以下是Kerberos登录模块的JAAS登录配置文件示例：
+
+[source,java,linenums]
+----
+Kerberos {
+    com.sun.security.auth.module.Krb5LoginModule required
+    debug=true
+    refreshKrb5Config=true;
+};
+----
+
+有关如何为Kerberos登录模块创建JAAS登录配置文件的更多信息，请参阅 link:http://docs.oracle.com/javase/7/docs/jre/api/security/jaas/spec/com/sun/security/auth/module/Krb5LoginModule.html[Krb5LoginModule]。
+
+===  NTLM身份验证
+
+. 点击全局元素标签。
+. 点击创建弹出全局类型对话框。
+. 在搜索文本框中，输入GP并填写所需的参数。
++
+image:gp-ntlm-connection-config.png[NTLM配置，500,500]
++
+. 单击测试连接以确保连接正常工作。
+. 连接成功后，单击确定。
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}说明
+|用户名 |连接到Dynamics GP的Windows用户名。 *Important:*用户必须与Dynamics GP位于同一个域中，并且不能是本地帐户，它必须是域帐户。
+|密码 |用户连接到Dynamics GP的密码。
+|端点 | SOAP服务以以下格式显示的基本URL：+
+`+http://<Server>:<WebServicePort>/DynamicsGPWebServices/DynamicsGPService.asmx+`
+
+示例：`+http://hostname:7047/DynamicsGPWebServices/DynamicsGPService.asmx+`
+{GP}实例的|域 |域。
+|===
+
+== 使用连接器
+
+查看任何版本连接器的完整操作列表，请参阅 link:https://msdn.microsoft.com/en-us/library/cc508424.aspx[Microsoft方法参考]。
+
+=== 连接器命名空间和架构
+
+在Studio中设计应用程序时，将连接器从调色板拖放到Anypoint Studio画布上的操作会自动使用连接器名称空间和模式位置填充XML代码。
+
+* 命名空间：`+http://www.mulesoft.org/schema/mule/dynamicsgp+`
+* 架构位置：`+http://www.mulesoft.org/schema/mule/dynamicsgp/current/mule-dynamicsgp.xsd+`
+
+如果您在Studio的XML编辑器或其他文本编辑器中手动编码Mule应用程序，请在`<mule>`标记内的Configuration XML头中定义名称空间和模式位置。
+
+[source, xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:dynamicsgp="http://www.mulesoft.org/schema/mule/dynamicsgp"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core
+               http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/dynamicsgp
+               http://www.mulesoft.org/schema/mule/dynamicsgp/current/mule-dynamicsgp.xsd">
+
+      <!-- put your global configuration elements and flows here -->
+</mule>
+----
+
+
+=== 在Mavenized Mule应用程序中使用连接器
+
+如果您编码的是Mavenized Mule应用程序，请将此XML片段包含在您的pom.xml文件中。
+
+[source,xml,linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>ms-dynamics-gp-connector</artifactId>
+  <version>1.0.0</version>
+</dependency>
+----
+
+在`<version>`标签内，为最新版本提供所需的版本号，单词`RELEASE`，或者为最新版本提供`SNAPSHOT`。
+
+
+使用连接器演示Mule应用程序== 
+
+您可以使用https://mulesoft.github.io/mule-microsoft-dynamics-gp-connector/ [此链接]中的Dynamics GP连接器下载全功能演示应用程序。
+
+=== 示例用例
+
+这组用例描述了如何使用Kerberos或NTLM身份验证创建Mule应用程序以使用Microsoft Dynamics GP CRUD操作。
+
+==== 创建客户
+
+. 将HTTP侦听器元素拖到画布上，并使用默认配置，但路径设置为`/createCustomer`。
+. 将一个Transform Message元素拖放到HTTP侦听器旁边，然后输入：
++
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		}  as :object {
+	class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+	}
+	},
+	customer: {
+		key: {
+			id: inboundProperties."http.query.params".customerKeyID
+		},
+		name: inboundProperties."http.query.params".customerName
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.CreateCustomerParams"
+}
+----
++
+. 将一个Microsoft Dynamics GP连接器拖到Transform消息旁边。
+. 将其配置设置为NTLM或Kerberos Connection，并填写必填字段，这适用于所有其他被拖入流中的Dynamics GP连接器。
+. 选择操作创建客户。按原样保留实体参考。
+. 拖动连接器旁边的Set Payload元素，并将其值设置为`"Success"`。
+
+==== 获取客户
+
+. 将Mule Palette中的HTTP Listener元素拖到画布上，并使用默认配置，但路径设置为`/getCustomer`。
+. 将一个Transform Message元素拖放到HTTP Listener旁边并写入：
++
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		}  as :object {
+	class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+	}
+	},
+
+	key: {
+		id: inboundProperties."http.query.params".customerKeyID
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.GetCustomerByKeyParams"
+}
+----
++
+. 将一个Microsoft Dynamics GP连接器拖到Transform消息旁边。
+. 选择“通过密钥获取客户”操作。保持实体参考原样。
+. 将对象拖到连接器旁边的JSON元素，并保持原样。
+
+==== 更新客户
+
+. 将Mule Palette中的*HTTP Listener*元素拖到画布上，并使用默认配置，但路径设置为`/updateCustomer`。
+. 将一个Transform Message元素拖放到HTTP侦听器旁边，然后输入：
++
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		} as :object {
+    class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+    }
+	},
+	key: {
+		id: inboundProperties."http.query.params".keyId
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.GetCustomerByKeyParams"
+}
+----
++
+. 将一个Microsoft Dynamics GP连接器拖到Transform消息旁边。
+. 选择通过密钥获取客户操作。按原样保留实体参考。
+. 拖动连接器旁边的转换消息元素，然后输入：
++
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		} as :object {
+    class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+    }
+	},
+	customer: {
+		comment1: flowVars.UpdatedComment,
+		key: {
+			id: payload.key.id
+		},
+		name: payload.name
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.UpdateCustomerParams"
+}
+----
++
+. 将一个Microsoft Dynamics GP连接器拖到Transform消息旁边。
+. 选择更新客户操作。按原样保留实体参考。
+. 将连接器旁边的设置有效负载元素拖动到`"Success"`。
+
+==== 删除客户
+
+. 将Mule Palette中的*HTTP Listener*元素拖到画布上，并使用默认配置，但路径设置为`/deleteCustomer`。
+. 将一个*Transform Message*元素拖放到HTTP侦听器旁边，然后输入：
++
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		} as :object {
+	class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+	}
+	},
+	key: {
+		id: inboundProperties."http.query.params".customerKeyID
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.DeleteCustomerParams"
+}
+----
++
+. 将一个Microsoft Dynamics GP连接器拖到Transform消息旁边。
+. 选择删除客户操作。按原样保留实体参考。
+. 拖动连接器旁边的设置有效负载元素，并将其值设置为`"Success"`。
+
+==== 获取客户列表
+
+. 将HTTP侦听器元素拖到画布上，并使用默认配置，但路径设置为`/getCustomerList`。
+. 将一个Transform Message元素拖放到HTTP侦听器旁边，然后输入：
++
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		} as :object {
+	class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+	}
+	},
+	criteria: {
+		name: {
+			like: inboundProperties."http.query.params".like
+		}
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.GetCustomerListParams"
+}
+----
++
+. 将一个Microsoft Dynamics GP连接器拖到Transform消息旁边。
+. 选择获取客户列表操作。按原样保留实体参考。
+. 将对象拖放到连接器旁边的JSON元素，并保持原样。
+
+=== 示例用例 -  XML
+
+将其粘贴到Anypoint Studio中以与本指南中讨论的示例用例应用程序进行交互。
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json"
+      xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata"
+      xmlns:dynamicsgp="http://www.mulesoft.org/schema/mule/dynamicsgp"
+      xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml"
+      xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/dynamicsgp http://www.mulesoft.org/schema/mule/dynamicsgp/current/mule-dynamicsgp.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8082"
+                          doc:name="HTTP Listener Configuration"/>
+    <dynamicsgp:config-kerberos name="Dynamics_GP__Kerberos_Connection" username="${gp-kerberos.username}" password="${gp-kerberos.password}" endpoint="${gp-kerberos.endpoint}" spn="${gp-kerberos.spn}" loginConfLocation="${gp-kerberos.loginConfLocation}" krb5ConfLocation="${gp-kerberos.krb5ConfLocation}" doc:name="Microsoft Dynamics GP: Kerberos Connection"/>
+    <flow name="CreateCustomer">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/createCustomer"
+                       doc:name="/createCustomer"/>
+        <dw:transform-message doc:name="Set Create Request">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		}  as :object {
+	class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+	}
+	},
+	customer: {
+		key: {
+			id: inboundProperties."http.query.params".customerKeyID
+		},
+		name: inboundProperties."http.query.params".customerName
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.CreateCustomerParams"
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamicsgp:create-customer config-ref="Dynamics_GP__Kerberos_Connection"
+                                    doc:name="Create Customer" params-ref="#[payload]"/>
+        <set-payload value="&quot;Success&quot;" doc:name="Set Payload"/>
+    </flow>
+    <flow name="GetCustomer">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/getCustomer"
+                       doc:name="/getCustomer"/>
+        <dw:transform-message doc:name="Set Get Request">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		}  as :object {
+	class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+	}
+	},
+
+	key: {
+		id: inboundProperties."http.query.params".customerKeyID
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.GetCustomerByKeyParams"
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamicsgp:get-customer-by-key config-ref="Dynamics_GP__Kerberos_Connection" params-ref="#[payload]" doc:name="Get Customer By Key"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+    <flow name="UpdateCustomer">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/updateCustomer"
+                       doc:name="/updateCustomer"/>
+        <set-variable variableName="UpdatedComment" value="#[message.inboundProperties.'http.query.params'.updatedComment]" doc:name="UpdatedComment"/>
+        <dw:transform-message doc:name="Set GetByKey Request">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		} as :object {
+    class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+    }
+	},
+	key: {
+		id: inboundProperties."http.query.params".keyId
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.GetCustomerByKeyParams"
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamicsgp:get-customer-by-key config-ref="Dynamics_GP__Kerberos_Connection" doc:name="Get Customer by Key"
+                                        params-ref="#[payload]"/>
+        <dw:transform-message doc:name="Set Update Request">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		} as :object {
+    class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+    }
+	},
+	customer: {
+		comment1: flowVars.UpdatedComment,
+		key: {
+			id: payload.key.id
+		},
+		name: payload.name
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.UpdateCustomerParams"
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamicsgp:update-customer config-ref="Dynamics_GP__Kerberos_Connection" params-ref="#[payload]" doc:name="Update Customer"/>
+        <set-payload value="&quot;Success&quot;" doc:name="Set Payload"/>
+    </flow>
+    <flow name="DeleteCustomer">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/deleteCustomer"
+                       doc:name="/deleteCustomer"/>
+        <dw:transform-message doc:name="Set Delete Request">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		} as :object {
+	class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+	}
+	},
+	key: {
+		id: inboundProperties."http.query.params".customerKeyID
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.DeleteCustomerParams"
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamicsgp:delete-customer config-ref="Dynamics_GP__Kerberos_Connection" params-ref="#[payload]" doc:name="Delete Customer"/>
+        <set-payload value="&quot;Success&quot;" doc:name="Set Payload"/>
+    </flow>
+    <flow name="GetCustomerList">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/getCustomerList" doc:name="/getCustomerList"/>
+        <dw:transform-message doc:name="Set GetList Request">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	context: {
+		organizationKey: {
+			id: inboundProperties."http.query.params".companyKeyID
+		} as :object {
+	class : "org.mule.modules.dynamics.gp.api.entity.CompanyKey"
+	}
+	},
+	criteria: {
+		name: {
+			like: inboundProperties."http.query.params".like
+		}
+	}
+} as :object {
+	class : "org.mule.modules.dynamics.gp.api.param.GetCustomerListParams"
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamicsgp:get-customer-list config-ref="Dynamics_GP__Kerberos_Connection" doc:name="Get Customer List"
+                                      params-ref="#[payload]"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+
+</mule>
+----
+
+== 另请参阅
+
+* 访问 link:/release-notes/microsoft-dynamics-gp-connector-release-notes[Microsoft Dynamics GP连接器发行说明]。
+* 了解如何 link:/anypoint-studio/v/6/import-asset-exchange-task[从Exchange导入资产]。
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。
+*  https://mulesoft.github.io/mule-microsoft-dynamics-gp-connector/ [连接器参考]。

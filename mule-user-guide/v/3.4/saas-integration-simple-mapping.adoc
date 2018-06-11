@@ -1,0 +1,164 @@
+=  SaaS集成简单映射
+
+这*Shortcut to Success*旨在为您提供背景和基本知识，以便能够快速构建将平面文件与SaaS提供商相集成的Mule项目。
+
+image:flat2saas-1.png[flat2saas-1]
+
+我们将使用示例用例来说明如何使用Mule应用程序将联系人列表从CSV文件推送到Salesforce。我们会告诉你完成的项目是什么样子，解释它是如何工作的，然后概述构建自己版本的步骤。
+
+== 成功的捷径：
+
+* 我们将考虑一个使用1：1数据映射的非常简单的用例。基本上，我们正在从平面文件中提取联系人信息（姓名，电子邮件地址等），将其映射到Salesforce可识别的结构化对象，然后将信息上传到Salesforce并自动在帐户中创建新联系人。
+
+== 下一个成功的捷径：
+
+* 即将推出！在*SaaS Integration Simple Mapping with Choice Routing*中，我们会通过添加仅同步新联系人信息的步骤来让这更有趣。
+* 即将推出！在*SaaS Integration 1 to N Mapping*中，我们会通过创建一个创建Salesforce帐户的流程，然后将联系人添加到我们CSV文件中每行的新帐户，从而增加一些复杂性。
+
+== 开始之前
+
+在开始之前对Mule有一个基本的了解是个好主意。通过这个简短的测试来了解您是否准备好进入这个成功捷径。
+
+. 在计算机软件方面，Mule是：
+.. 企业服务总线和集成平台。
+..  image:mule.png[马骡]
+
+.. 某种工具可以帮助我连接应用程序或Web服务
+. 您可以使用Mule Studio：
+.. 集成开发环境（IDE）
+.. 马大的房间，马哺乳动物可以聚集探索舞蹈艺术。
+.. 组合应用程序的拖放工具
+.  Mule应用程序由一个或多个：
+.. 流，其中包含一系列处理消息的元素。
+来自动物工作的同事的.. 参考资料。
+.. 端点，我认为？
+.  Mule应用程序通过处理工作：
+通过消息源（如HTTP）发送的.. 消息，以及路由，转换，充实或以其他方式处理消息内容的任意数量的消息处理器。
+.. 奶酪。
+.. 通过HTTP传入消息，也可能来自队列？
+.  Mule使用全局元素来：
+.. 定义可在同一应用程序中的多个消息处理器之间共享的配置。
+.. 在澳大利亚以每分钟不到10分钟的价格致电其亲属。
+.. 重复使用了一些代码，我认为还有一些其他事情，比如配置连接
+.  MEL代表：
+..  Mule表达式语言。
+.. 马群为马自由组织，一个寻求确保世界各地包装动物自由的活动组织。
+.. 可能是Mule表达式语言，但是它的语法是什么？
+
+
+== 示例
+
+我们的例子着重于一个简单的用例。想象一下，您有一个联系信息电子表格 - 姓名，电子邮件地址，电话号码等 - 您想要在Excel中停止跟踪并开始在CRM（客户关系经理）（如Salesforce）中进行管理。假设您没有兴趣通过手动将联系人逐个输入到Salesforce中来完成此操作，并且您有十几位同事拥有类似的清单，这些清单都需要以某种方式转移到Salesforce中。你可以为此构建一个应用程序。
+
+此应用程序使用三个元素的单个Mule流，接受包含联系人记录的CSV文件，然后将联系人上传到Salesforce。请查看下面的*visual*表示以及此应用程序的*XML*表示。
+
+[tabs]
+------
+[tab,title="Visual Editor"]
+....
+image:sync_contacts.png[sync_contacts]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<mule xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.4.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+  
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+  
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+  
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/5.0/mule-sfdc.xsd
+  
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+  
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+  
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd ">
+ 
+    <sfdc:config name="Salesforce" username="testsfdc@mulesoft.com" password="password"  doc:name="Salesforce" securityToken="bgfsG5688kroeemIHMnYJ">
+        <sfdc:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sfdc:config>
+  
+    <data-mapper:config name="datamapper_grf" transformationGraphPath="datamapper.grf" doc:name="DataMapper"/>
+  
+    <flow name="sync-contacts" doc:name="sync-contacts"
+        <file:inbound-endpoint path="/Users/RobinMacbook/Desktop/Input"  responseTimeout="10000" doc:name="File" connector-ref="File" moveToDirectory="/Users/RobinMacbook/Desktop/Output"/>
+        <data-mapper:transform config-ref="datamapper_grf" doc:name="DataMapper"/>
+        <sfdc:create config-ref="Salesforce" type="Contact" doc:name="Salesforce">
+            <sfdc:objects ref="#[payload]"/>
+        </sfdc:create>
+    </flow>
+----
+....
+------
+
+== 它是如何工作的
+
+让我们分解它。
+
+=== 文件进入
+
+在它可以对联系信息做任何事情之前，应用程序首先要做的就是接受一个CSV文件。流中的*{{0}}*的行为与入站的 link:/mule-user-guide/v/3.4/message-sources[消息来源]相同，接受放入指定文件夹的文件。进入 link:/mule-user-guide/v/3.4/mule-concepts[骡流]后，文件的内容将变为 link:/mule-user-guide/v/3.4/mule-concepts[骡信息]，并带有 link:/mule-user-guide/v/3.4/mule-concepts[头]和 link:/mule-user-guide/v/3.4/mule-concepts[有效载荷]。流程中的其他 link:/mule-user-guide/v/3.4/message-processors[消息处理器]将通过添加，转换或以其他方式操作此消息来处理此消息。
+
+image:saas1.png[saas1]
+
+=== 魔法发生
+
+现在，Mule的CSV文件内容 - 仍然以平面文件格式构建 - 在消息有效内容中。接下来是什么？那么，Salesforce只接受结构化格式的数据，因此我们首先必须将数据格式从平面转换为结构化。此外，CSV文件中的数据标记与Salesforce中的数据不同：CSV使用"first"，"last" "emailAddress"和"phone"，而在Salesforce中，联系人信息标记为"LastName"，"FirstName"，"Email"和"Phone"。因此，我们必须将CSV标签中的数据映射到新的Salesforce标签 - 最后是姓氏，首先是姓名，电子邮件地址是电子邮件，手机是电话。要一次执行这两项杂事，我们可以使用魔法。或者一个DataMapper。
+
+我们向流添加了一个*{{0}}*，并告诉它它可以预期的输入数据的类型（平面文件），我们希望它产生（结构化）的输出数据的类型，然后使用拖放界面以将输入字段可视化地映射到输出字段。 DataMapper以其可爱的完整形式为我们提供了所有这些转换细节的可视性，并用箭头直观地表示每个映射。
+
+image:mapping.png[制图]
+
+[TIP]
+====
+*Why use DataMapper rather than the CSV-to-Maps Transformer?*
+
+另外，您可以使用多个消息处理器先将CSV数据转换为对象，然后手动将数据输入映射为输出。但是，DataMapper更快更易于使用，特别是如果您在Salesforce连接器上启用DataSense，以便Mule为您自动填充输出映射字段。我们将在下一节详细讨论，但现在知道使用DataMapper变换器可以节省时间和精力，即使是最简单的映射也是如此。
+====
+
+=== 联系信息将消失
+
+将文件中的所有联系人转换为一组适用于Salesforce的数据后，应用程序将使用Salesforce Connector将数据推送到您的Salesforce帐户中。
+
+连接器的配置（在下面的橙色框中显示）指定了*operation*  -  `Create`和*sObject type*  -  `Contact`  - 确切地说明数据如何上传到Salesforce;在这种情况下，它会创建新的联系人。该配置还表示可以从消息负载中提取对象字段映射，因为在我们的示例中，消息负载是我们想要映射的CSV文件。
+
+image:saas2.png[saas2]
+
+Salesforce连接器还需要包含全局配置的 link:/mule-user-guide/v/3.4/global-elements[全球元素]。全局配置至少应包含一个用户名，密码和安全令牌，如下面的橙色框所示。
+
+image:Studio_SFglobal.png[Studio_SFglobal]
+
+正如你可能已经怀疑的那样，真正的魔法发生在蓝色框中（上图）。 ** {{0}}**复选框有两件令人兴奋的事情：
+
+. 允许您测试与Salesforce的连接，以便您知道连接立即工作，因此稍后没有任何意外
+. 主动从Salesforce获取有关数据的信息（如数据类型和结构），然后将其提供给DataMapper，以便您不必手动输入任何内容。
+
+这是一件美丽的事情。
+
+在所有部分就绪后，您只需运行应用程序并开始提供文件（即将CSV文件放入输入文件夹）。为了测试它，您可以将应用程序部署到与Studio捆绑在一起的嵌入式Mule运行时，或者部署在内部服务器上，或者使用CloudHub在云中部署。实际上有很多不同的方式可以部署和管理Mule应用程序;详细了解 link:/mule-user-guide/v/3.4/deployment-scenarios[部署方案]。
+
+== 建立您自己的
+
+以下是关于如何使用您想要的任何端点和连接器构建您自己的本示例版本的端到端说明。
+
+. 首先，定义您的消息源。选择与输入数据所在位置相对应的端点，并将其插入流程中。你是那里的三分之一。
+. 接下来，确定您的预期目的地。选择与您希望集成的SaaS供应商相对应的Anypoint Connector，将其插入您的流程中，并根据需要进行配置。
+. 如果您选择的连接器提供了 link:/mule-user-guide/v/3.4/mule-datasense[DataSense]，请确保在配置连接器的全局元素时选中了"Enable DataSense"框。现在你已经有三分之二了，DataMapper将要完成剩下的辛苦工作。
+. 在您的消息源和连接器之间添加一个 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[的DataMapper]转换器。
++
+
+*Pro Tip*
+
+在您已经放置并配置了启用DataSense的Anypoint连接器后，在您的流程中插入一个DataMapper转换器。按此顺序构建流程可为您节省大部分时间，因为它会触发DataSense动态发现出站映射字段并将信息提供给DataMapper。
+
+. 配置DataMapper转换器。如果您的连接器启用了DataSense，则只需要配置输入值。否则，您可以通过单击并拖动输入字段到 link:/mule-user-guide/v/3.4/datamapper-concepts[数据映射控制台]中的输出字段，快速将输入映射到输出。
+. 保存并运行您的应用程序。
+. 沉浸在你成功的荣耀中。
+
+== 潜入更深
+
+* 使用您的Mule Studio实例附带的 link:/mule-user-guide/v/3.4/connect-with-salesforce-example[与Salesforce示例连接]，逐步浏览此示例。
+* 尝试更复杂的 link:/mule-user-guide/v/3.4/choosing-mel-or-ctl2-as-scripting-engine[使用Mule表达式语言的DataMapping]，从您的邮件标题或有效内容中提取特定数据，并动态地映射到您所需的格式。
+* 了解如何自定义您的 link:/mule-user-guide/v/3.4/error-handling[错误处理]策略，以更细致地控制捕获哪些错误以及数据的发送位置。

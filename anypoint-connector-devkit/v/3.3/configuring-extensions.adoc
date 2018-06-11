@@ -1,0 +1,167 @@
+= 配置扩展
+
+通常，Mule扩展将具有全局配置参数和操作特定参数。前者与实例变量或全局状态含义有关，即状态在操作中持续存在。
+
+需要暴露给Mule的实例变量需要一个特殊的metetata来通知Annotation Processor该字段可以在Mule配置XML文件中分配。 DevKit为这种情况提供`@Configurable`注释。换句话说，需要由用户配置的连接器或模块的任何实例变量都必须标记`@Configurable`
+
+扩展可以包含任意数量的`@Configurable`字段，这些字段可以是原始类型或复杂类型。此外，可以从Mule中随意设置`@Configurable`字段，并且可以在默认值未分配值的情况下使用默认值。
+
+_Note_：此页面中的所有示例和解释都适用于`@Connector`注释类以及`@Module`注释类。
+
+==  `@Configurable`注释
+
+`@Configurable`注释用于向生成器发信号通知所有可为每个连接器实例配置的bean属性。除了`@Configurable`注释之外，还需要一个公共setter。
+
+用法示例：
+
+[source, java, linenums]
+----
+import org.mule.api.annotations.Configurable;
+import org.mule.api.annotations.Connector;
+ 
+@Connector(name = "myconnector")
+public class MyConnector {
+ 
+    @Configurable
+    private String key;
+ 
+    public void setKey(String key) {
+       this.key = key;
+    }
+----
+
+然后模块或连接器可以配置如下：
+
+[source, xml, linenums]
+----
+<myconnector:config key="myKey" />
+----
+
+请注意，通过仅使用`@Configurable`注释字段，在xml中配置扩展时，必须为其指定一个值。
+
+==  @可选
+
+`@Optional`注释与`@Configurable`字段一起使用，它表示该字段是可配置的，但它不是强制性的。
+
+用法示例：
+
+[source, java, linenums]
+----
+@Module(name = "mymodule")
+public class MyModule {
+ 
+    @Configurable
+    @Optional
+    private String key;
+ 
+    public void setKey(String key) {
+       this.key = key;
+    }
+----
+
+然后连接器可以配置如下：
+
+[source, xml, linenums]
+----
+<myconnector:config key="myKey" />
+----
+
+并且以下内容也是有效的，因为可以为其赋值：
+
+[source, xml, linenums]
+----
+<myconnector:config />
+----
+
+==  @默认
+
+`@Default`注释与`@Configurable`和`@Optional`一起使用，用于为可配置字段提供默认值，以防未明确分配。
+
+用法示例：
+
+[source, java, linenums]
+----
+@Module(name = "mymodule")
+public class MyModule {
+ 
+    @Configurable
+    @Optional
+    @Default("testKey")
+    private String key;
+ 
+    public void setKey(String key) {
+       this.key = key;
+    }
+----
+
+然后连接器可以配置如下：
+
+[source, xml, linenums]
+----
+<myconnector:config key="myKey" />
+----
+
+或者，如果`key`属性不存在，则会按照`@Default`注释的定义隐式分配值`testKey`：
+
+[source, xml, linenums]
+----
+<myconnector:config />
+----
+
+== 多个配置
+
+可以有多个配置。这种情况可能是Mongo Connector有一种配置来访问一个服务器（用户名，主机，端口等）中的数据库，另一个用于不同的服务器。当存在多个配置时，有必要为它们提供一个名称，以便稍后可以引用它们。
+
+一种配置，请注意调用消息处理器时，不需要为配置指定名称，因为只有一个：
+
+[source, xml, linenums]
+----
+<mongo:config host="{db.host}" port="{db.port}" username="${db.username}"
+                  password="${db.password}" database="${db.name}"/>
+ 
+    <flow name="ListCollections">
+        <http:inbound-endpoint address="http://localhost:8080/list-collections"/>
+        <mongo:list-collections />
+    </flow>
+----
+
+两种配置，当定义多个配置时，必须提供每个配置的名称，以便稍后可以引用它们。请注意`name`属性来自`mongo:list-collections`中的`mongo:config`元素和`config-ref`属性：
+
+[source, xml, linenums]
+----
+<mongo:config host="${db.host1}" port="${db.port1}" username="${db.username1}"
+                  password="${db.password1}" database="${db.name1}" name="config1"  />
+     
+    <mongo:config host="${db.host2}" port="${db.port2}" username="${db.username2}"
+                  password="${db.password2}" database="${db.name2}" name="config2"  />
+ 
+    <flow name="ListCollections1">
+        <http:inbound-endpoint address="http://localhost:8080/list-collections1"/>
+        <mongo:list-collections config-ref="config1" />
+    </flow> 
+     
+    <flow name="ListCollections2">
+        <http:inbound-endpoint address="http://localhost:8080/list-collections2"/>
+        <mongo:list-collections config-ref="config2" />
+    </flow>
+----
+
+_注：对扩展可能具有的配置数量没有限制。
+
+== 限制
+
+对`@Configurable`注释字段有一些限制：
+
+* 只能用于使用`@Connector`或`@Module`注释的类
+* 无法应用于静态字段
+* 无法应用于最终字段
+* 不能应用于数组字段
+
+== 配置无
+
+在某些情况下，模块实际上并不期望进行任何配置，或者可以使用配置缺省值来开箱即用。
+
+由于DevKit 3.3的配置元素现在完全是可选的，当满足以下条件时：
+
+* 该模块不使用任何@Configurable，或者如果它们都是正确的默认选项。
+* 对于连接器，它们不能使用OAuth 1.0a或OAuth 2.0注释，因为这些注释会引入强制配置。

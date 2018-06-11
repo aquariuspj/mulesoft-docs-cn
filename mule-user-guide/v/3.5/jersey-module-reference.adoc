@@ -1,0 +1,223 @@
+= 泽西模块参考
+
+[Jersey]是通过JAX-RS（JSR-311）实现构建的框架。 JAX-RS是一个规范，它提供了一系列注释和类，从而可以构建RESTful服务。 Mule Jersey运输可以在Mule中部署这些带注释的类。
+
+除了注释功能外，Jersey还包含许多有用的功能：
+
+* 与XML数据绑定框架（如JAXB）集成的能力
+
+* 轻松生成/使用JSON的能力。
+
+* 与JSP表示层集成的能力。
+
+* 与[Abdera]集成Atom支持。
+
+[WARNING]
+目前隐式视图不受支持。
+
+== 类路径设置
+
+最新的泽西岛模块使用泽西岛1.6.1。
+
+== 编写服务
+
+编写JAX-RS服务是一个广泛的话题，本指南不会涉及。然而，[泽西]网站有一组优秀的样本，[JAX-RS规范]也有帮助。
+
+然而，我们将会看看一个简单的Hello World服务。这个例子需要安装Apache Xalan JAR。
+
+创建JAX-RS服务的第一步是创建一个表示您的HTTP资源的类。在我们的例子中，我们将创建一个"HelloWorldResource"类。这个类的方法将被调用以响应特定URL上的GET / POST / DELETE / PUT调用。
+
+@Path注释允许您将类/资源绑定到特定的URL。在下面的示例中，我们将HelloWorldResource类绑定到"/helloworld"网址。
+
+[source, java, linenums]
+----
+package org.mule.transport.jersey;
+ 
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+import javax.ws.rs.PathParam;
+ 
+@Path("/helloworld")
+public class HelloWorldResource {
+ 
+    @GET
+    @Produces("text/plain")
+    @Path("/{name}")
+    public String sayHelloWithUri(@PathParam("name") String name) {
+        return "Hello " + name;
+    }
+}
+----
+
+看看"sayHelloWithUri"方法，我们看到了几个注释：
+
+*  @ GET指定此方法仅被称为@GET请求URL。
+
+*  @ Produces指定此方法正在生成MIME类型为"text/plain"的资源。
+
+*  @ Path将此方法绑定到URL "/helloworld{name}"。 {name}是一个URI模板。这部分URL中的任何内容都将映射到名为"name"的URI参数（请参见下文）。
+
+*  @ PathParam将方法的第一个参数绑定到名为"name"的路径中的URI参数。
+
+== 部署Web服务
+
+编写好服务后，您可以创建包含一组泽西岛资源的`jersey:resources`组件。 URL。下面是这样一个非常简单的配置：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:spring="http://www.springframework.org/schema/beans"
+  xmlns:jersey="http://www.mulesoft.org/schema/mule/jersey"
+  xsi:schemaLocation="
+    http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+    http://www.mulesoft.org/schema/mule/jersey http://www.mulesoft.org/schema/mule/jersey/3.0/mule-jersey.xsd
+    http://jersey.apache.org/core http://jersey.apache.org/schemas/core.xsd">
+     
+  <flow name="HelloWorld">
+     <inbound-endpoint address="http://localhost:8080/jersey"/>
+     <jersey:resources>
+         <component class="org.mule.transport.jersey.HelloWorldResource"/>
+     </jersey:resources>
+  </flow>
+    
+</mule>
+----
+
+== 使用RESTful Web服务
+
+一旦你在Mule中运行这个配置，你可以点击url：http：// localhost：8080 / jersy / helloworld / Dan，你应该在浏览器中看到这个响应："Hello Dan"。
+
+==  JSON支持
+
+您必须添加jersey-json模块（可在[Jersey网站上找到]）并指定`*@Produces/@Consumes ("application/json")`。
+
+== 异常映射器
+
+可以在`resources`元素内注册异常映射器。异常映射允许将可能在组件类中抛出的泛型异常映射到HTTP响应代码，您可以根据需要添加尽可能多的异常。
+
+以下配置将执行`HelloWorldResource`期间可能抛出的`HelloWorldException`映射到HTTP错误503（服务不可用）。
+
+[source, xml, linenums]
+----
+<jersey:resources>
+    <component class="org.mule.module.jersey.HelloWorldResource"/>
+    <jersey:exception-mapper class="org.mule.module.jersey.exception.HelloWorldExceptionMapper" />
+</jersey:resources>
+----
+
+[%header%autowidth.spread]
+|===
+^ | HelloWorldExceptionMapper.java
+一个|
+[source, java, linenums]
+----
+public class HelloWorldExceptionMapper implements ExceptionMapper<HelloWorldException>
+{
+    public Response toResponse(HelloWorldException exception)
+    {
+        int status = Response.Status.SERVICE_UNAVAILABLE.getStatusCode();
+        return Response.status(status).entity(exception.getMessage()).type("text/plain").build();
+    }
+}
+----
+|===
+
+== 上下文解析器
+
+[上下文解析器]被注入到资源类中，并向它们提供上下文信息，在某些情况下，当你需要缺省不可用的特定元数据时，上下文信息会很有用。
+
+当您为XML / JSON序列化使用JAXB时，JAXB会提供一些注释以防需要更改输出格式。这种注释的一个简单示例是@XMLElement，您可以在该注释本身上提供该字段的名称作为属性：`@XMLElement(name="PersonName")`。
+
+然而，一些配置不可能实现使用注释。例如，默认情况下，当使用JAXB进行JSON序列化时，数字（int，long ...）被双引号包围，使它们看起来像字符串。这可能对一些项目有好处，但其他项目可能希望删除这些双引号。这可以通过在Jersey资源上配置ContextResolver来完成。让我们快点。如果我们有一个名为Person的类，它内部包含一个age属性，并且我们希望此Person对象以不带引号的年龄作为JSON对象返回，请首先创建自定义上下文解析器。
+
+[%header%autowidth.spread]
+|===
+^ | CustomContextResolver.java
+一个|
+[source, java, linenums]
+----
+@Provider
+public class CustomContextResolver implements ContextResolver<JAXBContext>
+{
+    private JAXBContext context;
+    private Class[] types = {Person.class};
+  
+    public JAXBContextResolver() throws Exception
+    {
+        this.context = new JSONJAXBContext(
+            JSONConfiguration.natural().build(), types);
+    }
+  
+    public JAXBContext getContext(Class<?> objectType)
+    {
+        for (Class type : types)
+        {
+            if (type == objectType)
+            {
+                return context;
+            }
+        }
+        return null;
+    }
+}
+----
+|===
+
+在上面的CustomContextResoler中，我们指定了Person类的类，我们返回一个JAXBContext，它使用JSONConfiguration类使用自然符号进行配置。一旦我们有了我们自定义的Jersey ContextResolver，我们需要在Mule中配置它。
+
+[source, xml, linenums]
+----
+<jersey:resources>
+    <component class="org.mule.module.jersey.HelloWorldResource"/>
+    <jersey:context-resolver class="org.mule.module.jersey.context.CustomContextResolver" />
+</jersey:resources>
+----
+
+没有自定义上下文解析器，输出将如下所示：
+
+[source, code, linenums]
+----
+{"name":"Alan","age":"26"}
+----
+
+使用自定义上下文解析器，输出将更改为以下内容：
+
+[source, code, linenums]
+----
+{"name":"Alan","age":26}
+----
+
+ContextResolvers也可用于配置其他XML / JSON库，如Jackson。以下是一个自定义上下文解析器，用于配置Jackson将引号中的数字返回。
+
+[%header%autowidth.spread]
+|===
+^ | CustomJacksonContextResolver
+一个|
+[source, java, linenums]
+----
+@Provider
+public class CustomJacksonContextResolver implements ContextResolver<ObjectMapper>
+{
+    public ObjectMapper getContext(Class<?> type)
+    {
+        ObjectMapper objectMapper = new ObjectMapper();
+ 
+        objectMapper.configure(Feature.WRITE_NUMBERS_AS_STRINGS, true);
+        objectMapper.configure(Feature.QUOTE_NON_NUMERIC_NUMBERS, true);
+  
+        return objectMapper;
+    }
+}
+----
+|===
+
+有关上下文解析器的更多信息，请查看Jersey [用户指南]。
+
+
+== 另请参阅
+
+有关如何使用泽西岛的更多信息，请参阅[项目网站]。

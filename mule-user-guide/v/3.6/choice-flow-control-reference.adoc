@@ -1,0 +1,336 @@
+= 选择流量控制参考
+:keywords: anypoint, studio, esb, choice, conditional, if, flow control
+
+*choice flow control*根据消息有效负载或属性动态路由消息。它将条件编程添加到流中，类似于`if/then/else`代码块。
+
+选择流量控制使用 link:/mule-user-guide/v/3.6/mule-expression-language-mel[表达式]来评估消息的内容，然后将消息路由到其范围内的*routing options*之一（参见下图）。它将消息引导到与路由配置相匹配的范围中的第一个路由选项（计算结果为true）。如果没有任何表达式评估为true，则选择流控制会将消息引导至*default*（`else`）路由。
+
+image:Choice_schematic.png[Choice_schematic]
+
+== 添加选择流量控制
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+In Studio, drag the *Choice* icon from the Studio palette to the canvas, positioning it within the sequence of link:/mule-user-guide/v/3.6/elements-in-a-mule-flow[building blocks] that form the flow (below). 
+
+image:choice+flow+2.png[choice+flow+2]
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+Add a `choice` element in your flow, with one attribute and, at minimum, two child elements as per the table below. Refer to the code sample below.
+
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*doc:name* |unique name for the choice element (not required for Standalone)
+|*Child Element* |*Attribute*
+|*when* |expression
+|*otherwise* |n/a
+|===
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+<flow name="New_Studio_ProjectFlow1" doc:name="New_Studio_ProjectFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <expression-filter expression="#[message.inboundProperties.'http.request.uri' != '/favicon.ico']" doc:name="Expression"/>
+        <set-variable variableName="language" value="#[message.inboundProperties.'http.query.params'.language]" doc:name="Set Language Variable"/>
+        <choice doc:name="Choice">
+            <when expression="">
+            </when>
+            <otherwise>
+            </otherwise>
+        </choice>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>  
+</flow>
+----
+....
+------
+
+== 配置选择流量控制
+
+要配置选择流量控制，您需要确定以下消息路由详细信息：
+
+* 选择流路由器应该评估的内容以确定路由
+
+* 用于提供选择流量控制的路由选项的数量
+
+*  Mule应该为每个路由选项执行什么处理
+
+* 默认路由选项
+
+确定您的路由目标后，请按照此过程来定义路由选项，然后再定义路由指令。
+
+. 在虚线区域中插入表示选择流控制范围的消息处理器以定义路由选项，确保将其中一个放置在"Default"框中以将其定义为默认路由选项。根据需要，您可以为每个路由选项在链中放置多个消息处理器。在我们的示例中，如下所示，我们定义了三种路由选项以西班牙文，法文或英文进行回复：
++
+image:Studio_Choice_routingoptions.png[Studio_Choice_routingoptions]
+
+. 点击*Choice Router*构建块以打开其属性编辑器。在这里，输入Mule表达式来定义Mule适用于传入消息的路由逻辑（参见下表;后面有详细说明）。
++
+[%header,cols="2*"]
+|===
+一个|
+什么时候
+
+一个|
+将消息路由到
+
+| ` #[flowVars.language == 'Spanish'] `  | `Set Payload`
+| ` #[flowVars.language == 'French'] `  | `Set Payload`
+| `Default`  | `Variable`
+|===
+
+. 在表中，双击*When*下的第一个空行：
++
+image:ChoiceClickHere.png[ChoiceClickHere]
+
+. 在路由属性对话框中，输入：`#[flowVars.language == 'Spanish']`
++
+image:ChoiceRouteProperties.png[ChoiceRouteProperties]
+
+. 点击*OK*。该表达式告诉Mule在传入消息中查找名为`language`的流变量，并检查它是否等于西班牙语。如果此表达式的计算结果为true，则Mule会将消息路由到该路径中的消息处理器。
+
+. 点击下一个空行，然后输入：`#[flowVars.language == 'French']`
+
+就像在前一行一样，这个表达式告诉Mule在传入消息中寻找一个名为`language`的流变量。这一次，表达式表示Mule应该检查`language`是否等于法语。如果此表达式的计算结果为true，则Mule会将消息路由到该路径中的消息处理器。
+
+[start=7]
+. 点击*OK*保存路由配置。
+
+. 双击**Default **订单项以打开其“路由属性”面板。
+
+请注意：
+
+.. 您无法编辑*Expression*字段
+
+.. 选中*Otherwise*框
++
+image:Studio_Choice_default_routeproperties.png[Studio_Choice_default_routeproperties]
+
+*Otherwise*框将此路线标识为选择流量控制的*Default*。如果流量控制无法将消息路由到其范围内的任何前面的路由选项，则会将消息定向到默认路由。
+
+[start=9]
+. 接下来，单击Choice路径作用域中最上面的*Set Payload*构建块，打开其属性编辑器并将值设置为：`Hola!  `
++
+image:HolaAmigos.png[HolaAmigos]
+
+如果Mule找到流变量`language=Spanish`，那么您的消息将生成此有效内容作为响应。
+
+. 单击*Reply in French*的下一个*Set Payload*构建块，并将该值设置为：
++
+[source, code, linenums]
+----
+Bonjour!
+----
+
+如果Mule找到流变量`language=French`，那么您的消息将生成此有效内容作为响应。
+
+[start=10]
+. 单击默认框内的*Variable Transformer*以打开其属性编辑器，然后将其配置为：
++
+image:VarSetLangToEnv.png[VarSetLangToEnv]
+
+只有在选择路由逻辑中的两个表达式均未计为true时，才会调用此变量变量和后面的Set Payload。因此，如果Mule找不到流变量`language=Spanish`或流变量`language=French`，则Mule会将消息路由到此默认处理选项，该选项将流变量`language`设置为值{ {3}}。
+
+[NOTE]
+====
+请注意，在此配置中，您正在设置变量的文字值，而不是像使用前一个变量变换器中那样使用Mule表达式语言从消息中提取值。
+====
+
+[start=12]
+. 单击默认框中的变量变换器后面的*Set Payload*以打开其属性编辑器，然后将其配置为：
++
+image:SetPayLoadEnglish.png[SetPayLoadEnglish]
+
+该设置有效载荷变换器为您在选择的路由逻辑中配置的默认选项设置有效载荷。
+
+.  Mule在处理消息时，会按照自上而下的顺序评估您的路由选项中定义的表达式，直到其中一个评估为"true"。
+
+如有必要，可拖放画布上选择流程控制范围内的构建块以重新排序路由选项。
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+. 对于选择元素中的第一个`when`元素，将消息处理器添加为子元素以形成选择元素可以将消息引导到的路由选项。根据需要添加更多的`when`元素。
++
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+<flow name="New_Studio_ProjectFlow1" doc:name="New_Studio_ProjectFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <expression-filter expression="#[message.inboundProperties.'http.request.uri' != '/favicon.ico']" doc:name="Expression"/>
+        <set-variable variableName="language" value="#[message.inboundProperties.'http.query.params'.language]" doc:name="Set Language Variable"/>
+        <choice doc:name="Choice">
+            <when expression="">
+                <set-payload value="Hola!" doc:name="Reply in Spanish"/>
+            </when>
+            <when expression="">
+                <set-payload value="Bonjour!" doc:name="Reply in French"/>
+            </when>
+            <otherwise>
+            </otherwise>
+        </choice>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>  
+</flow>
+----
+
+. 配置`otherwise`子元素的内容以定义默认路由选项，如果以前的所有表达式评估为false，则您的选择路由器可以将消息定向到该路由选项。请参阅下面的代码示例。
++
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+<flow name="New_Studio_ProjectFlow1" doc:name="New_Studio_ProjectFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <expression-filter expression="#[message.inboundProperties.'http.request.uri' != '/favicon.ico']" doc:name="Expression"/>
+        <set-variable variableName="language" value="#[message.inboundProperties.'http.query.params'.language]" doc:name="Set Language Variable"/>
+        <choice doc:name="Choice">
+            <when expression="">
+                <set-payload value="Hola!" doc:name="Reply in Spanish"/>
+            </when>
+            <when expression="">
+                <set-payload value="Bonjour!" doc:name="Reply in French"/>
+            </when>
+            <otherwise>
+                <set-variable variableName="language" value="English" doc:name="Set Language to English"/>      
+                <set-payload value="Hello!" doc:name="Reply in English"/>
+            </otherwise>
+        </choice>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>  
+</flow>
+----
+
+. 对于每个`when`元素，输入一个表达式供选择路由器用来评估消息的内容。如果在处理过程中，与路由选项关联的表达式评估为true，则Mule将消息引导到该路由。请参阅下面的示例表达式。
++
+[source, xml, linenums]
+----
+<when expression="#[flowVars.language == 'Spanish']">
+----
+
+.   Mule在处理消息时，会按照它们在配置中出现的顺序从上到下评估路由选项中定义的表达式，直到其中一个评估为"true"。考虑到这一点，调整流中`when`元素的顺序。
+
+=== 配置摘要
+
+[%header%autowidth.spread]
+|===
+|元素 |说明
+| *choice*  |基于消息有效载荷或属性动态路由消息，向流中添加条件编程，类似于`if/then/else`代码块。
+|===
+
+[%header,cols="2*"]
+|====
+|元素属性 |描述
+| *doc:name* a |
+自定义以在应用程序中显示流量控制的唯一名称。
+
+注意：在Mule独立配置中不需要该属性。
+
+|====
+
+[%header%autowidth.spread]
+|===
+|子元素 |描述
+| *when*  |用于在选择流程控制中定义所有非默认路由选项。
+|===
+
+[%header%autowidth.spread]
+|====
+|子元素属性 |值 |描述
+| *expression*  | Mule表达式 |使用MEL定义表达式，选择路由器将使用该表达式来评估消息的内容。如果表达式评估为"true"，则Mule将消息引导至此路由选项。
+|====
+
+[%header%autowidth.spread]
+|====
+|子元素 |描述
+| *otherwise*  |如果前面`when`个表达式的计算结果均为"true"，则使用此选项为邮件定义默认路由选项
+|====
+
+[TIP]
+要运行和测试此示例，您可能会发现查看 link:/getting-started/content-based-routing[基于内容的路由]很有用。您可以在该流程中找到有关其他构建基块配置的详细信息，以及如何向其发送请求的说明。
+
+== 更改默认路由
+
+您可以更改选择流量控制配置以识别不同的默认路由选项。
+
+. 打开选择流程控制的属性编辑器，然后在表格中双击您希望指定为新默认路由的任意路由选项的行项目。
++
+image:choice+select+default+1.png[选择+选择+默认+ 1]
+
+. 选中*Otherwise*框（如下所示），然后点击*OK*。
++
+image:select+default.png[选择默认+]
+
+.  Mule将*Default*标签应用于属性编辑器（下方）中表格中的新默认路由选项。 （请注意，英文路由选项现在需要定义一个"when"表达式。）
++
+image:select+default+2.png[选择默认+ 2 +]
+
+. 为以前确定为默认路由选项的`when`表达式定义。 （在这个例子中，英文路由选项。）
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+调整您的XML配置以交换`when`元素和`otherwise`元素的内容。
+
+以下代码示例已进行了调整，以使西班牙语成为默认路由选项，并将英语更改为`when`元素。请注意，`otherwise`元素不需要进一步配置，但我们为新的`when`元素定义了一个新表达式。
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+<flow name="New_Studio_ProjectFlow1" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <expression-filter expression="#[message.inboundProperties.'http.request.uri' != '/favicon.ico']" doc:name="Expression"/>
+        <set-variable variableName="language" value="#[message.inboundProperties.'http.query.params'.language]" doc:name="Set Language Variable"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.language == 'french']">
+                <set-payload value="Bonjour!" doc:name="Reply in French"/>
+             </when>
+            <otherwise >
+                <set-variable variableName="language" value="spanish" doc:name="Set Language to Spanish"/>                
+                <set-payload value="Hola!" doc:name="Reply in Spanish"/>
+             </otherwise>
+            <when expression="#[flowVars.language == 'english']">    
+                <set-payload value="Hello!" doc:name="Reply in English"/>
+            </when>
+        </choice>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>   
+</flow>
+----
+
+== 完整的示例代码
+
+[source, xml, linenums]
+----
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+<flow name="New_Studio_ProjectFlow1" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <expression-filter expression="#[message.inboundProperties.'http.request.uri' != '/favicon.ico']" doc:name="Expression"/>
+        <set-variable variableName="language" value="#[message.inboundProperties.'http.query.params'.language]" doc:name="Set Language Variable"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.language == 'french']">
+                <set-payload value="Bonjour!" doc:name="Reply in French"/>
+             </when>
+            <when expression="#[flowVars.language == 'spanish']">
+                <set-payload value="Hola!" doc:name="Reply in Spanish"/>
+             </when>
+            <otherwise >
+                <set-variable variableName="language" value="English" doc:name="Set Language to English"/>      
+                <set-payload value="Hello!" doc:name="Reply in English"/>
+             </otherwise>
+        </choice>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>   
+</flow>
+</mule>
+----
+
+这个例子的流程是：
+
+image:FinalFlow.png[FinalFlow]
+
+== 另请参阅
+
+* 有关Choice Flow Control的更多信息，请参阅Routing Message Processors页面上的 link:/mule-user-guide/v/3.6/routers[选择]部分。

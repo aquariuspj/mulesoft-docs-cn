@@ -1,0 +1,1048 @@
+= 选择器
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+对象和数组的复杂结构可以使用选择器表达式进行导航。每个选择器表达式都会返回一个对象，一个数组或一个简单类型。
+选择器总是在给定的上下文中运行，它可以是对变量，对象文本，数组文本或函数调用的引用。当DataWeave处理选择器时，会为其他选择器设置新的上下文，因此您可以使用选择器链来浏览数组和对象的复杂结构，而选择器的深度仅受当前上下文深度的限制。
+
+有5种类型的选择器表达式：
+
+*  *Single Value selector*。<key-name>
+*  *Multi Value selector*。* <key-name>
+*  *Descendants Selector* .. <key-name>
+*  *Indexed Selector* [<index>]
+*  *Attribute Selector*。@ <attribute-name>
+
+
+应用*Single level Explicit Selector*，*Descendants Selector*或*Indexed Selector*将返回与表达式匹配的key：value对的值。
+
+*Note*：每个选择器表达式都支持'？'附加在链的末尾。这将表达式更改为一个查询，该查询检查密钥的存在。在这种情况下返回类型是一个布尔值true或false。
+
+本文档还详细介绍了您如何才能在传入Mule消息和环境中<<Reference Elements From an Incoming Mule Message, access different elements>>：
+
+*  <<The Payload of a Mule Message>>
+*  <<Inbound Properties from a Mule Message>>
+*  <<Outbound Properties from a Mule Message>>
+*  <<Flow Variables from a Mule Message>>
+*  <<Accessing System and Spring Properties>>
+
+
+
+
+== 单值选择器
+
+值选择器可以应用于`:object`或`:array`。
+
+=== 结束：对象
+
+此选择器返回键匹配表达式的第一个值，即*payload.name*，该键返回键匹配*name*的值。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  address: payload.people.person.address
+}
+----
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source, json,linenums]
+----
+{
+  "people": {
+    "size" : 1,
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+....
+[tab,title="Output: XML"]
+....
+.Output
+[source, xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<address>
+  <street>
+    <name>Italia</name>
+    <number>2164</number>
+  </street>
+  <area>
+    <zone>San Isidro</zone>
+    <name>Martinez</name>
+  </area>
+</address>
+----
+....
+------
+
+
+===  Over：数组
+
+此选择器应用于数组中`:object`类型的每个元素，并返回一个包含所有选定值的数组
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+payload.people.person.address.street
+----
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source,DataWeave, linenums]
+----
+{
+  "people": [ <1>
+    {
+      "person": {
+        "name": "Nial",
+        "address": {
+          "street": {
+            "name": "Italia",
+            "number": 2164
+          },
+          "area": {
+            "zone": "San Isidro",
+            "name": "Martinez"
+          }
+        }
+      }
+    },
+    {
+      "person": {
+        "name": "Coty",
+        "address": {
+          "street": {
+            "name": "Monroe",
+            "number": 323
+          },
+          "area": {
+            "zone": "BA",
+            "name": "Belgrano"
+          }
+        }
+      }
+    }
+  ]
+}
+----
+<1> As 'people' is an array, this sets the context for searching across both 'person' instances. The result from this is always an array.
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source, json,linenums]
+----
+[ <1>
+  {
+    "name": "Italia",
+    "number": 2164
+  },
+  {
+    "name": "Monroe",
+    "number": 323
+  }
+]
+----
+
+<1> As the context is an array, the output is always an array. An array is returned even if there's a single matching value.
+....
+------
+
+=== 替代语法
+
+您还可以通过替代语法`["<key-name>"]`选择单个值。例如*payload["price"]*返回键匹配*price*的值。这对数组和对象都有效。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+payload["people"]
+----
+
+这个语法的主要优点是可以很容易地用一个变量替换一个键的名字来创建一个更加动态的表达式。
+
+
+
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+payload.items[flowVars.item]
+----
+
+上述示例接收包含项目列表的有效内容以及指示要从有效内容中获取这些项目的流程变量。
+
+
+
+== 多值选择器
+
+多值选择器可以应用于`:object`或`:array`。
+
+=== 结束：对象
+
+这个选择器返回一个数组，其中的键值与表达式相匹配。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  users: payload.users.*user
+}
+----
+
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+[source, xml, linenums]
+----
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+</users>
+----
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source, json, linenums]
+----
+{
+  "users": [
+    "Mariano",
+    "Martin",
+    "Leandro"
+  ]
+}
+----
+....
+------
+
+
+===  Over：数组
+
+选择器应用于数组中`:object`类型的每个元素，并返回一个包含所有选定值的数组。
+
+=== 替代语法
+
+您也可以通过替代语法`[*"<key-name>"]`选择多个值。例如*payload[* "price"] * returns all the values whose key matches *价格*。这对数组和对象都有效。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+payload.items[*item]
+----
+
+
+
+
+
+== 索引选择器
+
+索引选择器返回指定位置的元素，它可以应用于`:array`，`:object`或`:string`
+
+===  Over：数组
+
+该选择器可以应用于字符串文字，数组和对象。在对象的情况下，返回在索引处找到的key：value对的值。该指数是基于零的。
+
+. 如果索引大于或等于0，则从头开始计数。
+. 如果索引是负数，则从-1开始计数的最后一个元素开始计数。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+payload.people[1]
+----
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source, json,linenums]
+----
+{
+  "people": [
+        {
+          "name": "Nial",
+          "address": "Martinez"
+        },
+        {
+          "name": "Coty",
+          "address": "Belgrano"
+        }
+    ]
+}
+----
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source, json,linenums]
+----
+{
+  "name": "Coty",
+  "address": "Belgrano"
+}
+----
+....
+------
+
+
+当使用带字符串的索引选择器时，字符串被分解为一个数组，其中每个字符都是一个索引。
+
+。转变
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%output application/json
+---
+{
+  name: "MuleSoft"[0]
+}
+--------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "M"
+}
+--------------------------------------------------------
+
+=== 结束：字符串
+
+选择器在给定位置拾取字符，将字符串视为字符数组。
+
+. 如果索引大于或等于0，则从头开始计数。
+. 如果索引是负数，则从末尾开始计算。
+
+。转变
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  name: "Emiliano"[0]
+}
+--------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "E"
+}
+--------------------------------------------------------
+
+== 结束：对象
+
+选择器返回指定位置的key：value对的值。
+
+== 范围选择器
+
+===  Over：数组
+
+范围选择器将输出限制为仅限特定顺序范围指定的元素。这个选择器允许你切割一个数组，甚至将其反转。
+
+。转变
+[source,DataWeave, linenums]
+------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  slice: [0,1,2][0 to 1],
+  last: [0,1,2][-1 to 0]
+}
+------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "slice": [
+    0,
+    1
+  ],
+  "last": [
+    2,
+    1,
+    0
+  ]
+}
+----
+
+=== 结束：字符串
+
+范围选择器将输出限制为仅由特定顺序范围指定的元素，将字符串视为字符数组。这个选择器允许你切割一个字符串或者甚至将其反转。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  slice: "DataWeave"[0 to 1],
+  last: "DataWeave"[-1 to 0]
+}
+----
+
+.OUTPUT
+
+[source,json,linenums]
+----
+{
+  "slice": "Da",
+  "last": "evaeWataD"
+}
+----
+
+
+== 属性选择器表达式
+
+为了查询对象上的属性，使用语法*.@<key-name>*。如果您只是使用*.@*（不带<key-name>），它会返回一个包含每个键：值对的对象。
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  item: {
+    type : payload.product.@type,
+    name : payload.product.brand,
+    attributes: payload.product.@
+  }
+}
+----
+
+
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+
+[source, xml,linenums]
+----
+<product id="1" type="tv">
+  <brand>Samsung</brand>
+</product>
+----
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source, json,linenums]
+----
+{
+  "item:" {
+    "type": "tv",
+    "name": "Samsung",
+    "attributes": { # <1>
+      "id": 1,
+      "type": tv
+    }
+  }
+}
+----
+
+<1> The third element in this output retrieves an object with all of the attributes in it, in this case both the id and the type.
+
+....
+------
+
+
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  item: {
+    attributes : payload.product.@,
+    name : payload.product.brand
+  }
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "item": {
+    "attributes": {
+      "id": 1,
+      "type": "tv"
+    },
+    "name": "Samsung"
+  }
+}
+----
+
+=== 选择键值对
+
+由于选择器只返回key：value对的值，为了同时获得键和值，可以使用对象的类型转换。
+
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+user: payload.name as :object <1>
+----
+
+<1>使用*as :object*将值转换为包含键和值的对象。如果没有对此对象的转换，则返回的XML正文将仅为<user> Mariano </user>。
+
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source, json,linenums]
+----
+{
+  "name": "Mariano",
+  "lastName" : "Doe"
+}
+----
+....
+[tab,title="Output: XML"]
+....
+.Output
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<user>
+  <name>Mariano</name>
+</user>
+----
+....
+------
+
+
+
+== 后代选择器
+
+此选择器使用格式*..<field-name>*应用于上下文，并检索当前上下文中子树中所有匹配的键：值对的值。无论这些字段是按照层次结构组织的，它们都被放置在输出中的同一级别。
+
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  names: payload.people..name <1>
+}
+----
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source, json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source, json,linenums]
+----
+{
+  "names": [
+    "Nial",
+    "Italia",
+    "Martinez"
+  ]
+}
+----
+<1> In this example, all of the fields that match the key "name" are placed in a list called "names" regardless of their cardinality in the tree of the input data.
+....
+------
+
+
+
+
+=== 选择所有后代键值对
+
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  names: payload.people..name as :object<1>
+}
+----
+<1> *as: object*使表达式返回一个对象而不是数组（默认情况下会返回）。这意味着每个值都有一个键。如果没有这种转换，那么在XML中，返回的数组将是由一个由所有三个名称合并为一个的长字符串组成。
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source, json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+....
+[tab,title="Output: XML"]
+....
+.Output
+[source, xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<names>
+  <name>Nial</name>
+  <name>Italia</name>
+  <name>Martinez</name>
+</names>
+----
+....
+------
+
+
+
+== 选择器修饰符
+
+有两个选择器修饰符：？和！
+无论键是否存在于结构上，问号都会返回true或false。
+感叹号评估选择，如果任何键不存在则失败。
+
+=== 密钥存在
+
+如果指定的键存在于对象中，则返回true。
+
+
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+present: payload.name?
+--------------------------------------------------------
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "Annie"
+}
+--------------------------------------------------------
+....
+[tab,title="Output: XML"]
+....
+.Output:
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<present>true</present>
+--------------------------------------------------------
+....
+------
+
+
+
+
+在上例中，如果输入中存在“名称”键，则返回*true*。
+
+该操作也适用于属性：
+
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  item: {
+    typePresent : payload.product.@type?
+  }
+}
+----
+
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+[source, xml,linenums]
+----
+<product id="1" type="tv">
+  <brand>Samsung</brand>
+</product>
+----
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source, json,linenums]
+----
+{
+  "item": {
+    "typePresent": true
+  }
+}
+----
+....
+------
+
+
+
+您也可以将此验证操作用作过滤器的一部分：
+
+
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+users: payload.users.*name[?($ == "Mariano")]
+--------------------------------------------------------
+
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+[source,xml,linenums]
+--------------------------------------------------------
+<users>
+  <name>Mariano</name>
+  <name>Luis</name>
+  <name>Mariano</name>
+</users>
+--------------------------------------------------------
+....
+[tab,title="Output: XML"]
+....
+.Output
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<users>
+  <name>Mariano</name>
+  <name>Mariano</name>
+</users>
+--------------------------------------------------------
+....
+------
+
+
+上面的示例选择值为"Mariano" => {名称：Mariano，名称：Mariano}的键值对
+
+=== 断言存在
+
+如果找不到任何指定的键，则返回异常。
+
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+present: payload.lastName!<1>
+--------------------------------------------------------
+<1>抛出异常"There is no key named 'lastName'"。
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "Annie"
+}
+--------------------------------------------------------
+....
+[tab,title="Output: XML"]
+....
+Exception: "There is no key named 'lastName'"
+....
+------
+
+
+
+来自骡子信息的== 参考元素
+
+通常情况下，您希望使用Mule消息中到达变换中的DataWeave Transformer的不同元素。以下部分向您展示了如何引用每个这些。
+
+
+=== 骡信息的有效载荷
+
+您可以将到达DataWeave变换器的Mule消息的*Payload*并将其用于变换主体中。
+
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  a: payload
+}
+----
+
+您也可以通过点语法`payload.user`来引用有效负载的子元素。
+
+[TIP]
+如果Studio的内部内容的元数据已知，则自动完成功能可帮助您解决问题。
+
+您也可以选择将有效负载定义为标题中的输入指令，尽管这不是必需的。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%input payload application/xml
+%output application/xml
+---
+{
+  a: payload
+}
+---------------------------------------------------------------------
+
+来自Mule消息的=== 入站属性
+
+您可以将来自Mule消息的*Inbound Properties*带到DataWeave转换器，并在转换体中使用它们。要引用其中之一，只需通过匹配来调用它
+link:/mule-user-guide/v/3.9/mule-expression-language-mel[骡子表达语言（MEL）]表达。
+
+在MEL中，有两种支持语法来调用入站属性：
+
+*  `inboundProperties.name`
+*  `inboundProperties['name']`
+
+[IMPORTANT]
+第一种方法仅适用于变量名不包含任何句号或空格的情况。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+{
+  a: inboundProperties.userName
+}
+---------------------------------------------------------------------
+
+[TIP]
+如果有关这些入站属性的元数据是Studio已知的，则自动完成功能可帮助您解决问题。
+
+您也可以选择将入站属性定义为标题中的常量指令，但这不是必需的，因为您可以直接调用该属性，如上所示。
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%var inUname = inboundProperties['userName']
+---------------------------------------------------------------------
+
+来自Mule消息的出站属性=== 
+
+您可以将Mule消息中的任何*Outbound Properties*到达DataWeave变换器并将其用于变换主体。要引用它，只需通过匹配的 link:/mule-user-guide/v/3.9/mule-expression-language-mel[骡子表达语言（MEL）]表达式来调用它。
+
+在MEL中，有两种支持的语法来调用出站属性：
+
+*  `outboundProperties.name`
+*  `outboundProperties['name']`
+
+[IMPORTANT]
+第一种方法仅适用于变量名不包含任何句号或空格的情况。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+{
+  a: outboundProperties.userName
+}
+---------------------------------------------------------------------
+
+[TIP]
+如果Studio知道有关这些出站属性的元数据，则自动完成功能可以帮助您解决问题。
+
+您也可以选择将出站属性定义为标题中的常量指令，但这不是必需的，因为您可以直接调用该属性，如上所示。
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%var outUname = outboundProperties['userName']
+---------------------------------------------------------------------
+
+
+来自Mule消息的流=== 变量
+
+您可以使用到达DataWeave变换器的Mule消息中的任何*Flow Variable*，并在变换体中使用它。要引用它，只需通过匹配来调用它
+link:/mule-user-guide/v/3.9/mule-expression-language-mel[骡子表达语言（MEL）]表达。
+
+在MEL中，有两种支持的语法来调用流变量：
+
+*  `flowVars.name`
+*  `flowVars['name']`
+
+[IMPORTANT]
+第一种方法仅适用于变量名不包含任何句号或空格的情况。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+{
+  a: flowVars.userName
+}
+---------------------------------------------------------------------
+
+[TIP]
+如果有关这些流变量的元数据是Studio已知的，则自动完成功能可帮助您解决问题。
+
+您也可以选择将流变量定义为标题中的常量指令，但这不是必需的，因为您可以直接调用变量，如上所示。
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%var uname = flowVars['userName']
+---------------------------------------------------------------------
+
+=== 访问系统和Spring属性
+
+您可以在DataWeave处理您的转换时引用服务器中存在的任何*Property*（系统或Spring），这样做可以使用*p('prop_name')*函数。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+{
+  a: p('userName')
+}
+---------------------------------------------------------------------
+
+
+
+
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.9/dataweave-quickstart[DataWeave快速入门指南]
+*  link:/anypoint-studio/v/6/transform-message-component-concept-studio[关于变换消息组件]
+*  link:/mule-user-guide/v/3.9/dataweave-language-introduction[DataWeave语言介绍]
+*  link:/mule-user-guide/v/3.9/dataweave-operators[DataWeave操作符]
+*  link:/mule-user-guide/v/3.9/dataweave-types[DataWeave类型]
+*  link:/mule-user-guide/v/3.9/dataweave-formats[DataWeave格式]
+*  link:/mule-user-guide/v/3.9/dataweave-examples[DataWeave示例]
+*  link:/mule-user-guide/v/3.9/mel-dataweave-functions[MEL DataWeave函数]

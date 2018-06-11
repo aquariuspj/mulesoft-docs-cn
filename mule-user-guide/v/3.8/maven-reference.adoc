@@ -1,0 +1,226 @@
+=  Maven参考
+:keywords: studio, maven, version control, dependencies, libraries
+
+本页总结了有助于使用Maven和Mule的参考信息。有关介绍和概述，请参阅 link:/mule-user-guide/v/3.8/using-maven-with-mule[和Mule一起使用Maven]。
+
+== 从命令行填充Maven存储库
+
+[TIP]
+您通常不需要这样做，因为它在创建Maven Mule项目时会自动发生。如果某些事情无法按预期工作，您可以选择手动进行。
+
+要将Mule库作为项目的依赖包含在内，您必须使用这些库来填充您的Maven存储库。要手动执行此操作，可以从命令行运行`$MULE_HOME/bin`中的`populate_m2_repo`脚本。
+
+在Unix上：
+
+[source]
+----
+$MULE_HOME/bin/populate_m2_repo
+----
+
+在Windows上：
+
+[source]
+----
+%MULE_HOME%\bin\populate_m2_repo.cmd
+----
+
+这些脚本调用您可以修改的`$MULE_HOME/bin/populate_m2_repo.groovy`。
+
+== 将Mule工件部署到中央Maven存储库
+
+使用中央存储库可以节省用户在构建应用程序时的时间。要部署到中央存储库，您需要将Mule POM文件和JAR构件部署到所需的存储库。
+
+===  {部署{1}}
+
+在您的Mule安装中，找到文件`<MULE_HOME>/bin/populate_m2_repo.groovy`并将其打开进行编辑。找到以下行：
+
+[source, code, linenums]
+----
+mvn(["install:install-file",
+ "-DgroupId=${project.groupId}", "-DartifactId=${project.artifactId}",
+"-Dversion=${version}", "-Dpackaging=pom",
+"-Dfile=${localPom.canonicalPath}"])
+----
+
+如图所示修改线。
+
+[source, code, linenums]
+----
+mvn(["deploy:deploy-file",
+ "-DgroupId=${project.groupId}", "-DartifactId=${project.artifactId}",
+"-Dversion=${version}", "-Dpackaging=pom",
+"-Dfile=${localPom.canonicalPath}","-Durl=http://<your_repository_ip>/nexus/content/repositories/releases", "-DrepositoryId=releases"])
+----
+
+对于`-Durl`参数，请使用正确的IP地址替换`your_repository_ip`。
+
+=== 部署JAR
+
+在`<MULE_HOME>/bin/populate_m2_repo.groovy`文件中找到第二个`// Install pom via maven`评论。该行下面紧接着是参数定义，其内容如下所示。
+
+[source, code, linenums]
+----
+def args = ["install:install-file", "-DgroupId=${pomProps.groupId}", "-DartifactId=${pomProps.artifactId}", "-Dversion=${pomProps.version}", "-Dpackaging=jar", "-Dfile=${f.canonicalPath}", "-DpomFile=${localPom.canonicalPath}"]
+----
+
+如图所示修改此行。
+
+[source, code, linenums]
+----
+def args = ["deploy:deploy-file",
+ "-DgroupId=${pomProps.groupId}", "-DartifactId=${pomProps.artifactId}",
+ "-Dversion=${pomProps.version}", "-Dpackaging=jar",
+"-Dfile=${f.canonicalPath}", "-DpomFile=${localPom.canonicalPath}",
+"-Durl=http://${your_repository_ip}/nexus/content/repositories/releases", "-DrepositoryId=releases"]
+----
+
+对于`-Durl`参数，请使用正确的IP地址替换`your_repository_ip`。
+
+如果您希望在本地安装JAR并远程部署它们，则可以在参数定义中保留这两个位置。
+
+== 引用MuleSoft的企业存储库
+
+请参阅 link:/mule-user-guide/v/3.8/configuring-maven-to-work-with-mule-esb[配置Maven以使用Mule]。
+
+== 检查项目中包含的JAR
+
+Maven可以自动将依赖项包含到您的项目中。当尝试在Maven之外测试项目时，可能会发现需要明确定义这些项目的依赖关系。例如，如果您使用Studio和Maven创建项目并使用其他工具（如Apache Ant）构建它，则需要确保项目所需的所有依赖关系都包含在您的Ant配置中。
+
+要获取项目中包含的依赖关系列表，请运行以下命令：
+
+[source]
+----
+mvn dependency:build-classpath
+----
+
+== 文件
+
+=== 的pom.xml
+
+[source, xml]
+----
+<project root>/pom.xml
+----
+
+项目对象模型文件，它定义了描述应用程序的Maven项目的设置。它包括构建应用程序所需的所有设置，例如构建插件配置。请注意，`pom.xml`存在于每个项目的基础上，并与项目一起分发。
+
+有关详细信息，请参阅Apache Maven联机文档中的 link:https://maven.apache.org/pom.html[POM参考]。
+
+=== 的settings.xml
+
+[source, xml, linenums]
+----
+<system-wide Maven directory>/settings.xml
+<user home directory>/.m2/settings.xml
+----
+
+包含Maven安装的全局设置。与项目的`pom.xml`不同，它定义了系统范围的设置，并未与项目一起分发，因为它可以包含身份验证凭证等机密信息。
+
+`settings.xml`文件可能位于两个位置：全系统设置文件夹和用户特定设置文件夹中。在第一种情况下，它是一个_global_设置文件，它定义系统上所有Maven安装的设置，而不管用户。例如：
+
+[source]
+----
+/etc/maven2/settings.xml
+----
+
+在每个用户的情况下，该文件是仅与特定用户的Maven安装相关的_user_设置文件。在这种情况下，默认位置是用户主目录中的`.m2`目录：
+
+[source]
+----
+/home/joe/.m2/settings.xml
+----
+
+在包含全局文件和用户`settings.xml`文件的系统上，两个文件的设置将合并。在重复设置的情况下，用户的设置优先于全局设置。
+
+有关此文件的完整参考资料，请参阅Apache Maven联机文档中的 link:https://maven.apache.org/settings.html[设置参考]。
+
+== 有用的命令
+
+=== 找到Maven二进制文件和其他文件（Unix）
+
+[source]
+----
+whereis mvn
+----
+
+=== 找到Maven文件，例如全局配置文件（Unix）
+
+[source]
+----
+locate maven
+----
+
+=== 获取Maven版本
+
+[source]
+----
+mvn --version
+----
+
+这还提供了其他信息，例如Java主目录，区域设置和处理器体系结构。
+
+=== 获取Maven命令和选项列表
+
+[source]
+----
+mvn -h
+----
+
+=== 检查Maven的手册页（Unix）
+
+[source]
+----
+man mvn
+----
+
+=== 创建一个项目
+
+[source]
+----
+mvn archetype:generate -DgroupId=com.company.app -DartifactId=myapp -DarchetypeArtifactId=myarchetypeid -DinteractiveMode=false
+----
+
+=== 建立一个项目
+
+[source]
+----
+mvn package
+----
+
+=== 清理项目
+
+[source]
+----
+mvn clean
+----
+
+=== 生成一个网站
+
+[source]
+----
+mvn site
+----
+
+=== 获取工件中包含的罐子列表
+
+[source]
+----
+mvn dependency:build-classpath
+----
+
+=== 获取工件的依赖树
+
+[source]
+----
+mvn dependency:tree
+----
+
+== 外部资源
+
+*  link:https://maven.apache.org/index.html[Apache Maven主页]
+*  link:https://maven.apache.org/guides/getting-started/index.html[Maven入门指南]
+*  link:http://code.google.com/p/m4enterprise/wiki/MavenCommandReference[Maven命令参考]
+*  link:https://maven.apache.org/pom.html[POM参考]
+*  link:https://maven.apache.org/settings.html[设置参考]
+*  link:https://github.com/mulesoft/maven-mule-plugin[Maven的Mule插件]
+

@@ -1,0 +1,233 @@
+=  JSON支持参考
+
+JSON是JavaScript Object Notation的缩写，是一种轻量级的数据交换格式。它是一种基于文本的，人类可读的格式，用于表示简单的数据结构和关联数组（称为对象）。
+
+== 对象绑定
+
+Mule支持将JSON数据绑定到对象，并使用https://github.com/codehaus/jackson[Jackson]框架将Java对象封装到JSON。 Jackson使用注释来描述数据如何映射到Java对象模型。例如，假设我们有一个描述一个人的JSON文件。当我们收到该JSON数据时，我们将其转换为`Person`对象。 JSON看起来像这样：
+
+[source, code, linenums]
+----
+{
+    "name":"John Doe",
+    "dob":"01/01/1970",
+    "emailAddresses":[
+        {
+            "type":"home",
+            "address":"john.doe@gmail.com"
+        },
+        {
+            "type":"work",
+            "address":"jdoe@bigco.com"
+        }
+    ]
+}
+----
+
+我们有一个我们想从JSON数据创建的对象`Person`。我们使用注释来描述如何执行映射。我们使用`@JsonAutoDetect`来表示字段成员名称直接映射到JSON字段名称：
+
+[source, java, linenums]
+----
+@JsonAutoDetect
+public class Person
+{
+    private String name;
+    private String dob;
+ 
+    private List<EmailAddress> emailAddresses;
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public String getDob() { return dob; }
+    public void setDob(String dob) { this.dob = dob; }
+    public List<EmailAddress> getEmailAddresses() { return emailAddresses; }
+ 
+    public void setEmailAddresses(List<EmailAddress> emailAddresses) { this.emailAddresses = emailAddresses; }
+}
+----
+
+_emailAddresses_中使用的`EmailAddress`对象只是另一个带有`@JsonAutoDetect`注释的JavaBean。
+
+此时Mule可以根据被调用的方法的参数判断是否执行JSON转换。例如：
+
+[source, java, linenums]
+----
+public class PersonComponent {
+    public void processPerson(@Payload Person person)
+    {
+    //tickle
+    }
+}
+----
+
+本示例接收端点上面`people.json`文件的内容，Mule发现`Person.class`是一个带注释的JSON对象，我们从JMS队列接收JSON数据并执行转换。
+
+=== 全局JSON映射器
+
+杰克逊通过`ObjectMapper`执行映射。这是一个可以使用其他配置来配置的对象，该对象可以关于如何序列化数据并定义将注释添加到不能直接更改的对象的混合。可以定义全局`ObjectMapper`;一个将用于应用程序中所有JSON转换的映射器。这不是必需的，因为Mule会自动为转换器创建一个映射器，但是如果您需要在映射器上配置特定的属性或使用mixins，则使用全局映射器会很有用。要创建共享的`ObjectMapper,`，请将以下内容添加到您的Mule配置文件中：
+
+[source, xml, linenums]
+----
+<json:mapper name="myMapper">
+    <json:mixin mixinClass="org.mule.module.json.transformers.FruitCollectionMixin"
+                        targetClass="org.mule.module.json.transformers.FruitCollection"/>
+    <json:mixin mixinClass="org.mule.module.json.transformers.AppleMixin"
+                        targetClass="org.mule.tck.testmodels.fruit.Apple"/>
+</json:mapper>
+----
+
+=== 截取JSON转换
+
+到目前为止，我们已经讨论过Mule如何执行自动JSON转换。有时候你可能想要拦截转换，为此只需创建一个带有JSON类的方法返回或参数类型的转换器：
+
+[source, java, linenums]
+----
+@Transformer(sourceTypes = {InputStream.class})
+public Person toPerson(String json, ObjectMapper mapper) throws JAXBException
+{
+    return (Person)mapper.readValue(in, Person.class);
+}
+----
+
+`ObjectMapper`实例既可以为您创建，也可以使用您的应用程序的全局上下文。这样做的一个原因是去掉一些JSON元素并从接收到的JSON子集中创建对象。有关变换的更多信息，请参阅 link:/mule-user-guide/v/3.3/using-transformers[使用变形金刚]部分。
+
+==  JsonPath
+
+目前没有用于查询JSON数据图的标准语言，与XPATH可以查询XML文档的方式相同。 Mule创建了一个简单的查询语法来处理Java中的JSON数据，称为JsonPath。
+
+此查询语法提供了一种导航JSON数据结构的简单方法。以下JSON数据演示了如何使用JSON路径查询：
+
+[source, code, linenums]
+----
+{
+    "name":"John Doe",
+    "dob":"01/01/1970",
+    "emailAddresses":[
+        {
+            "type":"home",
+            "address":"john.doe@gmail.com"
+        },
+        {
+            "type":"work",
+            "address":"jdoe@bigco.com"
+        }
+    ]
+}
+----
+
+要选择一个子项，请使用：
+
+[source, code, linenums]
+----
+name
+----
+
+要访问数组数据，请使用带有索引值的方括号：
+
+[source, code, linenums]
+----
+emailAddresses[0]/type
+----
+
+或者，路线元素是一个数组：
+
+[source, code, linenums]
+----
+[0]/arrayElement
+----
+
+另外，可以使用以下方式访问多维数组：
+
+[source, code, linenums]
+----
+filters[1]/init[1][0]
+----
+
+这很少见，但如果JSON属性名称包含'/'，则该名称需要单引号：
+
+[source, code, linenums]
+----
+results/'http://foo.com'/value
+----
+
+表达式中的===  JsonPath
+
+可以在 link:/mule-user-guide/v/3.3/non-mel-expressions-configuration-reference[骡子表达]中使用JSON路径查询用于过滤或 link:/mule-user-guide/v/3.3/message-enricher[丰富]的JSON消息有效内容。
+
+例如，要使用JSON路径执行基于内容的路由：
+
+[source, xml, linenums]
+----
+<choice>
+  <when expression="emailAddresses[0]/type = 'home'" evaluator="json">
+    <append-string-transformer message="Home address is #[json:emailAddresses[0]/address]" />
+  </when>
+  <when expression="emailAddresses[0]/type = 'work'" evaluator="json">
+    <append-string-transformer message="Work address is #[json:emailAddresses[0]/address]" />
+  </when>
+  <otherwise>
+    <append-string-transformer message=" No email address found" />
+  </otherwise>
+</choice>
+----
+
+表达式计算器名称是'json'，表达式是任何有效的JSON路径表达式。请注意，在执行上述示例中的布尔表达式时，将支持这些运算符：
+
+[%header,cols="2*"]
+|===
+| {算{1}}示例
+| *=*  | `emailAddresses0/type = 'foo'`或`emailAddresses0/flag = true`
+| *!=*  | `emailAddresses0/type != null`或`emailAddresses0/flag != false`
+|===
+
+字符串比较需要使用单引号，'null'被识别为空，并且支持布尔比较。如果检查数字值，只要将它们视为一个字符串。
+
+== 配置参考
+
+==  JSON模块
+
+JSON模块包含许多工具来帮助您读取，转换和编写JSON。
+
+=== 变压器
+
+这些是这种运输特有的变压器。请注意，这些会在启动时自动添加到Mule注册表中。当进行自动转换时，这些将在搜索正确的变压器时包含在内。
+
+[%header,cols="2*"]
+|===
+| {名称{1}}说明
+| json-to-object-transformer  |将JSON编码的对象图转换为java对象的转换器。对象类型由'returnClass'属性确定。请注意，这个转换器支持数组和列表。例如，要将JSON字符串转换为org.foo.Person数组，请设置`returnClass=org.foo.Person[]`。 JSON引擎可以使用jsonConfig属性进行配置。这是对net.sf.json.JsonConfig实例的对象引用。这可以创建为spring bean。
+| json-to-xml-transformer  |将JSON字符串转换为XML字符串
+| xml-to-json-transformer  |将XML字符串转换为JSON字符串
+| json-xslt-transformer  |使用XSLT转换JSON字符串
+| object-to-json-transformer  |将java对象转换为JSON编码的对象，该对象可以被其他语言（如Javascript或Ruby）使用。 JSON对象映射器可以使用`mapper-ref`属性进行配置。这是对`org.codehaus.jackson.Mapper`的实例的对象引用。这可以创建为spring bean。通常默认的映射器就足够了。在序列化对象时，用户经常想要配置排除或包含。这可以通过直接在对象上使用Jackson注释完成（参见+ http://fasterxml.github.io/jackson-core/javadoc/1.9/org/codehaus/jackson/annotate/package-summary.html+) If it is not possible to annotate the object directly, mixins can be used to add annotations to an object using AOP. There is a good description of this method here: http://www.cowtowncoder.com/blog/archives/08-01-2009_08-31-2009.html. To configure mixins for you objects, either configure the `mapper-ref` attribute or register them with the transformer using the <serialization-mixin> element. The returnClass for this transformer is usually `java.lang.String`, `byte[]`也可以使用，此时变换器不支持流式传输。
+|===
+
+=== 过滤器
+
+可以使用过滤器来控制允许哪些数据在流中继续。
+
+[%header,cols="2*"]
+|===
+| {名称{1}}说明
+| is-json-filter  |一个过滤器，用于确定当前消息有效内容是否是JSON编码消息。
+| json-schema-validation-filter  |针对XML模式验证JSON
+|===
+
+== 映射器
+
+杰克逊映射器用于JSON变压器。这不是必需的，但可以用来在映射器上配置mixin。
+
+<mapper...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|=============
+| {名称{1}}输入 |必 |缺省 |说明
+|名称 |字符串 |是 |   |变换器元素用于引用它的映射器的名称。
+|=============
+
+<mapper...>的{​​{0}}子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| {混入{1}} 0..1  |
+|===

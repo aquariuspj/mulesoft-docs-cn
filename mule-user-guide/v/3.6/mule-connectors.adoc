@@ -1,0 +1,119 @@
+=  Mule连接器
+:keywords: studio, connectors, elements, architecture
+
+image:connectors.png[图片] link:/mule-user-guide/v/3.6/anypoint-connectors[Anypoint连接器]在Mule和一个或多个外部来源（例如文件，数据库或Web服务）之间接收或发送消息。连接器可以充当入站端点作为消息源，它们可以充当消息处理器，在流程中执行操作，或者可以在流程结束时作为最终有效负载数据的接收者。
+
+Mule中的连接器是*endpoint-based*或*operation-based*。基于端点的连接器遵循单向或请求 - 响应交换模式，并且通常（但不总是）命名并且基于标准数据通信协议，例如FTP，JMS和SMTP。基于操作的连接器遵循一种基于您选择的操作的信息交换模式，并且通常（但并非总是）命名并基于一个或多个特定的第三方API。
+
+
+== 基于端点的连接器
+
+基于端点的连接器被配置为流中的入站或出站端点。入站端点充当流的消息源。出站端点可以发生在流量中或流量结束时，并将信息发送到外部系统。
+
+image:endpointbased.png[endpointbased]
+
+== 基于操作的连接器
+
+当您将基于操作的连接器添加到流程时，您立即定义该连接器执行的特定操作。
+
+image:operationbased.png[operationbased]
+
+连接器的XML元素根据您选择的操作而不同，格式为`<connectorName>:<operation>`。例如，`sfdc:query`或`sfdc:upsert-bulk`。其余配置属性或子元素由您选择的操作决定。
+
+== 全局连接器配置
+
+某些连接器要求在全局元素中配置连接信息，例如用户名，密码和安全令牌，而不是在流中的消息处理器级别。一个应用程序中的许多相同类型的连接器可以引用全局级别的连接器配置。对于基于操作的连接器，全局连接器配置是强制性的，但对于大多数基于端点的连接器来说，它是可选的。
+
+请注意，您在Anypoint Studio中配置的全局元素称为连接器配置。对应于基于操作的连接器的XML标签为**<connectorName>:config**，基于端点的连接器为**<connectorName>:connector**。看下面的例子。
+
+== 示例
+
+====  HTTP连接器
+
+此示例显示了如何将HTTP连接器配置为侦听器（用于接收入站请求）或作为请求连接器（用于发出出站请求）。 HTTP连接器始终需要一个指定其连接属性的全局连接器配置。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+     
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"  doc:name="HTTP Listener Configuration"/>
+    <http:request-config name="HTTP_Request_Configuration" host="localhost" port="8082"  doc:name="HTTP Request Configuration"/>
+ 
+    <flow name="httpexampleFlow1" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <set-payload value="foo" doc:name="Set Payload"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <http:request config-ref="HTTP_Request_Configuration" path="/" method="POST" doc:name="HTTP"/>
+    </flow>
+ 
+</mule>
+----
+
+====  JMS连接器
+
+此示例显示基于端点的JMS连接器，该连接器被配置为流中的入站端点。 JMS端点包含对包含连接参数的全局连接器配置的强制引用。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+ 
+    <jms:activemq-connector name="Active_MQ" username="test" password="test" brokerURL="tcp://localhost:61616" validateConnections="true" doc:name="Active MQ"/>
+ 
+    <flow name="myNewProjectFlow1" doc:name="myNewProjectFlow1">
+        <jms:inbound-endpoint queue="test" connector-ref="Active_MQ" doc:name="JMS Endpoint"/>
+ 
+...
+    </flow>
+ 
+</mule>
+----
+
+====  Salesforce连接器
+
+此示例显示基于操作的Salesforce连接器，该连接器配置为基于从文件端点提取的有效内容在Salesforce中创建新联系人。 Salesforce连接器包含对包含连接参数的全局连接器配置的强制引用。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd">
+ 
+    <sfdc:config name="Salesforce" username="test" password="test" securityToken="test" doc:name="Salesforce"/>
+ 
+    <flow name="newprojectFlow1" doc:name="newprojectFlow1">
+        <file:inbound-endpoint responseTimeout="10000" doc:name="File" path="/Users/AaronMacbook/Desktop/Input"/>
+        <sfdc:create config-ref="Salesforce" type="contact" doc:name="Salesforce">
+            <sfdc:objects ref="#[payload]"/>
+        </sfdc:create>
+ 
+    </flow>
+ 
+</mule>
+----
+
+== 另请参阅
+
+*  *NEXT STEP*：请阅读大约 link:/mule-user-guide/v/3.6/mule-components[组件]。
+* 向前浏览以了解 link:/mule-user-guide/v/3.6/mule-message-structure[骡信息]的结构。

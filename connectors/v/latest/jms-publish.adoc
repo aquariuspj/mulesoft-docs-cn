@@ -1,0 +1,156 @@
+= 发布消息
+:keywords: jms, connector, publish
+：TOC：
+：TOC标题：
+
+该操作允许您创建新的JMS消息并将其发送到指定的目的地，无论是队列还是主题。有了它，您不仅可以配置消息的内容，还可以配置可能需要的所有标题。
+
+== 发送消息到队列
+
+当以默认形式使用时，连接器将发布消息有效载荷中的任何内容：
+
+[source, xml, linenums]
+----
+<jms:publish destination="invoiceQueue" config-ref="JMS_config"/>
+----
+
+但是如果有效载荷的格式不正确，你实际上需要进行转换会发生什么？您可以在`publish`操作之前放置DataWeave转换，但这会导致消息负载发生变化并影响`publish`操作之后的操作。
+
+为了避免这种不希望的影响，您现在可以将转换放置在`publish`操作中：
+
+[source, xml, linenums]
+----
+<jms:publish destination="invoiceQueue" config-ref="JMS_config">
+  <jms:message>
+    <jms:body>#[%dw 2.0
+   output application/json
+   ---
+   payload.payments
+   ]</jms:body>
+  </jms:message>
+</jms:publish>
+----
+
+现在，转换可用于生成将发布的内容，而不会对传输中的消息产生副作用。
+
+== 将消息发布到主题
+
+`publish`操作也可用于将消息发布到给定的主题目标。
+操作和消息的所有配置都相同，但`destinationType`参数必须声明为`TOPIC`目标：
+
+对于前面看到的相同示例，如果不是将消息发送到Queue，而是将它发布到Topic，我们将执行：
+
+[source, xml, linenums]
+----
+<jms:publish destination="invoiceEvents" destinationType="TOPIC" config-ref="JMS_config">
+  <jms:message>
+    <jms:body>#[%dw 2.0
+   output application/json
+   ---
+   payload.payments
+   ]</jms:body>
+  </jms:message>
+</jms:publish>
+----
+
+
+== 自定义消息传递
+
+每个JMS消息都有一组标题，使您能够传送像生存时间这样的元数据或消息的优先级。这种有关正在发布的消息的元数据可以从`publish`操作参数进行配置。
+
+=== 实施优先级队列
+
+为了实现优先级队列，我们​​需要为某些消息分配一个不同于默认的优先级。我们可以在操作中使用`priority`参数：
+
+[source, xml, linenums]
+----
+<jms:publish priority="#[attributes.queryParams.priority]" destination="priorityQueue" config-ref="JMS_config"/>
+----
+
+=== 如何控制消息生存时间
+
+每个发布的JMS消息都会发送一个timeToLive头，该头声明消息在被驱逐之前应该消耗多长时间。 `publish`操作中的`timeToLive`和`timeToLiveUnit`参数允许您为发布的每个消息配置该JMS标头的值：
+
+[source, xml, linenums]
+----
+<jms:publish  timeToLive="#[vars.timeToLive]" timeToLiveUnit="SECONDS"
+              destination="#[vars.destination]" config-ref="JMS_config"/>
+----
+
+如果您使用的是JMS 2.0，那么您还可以控制消息的`deliveryDelay`，消息提供给消费者之前需要等待多长时间：
+
+[source, xml, linenums]
+----
+<jms:publish  deliveryDelay="${msgInitialDelay}" deliveryDelayUnit="MILLISECONDS"
+              destination="#[vars.destination]" config-ref="JMS_config"/>
+----
+
+
+== 声明一个答复目的地
+
+对于需要对发送的消息进行异步回复的情况，JMS `publish`操作允许我们声明任何`reply-to`目标。这个目的地将作为JMS头部传达给消息的消费者，并且是目的地，我们应该期望回复被发送。
+
+要声明`reply-to`目标，我们将其添加到消息定义中：
+
+[source, xml, linenums]
+----
+<jms:publish config-ref="JMS_config" destination="#[vars.invoceProcessorDestination]">
+    <jms:message>
+        <jms:reply-to destination="${completionEventsDestination}" destinationType="TOPIC"/>
+    </jms:message>
+</jms:publish>
+----
+
+== 传播关联ID
+
+`publish`操作允许您配置传出消息的`correlationId`。
+
+首先，您需要配置使用`sendCorrelationId`参数发布消息时是否要发送`correlationId`。可以将此参数设置为`ALWAYS`（始终发送标头），`NEVER`（永远不会发送标头）或`AUTO`（默认情况下，使用应用程序配置）。
+然后，您可以使用发送消息的事件的`correlationId`，也可以在消息生成器中配置自己的自定义`correlationId`：
+
+[source, xml, linenums]
+----
+<jms:publish config-ref="JMS_config" sendCorrelationId="ALWAYS" destination="#[attributes.headers.replyTo.destination]">
+    <jms:message correlationId="#[attributes.headers.correlationId]"/>
+</jms:publish>
+----
+
+== 配置消息属性
+
+每个JMS消息都可以有一组属性，这些属性可以用许多不同的方式使用，例如提供与其他消息系统的兼容性或创建自定义消息选择器。
+其中一些属性是众所周知的JMS标准，但其他属性取决于实现或自定义用户配置。 `publish`操作允许您直接在消息中配置所有这些属性。
+
+=== 设置用户属性
+
+无论何时您需要为传出消息设置属性，您只需使用消息中的`properties`元素并使用DataWeave对Map进行内联声明：
+
+[source, xml, linenums]
+----
+<jms:publish config-ref="JMS_config" destination="${bridgeDestination}" destinationType="TOPIC">
+    <jms:message>
+        <jms:body>#["bridged_" ++ payload]</jms:body>
+        <jms:properties>#[{
+            AUTH_TYPE: 'jwt'
+            AUTH_TOKEN: attributes.queryParams.token
+        }]</jms:properties>
+    </jms:message>
+</jms:publish>
+----
+
+=== 设置JMSX属性
+
+JMSX属性是JMS规范中定义的一组众所周知的属性，包含有关消息的元数据。为了配置这个属性，你可以将它们作为Message元素的一部分内联声明：
+
+[source, xml, linenums]
+----
+<jms:publish config-ref="JMS_config" destination="${bridgeDestination}" destinationType="TOPIC">
+    <jms:message>
+        <jms:body>#["bridged_" ++ payload]</jms:body>
+        <jms:jmsx-properties jmsxGroupID="#[vars.currentGroup]" jmsxUserID="${username}"/>
+    </jms:message>
+</jms:publish>
+----
+
+== 另请参阅
+
+link:jms-publish-consume[收听答复]

@@ -1,0 +1,338 @@
+=  Windows PowerShell连接器指南
+:keywords: anypoint studio, esb, connector, endpoint, windows powershell, powershell, os administration
+
+*Standard*
+
+Windows PowerShell可让您自动执行任务并创建配置管理脚本。 PowerShell连接器可将Windows操作系统管理任务集成到Mule应用程序中。 PowerShell脚本可以使用 link:/mule-user-guide/v/3.6/windows-gateway-services-guide[Windows网关服务]和Mule内处理的结果在远程Windows机器上执行。
+
+*Questions*？查看<<Frequently Asked Questions - FAQ>>。
+
+== 兼容性
+
+[%header%autowidth.spread]
+|===
+| {软件{1}}版本
+| Mule ESB  | 3.5及更高版本
+| Anypoint Studio  | 2014年10月及以后
+| Windows PowerShell  | v3或更高版本
+| .NET Framework  | 4.0
+| Windows  | 7或8
+| Windows Server  | 2008年，2012年
+|===
+
+== 假设
+
+本指南将从 link:/mule-user-guide/v/3.6/windows-gateway-services-guide[Windows网关服务指南]中获取信息，并假定您使用的是Windows和Anypoint Studio。您可以从 http://www.mulesoft.com/platform/mule-studio[Anypoint Studio网站]下载Studio的Windows版本。
+
+== 安装PowerShell连接器
+
+. 下载并安装 link:https://repository-master.mulesoft.org/nexus/content/repositories/releases/org/mule/modules/anypoint-windows-gateway-service/1.4.0/anypoint-windows-gateway-service-1.4.0.zip[Windows网关服务软件]。
+. 您可以使用 link:/mule-user-guide/v/3.6/installing-connectors[从Anypoint Exchange安装连接器]中的说明在Anypoint Studio中安装连接器。
+. 搜索*powershell*并将*Windows PowerShell*连接器拖到HTTP连接器右侧的画布上。
+. 单击*Powershell*连接器，单击绿色加号并设置以下值：
++
+image:PowershellGlobalElementProperties.png[PowershellGlobalElementProperties]
+
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+| *Gateway Service Address*  |必需。 Windows网关服务IP地址。格式：_ip_addr：port._网址不受支持。例如：` 203.0.113.42:9333 `
+| *Gateway Access Token*  |必需。 Windows网关服务访问令牌。在`appSettings`键**mule-auth-token**下的Windows服务配置文件（`c:\Program Files(x86)\Anypoint Gateway for Windows\Mule.SelfHost.exe.config`）中查找已配置的令牌。
+| *Username*  |可选。 Windows网关服务上的用户名。提供是否必须模拟呼叫。
+| *Password*  |可选。 Windows网关服务上的密码。提供是否必须模拟呼叫。
+| *Ignore SSL Warnings*  |可选。如果您使用的是自签名SSL证书，请点击该复选框。
+| *Test Connection*  |单击以测试到Windows网关服务的连接是否正常。
+|===
+
+. 点击*OK*。确保*Connector Configuration*设置为*Powershell*。
+. 在PowerShell连接器属性中，将**Script **属性设置为以下值：
++
+[source, code, linenums]
+----
+Get-Service -Name #[message.inboundProperties['http.query.params']['name']]
+----
++
+该命令调用*Get-Service*命令返回有关Windows服务的信息。 *-Name*参数解析了HTTP连接器设置的查询字符串参数名称。例如，以下URL获取有关ASP.NET会话状态服务的信息：`+http://localhost:8081/?name=aspnet_state+`
+
+. 搜索*object*并将*Object to JSON*转换器拖到PowerShell连接器图标右侧的Canvas中。没有必要设置。画布显示为：
+
++
+image:PowershellFlow.png[PowershellFlow]
+
+完成的XML Mule流程显示如下：
+
+[source,xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:powershell="http://www.mulesoft.org/schema/mule/powershell" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/powershell http://www.mulesoft.org/schema/mule/powershell/current/mule-powershell.xsd">
+    <powershell:config name="Powershell" serviceAddress="localhost:9333" accessToken="test-token" ignoreSSLWarnings="true" doc:name="Powershell"/>
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="ps-sampleFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <powershell:send config-ref="Powershell" script="Get-Service -Name #[message.inboundProperties['http.query.params']['name']]"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+</mule>
+----
+
+== 运行流程
+
+. 点击*Run*> *Run As*> *Mule Application*。
+. 检查控制台以查看应用程序启动并且没有错误。
+. 在浏览器中打开：`+http://localhost:8081/?name=aspnet_state+`
++
+*Note*：此示例假定在主机上运行了`aspnet_state` Windows服务，但也可以使用其他任何Windows服务。
+. 应呈现以下JSON响应。
++
+[source, javascript, linenums]
+----
+ {
+    "CanPauseAndContinue":  false,
+    "CanShutdown":  false,
+    "CanStop":  false,
+    "DisplayName":  "ASP.NET State Service",
+    "DependentServices":  [ ],
+    "MachineName":  ".",
+    "ServiceName":  "aspnet_state",
+    "ServicesDependedOn":  [ ],
+    "ServiceHandle":  null,
+    "Status":  1,
+    "ServiceType":  16,
+    "Site":  null,
+    "Container":  null,
+    "Name":  "aspnet_state",
+    "RequiredServices":  [ ]
+}
+----
+
+== 解决方案概述
+
+PowerShell连接器使用具有两层的客户端 - 服务器体系结构，在Mule ESB中运行的连接器或客户端，以及在服务器端运行的Windows服务网关。后者公开了一个用于接收和执行PowerShell命令的HTTP Web API。
+
+Windows网关利用以下技术和框架：
+
+*  http://www.asp.net/web-api[ASP.NET Web API]公开发送和接收原始消息的HTTP Web API。
+*  http://owin.org/[OWIN]作为HTTP层。 OWIN是用于将应用程序与Web服务器功能分离的开放式规范。它提供了一个独立于主机平台的所有HTTP关注的层。
+作为OWIN Microsoft实施的*  Katana，它为OWIN应用程序提供自我和IIS托管。
+
+== 高级用例
+
+PowerShell连接器支持两种主要用例。
+
+* 发送一个内联命令/脚本并等待响应。
+* 从具有参数的文件发送复杂的命令/脚本并等待响应。
+
+在第一种情况下，Mule ESB使用连接器通过HTTP将简单的内联脚本发送到Windows网关。该消息作为HTTP Post发送。 HTTP请求的有效载荷表示该命令。运行在Windows网关上的Web API在本地执行PowerShell脚本。以下消息说明了HTTP请求的结构。
+
+*Request Message:*
+
+[source, code, linenums]
+----
+POST: https://localhost:9333/powershell
+Authorization: mule test-token
+Mule-Api-Version: 1
+----------------------------
+get-service -name aspnet_state
+----
+
+*Response Message:*
+
+[source, javascript, linenums]
+----
+{
+    "CanPauseAndContinue":  false,
+    "CanShutdown":  false,
+    "CanStop":  false,
+    "DisplayName":  "ASP.NET State Service",
+    "DependentServices":  [ ],
+    "MachineName":  ".",
+    "ServiceName":  "aspnet_state",
+    "ServicesDependedOn":  [ ],
+    "ServiceHandle":  null,
+    "Status":  1,
+    "ServiceType":  16,
+    "Site":  null,
+    "Container":  null,
+    "Name":  "aspnet_state",
+    "RequiredServices":  [ ]
+}
+----
+
+In the second scenario, the script is read from a file and can optionally contain arguments and variables that need to be resolved. The connector reads the script content from the file and sends that to the Gateway via HTTP in the request payload.
+
+*Request Message:*
+
+[source, code, linenums]
+----
+POST: https://localhost:9333/powershell
+Authorization: mule test-token
+Mule-Api-Version: 1
+mule-ps-param-servicename: aspnet_state
+----
+
+[source, javascript, linenums]
+----
+[CmdletBinding(SupportsShouldProcess=$True)]
+ param (
+  [Parameter(Mandatory=$true)]
+  [string] $servicename = $null
+ )
+get-service $servicename
+----
+
+*Response Message:*
+
+[source, code, linenums]
+----
+{
+    "CanPauseAndContinue":  false,
+    "CanShutdown":  false,
+    "CanStop":  false,
+    "DisplayName":  "ASP.NET State Service",
+    "DependentServices":  [ ],
+    "MachineName":  ".",
+    "ServiceName":  "aspnet_state",
+    "ServicesDependedOn":  [ ],
+    "ServiceHandle":  null,
+    "Status":  1,
+    "ServiceType":  16,
+    "Site":  null,
+    "Container":  null,
+    "Name":  "aspnet_state",
+    "RequiredServices":  [ ]
+}
+----
+
+The connector uses HTTP headers with the prefix *mule-ps-param-* for sending command arguments, which are mapped to the expected parameters in the script. In the example above, the header **mule-ps-param-servicename *is mapped to the parameter *servicename**.
+
+The response is also returned as a JSON message.
+
+== Configuration of the powershell:send Element
+
+The `powershell:send` element is the only element used by the two scenarios described earlier in the document.
+
+This following table shows the supported properties in this element:
+
+[%header,cols="2*"]
+|===
+|Property |Usage
+|*script* |Inline PowerShell script. It could also represent the call to a command passed from a file.
+|*scriptFile* |Path a file containing a PowerShell script.
+|*userName* |The name of the user that is used to impersonate the call when executing the powershell script in the Gateway. Overrides the user name set in the Global element. Optional.
+|*password* |The password of the user that is used to impersonate the call when executing the powershell script in the Gateway. Overrides the password set in the Global element. Optional.
+|*depth* |A number for controlling the JSON serialization deep level for the PowerShell script output.
+|*parameters* |A collection of parameters to be passed to the PowerShell script. Each parameter represents a key value pair.
+|===
+
+== Configuring a PowerShell Script with Parameters
+
+The connector supports PowerShell scripts with top level parameters declared with the “param” keyword. For example,
+
+[source, javascript, linenums]
+----
+Param(
+  [string]$computerName,
+  [string]$filePath
+)
+# Do something with $computerName and $filePath
+----
+
+The `computerName` and `filePath` values are two different parameters that can be passed to the script.
+
+The parameters are configured in the connector using the `parameters` collection. The value for a parameter can be resolved with MEL. In the previous example, these two parameters can be configured as follows:
+
+[source,xml, linenums]
+----
+<powershell:send config-ref="Powershell" doc:name="Powershell" scriptFile="myscript.ps1">
+<powershell:parameters>
+<powershell:parameter key="computerName">#[computer]</powershell:parameter>
+<powershell:parameter key="filePath">c://mydocument.txt</powershell:parameter>
+</powershell:parameters>
+</powershell:send>
+----
+
+== Inline Execution of Scripts Defined in a File
+
+The `script` and `scriptFile` properties can be both combined to execute a function defined in a file. The file specified in ` scriptFile ` represents a PowerShell script with one or more callable functions, and `script` represents the function call. The call in `script` should contain all the expected arguments by the function. The following example shows how the two properties are combined.
+
+The `script` is defined in the external `Get-RemoteProgram.ps1` file.
+
+[source, javascript, linenums]
+----
+Function Get-RemoteProgram {
+[CmdletBinding(SupportsShouldProcess=$true)]
+param(
+  [Parameter(ValueFromPipeline=$true,
+    ValueFromPipelineByPropertyName=$true,
+    Position=0)]
+  [string[]]
+  $ComputerName = $env:COMPUTERNAME,
+  [Parameter(Position=0)]
+  [string[]]$Property
+)
+  # Function body
+}
+----
+
+== Connector Configuration
+
+[source,xml, linenums]
+----
+<powershell:send config-ref="Powershell" doc:name="Powershell" scriptFile="Get-RemoteProgram.ps1" script="Get-RemoteProgram -ComputerName MyComputer">
+</powershell>
+----
+
+The function invocation `Get-RemoteProgram` is done as part of the inline script specified in the `script` property. The optional argument `ComputerName` is also passed as part of the invocation.
+
+== Controlling the Serialization Depth
+
+The PowerShell output is usually represented by a complex object graph with multiple dependency levels (an object referencing another object). In some cases, these dependencies may be circular references making serialization a complex process. 
+
+The serialization depth controls how deep the serialization must happen in the object hierarchy. For example, a value *2* means two levels must serialized only (the root objects and a single association).
+
+This value must be set in the *depth* property: 
+
+[source,xml, linenums]
+----
+<powershell:send config-ref="Powershell"  doc:name="Powershell" scriptFile="myscript.ps1" depth="2"/>
+----
+
+== Frequently Asked Questions - FAQ
+
+=== What can I do with the PowerShell connector?
+
+Any arbitrary PowerShell script may be executed on a target Windows OS host, with the resultant object graph being returned to Mule for processing.
+
+=== Can I use the PowerShell connector on a non-Windows platform?
+
+Yes, the PowerShell connector passes the script contents to the link:/mule-user-guide/v/3.6/windows-gateway-services-guide[Windows Gateway Service] for execution so can be run on any platform.
+
+=== Do I have to install the Windows Gateway Service on each machine I wish to run PowerShell scripts on?
+
+Yes, you must install the Windows Gateway Service on the machine you wish to execute PowerShell scripts on.
+
+=== How do I consume the object graph returned by PowerShell in my Mule application?
+
+Results from executing PowerShell scripts are serialized into a `Map<string, string>` making it simple to consume using MEL or DataMapper.
+
+=== Can I use parameterized PowerShell scripts or function libraries?
+
+Yes, parameters are supported and automatically map from the message properties if not manually supplied in the parameters collection.
+
+=== How do I run a script under the security context of different users?
+
+Specifying the username and password for impersonation lets you run a script as a specific user. By default, a script runs as the identity of the Windows Gateway Service agent.
+
+=== How do I specify the domain of the provided username?
+
+The proper way for specifying a fully-qualified domain user is using the username@domain syntax, at the username field.
+
+== See Also
+
+*  link:/mule-user-guide/v/3.6/windows-gateway-services-guide[Windows Gateway Service]  
+*  link:/mule-user-guide/v/3.6/msmq-connector-user-guide[MSMQ Connector]

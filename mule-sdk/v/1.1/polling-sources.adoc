@@ -1,0 +1,289 @@
+= 轮询来源
+
+*Available since version 1.1*
+
+轮询源不是通过外部操作触发的，而是根据给定的`scheduling strategy`定期轮询项目并自动处理幂等性和水印的源。在每个轮询操作中，可以将许多项目分派到流程中，每个都作为一个`Message`。
+
+== 创建一个轮询源
+
+要创建轮询来源，您需要将`Source`类添加到扩展类的`@Sources`注释中，就像常规来源一样。对于来源
+表现为`PollingSource`，而不是扩展类`Source<T,A>`，但类需要从`PollingSource<T, A>`扩展。
+
+从`PollingSource<T, A>`扩展时，您需要实现方法`poll`和`onRejectedItem`。
+
+*  `poll`负责使用`accept`方法通过`pollContext`获取要分派的项目并与他们进行通信。
+
+当其中一个分派项目被拒绝时（例如，通过水印幂等或服务器过载），将调用*  `onRejectedItem`。调用此方法释放与`PollItem`的结果集关联的所有资源。
+
+以下是在目录监听器上声明这些方法的示例
+实现FTP连接器：
+
+[source, java, linenums]
+----
+public class FtpDirectoryListener extends PollingSource<InputStream, FtpFileAttributes> {
+// ...
+  @Override
+  public void poll(PollContext<InputStream, FtpFileAttributes> pollContext) {
+    // ...
+  }
+
+  @Override
+  public void onRejectedItem(Result<InputStream, FtpFileAttributes> result, SourceCallbackContext callbackContext) {
+    // ...
+  }
+// ...
+}
+----
+
+== 实现池方法
+
+此方法收集所有要分派的项目并逐个处理它们。
+
+来自`PollContext`的{​​{0}}方法负责将轮询的项目分配到流程中。它接收`Consumer<PollItem>`作为参数。
+
+此示例显示如何将消息设置为分派给流：
+
+[source, java, linenums]
+----
+public class FtpDirectoryListener extends PollingSource<InputStream, FtpFileAttributes> {
+// ...
+  @Override
+  public void poll(PollContext<InputStream, FtpFileAttributes> pollContext) {
+    if(pollContext.isSourceStopping()){ // <1>
+      return;
+    }
+    List<FtpFileAttributes> attributesList = listFilesAttributes();
+
+    for (FtpFileAttributes attributes : attributesList) {
+      if(pollContext.isSourceStopping()){ // <1>
+        break;
+      }
+      pollContext.accept(item -> { // <2>
+        Result<InputStream, FtpFileAttributes> result = read(attributes.getPath());
+        item.setResult(result); // <3>
+      });
+    }
+  }
+// ...
+}
+----
+<1>请注意，`pollContext`提供有关源是否停止的信息。这在任何耗时的任务之前都必须考虑到。
+<2> `accept`将一个项目分派给流程。
+<3> `setResult`用于设置分派的消息。
+
+=== 幂等性
+
+幂等性防止项目被轮询两次。 SDK确保
+没有其他线程或群集节点正在处理具有相同ID的项目，这提供了处理幂等性。没有两个具有相同ID的项目将被同时处理。如果节点使用正在处理的项目的ID轮询项目，则该项目将被删除，并调用`onRejectedItem`方法。
+
+[source, java, linenums]
+----
+public class FtpDirectoryListener extends PollingSource<InputStream, FtpFileAttributes> {
+// ...
+  @Override
+  public void poll(PollContext<InputStream, FtpFileAttributes> pollContext) {
+    if(pollContext.isSourceStopping()){
+      return;
+    }
+    List<FtpFileAttributes> attributesList = listFilesAttributes();
+
+    for (FtpFileAttributes attributes : attributesList) {
+      if(pollContext.isSourceStopping()){
+        break;
+      }
+      pollContext.accept(item -> {
+        Result<InputStream, FtpFileAttributes> result = read(attributes.getPath());
+        item.setResult(result);
+        item.setId(attributes.getPath());  // <1>
+      });
+    }
+  }
+// ...
+}
+----
+
+<1> `setId`用于设置用于幂等性的ID。
+
+=== 水印
+
+当您轮询增量数据源时，您可以使用加水印，并且您只需要新数据，而不是在每次调用时手动将旧数据中的新数据分开。
+
+通过为项目的水印设置递增值，每隔一次轮询就会丢弃并且对任何低于当前水印值的项目水印值调用`onRejectedItem`。在上面的例子中，选择的水印是文件的时间戳。
+
+SDK使用什么标准来比较水印？
+
+如果您使用的水印实现`Comparable`，则将使用这些值的自然顺序。没有必要设定一个标准。
+
+[source, java, linenums]
+----
+public class FtpDirectoryListener extends PollingSource<InputStream, FtpFileAttributes> {
+// ...
+  @Parameter
+  @Optional(defaultValue = "false")
+  private boolean watermarkEnabled = false; <1>
+// ...
+  @Override
+  public void poll(PollContext<InputStream, FtpFileAttributes> pollContext) {
+    if(pollContext.isSourceStopping()){
+      return;
+    }
+    List<FtpFileAttributes> attributesList = listFilesAttributes();
+
+    for (FtpFileAttributes attributes : attributesList) {
+      if(pollContext.isSourceStopping()){
+        break;
+      }
+      pollContext.accept(item -> {
+        Result<InputStream, FtpFileAttributes> result = read(attributes.getPath());
+        item.setResult(result);
+        item.setId(attributes.getPath());
+        if (watermarkEnabled) { // <1>
+          item.setWatermark(attributes.getTimestamp());  // <2>
+        }
+      });
+    }
+  }
+// ...
+}
+----
+
+<1>典型的最佳做法是让用户决定是否使用水印。
+<2> `setWatermark`将文件时间戳设置为水印。
+
+如果水印值不实现`Comparable`，或者如果我想使用另一个不是自然顺序的条件，该怎么办？
+
+您可以通过调用其方法`setWatermarkComparator`来简单地将`Comparator`设置为`PollContext`。
+
+===  PollItemStatus
+
+如果您调用`accept`方法，则会返回`PollItemStatus`。这是一个可以采用以下值的`Enum`：
+
+* 已接受：该项目已被接受并已计划执行。
+*  FILTERED_BY_WATERMARK：该项目被拒绝，因为水印已启用，因此已过滤。
+*  ALREADY_IN_PROCESS：该项目被拒绝，因为幂等性已启用且另一个线程或节点已在处理此项目。
+*  SOURCE_STOPPING：该项目已被拒绝，因为来源已收到停止信号。
+
+您可以使用它来记录每个项目的轮询状态：
+
+[source, java, linenums]
+----
+public class FtpDirectoryListener extends PollingSource<InputStream, FtpFileAttributes> {
+// ...
+  @Parameter
+  @Optional(defaultValue = "false")
+  private boolean watermarkEnabled = false;
+// ...
+  @Override
+  public void poll(PollContext<InputStream, FtpFileAttributes> pollContext) {
+    if(pollContext.isSourceStopping()){
+      return;
+    }
+    List<FtpFileAttributes> attributesList = listFilesAttributes();
+
+    for (FtpFileAttributes attributes : attributesList) {
+      if(pollContext.isSourceStopping()){
+        break;
+      }
+      PollItemStatus status = pollContext.accept(item -> { // <1>
+        Result<InputStream, FtpFileAttributes> result = read(attributes.getPath());
+        item.setResult(result);
+        item.setId(attributes.getPath());
+        if (watermarkEnabled) {
+          item.setWatermark(attributes.getTimestamp());
+        }
+      });
+
+      if(!status.equals(PollItemStatus.ACCEPTED)){
+        LOGGER.debug("Item rejected with code:  " + status.name());
+      }
+    }
+  }
+// ...
+}
+----
+
+<1>获取稍后记录的`PollItemStatus`。
+
+
+=== 获取源回调上下文
+
+如果您需要保存要在回调方法中使用的数据，则`item`
+为其提供`SourceCallbackContext`。
+
+此示例显示如何获取上下文，然后将数据保存在该上下文中：
+
+[source, java, linenums]
+----
+public class FtpDirectoryListener extends PollingSource<InputStream, FtpFileAttributes> {
+// ...
+  @Parameter
+  @Optional(defaultValue = "false")
+  private boolean watermarkEnabled = false;
+// ...
+  @Override
+  public void poll(PollContext<InputStream, FtpFileAttributes> pollContext) {
+    if(pollContext.isSourceStopping()){
+      return;
+    }
+    List<FtpFileAttributes> attributesList = listFilesAttributes();
+
+    for (FtpFileAttributes attributes : attributesList) {
+      if(pollContext.isSourceStopping()){
+        break;
+      }
+      PollItemStatus status = pollContext.accept(item -> {
+        SourceCallbackContext context = item.getSourceCallbackContext();   // <1>
+        context.addVariable("attributes", attributes);  // <2>
+        Result<InputStream, FtpFileAttributes> result = read(attributes.getPath());
+        item.setResult(result);
+        item.setId(attributes.getPath());
+        if (watermarkEnabled) {
+          item.setWatermark(attributes.getTimestamp());
+        }
+      });
+
+      if(!status.equals(PollItemStatus.ACCEPTED)){
+        LOGGER.debug("Item rejected with code:  " + status.name());
+      }
+    }
+  }
+// ...
+}
+----
+
+<1>从`item`获取上下文。
+<2>将数据保存在`SourceCallbackContext`上。
+
+== 实现OnRejectedItem方法
+
+当其中一个派发项目被拒绝时调用此方法。它应该释放
+任何与`PollItem`的结果集相关联的资源。
+
+这个例子展示了如何实现它：
+
+[source, java, linenums]
+----
+public class FtpDirectoryListener extends PollingSource<InputStream, FtpFileAttributes> {
+// ...
+  @Override
+    public void onRejectedItem(Result<InputStream, FtpFileAttributes> result, SourceCallbackContext callbackContext) {
+      closeFileStream(result);
+    }
+// ...
+}
+----
+
+== 如何在流中使用轮询源
+
+SDK自动向源添加`scheduling strategy`参数，使用户能够提供任何策略（如`fixed-frequency`）来处理轮询执行。运行时将使用该策略自动调度`poll`方法的执行。
+
+以下是使用轮询源的FTP目录侦听器的示例：
+
+[source, xml, linenums]
+----
+<ftp:listener config-ref="config" directory="path/" watermarkEnabled="true">
+  <scheduling-strategy>
+    <fixed-frequency startDelay="40000" frequency="1000" timeUnit="MILLISECONDS"/>
+  </scheduling-strategy>
+</ftp:listener>
+----

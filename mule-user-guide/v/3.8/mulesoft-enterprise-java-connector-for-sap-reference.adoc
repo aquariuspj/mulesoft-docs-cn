@@ -1,0 +1,984 @@
+用于SAP的MuleSoft Enterprise Java连接器。= 
+:keywords: anypoint studio, esb, connector, endpoint, sap
+
+_ *Premium* _
+
+[NOTE]
+该连接器需要单独的许可证。如果您想评估或使用此连接器，请联系mailto：info@mulesoft.com [MuleSoft]。
+
+== 介绍
+
+Mule SAP Transport使用SAP Java Connector（JCo）库，从而使您的Mule应用程序能够：
+
+. 通过sRFC（同步RFC），tRFC（事务性RFC）和qRFC（排队RFC）执行BAPI函数，
+. 充当JCo服务器，通过sRFC，tRFC和qRFC被称为BAPI
+. 通过tRFC和qRFC发送IDoc
+. 通过tRFC和qRFC接收IDoc
+. 将所有SAP对象（JCoFunction和IDocs）转换为XML
+
+[NOTE]
+====
+*Mule Compatibility* +
+
+有四种版本的MuleSoft Enterprise Java连接器用于SAP：
+
+*  _ *1.x* _：与Mule 3.0 / 3.1 / 3.2兼容
+*  _ *2.0.x and 2.1.x* _：与Mule 3.3 / 3.4兼容
+*  **_2.2.x_**：与Mule 3.6兼容
+
+涉及多个出站端点的有状态事务只能从具有事务范围的Mule 3.3开始。
+====
+
+== 安装
+
+SAP传输需要JCo库进行操作。以下部分介绍如何设置Mule，以便您可以在Mule应用程序中使用SAP传输：
+
+此过程假定您的主机上已安装Mule实例。如果没有，请按照 link:/mule-user-guide/v/3.8/downloading-and-starting-mule-esb[下载Mule Runtime]的说明进行操作。
+
+[TIP]
+在整篇文档中，我们使用`$MULE_HOME`来指代安装Mule的目录。
+
+. 从SAP网站下载SAP JCo和IDoc库：http://service.sap.com/connectors（为此，您需要SAP用户标识）。
+. 确保SAP可用于您的Mule应用程序和/或Mule实例。 JCo依靠本地库，这需要额外的安装步骤。
+. 如果您打算将SAP用作入站端点（即Mule将被称为BAPI或将接收IDoc），则必须在OS级别的服务文件中执行其他配置。
+
+[NOTE]
+====
+*About the SAP JCo and IDoc Library Versions* +
+
+SAP传输需要以下文件：
+
+*  SAP JCo Library 3.0.x（使用sapjco-3.0.7.jar和sapjco-3.0.9.jar进行测试）
+*  SAP IDoc库3.0.x（使用sapidoc-3.0.6.jar进行测试）
+
+每个SAP客户/合作伙伴都可以访问 link:http://service.sap.com[SAP服务市场（SMP）]。在这里，您可以下载这些文件以及NetWeaver RFC Library和其他连接器。
+
+SAP JCo库取决于操作系统，因此请确保下载与运行Mule的主机服务器的OS和硬件体系结构相对应的SAP库。
+====
+
+=== 使Jars适用于您的骡子应用程序
+
+按照SAP提供的说明安装JCo库，但请记住某些jar文件必须位于您的应用程序CLASSPATH中，并且动态链接库（dll / so）必须位于您的LD_LIBRARY_PATH中。
+
+接下来，在您的应用程序CLASSPATH中包含transport jar文件（mule-transport-sap  -  \ {version} .jar）。
+
+Mule SAP Transport取决于三个库：
+
+* 骡子运输-SAP  -  \ {}版本的.jar
+*  sapjco-3.0.x.jar
+*  sapidoc-3.0.x.jar
+
+[WARNING]
+您需要将这三个文件放在同一个目录中。
+
+** 如何将Jars放置在应用程序共享的通用目录中
++
+如果您打算将多个应用程序部署到同一台服务器，将所有这些Jars保存在一个文件夹中而不是为每个应用程序重复这些Jars是有意义的。 Mule并不支持这种方式，但是有一个解决方法。
++
+对于SAP连接器，MuleSoft建议使用以下目录：
++
+*  `$MULE_HOME/lib/user`
+*  `$MULE_HOME/lib/native`
++
+通过将这些库放置在这些目录中，您将在同一个Mule实例中运行的所有应用程序之间共享它们。由于SAP JCo配置是单例，因此如果采用这种方式，则所有应用程序都将共享相同的配置，包括JCo目标存储库。
+
+[WARNING]
+====
+要使此设置生效，您还必须手动配置`wrapper.conf`文件以添加对`$MULE_HOME/lib/user`和`$MULE_HOME/lib/native`目录的支持
+
+你到目前为止所做的就足以在Mule Standalone实例中运行它，但是为了使它在Anypoint Studio运行时正常运行，并且能够在开发它时测试你的应用程序，必须执行以下操作：
+
+* 将以下命令行参数添加到JRE默认虚拟机参数`-Djava.library.path=PATH`。这将处理本地库
+* 修改您的POM以包含支持文件`mule-transport-sap-{version}.jar`的`<scope>provided</scope>`
+====
+
+[NOTE]
+====
+*About the Application CLASSPATH* +
+
+您的应用程序库目录自动启用以支持动态库。如果您不包括它们，那么您还需要告诉Mule SAP JCo动态链接库驻留的位置。要做到这一点，您可以执行以下任一操作：
+
+* 配置`LD_LIBRARY_PATH`环境变量
+* 通过添加行`wrapper.java.library.path.{N}=PATH/TO/SAP-JCO/LIB-DIR`来配置Mule包装器配置文件`$MULE_HOME/conf/wrapper.conf`
+
+*IMPORTANT*：不要组合两个策略（例如，将JCo库放入应用程序`$MULE_HOME/apps/YOUR_APP/lib`中的mule实例共享lib目录（例如`$MULE_HOME/lib/user`）和SAP连接器库中，这将导致类加载器问题，因为JCo库在静态字段（单例）中保存配置。
+====
+
+==== 示例：发送应用程序内的所有依赖项
+
+假设您有一个名为sap-test的应用程序，它部署在Windows x86框中的$ MULE_HOME / apps中。为了具有所有连接器依赖性，目录树是：
+
+*  `$MULE_HOME/apps/sap-test/lib`
+**  `mule-transport-sap-{version}.jar`
+**  `sapjco-3.0.x.jar`
+**  `sapidoc-3.0.x.jar`
+**  `sapjco3.dll`
+
+[TIP]
+建议在Mule实例级别配置SAP库，因为具有不同版本SAP传输和/或JCo库的两个应用程序可能导致类加载器问题。
+
+===  SAP入站端点要求
+
+如果您想要接收IDoc或被称为BAPI（JCo服务器），并且您不希望将端口号用作*jcoGwService*的值，则必须修改操作系统{{1} }文件：
+
+*  `/etc/services`文件（用于基于Unix的操作系统）
+*  `C:\WINDOWS\system32\drivers\etc\services`文件（适用于Windows）
+
+在上述文件中，您必须添加网关（通过`jcoGwService`属性或`jco.server.gwserv / jco.client.gwserv`属性进行配置）。没有必要添加整个映射列表。
+
+例如，要设置以下`jcoGwService=sapgw00`，只需添加以下行：
+
+`sapgw00 3300/tcp`
+
+端口3300由SAP预定义，因此如果您需要根据您的SAP实例编号验证其他端口号，则可以查看服务端口映射的完整列表，可以找到 link:/mule-user-guide/v/3.8/sap-jco-server-services-configuration[这里]。
+
+== 命名空间和语法
+
+===  XML名称空间
+
+`xmlns:sap=http://www.mulesoft.org/schema/mule/sap`
+
+XML模式位置=== 
+
+*  `http://www.mulesoft.org/schema/mule/sap`
+*  `http://www.mulesoft.org/schema/mule/sap/current/mule-sap.xsd`
+
+[NOTE]
+例如，在架构位置URL中，您可以将别名*current*替换为特定的Mule版本号，例如**3.2**。
+
+=== 连接器语法
+
+[source, xml, linenums]
+----
+<sap:connector name="SapConnector" jcoClient="100" jcoUser="User"
+     jcoPasswd="Password" jcoLang="en" jcoAsHost="host" jcoSysnr="00"
+     jcoTrace="true" jcoPoolCapacity="3" jcoPeakLimit="10"/>
+----
+
+=== 端点语法
+
+==== 入站端点
+
+[source, xml, linenums]
+----
+<sap:inbound-endpoint name="idocServer" type="idoc" rfcType="trfc"
+     jcoConnectionCount="5" jcoGwHost="yoursapgw.company.com" jcoProgramId="send_idoc"
+     jcoGwService="sapgw00" exchange-pattern="one-way"/>
+----
+
+==== 出站端点
+
+[source, xml, linenums]
+----
+<sap:outbound-endpoint name="idocSender" type="idoc" connector-ref="SapConnector"
+                       exchange-pattern="request-response"/>
+----
+
+== 连接器
+
+`sap:connector`元素允许配置JCo连接参数，然后可以在同一应用程序中的`sap:inbound-endpoints`和`sap:outbound-endpoints`之间共享。
+
+=== 可配置的属性
+
+[%header,cols="4*"]
+|===
+|属性 |描述 |默认值 |自版本
+| *name*  | Mule配置内部使用的连接器的引用名称。 |   | 1.0
+| *jcoClient*  | SAP客户端。这通常是一个数字（例如：100）。 |   | 1.0
+| *jcoUser*  |基于密码的认证用户名 |   | 1.0
+| *jcoPasswd*  |用于基于密码的身份验证的密码 |   | 1.0
+| *jcoLang*  |用于登录对话框的语言。如果未定义，则使用默认用户语言 |  | 1.0
+| *jcoAsHost*  | SAP应用程序服务器主机（可指定IP地址或服务器名称）。 |   | 1.0
+| *jcoSysnr*  | SAP系统编号 |   | 1.0
+| *jcoTrace*  |启用/禁用RFC跟踪 | false  | 1.0
+| *jcoTraceToLog*  |如果_jcoTraceToLog_为_true_，则JCo跟踪将被重定向到Mule日志文件。如果设置了此属性，它将覆盖Java启动环境属性（**-Djco.trace_path=<PATH>**）。由于JCo库的限制，此属性必须在类加载器级别进行配置，因此，如果进行了配置，它将应用于类加载器级别的所有SAP连接。应为此参数启用*jcoTrace*。 | false  | 1.0
+| *jcoPoolCapacity*  |目的地保持打开的最大空闲连接数。当值为0时，不会发生连接池。 | 5  | 1.0
+| *jcoPeakLimit*  |可同时为目标创建的最大活动连接数 | 10  | 1.0
+| *jcoClientExtendedProperties-ref*  |对包含附加JCo连接参数的`java.util.Map`的引用。其他信息和参数的完整列表可以在 link:/mule-user-guide/v/3.8/sap-jco-extended-properties[这里]  |   | 1.0中找到
+| *disableFunctionTemplateCache*  |表示函数模板是否应该被缓存的布尔值。禁用缓存仅适用于特殊情况（例如在开发期间），因为禁用会影响性能。每个函数（BAPI）调用都需要两次到SAP服务器。 | false  | 2.1.0
+|===
+
+=== 配置示例
+
+[source, xml, linenums]
+----
+<sap:connector name="SapConnector" jcoClient="100" jcoUser="User" jcoPasswd="Password"
+    jcoLang="en" jcoAsHost="host" jcoSysnr="00" jcoTrace="true" jcoPoolCapacity="3"
+    jcoPeakLimit="10"/>
+----
+
+[TIP]
+====
+*Disabling JCo Pool* +
+
+如果您想禁用JCo Pool，则不要为属性*jcoPoolCapacity*和*jcoPeakLimit*提供值。还为属性*jcoPoolCapacity*提供零值将禁用池化。
+====
+
+===  SAP Solution Manager
+
+适用于SAP的MuleSoft Enterprise Java连接器已准备好 link:http://service.sap.com/solutionmanager[SAP Solution Manager]。这意味着该连接器符合在SAP系统景观目录中注册的最低要求。
+
+要对其进行配置，您需要在`sap:connector`中创建一个子元素`sap:sld-config`，以便Mule每次在应用程序启动时注册*System Landscape Directory*（SLD）。这个子元素支持以下属性：
+
+[%header,cols="4*"]
+|======
+|属性 |描述 |默认值 |自版本
+| *url* a |
+您的SLD正在侦听的URL（包括主机和端口）。通常，URL将符合如下模式：
+
+`+http://sld-host.company.com/sdl/ds+`
+
+  |   | 1.0
+| *user*  |有权更新SLD  |   | 1.0中的信息的用户
+| *password*  |有权更新SLD设置的用户的密码 |   | 1.0
+| *computerName*  |应用程序所在机器的名称。 |从操作系统获得的主机名（无域）。 | 1.0
+| *localSystemName*  |您的应用程序的描述性名称。 |   | 1.0
+|======
+
+=== 示例
+
+[source, xml, linenums]
+----
+<sap:connector name="SapConnector" jcoClient="100" jcoUser="User" jcoPasswd="Password"
+               jcoLang="en" jcoAsHost="host" jcoSysnr="00" jcoTrace="true"
+               jcoPoolCapacity="3" jcoPeakLimit="10">
+    <sap:sld-config url="http://sapsld.mulesoft.com:80/sld/ds" user="slduser" password="secret" computerName="mule01" localSystemName="Mule Enterprise Connector"/>
+</sap:connector>
+----
+
+[NOTE]
+====
+如果您在同一个Mule应用程序中或甚至在同一个Mule服务器上有多个SAP连接器，那么没有理由为它们中的每一个配置不同的SLD。
+
+除非需要向不同的SLD服务器注册，否则只能为一个`sap:connector`配置一个`sap:sld-config`，并且该SLD将用于在同一主机上运行的所有SAP连接器。
+====
+
+== 端点
+
+MuleSoft Enterprise Java连接器支持SAP <<Inbound Endpoint>>和<<Outbound Endpoint>>端点。
+
+*  <<Inbound Endpoint>>：通过RFC接收IDoc和BAPI调用。
+**  <<Receiving IDocs>>
+**  <<Receiving BAPI Calls>>
+*  <<Outbound Endpoint>>：通过RFC发送IDoc并执行BAPI。
+
+=== 端点地址
+
+为了支持*dynamic endpoints*，SAP Transport支持一种URI风格的地址，通用格式为：
+
+`address="sap://jcoUser:jcoPasswd@jcoAsHost?attr1=value1&attr2=value2& ... &attrN=valueN"`
+
+这些属性可以是：
+
+* 连接器或端点元素支持的相同属性（例如jcoClient，jcoSysnr等）
+* 特定的SAP连接属性（例如jco.client.r3name，jco.client.type等）
+
+只要未指定属性，就会使用默认值。
+
+[NOTE]
+您可以在地址属性中使用 link:/mule-user-guide/v/3.8/mule-expression-language-mel[骡子表达]，就像您为其他Mule传输一样。
+
+入站端点地址示例：
+
+[source, xml, linenums]
+----
+<sap:inbound-endpoint
+   address="sap://TEST_USER:secret@localhost?type=function&amp;rfcType=trfc&amp;jcoClient=100&amp;jcoSysnr=00&amp;jcoPoolCapacity=10&amp;jcoPeakLimit=10&amp;jcoGwHost=localhost&amp;jcoGwService=gw-service&amp;jcoProgramId=program_id&amp;jcoConnectionCount=2"/>
+----
+
+出站端点地址示例：
+
+[source, xml, linenums]
+----
+<sap:outbound-endpoint
+   address="sap://TEST_USER:secret@localhost?type=function&amp;rfcType=trfc&amp;jcoClient=100&amp;jcoSysnr=00&amp;jcoPoolCapacity=10&amp;jcoPeakLimit=10"/>
+----
+
+[WARNING]
+====
+*Important* +
+
+您必须在地址属性中“转义”＆符号（**'&'**），并将其替换为**'&amp;'**。
+====
+
+=== 优先化连接属性
+
+SAP JCo连接的属性（入站和出站）可以在许多地方进行配置。以下列表详细列出了在不同地方指定的值所赋予的优先级，其中列出的优先级最高。
+
+`<sap:inbound-endpoint/>`和`<sap:outbound-endpoint/>`级别的. 属性（例如jcoClient，jcoUser，jcoPasswd，jcoSysnr，jcoGwHost，jcoProgramId）
+.  `<sap:inbound-endpoint/>`和`<sap:outbound-endpoint/>`级别的*address*属性
+. 位于`<sap:inbound-endpoint/>`和`<sap:outbound-endpoint/>`级别的**jcoClientExtendedProperties-ref**和/或**jcoServerExtendedProperties-ref**属性中配置的地图内的属性
+. 在`<sap:connector/>`级别配置的属性（例如，jcoClient，jcoUser，jcoPasswd，jcoSysnr）
+. 在`<sap:connector/>`级别的**jcoClientExtendedProperties-ref**中配置的地图内部的属性
+. 默认值
+
+===  XML定义
+
+此定义是函数（JCOFunction）或IDoc（IDocDocument / IDocDocumentList）的XML表示形式。简而言之，这些是您将收到并发送给SAP的XML文档。
+
+SAP传输包括<<Transformers>>，它将把端点和SAP之间交换的XML文档转换为终端可以处理的相应SAP对象。
+
+可以找到不同XML文档的完整文档 link:/mule-user-guide/v/3.8/xml-definitions[这里]：
+
+*  link:/mule-user-guide/v/3.8/xml-definitions[JCo功能] +
+**  link:/mule-user-guide/v/3.8/xml-definitions[版本1]
+**  link:/mule-user-guide/v/3.8/xml-definitions[版本2]
+*  link:/mule-user-guide/v/3.8/xml-definitions[的IDoc]
+
+== 入站端点
+
+SAP入站端点充当RFC服务器或IDoc服务器。 JCo服务器需要注册SAP实例，因此它需要*client*和*server*配置属性。
+
+[%header,cols="4*"]
+|=======
+|属性 |描述 |默认值 |自版本
+| *name*  | Mule配置内部使用的端点的引用名称。 |   | 1.0
+| *exchange-pattern*  |可用选项为请求 - 响应和单向。 |   | 1.0
+| *address*  |提供端点属性的标准方式。有关详情，请参阅<<Endpoint Address>>。 |   | 1.0
+| *type*  |此端点将处理的SAP对象的类型（即*function*，*idoc*） |函数 | 1.0
+| *rfcType*  |端点用于接收函数或IDoc的RFC类型。可用选项为*srfc*（*sync* *no TID handler*），*trfc*和*qrfc*（均为*async*，{{ {7}}）。 | {SRFC {11}} 1.0
+| *functionName*  |如果类型为*function*，那么这是将要处理的BAPI函数的名称。如果未提供值，则通用处理程序将配置为接收所有呼叫。 |   | 1.0
+| *jcoClient*  | SAP客户端。这通常是一个数字（即100）。 |   | 1.0
+| *jcoUser*  |用户进行基于密码的身份验证。 |   | 1.0
+| *jcoPasswd*  |与用户关联的密码，用于基于密码的身份验证。 |   | 1.0
+| *jcoLang*  |登录语言。如果未定义，则使用默认用户语言 |  | 1.0
+| *jcoAsHost*  | SAP应用程序服务器主机。 （使用IP地址或服务器名称）。 |   | 1.0
+| *jcoSysnr*  | SAP系统编号。 |   | 1.0
+| *jcoPoolCapacity*  |目的地保持打开的最大空闲连接数。当值为0时，不会发生连接池。 | 5  | 1.0
+| *jcoPeakLimit*  |可为目标创建的最大同时活动连接数。 | 10  | 1.0
+| *jcoClientExtendedProperties-ref*  |对`java.util.Map`的引用，其中包含其他JCo连接参数。有关其他信息和完整的参数列表，请参阅 link:/mule-user-guide/v/3.8/sap-jco-extended-properties[这里]。 |   | 1.0
+| *jcoGwHost*  |服务器应注册的网关主机。 |   | 1.0
+| *jcoGwService*  |网关服务，即执行注册的端口。 |   | 1.0
+| *jcoProgramId*  |用于注册的程序ID。 |   | 1.0
+| *jcoConnectionCount*  |应该在网关注册的连接数。 | 2  | 1.0
+| *jcoServerExtendedProperties-ref*  |对`java.util.Map`的引用，其中包含其他JCo服务器连接参数。可以找到其他信息和服务器参数的完整列表 link:/mule-user-guide/v/3.8/sap-jco-extended-properties[这里]。 |   | 1.0
+| *outputXml*  |端点是否应将有效负载设置为SAP对象（函数或IDoc）的XML表示形式（String）或SapObject包装器本身。将此标志设置为'true'可以省去对象到xml的转换器。 | false  | 2.2.2
+| *xmlVersion*  |输出/输入XML的版本。 IDoc仅支持版本1，而对于具有版本1（默认）和版本2（DataMapper友好）的函数{2} {1}  | 2.2.2
+|=======
+
+*Example*
+
+[source, xml, linenums]
+----
+<sap:inbound-endpoint exchange-pattern="request-response" type="function" rfcType="srfc"
+    jcoGwHost="gateway-host" jcoGwService="gateway-service" jcoProgramId="program_id"
+    jcoConnectionCount="2" functionName="BAPI_FUNCTION_NAME" jcoServerExtendedProperties-ref="mapWithServerProperties"/>
+----
+
+=== 输出Mule消息
+
+入站端点生成一个Mule消息，其中包含以下负载内容：
+
+** 一个`org.mule.transport.sap.SapObject`实例。这是一个Java POJO，它的两个主要属性是：+
+*** 键入：`SapType.FUNCTION`或`SapType.IDOC`，具体取决于是否接收到BAPI呼叫或IDoc。
+*** 值：类型取决于具体的JCo对象：IDoc `com.sap.conn.idoc.IDocDocument`或`com.sap.conn.idoc.IDocDocumentList`，BAPI调用`com.sap.conn.jco.JCoFunction`。
+**  *outputXml*为*true*时包含XML文档的字符串。
+
+*payload*可以通过`<sap:object-to-xml/>`转换器转换为<<XML Definition>>。
+
+=== 接收IDoc
+
+要配置IDoc服务器，您需要完成以下步骤：
+
+. 将`type`参数设置为*idoc*。
+. 将`rfcType`参数定义为*trfc*或*qrfc*（IDoc根据定义是不同步的，因此无法通过*srfc*接收）。
+.  <<Configuring the TID Handler>>。 （默认是内存中的TID处理程序）。
+. 指定以下必需属性：jcoGwHost，jcoGwService，jcoProgramId。
+. 根据需要为端点或连接器指定必需的连接属性。这可能包括，例如，jcoClient，jcoUser，jcoPasswd，jcoAsHost，jcoSysnr。
+
+*A Sample IDoc Server Configuration*
+
+[source, xml, linenums]
+----
+<mule>
+    ...
+    <sap:connector name="SapConnector" jcoClient="100" jcoUser="mule_user" jcoPasswd="secret" jcoLang="en"
+        jcoAsHost="sap-as.mulesoft.com" jcoSysnr="00" jcoTrace="true" jcoPoolCapacity = "3" jcoPeakLimit="10"
+        jcoClientExtendedProperties-ref="sapProperties"/>
+    ...
+    <flow name="sapExample">
+        <sap:inbound-endpoint name="sapInbound" exchange-pattern="request-response" type="idoc"
+            rfcType="trfc" jcoGwHost="sapgw.mulesoft.com" jcoProgramId="idoc_send" jcoGwService="sapgw00"
+            jcoConnectionCount="2" jcoClientExtendedProperties-ref="sapProperties">
+             
+                <sap:default-in-memory-tid-store/>
+        </sap:inbound-endpoint>
+        ...
+    </flow>
+</mule>
+----
+
+=== 接收BAPI电话
+
+要配置BAPI RFC服务器，您必须完成以下步骤：
+
+. 将`type`参数设置为*function*。
+. 将`rfcType`参数定义为*trfc*，*qrfc*或*srfc*。 （如果未指定`rfcType`，则默认使用*srfc*。）
+. 如果`rfcType`是*trfc*或*qrfc*，那么您可能还需要<<Configuring the TID Handler>>。
+. 指定以下必需属性：jcoGwHost，jcoGwService，jcoProgramId。
+. 根据需要为端点或连接器指定必需的连接属性。这可能包括，例如，jcoClient，jcoUser，jcoPasswd，jcoAsHost，jcoSysnr。
+
+=== 返回到SAP
+
+执行流程后，如果SAP入站端点是请求 - 响应，则Mule会将值返回给调用SAP实例。返回值可以用 link:/mule-user-guide/v/3.8/xml-definitions[JCo功能]的XML表示来表示。 +
+ 有三种可能的情况：
+
+*  *Normal Execution*：只需填写*export*，*changing*或*tables*部分中的值即可。
+*  *Exception*：在*exceptions*部分填充例外。这会抛出一个AbapException，SAP会将其视为应用程序错误。
+*  *Flow Exception*：由流引发的任何异常都将在SAP中被视为系统故障（SYSTEM_FAILURE）。
+
+*A Sample BAPI RFC Server Configuration*
+
+[source, xml, linenums]
+----
+<mule>
+    ...
+    <sap:connector name="SapConnector" jcoClient="100" jcoUser="mule_test" jcoPasswd="secret" jcoLang="en" jcoAsHost="sapas.mulesoft.com"
+        jcoSysnr="00" jcoTrace="true" jcoPoolCapacity = "3" jcoPeakLimit="10" jcoClientExtendedProperties-ref="sapProperties"/>
+    ...
+    <flow name="sapExample">
+        <sap:inbound-endpoint name="sapInbound" exchange-pattern="request-response" type="function" rfcType="trfc" jcoGwHost="sapas.mulesoft.com"
+            jcoProgramId="rfc_send" jcoGwService="sapgw00" jcoConnectionCount="2"/>
+        ...
+    </flow>
+</mule>
+----
+
+=== 配置TID处理程序
+
+TID（Transaction ID）处理程序是*tRFC*和*qRFC*的重要组件，可确保Mule不会处理同一个事务两次。
+
+SAP连接器允许您配置不同的TID存储区：
+
+*  *In Memory TID Store*：这个默认的TID存储有助于在同一个Mule实例中共享TID。如果`rfcType`是*tRFC*或*qRFC*，并且没有配置TID存储，则使用此默认存储。这不建议在生产环境中使用，并且此选项在群集环境中不起作用。
+*  *Mule Object Store TID Store*：这个包装使用现有的Mule对象存储来存储和共享TID。如果您需要多个Mule服务器实例，则应该配置一个JDBC对象存储或者一个启用了集群的对象存储，以便您可以在这些实例之间共享TID。
+
+[NOTE]
+====
+*Important*
+
+如果`rfcType`配置为*srfc*，或者未提供（{因此默认为*srfc*），则不配置TID处理程序。此外，如果在XML文件中配置了TID处理程序，它将被忽略。
+====
+
+*Example of a Default In-memory TID Store*
+
+要成功配置内存中的TID存储区，您必须了解以下内容：
+
+. 如果您有多个共享相同*program id*的Mule实例，则内存中的TID存储将无法按预期工作。 （这是因为SAP网关在所有共享相同*program id*的已注册SAP服务器之间进行负载平衡。）
+.  `<sap:inbound-endpoint .../>`中的`rfcType`应该是*trfc*或*qrfc*。
+. 配置子元素`<sap:default-in-memory-tid-store/>`是可选的，因为默认情况下，内存中处理程序是选项。
++
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:sap="http://www.mulesoft.org/schema/mule/sap"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/sap http://www.mulesoft.org/schema/mule/sap/current/mule-sap.xsd
+        http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd">
+ 
+    <!-- Configuration for both SAP & the TID Store -->
+    <spring:bean id="sapProperties" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer"
+        <spring:property name="ignoreUnresolvablePlaceholders" value="true" />
+        <spring:property name="location" value="classpath:sap.properties"/>
+    </spring:bean>
+ 
+    <!-- SAP Connector -->
+    <sap:connector name="SapConnector" jcoClient="${sap.jcoClient}"
+        jcoUser="${sap.jcoUser}" jcoPasswd="${sap.jcoPasswd}" jcoLang="${sap.jcoLang}" jcoAsHost="${sap.jcoAsHost}"
+        jcoSysnr="${sap.jcoSysnr}" jcoTrace="${sap.jcoTrace}" jcoPoolCapacity="${sap.jcoPoolCapacity}" jcoPeakLimit="${sap.jcoPeakLimit}"/>
+ 
+     
+    <flow name="idocServerFlow">
+        <sap:inbound-endpoint name="idocServer" exchange-pattern="request-response" type="idoc" rfcType="trfc" jcoGwHost="${sap.jcoGwHost}"
+                              jcoProgramId="${sap.jcoProgramId}" jcoGwService="${sap.jcoGwService}" jcoConnectionCount="${sap.jcoConnectionCount}">
+            <sap:default-in-memory-tid-store/>
+        </sap:inbound-endpoint>
+             
+            ...
+    </flow>
+</mule>
+----
+
+*A Sample JDBC-based Mule Object Store TID Store*
+
+要配置Mule对象存储TID存储，请完成以下步骤：
+
+. 将`<sap:inbound-endpoint .../>`组件中的`rfcType`配置为*trfc*或*qrfc.*
+. 配置子元素`<sap:mule-object-store-tid-store>.`
+. 使用数据库连接详细信息配置DataSource bean。
+. 配置JDBC连接器。
+
+[NOTE]
+`<sap:mule-object-store-tid-store>`的子元素可以是任何支持的Mule对象存储。
+
+这个例子说明了如何配置一个基于MySQL的JDBC对象存储。
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:sap="http://www.mulesoft.org/schema/mule/sap"
+      xmlns:jdbc="http://www.mulesoft.org/schema/mule/jdbc"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/sap http://www.mulesoft.org/schema/mule/sap/current/mule-sap.xsd
+        http://www.mulesoft.org/schema/mule/jdbc http://www.mulesoft.org/schema/mule/jdbc/current/mule-jdbc.xsd
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd">
+ 
+    <!-- Configuration for both SAP & TID Store -->
+    <spring:bean id="sapProperties" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer"
+        <spring:property name="ignoreUnresolvablePlaceholders" value="true" />
+        <spring:property name="location" value="classpath:sap.properties"/>
+    </spring:bean>
+ 
+    <spring:bean id="jdbcProperties" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <spring:property name="location" value="classpath:jdbc.properties"/>
+    </spring:bean>
+ 
+    <!-- TID Store configuration -->
+    <spring:bean id="jdbcDataSource"
+        class="org.enhydra.jdbc.standard.StandardDataSource"
+        destroy-method="shutdown">
+        <spring:property name="driverName" value="${database.driver}"/>
+        <spring:property name="url" value="${database.connection}"/>
+    </spring:bean>
+ 
+    <jdbc:connector name="jdbcConnector" dataSource-ref="jdbcDataSource" queryTimeout="${database.query_timeout}">
+        <jdbc:query key="insertTID" value="insert into saptids (tid, context) values (?, ?)"/>
+        <jdbc:query key="selectTID" value="select tid, context from saptids where tid=?"/>
+        <jdbc:query key="deleteTID" value="delete from saptids where tid=?"/>
+    </jdbc:connector>
+ 
+    <!-- SAP Connector -->
+    <sap:connector name="SapConnector" jcoClient="${sap.jcoClient}"
+        jcoUser="${sap.jcoUser}" jcoPasswd="${sap.jcoPasswd}" jcoLang="${sap.jcoLang}" jcoAsHost="${sap.jcoAsHost}"
+        jcoSysnr="${sap.jcoSysnr}" jcoTrace="${sap.jcoTrace}" jcoPoolCapacity="${sap.jcoPoolCapacity}" jcoPeakLimit="${sap.jcoPeakLimit}"/>
+     
+    <flow name="idocServerFlow">
+        <sap:inbound-endpoint name="idocServer" exchange-pattern="request-response" type="idoc" rfcType="trfc" jcoGwHost="${sap.jcoGwHost}"
+                              jcoProgramId="${sap.jcoProgramId}" jcoGwService="${sap.jcoGwService}" jcoConnectionCount="${sap.jcoConnectionCount}">
+            <sap:mule-object-store-tid-store>
+                <jdbc:object-store name="jdbcObjectStore" jdbcConnector-ref="jdbcConnector"
+                    insertQueryKey="insertTID"
+                    selectQueryKey="selectTID"
+                    deleteQueryKey="deleteTID"/>
+            </sap:mule-object-store-tid-store>
+        </sap:inbound-endpoint>
+        ...
+    </flow>
+</mule>
+----
+
+[WARNING]
+====
+请务必注意以下几点：
+
+. 特定的组合属性存储在两个属性文件中：`sap.properties`和`jdbc.properties`。
+. 要配置多个PropertyPlaceholder，第一个必须将属性*ignoreUnresolvablePlaceholders*设置为*true*。 （即，`<spring:property name="ignoreUnresolvablePlaceholders" value="true" />`）
+====
+
+*A Sample Database Creation Script for the JDBC Object Store*
+
+[source, code, linenums]
+----
+-- MySQL Script
+CREATE DATABASE saptid_db;
+ 
+GRANT ALL ON saptid_db.* TO 'sap'@'localhost' IDENTIFIED BY 'secret';
+GRANT ALL ON saptid_db.* TO 'sap'@'%' IDENTIFIED BY 'secret';
+ 
+USE saptid_db;
+ 
+CREATE TABLE saptids
+(
+    tid VARCHAR(512) PRIMARY KEY,
+    context TEXT
+);
+----
+
+== 出站端点
+
+SAP出站端点执行功能（BAPI）或发送IDoc。
+
+[%header,cols="4*"]
+|===
+|属性 |描述 |默认值 |自版本
+| *name*  | Mule配置内部使用的端点的引用名称。 |   | 1.0
+| *exchange-pattern*  |可用选项为`request-response`和`one-way`。 |   | 1.0
+| *address*  |指定端点属性的标准方式。有关详情，请参阅<<Endpoint Address>>。 |   | 1.0
+| *type*  |此端点将处理的SAP对象类型（*function*或*idoc*，自2.1.0起**function-metadata**）  |功能 | 1.0
+| *rfcType*  |端点将用于执行函数或发送和IDoc的RFC类型。允许的值为*srfc*，*trfc*和*qrfc*。 | srfc  | 1.0
+| *queueName*  |如果RFC类型为*qrfc*，则这是队列的名称。 |   | 1.0
+| *functionName*  |当类型为*function*时，将执行此BAPI函数。如果类型为*function-metadata*，则需要提供要检索其元数据的BAPI的名称。此属性接受 link:/mule-user-guide/v/3.8/mule-expression-language-mel[Mule表达式]。 |   | 1.0
+| *evaluateFunctionResponse*  |当类型为*function*时，*true*标志表示SAP传输器应该在发生错误时评估函数响应以及抛出和异常在SAP中。当此标志设置为*false*时，SAP传输不会在发生错误时引发异常，并且用户负责解析函数响应。 | false  | 1.0
+| *definitionFile*  |要执行的函数或要发送的IDoc的模板定义文件的路径。 |   | 1.0
+| *idocVersion*  |当类型为*idoc*时，在发送IDoc时使用此版本。 IDoc版本的值对应于com.sap.conn.idoc.IDocFactory中的*IDOC_VERSION_xxxx*个常量。 | 0（_IDOC_VERSION_DEFAULT _）。 | 1.0
+| *jcoClient*  | SAP客户端。这通常是一个数字（即100）。 |   | 1.0
+| *jcoUser*  |用户进行基于密码的身份验证。自版本*2.1.0*此属性接受*Mule Expressions*。 |   | 1.0
+| *jcoPasswd*  |与用户进行密码验证相关的密码。自版本*2.1.0*此属性接受*Mule Expressions*。 |   | 1.0
+| *jcoLang*  |登录对话框使用的语言。未定义时，使用默认的用户语言 |  | 1.0
+| *jcoAsHost*  | SAP应用服务器主机（IP或服务器名称）。 |   | 1.0
+| *jcoSysnr*  | SAP系统编号。 |   | 1.0
+| *jcoPoolCapacity*  |目的地保持打开的最大空闲连接数。当值为0时，不会发生连接池。 | 5  | 1.0
+| *jcoPeakLimit*  |可同时为目标创建的最大活动连接数。 | 10  | 1.0
+| *jcoClientExtendedProperties-ref*  |对包含附加JCo连接参数的`java.util.Map`的引用。有关其他信息和完整的参数列表，请参阅 link:/mule-user-guide/v/3.8/sap-jco-extended-properties[这里]。 |   | 1.0
+| *bapiTransaction*  |设置为_true_时，根据是否有例外情况调用*BAPI_TRANSACTION_COMMIT*或*BAPI_TRANSACTION_ROLLBACK*。该属性可以根据事务的存在使用。如果没有配置事务，则在执行该函数后调用BAPI_TRANSACTION_COMMIT。如果存在事务，则在其末尾调用BAPI_TRANSACTION_COMMIT。 | false  | 2.1.0
+| *xmlVersion*  |此属性支持值*1*或*2*，并定义type为*function-metadata*时生成的XML输出的版本{ 6}} 1  | 2.1.0
+| *outputXml*  |端点是否应将有效负载设置为SAP对象（函数或IDoc）的XML表示形式（String）或SapObject包装器本身。将此标志设置为'true'可以省去对象到xml的转换器。 | false  | 2.2.2
+|===
+
+=== 多用户支持
+
+由于SAP Connector版本*2.1.0*用户可以动态设置连接用户和密码（这意味着可以使用将在运行时评估的*Mule Expression*来设置jcoUser和jcoPasswd。尽管这对于在特定用户下执行BAPI非常重要的用例非常有用，但值得一提的是，将为每个用户创建一个到SAP的连接池。 +
+ 请根据可能使用的用户数量正确调整JCo连接池和配置的java内存。
+
+===  IDoc版本
+
+[%header,cols="2*"]
+|===
+|值 |说明
+| {0 {1}} IDOC_VERSION_DEFAULT
+| 2  | IDOC_VERSION_2
+| 3  | IDOC_VERSION_3
+| 8  | IDOC_VERSION_QUEUED
+|===
+
+*A Sample SAP Outbound Endpoint Configuration*
+
+[source, xml, linenums]
+----
+<sap:outbound-endpoint exchange-pattern="request-response" type="function" rfcType="qrfc"
+    queueName="QRFC_QUEUE_NAME" functionName="BAPI_FUNCTION_NAME"
+    definitionFile="path/to/definition/file.xml"/>
+----
+
+*A Sample SAP Outbound Endpoint Configuration to retrieve the Metadata for a BAPI (since version 2.1.0)*
+
+[source, xml, linenums]
+----
+<sap:outbound-endpoint exchange-pattern="request-response" type="function-metadata"  functionName="BAPI_FUNCTION_NAME"/>
+----
+
+=== 输入Mule消息
+
+出站端点期望Mule消息携带以下任何有效载荷：
+
+*  `org.mule.transport.sap.SapObject `实例。这是一个Java POJO，它的两个主要属性是：+
+** 类型：`SapType.FUNCTION`（用于BAPI调用）或`SapType.IDOC`（用于IDoc）。
+** 值：特定的JCo对象依赖于有效负载类型：IDoc `com.sap.conn.idoc.IDocDocument`或`com.sap.conn.idoc.IDocDocumentList`，BAPI调用`com.sap.conn.jco.JCoFunction`。
+* 字符串，byte []，InputStream实例。连接器将假定这些类型中的任何一个都拥有SAP对象（BAPI或IDoc）的有效XML表示形式
+* 任何其他对象。您需要在XML中提供具有属性`definitionFile`或<<Embedding the XML Definition>>的XML定义。
+
+可以使用以下变换器将*payload*从<<XML Definition>>转换为SapObject：
+
+[source, xml, linenums]
+----
+<!-- IDocs -->
+<sap:xml-to-idoc/>
+ 
+<!-- BAPI calls -->
+<sap:xml-to-function/>
+----
+
+=== 嵌入XML定义
+
+作为在文件中提供SAP对象定义的替代方法（通过*definitionFile*属性），XML定义可以嵌入到`sap:outbound-endpoint`元素中，方法是使用+
+`sap:definition`元素。由于定义将是一个XML片段，因此必须在CDATA部分中提供。
+
+[source, code, linenums]
+----
+ <sap:outbound-endpoint ...>
+     <sap:definition>
+         <![CDATA[
+         <jco>
+           <import>
+             <structure name="POHEADER">
+               <field name="COMP_CODE">#[payload.value1]</field>
+               <field name="DOC_TYPE">#[header:value2]</field>
+               <field name="VENDOR">#[bean:value3]</field>
+               <field name="PURCH_ORG">#[xpath://path/to/value4]</field>
+             </structure>
+           </import>
+         </jco>
+         ]]>
+     </sap:definition>
+ </sap:outbound-endpoint>
+----
+
+=== 执行函数
+
+有不同的方法来执行一个函数：
+
+. 创建`com.sap.conn.jco.JCoFunction`的实例并将其作为有效内容发送到SAP出站端点。在这种情况下，以下属性将被忽略：type，functionName，definition，definitionFile。例如，您可以在Java组件或脚本中创建JCoFunction对象。
+. 为JCoFunction生成XML定义，并通过`<xml-to-function/>`转换器将其作为有效内容（即，采用以下格式之一：InputStream，byte []或String）发送到SAP出站端点。在这种情况下，如果函数名称在XML定义中提供，它将覆盖属性`functionName`中的值。以下属性也被忽略：type，definition，definitionFile。
+. 配置`definitionFile`或将XML定义嵌入到SAP出站端点中。 （如果两者均已配置，则definitionFile的内容会覆盖嵌入的XML定义。）type属性应设置为*function*。在这种情况下，如果函数名称在XML定义中提供，它将覆盖属性`functionName`中的值。 XML定义文件可能包含Mule表达式，它们可以在运行时用Mule事件中的值（有效载荷，头文件，全局属性，bean等）替换。
+
+调用一个函数会产生一个JCoFunction对象。 Mule SAP出站端点将此对象封装在`org.mule.transport.sap.SapObject`中。您可以通过调用getValue方法来访问响应JCoFunction对象。
+
+您也可以使用`<object-to-xml/>`转换器来获取JCoFunction的XML表示。
+
+=== 示例
+
+*XML input and XML output*
+
+*Example notes:*
+
+. 以XML文档接收输入，该文档使用标记`<jco name="BAPI_NAME">`指定要调用的BAPI。
+. 函数输出被转换为XML文档。
+. 如果SAP执行BAPI会产生错误，则会从出站端点引发异常（因为`evaluateFunctionResponse`为true）。
+
+[source, xml, linenums]
+----
+<mule>
+    ...
+    <sap:connector name="SapConnector" jcoClient="100" jcoUser="mule_test" jcoPasswd="secret" jcoLang="en" jcoAsHost="sapas.mulesoft.com"
+        jcoSysnr="00" jcoTrace="true" jcoPoolCapacity = "3" jcoPeakLimit="10" jcoClientExtendedProperties-ref="sapProperties"/>
+    ...
+    <flow name="sapExample">
+        ...
+        <xml-to-function/>
+        <sap:outbound-endpoint name="sapOutbound" exchange-pattern="request-response" type="function" rfcType="srfc" evaluateFunctionResponse="true"/>
+        <object-to-xml/>
+        ...
+    </flow>
+</mule>
+----
+
+*A Sample of an Embedded XML Definition using Mule Expressions*
+
+*Example notes:*
+
+. 有效内容是一个Java对象。 （在这个例子中，假设它有一个属性名称is_value1_）。
+. 函数输出被转换为XML文档
+. 要执行的BAPI函数的名称是_BAPI_PO_CREATE1_
+. 在定义内部，您可以看到各种Mule表达式
+
+[source, xml, linenums]
+----
+<mule>
+    ...
+    <sap:connector name="SapConnector" jcoClient="100" jcoUser="mule_test" jcoPasswd="secret" jcoLang="en" jcoAsHost="sapas.mulesoft.com"
+        jcoSysnr="00" jcoTrace="true" jcoPoolCapacity = "3" jcoPeakLimit="10" jcoClientExtendedProperties-ref="sapProperties"/>
+    ...
+    <flow name="sapExample">
+        <!-- Load values into Mule Message -->
+        ...    
+        <sap:outbound-endpoint exchange-pattern="request-response" type="function" functionName="BAPI_PO_CREATE1">
+            <sap:definition>
+                <![CDATA[
+                <jco>
+                  <import>
+                    <structure name="POHEADER">
+                      <field name="COMP_CODE">#[payload.value1]</field>
+                      <field name="DOC_TYPE">#[message.inboundProperties['value2']]</field>
+                      <field name="VENDOR">#[message.payload.value3]</field>
+                      <field name="PURCH_ORG">#[xpath3('//path/to/value4')]</field>
+                    </structure>
+                  </import>
+                </jco>
+                ]]>
+            </sap:definition>
+        </sap:outbound-endpoint>
+        <sap:object-to-xml/>
+        ...
+        <!-- Process XML result -->      
+    </flow>
+</mule>
+----
+
+=== 发送IDoc
+
+有不同的方式发送IDoc：
+
+. 创建`com.sap.conn.idoc.IDocDocument`或`com.sap.conn.idoc.IDocDocumentList`的实例，并将其作为有效内容发送到SAP出站端点。在这种情况下，以下属性将被忽略：type，definition，definitionFile。例如，您可以在Java组件或脚本中创建IDoc文档对象。
+. 为IDoc生成XML定义，并通过`<xml-to-idoc/>`转换器将其作为有效负载（InputStream，byte []或String）发送到SAP出站端点。在这种情况下，以下属性将被忽略：type，definition，definitionFile。
+. 配置`definitionFile`或将XML定义嵌入到SAP出站端点中。 （如果两者都已配置，那么definitionFile的内容将覆盖嵌入的XML定义。）type属性应设置为*idoc*。在这种情况下，XML定义文件可能包含Mule表达式，它可以在运行时用Mule事件中的值（有效载荷，头文件，全局属性，bean等）替换。
+
+*Reading a file that represents an IDoc (XML Document)*
+
+*Example notes:*
+
+. 本示例针对IDoc XML文档轮询目录`C:/sap-test/in`，然后将它们发送到SAP。
+. 扩展属性在地图`sapProperties`中定义。
+. 出站端点使用`address`属性进行配置。
+. 变换`<sap:xml-to-idoc />`接收*Stream*，然后将其转换为端点可以处理的SAP对象。
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:spring="http://www.springframework.org/schema/beans" xmlns:sap="http://www.mulesoft.org/schema/mule/sap"
+    xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/sap http://www.mulesoft.org/schema/mule/sap/current/mule-sap.xsd">
+ 
+    <spring:bean name="sapProperties" class="java.util.HashMap">
+        <spring:constructor-arg>
+            <spring:map>
+                <spring:entry key="jco.server.unicode" value="1" />
+            </spring:map>
+        </spring:constructor-arg>
+    </spring:bean>
+ 
+    <sap:connector name="SapConnector" jcoSysnr="00" jcoPeakLimit="10"
+        jcoClientExtendedProperties-ref="sapProperties" />
+ 
+    <file:connector name="FileConnector" moveToDirectory="C:/sap-test/bk"
+        moveToPattern="#[function:datestamp]-#[header:originalFilename]"
+        streaming="false" />
+ 
+    <flow name="sapExample">
+        <file:inbound-endpoint address="file://C:/sap-test/in" />
+        <sap:xml-to-idoc />
+        <sap:outbound-endpoint
+            address="sap://mule_user:password@sapas.mulesoft.com:00?lang=en&amp;jcoClient=100&amp;jcoTrace=false&amp;jcoPoolCapacity=100"
+            exchange-pattern="request-response" type="idoc"/>
+    </flow>
+</mule>
+----
+
+== 在群集环境中配置SAP连接器
+
+SAP连接器是Mule HA准备好的，这意味着它可以在Mule集群中工作而没有任何问题。但是，根据应用程序体系结构的不同，您可能需要在SAP端点中执行特定的配置。
+
+[WARNING]
+*IMPORTANT*：集群中完全有效的应用程序的关键是实现 link:/mule-user-guide/v/3.8/reliability-patterns[可靠性模式]。
+
+=== 出站端点
+
+出站端点通常不是HA环境的问题。如果应用程序正确构建以在群集中工作，则没有特别的考虑。确保一次只有一个节点正在处理特定的请求。通常，这是由HA准备入站端点保证的。
+
+=== 入站端点
+
+在HA模式下配置应用程序时，入站端点代表了更大的挑战。以下部分提供的信息可以帮助您做出最佳决策。
+
+====  SAP侧功能
+
+SAP连接器基于JCo服务器功能。 JCo Server连接SAP侧的一个网关，负责：
+
+. 将平衡请求传递给SAP入站端点。
+. 在事务性RFC（rfcType是tRFC或qRFC）的情况下，启动事务并确保它不会向多个入站端点发送相同的请求（从而避免在多个群集节点中出现重复请求。）
+
+==== 配置HA的SAP入站端点
+
+在HA配置中配置多个SAP入站端点时，请记住，所有节点都可以共享事务ID（TID）。为此，需要配置一个基于分布式对象库的事务ID存储。 HA配置的推荐对象存储实现是**managed-store**，因为默认实现取决于应用程序是独立运行还是在群集中运行（群集节点间共享对象存储）。
+
+另请注意，在HA配置中，有效负载应该是可序列化的。为确保这一点，请配置入站端点以输出XML。在3.6.0中，*outputXml*属性设置为true很容易实现。在以前的版本中，您需要配置全局变压器。
+
+*Mule 3.6.0+*
+
+[source, xml, linenums]
+----
+<sap:connector name="SapConnector" jcoAsHost="${sap.jcoAsHost}"
+    jcoUser="${sap.jcoUser}" jcoPasswd="${sap.jcoPasswd}" jcoSysnr="${sap.jcoSysnr}"
+    jcoClient="${sap.jcoClient}" jcoLang="${sap.jcoLang}" jcoPoolCapacity="${sap.jcoPoolCapacity}"
+    jcoPeakLimit="${sap.jcoPeakLimit}"/>
+ 
+<flow>
+    <sap:inbound-endpoint type="function" rfcType="trfc" connector-ref="SapConnector"
+    jcoGwHost="${sap.gwHost}" jcoGwService="${sap.gwService}"
+    jcoProgramId="${sap.programId}" outputXml="true">
+ 
+        <sap:mule-object-store-tid-store>
+            <managed-store storeName="sap-tid-store" persistent="true" />
+        </sap:mule-object-store-tid-store>
+    </sap:inbound-endpoint>
+ 
+    ...
+</flow>
+----
+
+*Mule 3.4.x and Before*
+
+[source, xml, linenums]
+----
+<sap:connector name="SapConnector" jcoAsHost="${sap.jcoAsHost}"
+    jcoUser="${sap.jcoUser}" jcoPasswd="${sap.jcoPasswd}" jcoSysnr="${sap.jcoSysnr}"
+    jcoClient="${sap.jcoClient}" jcoLang="${sap.jcoLang}" jcoPoolCapacity="${sap.jcoPoolCapacity}"
+    jcoPeakLimit="${sap.jcoPeakLimit}"/>
+ 
+<sap:object-to-xml name="sap-object-to-xml" xmlVersion="2" />
+ 
+<flow>
+    <sap:inbound-endpoint type="function" rfcType="trfc" connector-ref="SapConnector"
+    jcoGwHost="${sap.gwHost}" jcoGwService="${sap.gwService}"
+    jcoProgramId="${sap.programId}" transformer-refs="sap-object-to-xml">
+ 
+        <sap:mule-object-store-tid-store>
+            <managed-store storeName="sap-tid-store" persistent="true" />
+        </sap:mule-object-store-tid-store>
+    </sap:inbound-endpoint>
+ 
+    ...
+</flow>
+----
+
+== 交易
+
+基于JCo的SAP传输不支持分布式事务，因为JCo不支持XA。
+
+SAP出站端点支持子元素事务：
+
+[source, xml, linenums]
+----
+<sap:transaction action="ALWAYS_BEGIN" bapiTransaction="true|false"/>
+----
+
+[NOTE]
+====
+*Important Compatibility Notes* +
+
+SAP连接器版本*1.x*中的事务支持非常有限，只允许一个函数调用的事务。
+
+从SAP连接器版本**2.1.0**开始，属性_bapiTransaction_不再存在于事务级别。此属性已移至出站端点。
+====
+
+[%header,cols="4*"]
+|===
+|属性 |描述 |默认值 |自版本
+| *action*  | action属性是Mule事务标准的一部分，可以具有以下值：_NONE_，_ALWAYS_BEGIN_，_BEGIN_OR_JOIN_，_ALWAYS_JOIN_和_JOIN_IF_POSSIBLE _  |   {{4} } 1.0
+| *bapiTransaction*  |当设置为_true_时，在事务结束时调用*BAPI_TRANSACTION_COMMIT*或*BAPI_TRANSACTION_ROLLBACK*，具体取决于该事务的结果。自版本*2.1.0*此选项已移至出站端点。 | false  | 1.0
+|===
+
+有关更多信息，请参阅 link:/mule-user-guide/v/3.8/transactions-configuration-reference[事务配置参考]。
+
+将出站端点中定义的RFC类型（rfcType）属性与事务组合起来，有助于SAP传输处理事务的不同方式：
+
+*  link:/mule-user-guide/v/3.8/outbound-endpoint-transactions[sRFC有状态]
+*  link:/mule-user-guide/v/3.8/outbound-endpoint-transactions[sRFC有状态BAPI事务]
+*  link:/mule-user-guide/v/3.8/outbound-endpoint-transactions[tRFC有状态]
+*  link:/mule-user-guide/v/3.8/outbound-endpoint-transactions[qRFC有状态]
+
+例如，请查看 link:/mule-user-guide/v/3.8/outbound-endpoint-transactions[出站端点事务]。
+
+[TIP]
+如果未指定事务，则所有调用（执行函数或发送IDoc）都是无状态的。
+
+== 变压器
+
+.  `<sap:xml-to-function/>`
+.  `<sap:xml-to-idoc/>`
+.  `<sap:object-to-xml/>`
+
+[%header,cols="4*"]
+|======
+|属性 |描述 |默认值 |自版本
+| *xmlVersion*  |此属性支持值*1*或*2*，并定义type为*function-metadata*时生成的XML输出的版本{ 6}} 1  | 2.2.2
+|======
+
+== 另请参阅
+
+* 了解如何使用 link:/mule-user-guide/v/3.8/sap-connector[Anypoint Studio中的SAP连接器]。
+* 详细了解 link:/mule-user-guide/v/3.8/sap-jco-extended-properties[SAP JCo扩展属性]， link:/mule-user-guide/v/3.8/sap-jco-server-services-configuration[SAP JCo服务器服务配置]或 link:/mule-user-guide/v/3.8/outbound-endpoint-transactions[出站端点事务]
+* 深入挖掘 link:/mule-user-guide/v/3.8/xml-definitions[XML定义]。
+* 访问疑难解答提示：+
+**  link:/mule-user-guide/v/3.8/troubleshooting-sap-connector[检查日志文件]
+**  link:/mule-user-guide/v/3.8/troubleshooting-sap-connector[启用JCo跟踪]
+**  link:/mule-user-guide/v/3.8/troubleshooting-sap-connector[常见错误]

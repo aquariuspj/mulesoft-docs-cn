@@ -1,0 +1,204 @@
+= 安全隐藏应用程序属性
+:keywords: cloudhub, jdbc, security
+
+image:logo-cloud-active.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-disabled.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-disabled.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+CloudHub支持*safely hidden application properties*，其中属性的名称在控制台中可见，但该值不会被任何用户显示或检索。 CloudHub在运行时解析属性而不暴露敏感信息。
+
+[注意]
+====
+在内部，安全隐藏的应用程序属性被加密并存储在MuleSoft托管的CloudHub属性数据库中，该数据库按用户组织加密。
+====
+
+安全隐藏的应用程序属性是当前仅可用于通过运行时管理器UI为部署到CloudHub工作人员的应用程序设置的功能。对于通过任何其他 link:/runtime-manager/deployment-strategies[部署战略]部署的应用程序，您需要使用与应用程序压缩文件捆绑在一起的安全属性占位符文件。
+
+安全隐藏的应用程序属性是存储在 link:/mule-user-guide/v/4.1/secure-configuration-properties[安全配置属性]文件中的加密Mule应用程序属性的独立功能和概念。
+
+== 概述
+
+应用程序属性是用作Mule应用程序中占位符的变量，它们在运行时在Mule运行时中设置。当您在运行时管理器控制台中部署应用程序或更新现有应用程序时，Mule运行时将使用您在Runtime Manager控制台的“属性”选项卡中配置的信息提供属性变量的值。
+
+
+
+== 用例
+
+
+例如，您可以配置用户名设置为`${dbUsername}`并且密码设置为`${dbPassword}`的JDBC连接器。在Runtime Manager控制台中，可以将这两个属性设置为应用程序属性，如下所示。
+
+image:dbproperties.png[dbproperties]
+
+对于敏感信息，您可能希望将这些属性标记为隐藏，以便在输入并保存到Runtime Manager控制台中后，它们的值在控制台中既不可见也不会在控制台和CloudHub服务器之间传递。
+
+== 创建安全隐藏的应用程序属性
+
+创建安全隐藏的应用程序属性：
+
+1.通过将它们列为逗号分隔的数组，作为Mule应用程序的`mule-artifact.json`文件中的`secure.properties`键的值，标识您希望安全隐藏的属性名称。在下面的示例中，应用程序中使用了四个总属性（下面的第1-4行），这些属性已在mule-app.properties文件中用本地测试值（可选）定义。第5行将两个属性标记为安全。
+
+.config.yaml
+[source,yaml, linenums]
+----
+http:
+    port: 8081
+username: "testuser"
+password: "testpass123"
+birthdate: "01/01/2015"
+----
+
+.mule-artifact.json
+[source,json, linenums]
+----
+{
+  "configs": [
+    "secure-properties.xml"
+  ],
+  "secureProperties": ["password", "birthdate"],
+  "redeploymentEnabled": true,
+  "name": "secure-properties",
+  "minMuleVersion": "4.1.1",
+  "requiredProduct": "MULE_EE",
+  "classLoaderModelLoaderDescriptor": {
+    "id": "mule",
+    "attributes": {
+      "exportedResources": []
+    }
+  },
+  "bundleDescriptorLoader": {
+    "id": "mule",
+    "attributes": {}
+  }
+}
+----
+
+[注意]
+====
+`securePproperties`条目无论在哪里（或如果）定义都会影响所有属性。
+====
+
+2.将Mule应用程序部署到CloudHub。
+3.照常输入您的应用程序属性。
+
+
+image:dbproperties2.png[dbproperties2]
+
+
+4.提交您的部署或更新。部署应用程序后，导航到“部署”选项卡并检查应用程序属性。您标记为安全隐藏的所有属性的值现在不再可供您或任何其他用户看到。在下面的例子中，生日和密码是安全隐藏的，但用户名不是。
+
+
+image:dbproperties3.png[dbproperties3]
+
+
+[NOTE]
+====
+一旦这些值被提交并且应用程序被上传，安全隐藏的属性就不会显示在控制台上，也不会在控制台和CloudHub服务器之间发送和接收。设置后无法检索该属性。但是，它可以被新的值覆盖。因此，如果您需要更新值，请在该字段中输入新值，如下所示。
+====
+
+image:dbproperties4.png[dbproperties4]
+
+[NOTE]
+====
+一旦应用程序与安全隐藏的应用程序属性一起部署，CloudHub将维护这些属性的安全标志。即使您编辑应用程序文件以从您的`mule-artifact.json`文件中删除`secureProperties`定义，然后将编辑后的应用程序文件上传到CloudHub，CloudHub仍会保留先前标记为安全隐藏的属性的不可见性。
+====
+
+
+*Copying Safely Hidden Application Properties between Sandboxes*
+在*sandboxes*之间移动应用程序时，安全隐藏的应用程序属性值将不会被复制到新环境中。对于所有安全隐藏的应用程序属性，该属性的名称将被复制，但该值将保留为空。
+
+
+== 加密的应用程序属性与安全隐藏的应用程序属性
+Mule应用程序还可以使用安全属性占位符来存储具有加密值的属性。
+
+有关创建和使用安全配置属性的更多信息，请参阅 link:/mule-user-guide/v/4.1/secure-configuration-properties[安全配置属性]。
+
+通过加密属性，Mule应用程序将安全属性占位符文件捆绑到Mule应用程序的可部署归档.jar文件中。
+
+安全属性占位符将包含加密属性的文件以及用于加密安全属性值的加密算法的详细信息组合在一起。安全属性使用密钥进行加密。绝对不要将密钥存储在Mule应用程序中，这一点很重要。相反，您需要在部署时安全（安全）传递密钥值。
+
+为了安全地将密钥传递到Mule应用程序中，可以使用属性占位符来开发Mule应用程序来表示密钥值。然后有几个选项可以让运营商在部署时安全地传递密钥值。
+
+对于部署到客户托管的Mule运行时（其中操作员可以访问文件系统和命令行），可以在启动Mule运行时时通过设置系统环境变量来传入密钥。如果文件系统是安全的，将密钥存储在文件系统上的特殊安全文件夹中也是安全的，并且在启动时允许Mule应用程序安全地读取密钥。一旦秘密密钥被读入内存中，Mule应用程序将使用它来解密安全属性占位符中的所有其他属性，并将解密后的值存储在内存中。为了保护Mule应用程序，必须锁定对Mule运行时主机的访问权限，以便任何人都不能读取Mule应用程序的内存或JVM属性。
+
+[注意]
+====
+在`mule-artifact.json`文件中为使用安全属性模块定义的属性指定`secure properties`时，不要忘记添加`secure::`前缀。
+====
+
+
+== 启动使用加密属性的CloudHub应用程序
+
+还可以开发Mule应用程序，以将加密属性存储在安全属性占位符文件中。
+
+对于CloudHub部署，由于操作员无法访问CloudHub工作人员的文件系统，也无法登录命令行来启动CloudHub工作人员，因此CloudHub中未提供针对客户托管部署讨论的安全部署方法。
+
+通过在Mule应用程序的mule-app.properties文件的secure.properties条目中列出加密属性的名称，还可以将加密属性标记为安全隐藏的应用程序属性。特别是，用于解密加密属性的密钥可以设置为mule-app.properties文件的secure.properties变量中的安全隐藏属性。
+
+这里是一个例子：
+
+.config.yaml
+[source,yaml, linenums]
+----
+http:
+    port: 8081
+username: "testuser"
+password: "![r8weir09458riwe0r9484oi]"
+birthdate: "01/01/2015"
+----
+
+.mule-artifact.json
+[source,json, linenums]
+----
+{
+  "configs": [
+    "secure-properties.xml"
+  ],
+  "secureProperties": ["secure::password", "birthdate", "secure.key"],
+  "redeploymentEnabled": true,
+  "name": "secure-properties",
+  "minMuleVersion": "4.1.1",
+  "requiredProduct": "MULE_EE",
+  "classLoaderModelLoaderDescriptor": {
+    "id": "mule",
+    "attributes": {
+      "exportedResources": []
+    }
+  },
+  "bundleDescriptorLoader": {
+    "id": "mule",
+    "attributes": {}
+  }
+}
+----
+
+
+然后，在部署时，操作员可以在部署的“运行时管理器属性”选项卡中键入`secure.key`值。由于安全密钥被标记为隐藏在控制台中，因此没有人能够看到操作员正在输入什么内容。
+
+一旦秘密密钥被传递到Mule应用程序中，加密属性就像用户托管部署一样被解密到内存中。这在CloudHub中是安全的，因为CloudHub工作人员非常安全，无法访问CloudHub工作人员的命令行，入侵者也无法读取CloudHub工作人员的内存或JVM属性。
+
+== 如何覆盖加密属性
+在安全属性占位符文件中与Mule应用程序捆绑在一起的已加密属性不会显示在运行时管理器属性选项卡中。通过这种方式，这些值安全地锁定在Mule应用程序中。
+
+但是，当运营商需要更新加密值时会出现问题。运行时管理器控制台无权访问密钥，因此无法使用新加密值替换加密值，而无需打开Mule应用程序源文件，使用密钥重新编码新的加密值，然后重新生成Mule应用程序的可部署存档。在许多环境中，运行时操作员不允许像这样扯下并替换Mule应用程序的可部署归档文件，因此Mule应用程序必须发回给开发人员。
+
+但是，Mule应用程序的设计方法可以让操作人员安全地覆盖加密属性。
+如果加密属性名称也列在Mule应用程序的'mule-artifact.json'中的'secureProperties'条目中，那么一旦部署了应用程序，此加密属性的值也将隐藏在Runtime Manager Properties选项卡中，就像解密的属性，以及与其他属性一样，解密的值只存储在Mule工作者的内存中，并安全地存储在您的用户帐户的CloudHub数据库中，并且永远不会存储在任何CloudHub工作人员的文件中，也不会存储在任何其他机器（包括运行时管理器控制台）。
+
+因此，对于在Mule应用程序的`secureProperties`条目中也被标记为安全隐藏的任何加密属性，您可以安全地使用明文值替换任何加密属性，该值将安全地存储在CloudHub属性数据库中， Mule应用程序启动后，传递给Mule应用程序。
+
+一旦部署应用程序并且永远不会再查看，新值也会隐藏。
+
+这意味着，当您覆盖应用程序的CloudHub属性选项卡中的安全属性时，这些值永远不需要加密。在这种情况下，将敏感属性的值安全性降低到可以控制哪些运营商在部署或重新部署安全应用程序时有权访问这些值。
+
+例如，如果生产应用程序需要更新存储在名为db.user和db.password的两个属性中的数据库用户和密码，那么操作员会将此新的db.user和db.password输入到应用程序的CloudHub属性选项卡中然后启动或重新启动该应用程序。这允许新的应用程序以零停机时间升级这个安全的登录信息。一旦所有依赖的应用程序被迁移，旧帐户就可以被分解。
+
+==  CloudHub Mule应用程序不需要加密属性
+前面的讨论表明，对于只会部署到CloudHub工作人员的Mule应用程序，您可能不需要加密属性，而只需将这些属性标记为Mule应用程序的“mule-app.properties”文件的{{0 }}条目。
+
+== 另请参阅
+*  link:/mule-user-guide/v/4.1/secure-configuration-properties[安全配置属性]
+*  link:/runtime-manager/deploying-to-cloudhub[部署到CloudHub]
+*  link:/runtime-manager/managing-deployed-applications[管理已部署的应用程序]
+*  link:/runtime-manager/managing-applications-on-cloudhub[在CloudHub上管理应用程序]
+

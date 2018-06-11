@@ -1,0 +1,57 @@
+= 升级到Tcat 7.1.0
+:keywords: tcat, upgrade, 7.1.0
+
+升级分三个阶段完成。
+
+. 备份现有安装。
+. 使用migration-util.jar将tcat-data迁移到较新的模式。
+. 安装Tcat服务器并用升级后的tcat-data替换它的tcat-data（上面的步骤2）。
+
+== 备份现有安装
+
+. 停止Tcat服务器。
+. 对您现有的Tcat Server安装进行完整备份。这应该包括Tcat Server安装目录中的所有内容。
+
+== 将现有的tcat数据迁移到较新的模式
+
+. 创建一个名为*work*的目录。
+. 从支持门户下载migration-util-7.1.0.jar，并将其放入*work*目录。
+. 从现有的Tcat Server备份中复制tcat-data目录，并将该tcat-data放入*work*目录。
+. 下载 link:_attachments/repository.xml[的repository.xml]并将其放入*tcat-data*目录。
+. 下载 link:_attachments/new-repository.xml[新的repository.xml]并将其放入*work*目录。
+. 如果您有大量的tcat数据，请确保您的目录具有足够的空间，可用作_temp_目录。假设目录是/ home / mulesoft / tmp。另外请确保您至少有1 GB的内存可用于分配给JVM中的堆
+. 从tcat-data中删除以下目录：
+..  TCAT数据/库/索引
+..  TCAT数据/工作区/默认/索引
+. 在*work*目录中，创建一个名为_target-data_的新目录。这是升级后的数据库的存储位置
+. 现在运行以下命令来执行迁移（将-Djava.io.tmpDir的值替换为临时目录）。 _此步骤需要几分钟才能完成。你的tcat数据越大，需要的时间越长_：
+
+`java -Xmx1g -Djava.io.tmpdir=/home/mulesoft/tmp -jar migration-util-7.1.0.jar --backup --repo tcat-data --conf tcat-data/repository.xml --backup-repo target-data/`
+
+[NOTE]
+====
+*Error At The End of the Migration*
+
+迁移完成时出现以下错误，因为它是预期的，所以请忽略此错误：
+
+`Import error on line 1 of file /var/folders/3b/wdmt1kyd0kd5gg0_112m7v8m0000gn/T/QRTZ_LOCKS.dat: The statement was aborted because it would have caused a duplicate key value in a unique or primary key constraint or unique index identified by 'SQL140508230804700' defined on 'QRTZ_LOCKS'.`
+====
+
+== 安装Tcat Server 7.1.0
+
+. 启动安装程序并接受默认设置。确保选择不同的安装位置，即不要安装在现有的Tcat服务器上。
+. 启动Tcat服务器。
+.  *Important*：清除浏览器的缓存。
+. 打开浏览器并登录到管理控制台（*username:admin, password:admin*）
+. 当您能够成功登录时，关闭浏览器并停止Tcat服务器（bin / tcat7停止）。
+. 从Tcat服务器上删除tcat-data目录，并将其替换为目标数据目录。
+. 将目标数据重命名为tcat-data。
+. 再次启动Tcat服务器（使用日志中的`tail`查看任何错误）并使用您的凭据登录。
+. 如果您的tcat数据较大，则服务器启动可能需要一个多小时，因为正在生成新迁移的tcat-data的lucene索引。
+
+[NOTE]
+====
+*Error compiling groovy scripts*
+
+拖尾日志时，编译groovy脚本时可能会看到错误。预计这些是因为你的一些groovy脚本可能使用过时的API。让Tcat支持团队了解这些脚本，他们可以与您一起更新它们，或者您甚至不再需要它们。
+====

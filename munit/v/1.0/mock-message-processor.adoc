@@ -1,0 +1,421 @@
+= 模拟消息处理器
+：版本信息：3.7.0和更新
+:keywords: munit, testing, unit testing
+
+== 概述
+
+MUnit提供的*Mock*功能允许您为消息处理器定义_mocked_行为。在这种情况下，MUnit将用您定义的行为替换消息处理器的正常行为。因此，您可以修改特定消息处理器在调用特定属性集时的响应方式。
+
+== 定义Mocks
+
+定义一个模拟包含几个任务，在下面的部分列出。
+
+*  <<Defining the Message Processor to Mock>>
+*  <<Defining Mocked Behavior Using Message Processor Attributes>>
+*  <<Defining the Payload of the Mock Response>>
+
+使用上述任务中涉及的参数，您可以告诉MUnit如何用您定义的那个替换消息处理器的正常行为。
+
+注意：不可能模拟流量控制消息处理器，例如Filter或Choice。
+
+为了本文档的目的，我们假定我们正在测试以下Mule代码：
+
+[source, xml, linenums]
+。测试代码
+----
+<flow name="exampleFlow">
+  <set-payload value="#['real_payload']" doc:name="Real Set Payload"/>
+</flow>
+----
+
+[[define]]
+=== 定义消息处理器进行模拟
+
+定义模拟时，我们使用`when`消息处理器，如下所示。
+
+[source, xml, linenums]
+----
+<mock:when messageProcessor="mule:set-payload">
+
+</mock:when>
+----
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `messageProcessor`
+|指定要模拟的消息处理器。该定义采用`{name-space}:{message-processor-name}`的形式。正则表达式是允许的。
+
+|===
+
+`messageProcessor`属性接受正则表达式。例如，你可以创建一个模拟，如下所示：
+
+[source, xml, linenums]
+----
+<mock:when messageProcessor=".*:set-payload">
+
+</mock:when>
+----
+
+上面的示例为名为`set-payload`的消息处理器定义了一个模拟，而不管消息处理器属于哪个名称空间。
+
+注意：正则表达式语言与Java相同。
+
+[[matchers]]
+=== 使用消息处理器属性定义模拟行为
+
+模拟定义基于_matchers_，即与所需消息处理器的特征相匹配的参数。仅根据消息处理器的名称来定义模拟很大程度上限制了您对模拟的范围和操作。出于这个原因，MUnit允许您通过定义消息处理器属性值的匹配器来定义一个模拟。
+
+[source, xml, linenums]
+。通过属性定义模拟
+----
+<mock:when messageProcessor="mule:set-payload">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#['Real Set Payload']" name="doc:name"/>
+  </mock:with-attributes>
+</mock:when>
+----
+
+您可以根据需要定义尽可能多的属性，以使模拟尽可能具有代表性。定义一个属性时，通过定义：
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `name`
+|属性的名称。该值是文字，不支持正则表达式
+
+| `whereValue`
+|真实消息处理器的属性应包含的值。它接受MEL表达式。如果保留为文字，它会假设一个字符串值。
+
+|===
+
+提示：MUnit允许您根据Mule消息的内容定义模拟。
+
+提示：如果您在模拟时希望使用的属性与`config-ref`类似并解析为实际bean，则可以使用MUnit MEL函数`getBeanFromMuleContext('bean_name')`。此函数检查Mule注册表，并返回具有匹配名称的bean（如果存在）。有关详细信息，请参阅 link:/munit/v/1.0/assertion-message-processor[断言消息处理器]。
+
+Mule的消息处理器中的几个属性支持在运行时评估的表达式。 MUnit足够聪明，可以理解这一点。
+
+假设我们将测试代码更改为：
+[source, xml, linenums]
+----
+<flow name="exampleFlow">
+  <set-variable variableName="#[1==1? 'var_true': 'var_false']"
+    value="#['some value']" doc:name="Variable"/>
+  <set-variable variableName="#[1==2? 'var_true': 'var_false']"
+    value="#['some value']" doc:name="Variable"/>
+</flow>
+----
+
+在这个例子中，我们将仅嘲笑第一个`set-variable`。要指定这个，我们使用_attributes_，如下所示：
+
+[source, xml, linenums]
+----
+<mock:when messageProcessor="mule:set-variable">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#['var_true']" name="variableName"/>
+  </mock:with-attributes>
+</mock:when>
+----
+
+=== 关于嘲笑流程的一个词 -  ref
+
+在MUnit中，您不会模拟或验证`flow-ref`消息处理器，而是`flow-ref`将调用的流或子流。
+
+[source, xml, linenums]
+----
+<mock:when messageProcessor="mule:sub-flow">
+</mock:when>
+----
+
+请注意，`flow`或`sub-flow`都不具有属性`doc:name`;代替使用属性`name`。因此，要将`flow-ref`模拟为`flow`：
+
+[source, xml, linenums]
+----
+<mock:when messageProcessor="mule:flow">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="FlowName" name="name"/>
+  </mock:with-attributes>
+</mock:when>
+----
+
+另外请注意，要模拟`sub-flow`，您不能只输入`sub-flow`的名称。相反，您需要使用MUnit匹配器`matchContains`：
+
+[source, xml, linenums]
+----
+<mock:when messageProcessor="mule:sub-flow">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#[matchContains('Sub_Flow_name')]" name="name"/>
+  </mock:with-attributes>
+</mock:when>
+----
+
+
+[source,xml,linenums]
+----
+#[matchContains('exampleSub_Flow1')]
+----
+
+在验证或模拟流程时，使用`matchContains`不是必需的，而只需要子流程。
+
+注意：在嘲笑或验证子流并使用`name`属性时，始终使用MUnit匹配器`matchContains`。
+
+[[def_payload]]
+=== 定义模拟响应的有效负载
+
+当模拟消息处理器时，你可以定义模拟消息处理器应该返回的Mule消息。
+
+[source, xml, linenums]
+----
+<mock:when messageProcessor="mule:set-payload">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#['Real Set Payload']" name="doc:name"/>
+  </mock:with-attributes>
+  <mock:then-return payload="#['mocked_payload']"/> //<1>
+</mock:when>
+----
+<1>定义消息响应。
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `payload`
+|定义模拟有效载荷的内容。
+
+| `encoding`
+|定义消息的编码。该属性是可选的。
+
+| `mimeType`
+|定义消息的MIME类型。该属性是可选的。
+
+|===
+
+==== 返回原始有效负载
+
+如果您不想模拟消息处理器的有效负载并想返回
+原始有效载荷，您可以使用函数`samePayload()`。
+
+[source,xml,linenums]
+----
+<mock:when messageProcessor="mule:set-payload">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#['Real Set Payload']" name="doc:name"/>
+  </mock:with-attributes>
+  <mock:then-return payload="#[samePayload()]"/> //<1>
+</mock:when>
+----
+<1>返回相同的有效负载
+
+省略`mock:then-return`属性也会返回原始有效内容
+但是如果你想返回原始的有效负载和模拟消息属性，你可以使用
+`samePayload`功能来实现这一点。
+
+[source,xml,linenums]
+----
+<mock:when messageProcessor="mule:set-payload">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#['Real Set Payload']" name="doc:name"/>
+  </mock:with-attributes>
+  <mock:then-return payload="#[samePayload()]"> //<1>
+    <mock:inbound-properties>
+      <mock:inbound-property key="property" value="#['propertyValue']"/> //<2>
+    </mock:inbound-properties>
+  </mock:then-return>
+</mock:when>
+----
+<1>返回相同的有效负载
+<2>模拟消息属性
+
+
+==== 从文件和脚本加载有效内容
+
+有时从文件加载复杂的有效载荷会更容易。 MUnit提供了一套MEL功能来帮助您实现这一点。
+
+[%header%autowidth.spread]
+|===
+|函数名称 |属性 |描述
+
+| `getResource()`
+| _classpath_资源的名称。
+|从项目的类路径加载资源并返回一个MuniResource对象。此对象支持util方法，如`asStream()`，`asString()`和`asByteArray()`
+
+| `resultOfScript()`
+|已声明脚本bean的名称。
+|执行在应用程序中注册的脚本，可以在MUnit套件中或其中一个导入的文件中执行。
+
+|===
+
+[source, xml, linenums]
+。示例：getResource
+----
+<mock:then-return payload="#[getResource('users.xml').asStream()]"/>    //<1>
+<mock:then-return payload="#[getResource('users.xml').asString()]"/>    //<2>
+<mock:then-return payload="#[getResource('users.xml').asByteArray()]"/> //<3>
+----
+<1>将`users.xml`的内容作为输入流返回。
+<2>将`users.xml`的内容作为字符串返回。
+<3>将`users.xml`的内容作为字节数组返回。
+
+[source, xml, linenums]
+。示例：resultOfScript
+----
+<script:script name="groovyScriptPayloadGenerator" engine="groovy"><![CDATA[  //<1>
+  List<String> lists = new ArrayList<String>();
+  lists.add("item1");
+  lists.add("item2");
+  lists.add("item3");
+
+  return lists;]]>
+</script:script>
+
+  ...
+<mock:then-return payload="#[resultOfScript('groovyScriptPayloadGenerator')]"/> //<2>
+  ...
+----
+<1>脚本定义。
+<2>作为`groovyScriptPayloadGenerator`脚本的结果返回模拟有效载荷。
+
+=== 定义模拟响应的属性
+
+使用MUnit，您还可以定义由模拟返回的消息的属性。以下代码展开了示例<<def_payload,above>>以修改返回的有效内容：
+
+[source, xml, linenums]
+----
+<mock:when messageProcessor="mule:set-payload">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#['Real Set Payload']" name="doc:name"/>
+  </mock:with-attributes>
+  <mock:then-return payload="#['mocked_payload']">
+    <mock:invocation-properties>
+      <mock:invocation-property key="property_name" value="#['property_value']"/>
+    </mock:invocation-properties>
+  </mock:then-return>
+</mock:when>
+----
+
+[%autowidth.spread]
+|===
+|属性名称 |描述
+| `key`
+|属性的名称。这个值总是字面的。
+
+| `value`
+|定义属性应该包含的值。它接受MEL表达式。如果保留为文字，它会假设一个字符串值。
+
+| `encoding`
+|定义消息的编码。该属性是可选的。
+
+| `mimeType`
+|定义消息的MIME类型。该属性是可选的。
+
+|===
+
+您可以定义以下任何属性类型：
+
+入站属性。* 
+* 调用属性
+* 出站属性
+
+[TIP]
+您可以使用相同的MEL函数`getResource()`，`resultOfScript()`和`getBeanFromMuleContext()`来定义Mule消息属性的内容。
+
+=== 定义模拟响应例外
+
+在某些情况下，如果消息处理器引发异常，您可能需要验证流程的行为。对于这些情况，MUnit提供了`throw-an`例外功能。
+
+此功能通过不同的消息处理器提供：`mock:throw-an`。
+
+[source, xml, linenums]
+----
+<mock:config name="mock_config" doc:name="Mock configuration"/>
+...
+<mock:throw-an whenCalling="mule:set-payload" exception-ref="#[new java.lang.Exception()]">
+</mock:throw-an>
+----
+
+在`throw-an`消息处理器的结构中，您可以像`when`消息处理器一样定义您希望模拟的消息处理器。但是，在这里您还需要定义应该由模拟消息处理器抛出的异常。
+
+消息处理器属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+
+| `whenCalling`
+|以{name-space}：{message-processor-name}的形式描述我们要模拟的消息处理器。支持正则表达式。
+
+| `exception-ref`
+|定义模拟有效载荷应该抛出的异常。
+
+|===
+
+[[define_mock_response_exception]]
+==== 使用消息处理器属性定义模拟响应异常
+
+您可以使用<<matchers,matchers>>  - 与所需消息处理器的功能相匹配的参数 - 创建一个模拟来引发异常。
+
+[source, xml, linenums]
+----
+<mock:throw-an whenCalling="mule:set-payload" exception-ref="#[new java.lang.Exception()]">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#['Real Set Payload']" name="doc:name"/>
+  </mock:with-attributes>
+</mock:throw-an>
+----
+
+你可以定义许多属性，因为你认为这是模拟的必要条件
+尽可能代表。定义一个属性时，通过定义：
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `name`
+|属性的名称。该值是文字，不支持正则表达式。
+
+| `whereValue`
+|定义真实消息处理器的属性应包含的值。
+
+|===
+
+== 使用Java代码定义Mocks
+
+下面的代码重现了<<define_mock_response_exception,above>>中描述的示例，但使用了MUnit Java API。
+
+[source,java, linenums]
+----
+import org.junit.Test;
+import org.mule.api.MuleMessage;
+import org.mule.munit.common.mocking.Attribute;
+import org.mule.munit.runner.functional.FunctionalMunitSuite;
+
+public class TheTest extends FunctionalMunitSuite {
+
+  @Test
+  public void test() {
+    Attribute attribute =
+      Attribute.attribute("name").ofNamespace("doc").
+        withValue("Real Set Payload"); //<1>
+
+    MuleMessage messageToBeReturned =
+      muleMessageWithPayload("Real Set Payload"); //<2>
+    messageToBeReturned.setProperty("property_name",
+      "property_value",PropertyScope.INBOUND); //<3>
+
+    whenMessageProcessor("set-payload") //<4>
+    .ofNamespace("mule")                //<5>
+    .withAttributes(attribute)          //<6>
+    .thenReturn(messageToBeReturned);   //<7>
+  }
+
+}
+----
+<1>定义要匹配的真实消息处理器属性。
+<2>定义应该由模拟消息处理器返回的Mule消息。
+<3>定义应该由模拟消息处理器返回的Mule消息的属性。
+<4>定义要模拟的消息处理器的名称（接受正则表达式）。
+<5>定义要模拟的消息处理器的名称空间的名称（接受正则表达式）。
+<6>设置（1）中定义的消息处理器属性。
+<7>设置消息由（3）中定义的模拟消息处理器返回。
+

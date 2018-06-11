@@ -1,0 +1,236 @@
+=  OAuth V2
+:keywords: oauth v2, devkit, authentication, connector, api
+
+本页面详细讨论了DevKit对OAuth V2身份验证的支持以及如何实现使用OAuth V2对您的API进行身份验证的连接器。
+
+== 先决条件
+
+本文假设您熟悉 link:/anypoint-studio/v/5/index[Anypoint Connector Essentials]并准备在您的连接器上实施身份验证。它假定您熟悉各种 link:/anypoint-connector-devkit/v/3.7/authentication-methods[认证方法]，并可能使用OAuth V1对您的API进行身份验证。
+
+如果您不熟悉OAuth V1身份验证，它是什么或如何工作，我们建议访问链接：
+http://tools.ietf.org/html/rfc5849[OAuth 1.0协议/ RFC-5849]。另请参阅 link:/anypoint-connector-devkit/v/3.7/oauth-v1[OAuth V1]。
+
+== 所需的API信息
+
+从服务提供商的API文档中，获取下表中列出的变量的精确值。这些变量引用授权过程中使用的URL;有关此过程的这些步骤的详细信息，请参阅 link:http://tools.ietf.org/html/rfc6749[OAuth 2规范]。
+
+[%header%autowidth.spread]
+|===
+| {变量{1}}说明
+| `accessTokenUrl`  |从中获取访问令牌的URL
+| `authorizationUrl`  |从中获取资源访问权限的URL
+|===
+
+===  @的OAuth2注解
+
+要在您的连接器上实施OAuth V2身份验证，您需要创建一个新的`@ConnectionStrategy`。创建一个新类并使用`@OAuth2`注释对其进行注释。
+
+[NOTE]
+在构建过程中，使用`@OAuth2`注释的连接器会获得另外两个自动生成的`@Processor`方法，分别称为`authorize`和`unauthorize`。这些消息处理器负责发起和结束OAuth会话。
+
+下表介绍了`@OAuth2`批注的所有参数。
+
+[%header,cols="25,50,10,15"]
+|===
+一个|
+*Parameter*
+
+一个|
+*Description*
+
+一个|
+*Required?*
+
+一个|
+*Default Value*
+
+| `friendlyName`  |定义将在弹出的连接器配置中显示的名称。 |✓ | 
+| `configElementName`  |定义要在Mule应用中使用的配置的名称。 |   | `config`
+| `accessTokenUrl`  |服务提供商为获取访问令牌而定义的网址。 |✓ | 
+| `authorizationUrl`  |由服务提供商定义，资源所有者被重定向到的URL，以授权给消费者。通过在`config`元素中设置不同的值来配置处理器时，您可以覆盖此值。在创建流程时，您可以通过在`authorize`元素中输入所需值来覆盖此值。 |✓ | 
+| `authorizationParameters` a |
+以逗号分隔的注释列表，格式如下：
+
+`@OAuthAuthorizationParameter(name = "xxx", type = xxx, description = "xxx", optional = true)`
+
+该类型不能是集合或复杂类型。
+
+|   | 
+| `verifierRegex`  | Java正则表达式在资源所有者授权使用者后，从服务提供者响应中提取验证者。 |   | {{1 }}
+| `accessTokenRegex`  |用于从服务提供商响应中提取访问令牌的Java正则表达式。 |   | `"access_token":"([^&]+?)"`
+| `expirationRegex`  |一个Java正则表达式，用于从服务提供者响应中提取访问令牌的过期时间（以秒为单位）。如果在服务提供者响应中找不到正则表达式（因为正则表达式错误或访问令牌永不过期），则将访问令牌视为永不过期。 |   | { {1}}
+| `refreshTokenRegex`  | Java正则表达式，用于在授权流程中从回调中提取刷新令牌。 |   | `"\"refresh_token\":\"([^&]+?)\""`
+| `callbackPath`  |如果服务提供商只接受已知的重定向网址。将此参数分配给域中的路径（由`fullDomain`环境变量表示），该路径将作为重定向URL在服务提供商处注册。如果留空（表示服务提供商接受任何URL作为重定向URL），Mule将使用随机路径。 |   | `<random path>`
+|===
+
+=== 将@ OAuth2添加到您的@Connector
+
+将OAuth V2添加到连接器：
+
+. 创建连接策略：
++
+[source,java, linenums]
+----
+@Connector(name = "oauth2connector")
+public class MyConnector
+{
+    @ConnectionStrategy
+    private OAuth2Strategy strategy;
+
+    /**
+    * YOUR CODE GOES HERE
+    */
+}
+----
+
+. 添加OAuth访问URL，访问令牌URL和OAuth策略：
+
+[source,java, linenums]
+----
+@OAuth2(authorizationUrl = "http://someUrl", accessTokenUrl = "http://someOtherUrl")
+public class OAuth2Strategy
+{
+    /**
+     * The OAuth2 consumer key
+     */
+    @Configurable
+    @OAuthConsumerKey
+    private String consumerKey;
+
+    /**
+     * The OAuth2 consumer secret
+     */
+    @Configurable
+    @OAuthConsumerSecret
+    private String consumerSecret;
+
+    /**
+    * YOUR CODE GOES HERE
+    */
+}
+----
+
+===  @ OAuth2类属性
+
+您的策略类需要`@Configurable`实例属性，以允许用户在使用连接器时指定其私有使用者密钥和秘密，如上所示：
+
+*  `@OAuthConsumerKey`来保存OAuth使用者密钥
+*  `@OAuthConsumerSecret`来保存OAuth消费者密钥
+
+确保这些实例变量具有公共getter和setter（未显示）。
+
+===  @处理器方法注释
+
+在访问受保护资源（用`@Processor`注释）的方法中，添加一个String参数并使用`@OAuthAccessToken`对其进行注释：
+
+[source,java,linenums]
+----
+@Processor
+public Object accessProtectedResource(@OAuthAccessToken String accessToken, ...)
+{
+    /**
+    * YOUR PROCESSOR CODE GOES HERE
+    */
+}
+----
+
+调用时，包含带有{{}}注释参数的方法将启动以下活动：
+
+. 首次访​​问受保护资源时，用户将被重定向到服务提供商的授权URL，以授予或拒绝消费者访问受保护资源。
+. 在随后的访问请求期间，Mule将请求中*access token*（包含在`@OAuthAccessToken`注释的参数中）包含在服务提供者的请求中。有关更多详细信息，请参阅 link:http://oauth.net/2[Oauth 2.0规范]。
+
+=== 访问令牌到期
+
+如果您已指定适当的正则表达式（使用`@OAuth2`注释的`expirationRegex`参数），并且API的访问令牌到期，则Anypoint DevKit会自动检测到期，并在这种情况下会触发OAuth2再次授权流程。
+
+=== 客户端类更改：传递访问令牌
+
+Anypoint DevKit中的OAuth V2支持为@Connector中的OAuth2提供支持。但是，客户端类可能必须包含逻辑，以在访问令牌调用We​​b服务时实际传递访问令牌。由于OAuth2不是一种形式化和严格的标准，访问令牌如何与请求一起传递的具体情况取决于API的实现。
+
+API提供程序提供了示例代码，说明如何将令牌传递给其服务。在实现您的客户端类时，请使用API​​提供者的示例代码作为参考。
+
+例如，想象服务支持OAuth 2.0身份验证，并且期望客户端将访问令牌作为查询参数传递。这个例子展示了如何使用Devkit来实现。
+
+连接器将`accessToken`作为参数传递给客户端类操作`client.usersGetList()`：
+
+[source,java,linenums]
+----
+@OAuthProtected
+@Processor
+public UsersListResponse usersGetList(
+    @Optional @Default("self") String userId,
+    @Optional @Default("") String group,
+    @Optional @Default("") String location)
+  throws Oauth2ConnectorExampleTokenExpiredException,
+         Oauth2ConnectorExampleException {
+        return client.usersGetList(accessToken, userId, group, location);
+    }
+----
+
+其他服务需要在客户端进行类似的更改，但细节不同，例如将令牌作为标头发送。此外，此示例还说明了如何将OAuth 2与使用Jersey Client的RESTful Web服务结合使用;对于基于SOAP的Web服务，客户端类的更改是类似的，但具体细节不同。
+
+== 使用您的OAuth2 Authenticated Connector
+
+=== 授权连接器
+
+在消费者可以执行任何需要授权的操作之前，资源所有者必须授予对连接器的访问权限以访问受保护的资源。当它收到授权请求时，Mule将资源所有者的浏览器重定向到服务提供商授权页面。任何后续访问受保护资源的尝试都会填充使用`@OAuthAccessToken`注释的参数。 Mule在向服务提供商的请求中包含访问令牌：+
+
+[source,xml,linenums]
+----
+<connector:config-oauth name="oauth2" consumerKey="[ckey]" consumerSecret="[csec]"/>
+...
+<flow name="authorize">
+  <http:listener config-ref="config" path="/authorize">
+  <connector:authorize config-ref="oauth2"/>
+</flow>
+----
+
+=== 配置您的连接器
+
+通过为您的应用程序传递服务提供商提供的`apiKey`使用者密钥和`apiSecret`个人密钥来配置连接器：
+
+[source,xml,linenums]
+----
+...
+<oauth2module:config apiKey="${api.key}" apiSecret="${api.secret}"/>
+...
+----
+
+=== 自定义回拨
+
+当用户授予对受保护资源的访问权限时，服务提供者将发起HTTP回调。
+
+该回调传递一个授权代码，Mule稍后使用它来获取访问令牌。为了处理回调，Mule动态地创建一个HTTP入站端点，然后将该端点的URL传递给服务提供者。因此，你不需要完成任何特定的配置来进行HTTP回调。
+
+默认情况下，Mule使用主机和端口（由`fullDomain`环境变量和`http.port`确定）来构建一个URL以发送给服务提供商。在需要使用主机和端口的非默认值的情况下，添加配置：+
+
+[source,xml,linenums]
+----
+<connector:config-oauth name="oauth2" consumerKey="[ckey]" consumerSecret="[csec]">
+  <connector:oauth-callback-config domain="SOME_DOMAIN" localPort="SOME_PORT" path="SOME_PATH"/>
+</connector:config-oauth>
+----
+
+
+=== 添加安全套接字层（SSL）
+
+当Mule自动启动HTTP侦听器请求来处理OAuth回调时，它默认使用HTTP连接器。在服务提供商要求*HTTPS*的地方，您可以配置Mule以传递您自己的HTTPS连接器：+
+
+[source,xml,linenums]
+----
+...
+<http:listener-config name="configuration" protocol="HTTPS"
+  host="localhost" port="8081">
+  <https:tls-key-store path="keystore.jks" keyPassword="mule2015"
+    storePassword="mule2015"/>
+</http:listener-config>
+...
+<connector:config-oauth name="oauth2" apiKey="${api.key}" apiSecret="${api.secret}">
+  <connector:oauth-callback-config domain="localhost" localPort="${http.port}" remotePort="${http.port}" async="true" connector-ref="httpsConnector"/>
+</connector:config-oauth>
+...
+----
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.7/http-connector-reference[HTTPS连接器参考]

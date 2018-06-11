@@ -1,0 +1,84 @@
+= 脚本示例
+
+这个例子演示了如何从Mule ESB调用JSR-223脚本。它还演示了如何使用自定义转换器，基于有效内容的内容类型的路由以及如何在Mule配置中使用JVM环境变量。该脚本实现了一个 link:http://en.wikipedia.org/wiki/Greedy_algorithm[贪婪算法]以进行更改。
+
+== 运行应用程序
+
+. 确保您符合先决条件，并根据安装Mule指令安装Mule。
+. 在命令行中，导航到您的Mule主目录下的`examples/scripting`目录。
+. 将预先构建的示例zip复制到应用程序文件夹（$ MULE_HOME / apps）。
+. 在浏览器中打开以下某个网址：+
+  `+http://localhost:47493/change-machine?amount=2.42&currency=USD+` +
+  `+http://localhost:47493/change-machine?amount=2.42&currency=GBP+`
+. 要停止Mule，请在Mule控制台窗口中键入'CTRL-C'。
+
+== 构建应用程序
+
+您可以通过从当前目录运行`ant`或`mvn`来构建示例。
+
+== 它是如何工作的
+
+该示例从HTTP请求获取输入，并使用HttpRequestToMap变换器将请求的主体转换为Map。然后它从该Map中提取货币以确定要调用的脚本。在实际调用脚本之前，amout将从Map中提取，转换为一个数字并归一化为一个整数。
+
+*Input*
+
+[source,xml]
+----
+<flow name="http-inbound">
+ <http:inbound-endpoint host="0.0.0.0" port="47493" path="change-machine" 
+   exchange-pattern="request-response" transformer-refs="HttpRequestToMap">
+  <not-filter>
+   <wildcard-filter pattern="/favicon.ico"/>
+  </not-filter>
+ </http:inbound-endpoint>
+ <choice>
+  <when expression="payload.currency == 'USD'" evaluator="groovy">
+   <processor-chain>
+    <transformer ref="ExtractAmount StringToNumber DollarsToCents"/>
+    <script:component>
+      <script:script file="greedy.groovy">
+        <property key="currency" value="USD"/>
+       </script:script>
+     </script:component>
+   </processor-chain>
+ </when>
+ <when expression="payload.currency == 'GBP'" evaluator="groovy">
+ <processor-chain>
+ <transformer ref="ExtractAmount StringToNumber DollarsToCents"/>
+ <script:component>
+  <script:script file="greedy.py">
+   <property key="currency" value="GBP"/>
+  </script:script>
+ </script:component>
+ </processor-chain>
+ </when>
+</choice>
+</flow>
+----
+
+实际脚本是从外部文件加载的，并传递一个名为`currency`的变量，该变量根据JSR-223规范绑定到本地脚本变量。
+
+*Entry Point for Groovy Script*
+
+[source,java]
+----
+switch (currency) {
+ case "USD": return change(USD, payload)
+ case "GBP": return change(GBP, payload)
+ default: throw new AssertionError("Unsupported currency: $currency")
+}
+----
+
+*Entry point for Python script*
+
+[source,java]
+----
+c = Change(currency, payload)c.recursive_change(c.amount)result = "[" + c.result + "]"
+----
+
+== 参考
+
+Groovy算法根据 link:https://web.archive.org/web/20150213041152/http://groovy.codehaus.org/Greedy+Coin+Changer+in+Groovy[Groovy食谱]进行调整，Python算法根据 link:http://www.oreillynet.com/onlamp/blog/2008/04/python_greedy_coin_changer_alg.html[O'Reilly的ONLamp博客]中的文章进行调整
+
+任何具有JSR 223兼容引擎的语言都可以用这种方式与Mule一起使用。
+

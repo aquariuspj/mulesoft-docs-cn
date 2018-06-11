@@ -1,0 +1,51 @@
+= 关于专用负载均衡器体系结构
+
+CloudHub专用负载均衡器（DLB）允许您将外部HTTP和HTTPS流量路由到部署到特定虚拟私有云（VPC）内的CloudHub工作人员的Mule应用程序。每个CloudHub专用负载均衡器都分配给特定的VPC，并且该VPC在特定的服务区域内运行。这意味着专用负载均衡器会将流量（内部和外部流量）路由到部署到该VPC的CloudHub工作人员。
+
+公共CloudHub负载均衡器已经将`http://<myApp>.cloudhub.io`到`mule-worker-<myApp>.cloudhub.io:8081`的HTTP请求以及到`https://<myApp>.cloudhub.io:443`的HTTPS流量路由到`https://mule-worker-<myApp>.cloudhub.io:8082`，其中`<myApp>`是Mule的名称应用程序部署到CloudHub。
+
+== 将外部请求路由到专用负载均衡器
+CloudHub专用负载平衡器提供了一个替代域名，用于将HTTP请求路由到侦听端口8091上的Mule应用程序，以及向侦听端口8092上的Mule应用程序发送HTTPS请求。此外，您可以编写映射规则以将请求重命名为CloudHub专用负载平衡器到不同的Mule应用程序域名。
+
+例如，假设您定义了一个名为*lb-name*的创建负载均衡器。然后，专用负载均衡器会公开一个外部域名，该域名解析为两个可从CloudHub VPC网络外部访问的公用IP地址。
+
+----
+ lb-name.lb.anypointdns.net 
+----
+
+== 通过专用负载均衡器重命名外部Mule应用程序URL
+您可以创建一个映射规则来重命名Mule应用程序，以便通过不同的域名访问它。
+
+例如，假设您部署名为`<myApp>-myCompany-prod.cloudhub.io`的Mule应用程序。回想一下，在所有其他MuleSoft客户和Mule应用程序中，CloudHub域名必须是全球唯一的。专用负载平衡器可帮助您隐藏公司DNS域名中的这种命名复杂性。
+
+然后，您可以在专用负载平衡器中设置映射规则，以便外部客户端可以在`http://<myApp>.lb-name.lb.anypointdns.net`或`https://<myApp>.lb-name.lb.anypointdns.net:443`上访问Mule应用程序。
+
+另外，您可以在公司DNS名称服务器中设置CNAME记录，以将`lb-name.lb.anypointdns.net`域名屏蔽到您的公司"vanity"域。
+
+例如，假设您的公司拥有DNS域example.com。您可以创建CNAME记录，将请求路由到myapp.example.com路由到`<myApp>.lb-name.lb.anypointdns.net`。现在，您已经在`cloudhub.io`域中隐藏了CloudHub domian名称的复杂性。
+
+== 将内部请求路由到专用负载均衡器
+您的CloudHub专用负载均衡器还具有内部域名，供VPC内的应用程序和客户端使用。内部域使用的命名约定是：
+
+----
+internal-<lb-name>.lb.anypointdns.net
+----
+
+`<lb-name>`是您创建负载均衡器时所用的名称。
+
+每个专用负载均衡器都有一个解析为两个实例的两个公有IP地址的DNS A Record `<lb-name>.lb.anypointdns.net`。通过您的DNS提供商，您可以添加指向该记录的CNAME记录并使用您自己的域名进行访问。
+
+如果您希望负载平衡器处理与应用程序的所有连接，但不希望公开公开您应用程序的默认域名，则每个应用程序需要在端口8091或8092上监听HTTP。或者，您可以创建自定义映射策略将外部请求从您的负载均衡器重定向到您的特定应用程序。
+
+下图显示了负载均衡器如何在虚拟私有云和Anypoint Plaform之间进行交互。
+
+image:pxty_lb.png[负载平衡器]
+
+您的负载均衡器通过HTTPS侦听外部请求，默认情况下，通过HTTP与您的工作人员进行内部通信。如果您在VPC内配置Mule应用程序以侦听HTTPS，则必须使用load-balancer mappings add命令创建映射列表时将upstreamProtocol设置为HTTPS。
+
+内部HTTP模式允许您配置如何处理HTTP请求。它们要么被默默忽略，要么在默认SSL端点上映射HTTPS，要么将URL直接映射到相应的HTTPS URL。
+
+== 另请参阅
+
+*  link:/runtime-manager/cloudhub[CloudHub]
+*  link:/runtime-manager/virtual-private-cloud[虚拟私有云]

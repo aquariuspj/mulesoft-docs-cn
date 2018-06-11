@@ -1,0 +1,1429 @@
+=  SAP连接器用户指南
+:keywords: anypoint studio, connector, endpoint, sap
+：imagesdir：./_images
+
+_Premium_
+
+SAP连接器支持基于SAP NetWeaver和外部系统的数据集成。 MuleSoft在Premium支持策略下维护此连接器，并且需要单独的许可证。联系mailto：sales@mulesoft.com [MuleSoft]在生产中评估或使用此连接器。
+
+Mule运行时支持通过我们的Anypoint Connector for SAP进行SAP集成，这是SAP认证的Java连接器，它利用SAP Java连接器（JCo）库，从而允许Mule应用程序执行以下操作：
+
+. 通过RFC协议执行BAPI功能，支持以下类型：
+    * 同步RFC（sRFC）
+    * 事务性RFC（tRFC）
+    * 队列RFC（qRFC）
+
+. 充当JCo服务器，作为通过sRFC，tRFC和qRFC的BAPI。
+
+. 通过tRFC和qRFC发送IDoc。
+
+. 通过tRFC和qRFC接收IDoc。
+
+. 将SAP对象（JCo函数/ BAPI和IDocs）转换为XML。
+
+===  SAP JCo架构
+
+SAP JCo促进SAP后端系统和Java应用程序之间的通信。它允许Java程序连接到SAP系统并调用远程功能模块。它还允许解析IDoc（SAP中间文档）以及其他对象类型。支持入站和出站通信。
+
+*	 Java API：处理动态元数据查找和缓存。它实现了`JCO.Function`，它是Java中SAP函数模块（BAPI）的参数和/或表的容器。 Java应用程序构建在Java API之上。
+
+*	 JNI（Java本地接口）：最初，SAP使用C语言创建了允许直接RFC调用SAP以处理数据的库。 JCo将C库封装在Java中以提供对SAP系统的平台本地访问。 RFC中间件通过（JNI）层使用RFC库。
+
+*  RFC（远程函数调用）：通过RFC协议执行与SAP系统的通信。 RFC意味着调用BAPI或触发在另一个系统中运行的IDoc处理作为调用程序。 RFC接口支持两个SAP系统之间或SAP与外部系统之间的函数调用。
+
+*	 RFC库：用于访问SAP系统的基于C语言的函数库。 RFC库由JNI解决。
+
+*  RFC层：处理RFC调用的SAP组件。
+
+*	 SAP Java IDoc类库：提供Java中SAP IDocs的结构化，高级解释和导航。它由以下附加软件包组成：
+    -  SAP Java Base IDoc类库：一个独立于中间件的库，为依赖中间件的Java IDoc类库实现提供一组通用基类和接口。
+    -  SAP Java连接器IDoc类库：用于创建，发送和接收IDoc的独立于中间件的库。
+
+*	 FM（功能模块）：功能模块是在SAP的ABAP语言中定义的过程。它允许在SAP系统中封装和重用全局功能。
+
+*	 BAPI（业务应用程序编程接口）：是满足特定设计标准的功能模块，例如：
+    - 实现SAP业务对象的方法。
+    - 通过不同版本的SAP系统维护一个静态接口。
+    - 启用了远程功能。
+    - 运行或不运行用户交互时完成。
+    - 处理错误。
+
+*	 IDoc（中级文档）：用于SAP系统之间电子数据交换的标准SAP格式。不同的消息类型（例如交货单或采购订单）通常对应于不同的特殊格式，称为IDoc类型。但是，具有相关内容的多种消息类型可以分配给单个IDoc类型。
+
+*	 ALE（应用程序链接启用）：用于设置和操作分布式应用程序的技术。 ALE促进SAP系统的分布式集成安装。这涉及在松散链接的SAP应用程序之间使用一致数据进行业务驱动的消息交换。应用程序通过同步和异步通信进行集成，而不是通过使用中央数据库。
+
+*  SAP NetWeaver：SAP解决方案使用的主要技术和应用程序平台之一。其主要组件是SAP Web应用程序服务器（WebAS），它为ERP，CRM，SCM，PLM，SRM，BI等SAP应用程序提供运行时环境。其他组件包括企业门户，交换基础架构，主数据管理和移动基础架构。 SAP NetWeaver是这些技术组件的总称。
+
+SAP连接器使用RFC协议连接到NetWeaver应用程序服务器（NWAS）。与其他SAP解决方案一样， link:http://www.cipherbsc.com/solutions/sap-erp-central-component-erp-ecc/[ECC]和 link:https://help.sap.com/crm[CRM]在NWAS之上运行，因此使用该连接器的任何客户都可以访问这些系统。
+
+SAP NetWeaver在Java和ABAP堆栈上运行。
+
+*  ABAP（高级商业应用程序编程）：这是SAP专有的编程语言，也是构建业务应用程序的NetWeaver平台的一部分。
+
+[[prerequisites]]
+=== 先决条件
+
+本文假定您有：
+
+* 熟悉SAP业务环境，尤其是SAP R / 3 Business Suite。
+* 从管理角度对SAP NetWeaver平台的基本理解。
+*  ABAP语言的一些基本知识。
+
+== 名称空间和架构
+
+SAP连接器所需的名称空间和模式位置应包含在Mule应用程序的标题区域中。
+
+[source, xml]
+----
+<mule xmlns:sap="http://www.mulesoft.org/schema/mule/sap"
+  ...
+  xsi:schemaLocation="http://www.mulesoft.org/schema/mule/sap http://www.mulesoft.org/schema/mule/sap/current/mule-sap.xsd">
+  ...
+  <flow name="yourFlow">
+  ...
+  </flow>
+</mule>
+----
+
+[[requirements]]
+=== 要求
+
+该连接器需要以下SAP库：
+
+*  Java连接器（JCo）库
+*  IDoc库
+
+*Note:* JCo库取决于您的硬件平台和操作系统。因此，您需要为运行Anypoint Studio的本地驱动器下载适当的版本。
+
+两个库都需要三个文件：
+
+* 两个多平台Java库：
+
+    - `sapjco3.jar`
+    -  `sapidoc3.jar`
+
+*  JCo平台特定的本机库之一：
+
+    - `sapjco3.dll` (Windows)
+    -  `libsapjco3.jnilib`（Mac OS X）
+    -  `libsapjco3.so`（Linux）
+
+重要提示：不要将任何SAP JCo库文件的名称从其原始名称中更改，因为它们不会被JCo识别。自JCo 3.0.11以来，JAR文件不能从`sapjco3.jar`重命名，也不能重新打包。详细了解 link:/mule-user-guide/v/3.9/sap-connector-troubleshooting[SAP故障排除]。
+
+SAP JCo库是依赖于操作系统的。因此，请确保下载与运行Mule的主机服务器的操作系统和硬件体系结构相对应的SAP库。如果您部署到与用于开发的平台不同的平台，则必须在生成zip文件之前更改本机库。
+
+[[dependencies]]
+=== 依赖
+
+有四种版本的SAP连接器已经发布，这取决于某些版本的Mule。
+
+[%header%autowidth.spread]
+|===
+| SAP连接器版本|兼容Mule版本
+| `1.x` | `3.0 / 3.1 / 3.2`
+| `2.0.x` | `3.3 / 3.4`
+| `2.1.x` | `3.3 / 3.4`
+| `2.2.x` | `3.5 / 3.6 / 3.7`
+| `3.0.x` | `3.5 / 3.6 / 3.7 / 3.8`
+|===
+
+涉及多个出站端点的有状态事务只能通过设置事务范围来工作。详细了解 link:/mule-user-guide/v/3.9/sap-connector-advanced-features#transactions[SAP交易]。
+
+每个SAP客户或合作伙伴都可以访问https://websmp201.sap-ag.de/public/connectors[SAP服务市场（SMP）]。您可以在这里下载这两个文件以及NetWeaver RFC Library和其他连接器。
+
+[[compatibility-matrix]]
+=== 兼容性矩阵
+
+SAP连接器与任何基于SAP NetWeaver的系统兼容，并支持3.0.11及更高版本的SAP R / 3系统。
+
+[%header%autowidth.spread]
+|===
+| SAP连接器版本 | JCo库版本 | IDoc库版本
+| `1.x` 2 + | `3.0.7 and 3.0.9`
+| `2.0.x and 2.1.x` 2 + | `3.0.7 and 3.0.9`
+| `2.1.2` 2 + | `3.0.7 / 3.0.9 / 3.0.10`
+| `2.2.2` 2 + | `3.0.7 / 3.0.9 / 3.0.10`
+| `2.2.3` 2 + | `3.0.7 / 3.0.9 / 3.0.10`
+| `2.2.5`  | `3.0.11 / 3.0.13`  | `Up to 3.0.11`
+| `2.2.6`  | `3.0.11 / 3.0.13`  | `Up to 3.0.12`
+| `2.2.7`  | `3.0.11 / 3.0.13`  | `Up to 3.0.12`
+| `2.2.8`  | `3.0.11 / 3.0.14`  | `Up to 3.0.12`
+| `3.0.0`  | `3.0.11 / 3.0.14`  | `Up to 3.0.12`
+| `3.1.0`  | `3.0.15`  | `Up to 3.0.15`
+| `3.2.0`  | `3.0.15 / 3.0.18`  | `Up to 3.0.18`
+|===
+
+*Note:*除了与IDoc 3.0.12不兼容的SAP 2.2.5之外，以上矩阵中显示的JCo和IDoc库的其余部分都已使用连接器进行了测试。请注意，可能还有其他SAP兼容版本，这些版本未在上面列出。
+
+[[install-and-config]]
+== 安装和配置
+
+SAP连接器捆绑在Anypoint Studio中：通常，Studio的最新版本附带最新版本的SAP连接器。如果您在Anypoint Studio中需要另一个版本的连接器，或者必须重新安装它：
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+[[install]]
+
+SAP连接器需要JCo库才能运行。本节介绍如何设置Mule，以便您可以在Mule应用程序中使用SAP连接器。
+
+此过程假定您的主机上已安装Mule运行时实例。
+
+*Note*：在本文档中，`$MULE_HOME`指的是安装Mule的目录。
+
+. 从https://websmp201.sap-ag.de/public/connectors[SAP服务市场（SMP）]下载SAP JCo和IDoc库。为此，您需要`SAP User ID`（也称为`S-User ID`）。
+一旦拥有这些库，请转到SMP的SAP Java Connector部分。文件位于SMP的工具和服务部分。
++
+有关详细信息，请阅读https://support.sap.com/en/index.html[SAP JCo 3.0版本和支持策略 - 支持说明1077727（要求您登录SAP支持门户）]。
++
+. 确保SAP JAR对您的Mule应用程序和/或Mule实例可用。 JCo依靠本地库，这需要额外的安装步骤。
+
+如果您计划使用SAP作为入站端点，那么这就是Mule被称为BAPI或接收IDoc的地方，您必须在OS级别的服务文件中执行其他配置。要求的详细说明可以在 link:/mule-user-guide/v/3.9/sap-connector-advanced-features#server-services-configuration[SAP JCo服务器服务配置]找到。
+
+
+=== 将SAP连接器添加到类路径
+
+在系统`classpath`中指定SAP连接器的位置使您能够在本地运行/调试项目，并在使用这些类的项目中创建自定义Java代码。
+
+当您第一次尝试将任何SAP组件添加到您的Mule配置文件时，会自动添加与项目运行时版本匹配的SAP依赖项。如果项目中配置的Mule运行时存在多个SAP传输相关性，则会提示您选择要使用的最新，最旧或选择手动选择。
+
+要手动将SAP连接器添加到类路径，请完成以下步骤：
+
+. 右键单击Package Explorer面板中项目的顶部。
+. 选择“构建路径”>“添加库”。
+. 选择库类型Anypoint连接器依赖项，然后单击下一步。
+. 从列表中检查您需要的SAP扩展，注意连接器的版本和Mule运行时版本要求。
+
+image:sap-extension.png[添加SAP延期]
+
+[[config]]
+=== 配置
+
+要在您的Mule应用程序中使用SAP连接器，您必须首先配置全局SAP元素。
+
+详细了解 link:/mule-user-guide/v/3.9/global-elements[全球元素]。
+
+[[config-global]]
+==== 设置全局元素
+
+SAP连接器对象包含允许您连接到SAP服务器的配置属性。当在全局元素中定义SAP连接器时，所有SAP端点都使用其连接参数;否则每个SAP端点都使用自己的连接参数连接到SAP服务器。
+
+要为SAP连接器创建配置，请完成以下步骤：
+
+. 单击消息流画布下方的全局元素选项卡。
+. 单击创建，然后单击连接器配置左侧的箭头图标。
+. 从可用连接器的下拉列表中选择SAP，然后单击确定。
+. 在全局元素属性窗格中，输入用于定义SAP系统管理员应提供的SAP连接所需的参数。
+
+SAP全局元素配置允许您定义连接属性以及轻松地将所需的SAP依赖项添加到您的项目中。
+
+为了便于使用，SAP连接器仅将最常见的属性显示为连接器参数。要配置未在“属性”面板中列出的属性，请参阅<<Extended Properties>>部分。
+
+image:sap-connector-global-element.png[sap conn全球元素]
+
+您必须定义的最小必需属性是：
+
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+|名称| 项目中SAP端点使用的连接器的名称。
+| DataSense | 通过选中复选框来启用（或禁用）DataSense功能。
+| AS主机|  SAP系统的URL或IP地址。
+|用户 | 授权的SAP用户的用户名。
+|密码| 授权SAP用户的密码凭证。
+| SAP系统编号| 用于连接到SAP系统的系统编号。
+| SAP客户端| 用于连接SAP系统的SAP客户端ID（通常是一个数字）。
+|登录语言| 用于SAP连接的语言。例如，`EN`为英文。
+|===
+
+有关这些属性的深入解释可以在<<Configurable Properties>>部分找到。
+
+*Tip*：作为最佳做法，使用属性占位符语法以更简单且可重用的方式加载凭据。详细了解 link:/mule-user-guide/v/3.9/configuring-properties[配置属性]的属性占位符。
+
+最后，单击“测试连接”按钮以验证与SAP实例的连接是否成功。如果凭证正确，您应该收到_Test Connection Successful_消息。
+
+[[config-libs]]
+==== 添加SAP库
+
+如<<Requirements>>部分所述，SAP连接器需要依赖于平台的SAP JCo Native库以及多平台JCo和IDoc库。
+
+对每个所需的库执行以下步骤：
+
+. 点击添加文件按钮。
+. 导航到文件的位置并选择它。
+. 确保加载的库旁边出现绿色的勾号。
+
+image:sap-libs-ok.png[SAP必需的依赖关系]
+
+SAP库会自动添加到项目的`classpath`。
+
+*Important*：
+
+* 如果要添加JCo库并使用SAP JCo 3.0.11之后的SAP JCo版本手动配置类路径，则`sapjco3.jar`和相应的本机库必须位于Datasense的不同目录中工作。
+* 如果您使用的是Maven化应用，则应根据您的操作系统将本机库命名为`libsapjco3`，后跟该扩展名。
+
+[[config-extended-props]]
+==== 扩展属性
+
+要为SAP连接器全局元素定义扩展属性，请完成以下步骤：
+
+. 导航到“全局元素属性”窗格上的“高级”选项卡。
+. 找到窗口底部的扩展属性部分。
+. 单击扩展属性下拉菜单旁边的加号图标以定义其他配置属性。
+
+image:sap-connector-global-element-advanced-tab.png[SAP全局元素adv选项卡]
+
+您可以通过定义表示Map（`java.util.Map`）实例的Spring bean全局元素来提供其他配置属性。这可用于配置SCN（安全连接）或高级池功能以及其他属性。
+
+*Important*：为此，您必须在您的配置中设置由SAP定义的属性名称。检查 link:/mule-user-guide/v/3.9/sap-connector-advanced-features#jco-extended-properties[SAP JCo扩展属性]以获取完整的属性列表。
+
+[[upgrading]]
+== 从2.x.x升级到3.0.0
+
+SAP连接器可以通过Mule Studio中的集成更新功能进行更新。
+
+SAP 3.0.0中引入的主要变化是删除XML解析器版本1.从现在起，版本2是唯一支持的格式。因此，要从V1平滑移动到V2，需要进行以下修改：
+
+=== 在SAP Endpoint和Transformers中
+
+属性`xmlVersion`已弃用，不再需要在SAP流程中使用。使用`xmlVersion="1"`的项目失败，但使用`xmlVersion="2"`的项目仍然兼容。这同样适用于SAP变换器，如SAP对象到XML，XML到SAP功能（BAPI）和XML到SAP IDoc。以下详情：
+
+[source,xml,linenums]
+----
+<flow>
+    <!-- Recommended (NO xmlVersion declared) -->
+    <sap:outbound-endpoint type="function" ... />
+    <sap:object-to-xml doc:name="SAP Object to XML"/>
+
+    <!-- Compatible -->
+    <sap:outbound-endpoint xmlVersion="2" type="function" ... />
+    <sap:object-to-xml xmlVersion="2" doc:name="SAP Object to XML"/>
+
+    <!-- Invalid -->
+    <sap:outbound-endpoint xmlVersion="1" type="function" ... />
+    <sap:object-to-xml xmlVersion="1" doc:name="SAP Object to XML"/>
+
+    <!-- same approaches apply to remaining SAP transformers -->
+</flow>
+----
+
+XML定义中的=== 
+
+替换`jco`节点：
+
+[source,xml,linenums]
+----
+<jco name="Z_BAPI_MULE_EXAMPLE">
+    ...
+</jco>
+----
+
+使用Function / BAPI名称：
+
+[source,xml,linenums]
+----
+<Z_BAPI_MULE_EXAMPLE>
+    ...
+</Z_BAPI_MULE_EXAMPLE>
+----
+
+元素`import`，`export`，`tables`和`exceptions`节点保持不变。
+
+[source,xml,linenums]
+----
+<import>
+    <!-- import params -->
+</import>
+<export>
+    <!-- export params -->
+</export>
+<tables>
+    <!-- table params -->
+</tables>
+<exceptions>
+    <!-- exceptions params -->
+    <exception key="EXCEPTION_KEY" />
+</exceptions>
+----
+
+用他们的名称属性替换`field`和`structure`个节点。
+
+[source,xml,linenums]
+----
+<import>
+    <field name="MATERIAL">999</field>
+    <structure name="MATERIAL_EVG">
+        <field name="MATERIAL_EXT"/>
+        <field name="MATERIAL_VERS"/>
+        <field name="MATERIAL_GUID"/>
+    </structure>
+    <field name="PLANT">1111</field>
+    <field name="VALUATIONAREA"/>
+    <field name="VALUATIONTYPE"/>
+</import>
+----
+
+创造：
+
+[source,xml,linenums]
+----
+<import>
+    <MATERIAL>999</MATERIAL>
+    <MATERIAL_EVG>
+        <MATERIAL_EXT/>
+        <MATERIAL_VERS/>
+        <MATERIAL_GUID/>
+    </MATERIAL_EVG>
+    <PLANT>1111</PLANT>
+    <VALUATIONAREA/>
+    <VALUATIONTYPE/>
+</import>
+----
+
+将`table`的子元素替换为其名称属性，并从每个`row`中移除`id`。
+
+[source,xml,linenums]
+----
+<tables>
+    <table name="MATNRSELECTION">
+        <row id="0">
+            <field name="SIGN">I</field>
+            <field name="OPTION">CP</field>
+        </row>
+    </table>
+</tables>
+
+<tables>
+    <MATNRSELECTION>
+        <row>
+            <SIGN>I</SIGN>
+            <OPTION>CP</OPTION>
+        </row>
+    </MATNRSELECTION>
+</tables>
+----
+
+=== 在Studio可视化编辑器中
+
+[%header%autowidth.spread]
+|===
+| {之前{1}}之后
+| image:sap-migration-v1.png[SAP迁移V1]  |  image:sap-migration-v2.png[SAP迁移V2]
+2 + |  SAP常规设置
+| image:sap-migration-v1-transformer.png[SAP迁移V1变压器]  |  image:sap-migration-v2-transformer.png[SAP Migration V2变压器]
+2 + |  SAP变形金刚
+| image:sap-migration-v1-export.png[SAP Migration V1导出]  |  image:sap-migration-v2-export.png[SAP迁移V2导出]
+2 + |  SAP模板
+|===
+
+[[using-the-connector]]
+== 使用连接器
+
+[[syntax]]
+=== 语法
+
+连接器语法：
+
+[source, xml, linenums]
+----
+<sap:connector name="SapConnector" jcoClient="${sap.jcoClient}" jcoUser="${sap.jcoUser}"
+    jcoPasswd="${sap.jcoPasswd}" jcoLang="${sap.jcoLang}" jcoAsHost="${sap.jcoAsHost}"
+    jcoSysnr="${sap.jcoSysnr}" jcoTrace="${sap.jcoTrace}"
+    jcoPoolCapacity="${sap.jcoPoolCapacity}" jcoPeakLimit="${sap.jcoPeakLimit}"/>
+----
+
+端点语法：
+
+[source, xml, linenums]
+----
+<!-- inbound -->
+<sap:inbound-endpoint name="idocServer" type="idoc" rfcType="trfc"
+     jcoConnectionCount="5" jcoGwHost="${sap.jcoGwHost}" jcoProgramId="${sap.jcoProgramId}"
+     jcoGwService="${sap.jcoGwService}" exchange-pattern="one-way"/>
+
+<!-- outbound -->
+<sap:outbound-endpoint name="idocSender" type="idoc" connector-ref="SapConnector"
+     exchange-pattern="request-response"/>
+----
+
+[[configurable-properties]]
+=== 可配置属性
+
+`<sap:connector/>`元素允许在同一应用程序中配置可在`<sap:inbound-endpoint/>`和`<sap:outbound-endpoint/>`之间共享的JCo连接参数。
+
+[[connector-properties]]
+==== 连接器属性
+
+[%header%autowidth.spread]
+|===
+|字段 |  XML属性 |描述 |默认值
+|显示名称 | `name`  | Mule配置内部使用的连接器的引用名称。 |
+|用户 | `jcoUser`  |基于密码的身份验证的用户名。 |
+|密码 | `jcoPasswd`  |用于基于密码的身份验证的密码。 |
+| SAP客户端 | `jcoClient`  | SAP客户端，与用户/传递凭证同等重要。这通常是一个数字。例如，100。 |
+|登录语言 | `jcoLang`  |用于登录对话框的语言。如果未定义，则使用默认的用户语言。 | `en`
+| AS主机 | `jcoAsHost`  | SAP应用程序服务器主机（可指定IP地址或服务器名称）。 |
+| SAP系统编号 | `jcoSysnr`  | SAP系统编号。 |
+| JCo Trace  | `jcoTrace`  |启用/禁用RFC跟踪。 | `false`
+| JCo跟踪到Mule日志 | `jcoTraceToLog`  |如果`jcoTraceToLog`是`true`，则JCo跟踪将重定向到Mule日志文件。如果设置了此属性，它将覆盖Java启动环境属性`-Djco.trace_path=<PATH>`。由于JCo库的限制，此属性必须在类加载器级别进行配置，因此如果进行配置，它将应用于类加载器级别的所有SAP连接。应该为此参数启用`jcoTrace`。 | `false`
+|池容量 | `jcoPoolCapacity`  |目的地保持打开的最大空闲连接数。值为0时不会发生连接池。 | `5`
+|峰值限制 | `jcoPeakLimit`  |可同时为目标创建的活动连接的最大数量 | `10`
+|到期时间 | `jcoExpirationTime`  | 可以关闭池中可用的空闲连接的时间（以毫秒为单位）。 | {{1} }
+|扩展属性 | `jcoClientExtendedProperties-ref`  |对包含其他JCo连接参数的`java.util.Map`的引用。其他信息和参数的完整列表可以在/mule-user-guide/v/3.9/sap-jco-extended-properties[here]. |
+找到。
+|禁用函数模板缓存 | `disableFunctionTemplateCache`  |表示函数模板是否应该缓存的布尔值。禁用缓存仅适用于真正的特殊情况（例如在开发过程中），因为禁用会影响性能。每个功能（BAPI）呼叫都需要两次到SAP服务器。 | `false`
+|===
+
+[[inbound-endpoint-properties]]
+==== 入站端点属性
+
+[%header%autowidth.spread]
+|===
+|字段 | XML属性 |描述 |默认值
+|显示名称 | `name`  | Mule配置内部使用的端点的引用名称。 |
+| Exchange模式 | `exchange-pattern`  |可用选项为请求 - 响应和单向。 |
+|地址 | `address`  |提供端点属性的标准方式。 | 有关更多信息，请参阅 link:/mule-user-guide/v/3.9/sap-connector-advanced-features#endpoint-address[端点地址]。
+|类型 | `type`  |此端点处理的SAP对象的类型（即函数或idoc）。从2.1.0开始，function-metadata和idoc-metadata可用于检索给定BAPI或IDoc的XML结构。 | `function`
+| RFC类型 | `rfcType`  |端点用来接收函数或IDoc的RFC类型。可用的选项是srfc（与TID处理程序同步），trfc和qrfc（两者都是异步的，带有TID处理程序）。 | `srfc`
+|队列名称 | `queueName`  |如果RFC类型为`qrfc`，则这是队列的名称。 |
+|函数名称 | `functionName`  |如果类型为`function`，那么这是执行的BAPI函数的名称。当选择元数据类型时，此属性保存应检索元数据的BAPI或IDoc的名称。 |
+|输出XML  | `outputXml`  |端点是否应将有效负载设置为SAP对象（函数或IDoc）或SapObject包装器的XML表示形式本身。将此标志设置为'true'将消除对SAP对象到XML转换器的需求。 | `false`
+|网关主机 | `jcoGwHost`  |应在其上注册服务器的网关主机。|
+|网关服务 | `jcoGwService`  |网关服务，即执行注册的端口。|
+|程序ID  | `jcoProgramId`  |用于注册的程序ID。|
+|连接计数 | `jcoConnectionCount`  |应该在网关注册的连接数。 | `2`
+|池容量 | `jcoPoolCapacity`  |目的地保持打开的最大空闲连接数。值为0时不会发生连接池。 | `5`
+|峰值限制 | `jcoPeakLimit`  |可同时为目标创建的活动连接的最大数量 | `10`
+|到期时间 | `jcoExpirationTime`  | 可以关闭池中可用的空闲连接的时间（以毫秒为单位）。 | {{1} }
+| TID存储 link:/mule-user-guide/v/3.9/sap-connector-advanced-features#tid-handler[TID处理程序]的|  `<sap:default-in-memory-tid-store />`，`<sap:mule-object-store-tid-store-ref/>`  | 配置。 |
+|扩展服务器属性 | `jcoServerExtendedProperties-ref`  |对`java.util.Map`的引用，其中包含其他JCo连接参数。如有必要，请咨询 link:/mule-user-guide/v/3.9/sap-connector-advanced-features#jco-server-properties[完整的服务器参数列表]。 |
+|===
+
+[[outbound-endpoint-properties]]
+==== 出站端点属性
+
+[%header%autowidth.spread]
+|===
+|字段 | XML属性 |描述 |默认值
+|显示名称 | `name`  | Mule配置内部使用的端点的引用名称。 |
+| Exchange模式 | `exchange-pattern`  |可用选项为请求 - 响应和单向。 |
+|地址 | `address`  |提供端点属性的标准方式。 |有关更多信息，请查看 link:/mule-user-guide/v/3.9/sap-connector-advanced-features#endpoint-address[端点地址]。
+|类型 | `type`  |此端点处理的SAP对象的类型（即函数或idoc）。从2.1.0开始，function-metadata和idoc-metadata可用于检索给定BAPI或IDoc的XML结构。 | `function`
+| RFC类型 | `rfcType`  |端点用来接收函数或IDoc的RFC类型。可用的选项是srfc（与TID处理程序同步），trfc和qrfc（两者都是异步的，带有TID处理程序）。 | `srfc`
+|队列名称 | `queueName`  |如果RFC类型为`qrfc`，则这是队列的名称。 |
+|函数名称 | `functionName`  |如果类型为`function`，则这是执行的BAPI函数的名称。选择元数据类型时，此属性保存应检索其元数据的BAPI或IDoc的名称。 |
+|输出XML  | `outputXml`  |端点是否应将有效负载设置为SAP对象（函数或IDoc）或SapObject包装器的XML表示形式本身。将此标志设置为'true'将消除对SAP对象到XML转换器的需求。 | `false`
+|评估函数响应 | `evaluateFunctionResponse`  |当类型为`function`时，`true`标志（选中框）表示SAP传输应该评估函数响应并在SAP中发生错误时抛出异常。当此标志设置为`false`（框未选中）时，SAP传输不会在发生错误时引发异常，并且用户负责解析函数响应。 | `false`
+|是BAPI事务 | `bapiTransaction`  |选中时，在事务结束时调用BAPI_TRANSACTION_COMMIT或BAPI_TRANSACTION_ROLLBACK，具体取决于该事务的结果。{{5 }} `false`
+|定义文件 | `definitionFile`  |要执行的函数或要发送的IDoc的模板定义文件的路径。 |
+| IDoc版本 | `idocVersion`  |当类型为`idoc`时，在发送IDoc时使用此版本。 IDoc版本的值对应于`com.sap.conn.idoc.IDocFactory`中的IDOC_VERSION_xxxx常量。|
+|扩展客户端属性 | `jcoClientExtendedProperties-ref`  |对`java.util.Map`的引用，其中包含其他JCo连接参数。如有必要，请咨询 link:/mule-user-guide/v/3.9/sap-connector-advanced-features#jco-client-properties[完整的客户端参数列表]。 |
+|===
+
+[[idoc-versions]]
+====  IDoc版本
+
+[%header%autowidth.spread]
+|===
+|值 |说明
+| `0`  | `IDOC_VERSION_DEFAULT`
+| `2`  | `IDOC_VERSION_2`
+| `3`  | `IDOC_VERSION_3`
+| `8`  | `IDOC_VERSION_QUEUED`
+|===
+
+[[sap-transformers]]
+===  SAP变形金刚
+
+SAP端点接收和传输SAP对象，这些对象必须在您的Mule流中转换为XML或从XML转换而来。 MuleSoft捆绑了专为处理这种转换而设计的三款SAP转换器：
+
+*  SAP Object to XML
+*  XML到SAP函数（BAPI）
+*  XML到SAP IDoc
+
+这些可在Studio Palette的Transformers组中找到。在调色板上方的过滤器输入文本框中键入"sap"应显示SAP连接器和SAP变形金刚：
+
+image:sap-connector-pallete.png[sap调色板结果]
+
+在SAP入站端点（或者如果端点是函数并期望响应）的SAP出站端点之后，单击并将SAP对象拖动到XML转换器。
+
+*Important*：通过在SAP端点上启用DataSense的选项提供了一个新属性`outputXml`。默认值`false`确保端点生成的输出是XML而不是Java对象。但是，如果将此值设置为`true`以输出Java对象，请避免后续使用SAP对象到XML转换器。
+
+在您的Mule应用程序流中的SAP出站端点之前，单击XML并将其拖动到SAP功能（BAPI）或XML到SAP IDoc转换器。
+
+出站端点的输入既可以是由XML到SAP函数（BAPI）创建的SAP对象，也可以是XML到SAP IDoc以及表示XML文档的任何类型（String，byte []或InputStream）。
+
+如前所述，为避免使用SAP对象到XML，现在可以在端点级别（适用于入站和出站SAP端点）使用设置为`true`的{​​{0}}属性。
+
+[[xml-definitions]]
+===  XML定义
+
+所有SAP对象（BAPI和IDoc）都可以表示为XML文档以便于使用。 IDoc本质上已经是XML文档，可以通过SAP事务WE60获取模式。
+
+SAP连接器将<<SAP Transformers>>将在端点和SAP之间交换的XML文档转换为相应的SAP对象，以供端点处理。
+
+*Note*：有了DataSense支持，生成XML定义的推荐方法是使用 link:/mule-user-guide/v/3.9/dataweave[DataWeave]。但是，如果您正在使用Mule 3.3应用程序，请参阅 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[的DataMapper]。
+
+对于BAPI，SAP连接器提供与DataWeave和DataMapper完全兼容的专有格式。
+
+[[jco-function]]
+====  JCo函数
+
+JCo函数表示一个函数或BAPI，并由以下元素组成：
+
+[%header%autowidth.spread]
+|===
+| `IMPORT`  |在执行BAPI /函数时包含输入值（参数）。
+| `EXPORT`  |执行BAPI /函数后包含输出值。
+| `CHANGING`  |包含执行BAPI /函数时可以发送和/或接收的更改值。
+| `TABLES`  |包含其值可用于输入和输出的表格。
+| `EXCEPTIONS`  |检索BAPI元数据时，包含BAPI可能抛出的所有异常。将响应发回给入站端点中的SAP时，如果应该返回ABAP异常，则应该在此异常元素子节点中发送该异常。
+|===
+
+====  BAPI XML结构
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<Z_BAPI_MULE_EXAMPLE>
+    <import>
+        <!-- Fields / Structures / Tables -->
+    </import>
+    <export>
+        <!-- Fields / Structures / Tables -->
+    </export>
+    <changing>
+        <!-- Fields / Structures / Tables -->
+    </changing>
+    <tables>
+        <!-- Tables -->
+    </tables>
+    <exceptions>
+        <!-- Errors -->
+        <exception/>
+    </exceptions>
+</Z_BAPI_MULE_EXAMPLE>
+----
+
+每个主要记录（导入，导出和更改）支持字段，结构和/或表格：
+
+[%header%autowidth.spread]
+|===
+| `STRUCTURE`  |包含字段，表格和/或内部结构。
+| `TABLE`  |包含行列表。
+| `TABLE ROW`  |包含字段，结构和/或内部表格。
+| `FIELD`  |唯一包含实际值的元素。
+|===
+从1.4.1版和2.1.0版开始，字段元素允许一个名为`trim`的特殊属性，它保存一个布尔值，指示是否应该修剪字段的值（删除前导空格字符和尾随空格字符）。默认行为是修剪值（`trim="true"`）。
+
+[source, xml, linenums]
+----
+<Z_BAPI_MULE_EXAMPLE>
+    <import>
+        <ATTR_1>   VAL-1 </ATTR_1> <!-- Trims ==> "VAL-1" -->
+        <ATTR_2 trim="false">  VAL-2  </ATTR_2> <!-- No trim ==> "  VAL-2  " -->
+        <ATTR_3 trim="true"> VAL-3</ATTR_3> <!-- Trims  ==> "VAL-3" -->
+    </import>
+    ...
+</Z_BAPI_MULE_EXAMPLE>
+----
+
+*Note*：trim属性在所有XML版本中都有效。上面的例子使用XML版本2。
+
+所有XML版本中的异常都以相同的方式表示。元数据检索方法的结果显示了功能模块（BAPI）可以抛出的异常列表。
+
+[source, xml, linenums]
+----
+<Z_BAPI_MULE_EXAMPLE>
+    ...
+    <exceptions>
+        <exception key="EXCEPTION_1" messageClass="" messageNumber="" 
+        messageType="">Message 1</exception>
+        <exception key="EXCEPTION_2" messageClass="" messageNumber="" 
+        messageType="">Message 2</exception>
+        <exception key="EXCEPTION_3" messageClass="" messageNumber="" 
+        messageType="">Message 3</exception>
+        <exception key="EXCEPTION_4" messageClass="" messageNumber="" 
+        messageType="">Message 4</exception>
+    </exceptions>
+</Z_BAPI_MULE_EXAMPLE>
+----
+
+当入站端点需要将ABAP异常返回给SAP时，还会使用异常元素。在这种情况下，只有一个例外应该存在。如果返回多个异常，则会抛出第一个异常，其余部分将被忽略。
+
+有两个用于ABAP异常的构造函数，并且XML根据要调用的对象而不同：
+
+*  `new AbapException(String key, String message)`
++
+[source, xml, linenums]
+----
+<Z_BAPI_MULE_EXAMPLE>
+    ...
+    <exceptions>
+        <exception key="EXCEPTION_1">Message 1</exception>
+    </exceptions>
+</Z_BAPI_MULE_EXAMPLE>
+----
++
+*  `new AbapException(String key, String messageClass, char messageType, String messageNumber, String[] messageParameters)`
++
+[source, xml, linenums]
+----
+<Z_BAPI_MULE_EXAMPLE>
+    ...
+    <exceptions>
+        <exception key="EXCEPTION_2" messageClass="THE_MESSAGE_CLASS" messageNumber="1000" messageType="E">
+            <param>Param 1</param>
+            <param>Param 2</param>
+            <!-- Max 4 params -->
+        </exception>
+    </exceptions>
+</Z_BAPI_MULE_EXAMPLE>
+----
++
+您可以使用类型为`function-metadata`的SAP出站端点来检索给定功能模块（BAPI）的XML模板：
++
+[source, xml, linenums]
+----
+<mule ...>
+    <flow name="retrieveMetadata">
+        <!-- inbound endpoint -->
+        <sap:outbound-endpoint type="function-metadata" functionName="#[payload.bapiName]" />
+        <sap:object-to-xml/>
+    </flow>
+</mule>
+----
++
+这里`functionName`包含一个Mule表达式（MEL），它返回函数模块的名称。对于IDoc模板，请改用操作`idoc-metadata`。
+
+[[xml-version-2]]
+====  XML版本2
+
+添加了此XML版本，为 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[Anypoint DataMapper]工具提供了更好的选择。它具有与XML版本1相同的通用结构，但XML元素的名称是字段，结构或表的实际名称，并且类型是作为属性提供的。
+
+*Important*：XML版本2.0是自SAP连接器v2.1.0以来的默认版本，并且是SAP连接器v3.0.0及以后版本中唯一受支持的版本。
+
+====  BAPI请求
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<Z_BAPI_MULE_EXAMPLE version="1.0">
+    <import>
+        <POHEADER>
+            <COMP_CODE>2100</COMP_CODE>
+            <DOC_TYPE>NB</DOC_TYPE>
+            <VENDOR>0000002101</VENDOR>
+            <PURCH_ORG>2100</PURCH_ORG>
+            <PUR_GROUP>002</PUR_GROUP>
+        </POHEADER>
+        <POHEADERX>
+            <DOC_TYPE>X</DOC_TYPE>
+            <VENDOR>X</VENDOR>
+            <PURCH_ORG>X</PURCH>
+            <PUR_GROUP>X</PUR_GROUP>
+            <COMP_CODE>X</COMP_CODE>
+        </POHEADERX>
+    </import>
+    <tables>
+        <POITEM>
+            <row>
+                <NET_PRICE>20</NET_PRICE>
+                <PLANT>2100</PLANT>
+                <MATERIAL>SBSTO01</MATERIAL>
+                <PO_ITEM>00010</PO_ITEM>
+                <QUANTITY>10.000</QUANTITY>
+            </row>
+        </POITEM>
+        <POITEMX>
+            <row>
+                <PO_ITEMX>X</PO_ITEMX>
+                <MATERIAL>X</MATERIAL>
+                <QUANTITY>X</QUANTITY>
+                <PLANT>X</PLANT>
+                <PO_ITEM>00010</PO_ITEM>
+                <NET_PRICE>X</NET_PRICE>
+            </row>
+        </POITEMX>
+        <POSCHEDULE>
+            <row>
+                <QUANTITY>10.000</QUANTITY>
+                <DELIVERY_DATE>27.06.2011</DELIVERY_DATE>
+                <SCHED_LINE>0001</SCHED_LINE>
+                <PO_ITEM>00010</PO_ITEM>
+            </row>
+        </POSCHEDULE>
+        <POSCHEDULEX>
+            <row>
+                <PO_ITEM>00010</PO_ITEM>
+                <QUANTITY>X</QUANTITY>
+                <DELIVERY_DATE>X</DELIVERY_DATE>
+                <SCHED_LINEX>X</SCHED_LINEX>
+                <PO_ITEMX>X</PO_ITEMX>
+                <SCHED_LINE>0001</SCHED_LINE>
+            </row>
+        </POSCHEDULEX>
+    </tables>
+</Z_BAPI_MULE_EXAMPLE>
+----
+
+====  BAPI响应
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<Z_BAPI_MULE_EXAMPLE version="1.0">
+    <import>
+        ...
+    </import>
+    <export>
+        <RETURN>
+            <ID></ID>
+            <NUMBER></NUMBER>
+            <MESSAGE></MESSAGE>
+            <LOG_NO></LOG_NO>
+            <LOG_MSG_NO></LOG_MSG_NO>
+            <MESSAGE_V1></MESSAGE_V1>
+            <MESSAGE_V2></MESSAGE_V2>
+            <MESSAGE_V3></MESSAGE_V3>
+            <MESSAGE_V4></MESSAGE_V4>
+            <PARAMETER></PARAMETER>
+            <ROW></ROW>
+            <FIELD></FIELD>
+            <SYSTEM></SYSTEM>
+        </RETURN>
+    </export>
+</Z_BAPI_MULE_EXAMPLE>
+----
+
+[[idoc-document]]
+====  IDoc文档/文档列表
+
+IDoc是由SAP定义的XML文档。您可以使用SAP用户界面从SAP服务器下载他们的定义。
+
+[source, xml, linenums]
+----
+<?xml version="1.0"?>
+<ORDERS05>
+    <IDOC BEGIN="1">
+        <EDI_DC40 SEGMENT="1">
+            <TABNAM>EDI_DC40</TABNAM>
+            <MANDT>100</MANDT>
+            <DOCNUM>0000000000237015</DOCNUM>
+            <DOCREL>700</DOCREL>
+            <STATUS>30</STATUS>
+            <DIRECT>1</DIRECT>
+            <OUTMOD>2</OUTMOD>
+            <IDOCTYP>ORDERS05</IDOCTYP>
+            <MESTYP>ORDERS</MESTYP>
+            <STDMES>ORDERS</STDMES>
+            <SNDPOR>SAPB60</SNDPOR>
+            <SNDPRT>LS</SNDPRT>
+            <SNDPRN>B60CLNT100</SNDPRN>
+            <RCVPOR>MULE_REV</RCVPOR>
+            <RCVPRT>LS</RCVPRT>
+            <RCVPRN>MULESYS</RCVPRN>
+            <CREDAT>20110714</CREDAT>
+            <CRETIM>001936</CRETIM>
+            <SERIAL>20101221112747</SERIAL>
+        </EDI_DC40>
+        <E1EDK01 SEGMENT="1">
+            <ACTION>004</ACTION>
+            <CURCY>USD</CURCY>
+            <WKURS>1.06383</WKURS>
+            <ZTERM>0001</ZTERM>
+            <BELNR>0000000531</BELNR>
+            <VSART>01</VSART>
+            <VSART_BEZ>standard</VSART_BEZ>
+            <RECIPNT_NO>C02199</RECIPNT_NO>
+            <KZAZU>X</KZAZU>
+            <WKURS_M>0.94000</WKURS_M>
+        </E1EDK01>
+
+        ...
+
+        <E1EDS01 SEGMENT="1">
+            <SUMID>002</SUMID>
+            <SUMME>1470.485</SUMME>
+            <SUNIT>USD</SUNIT>
+        </E1EDS01>
+    </IDOC>
+</ORDERS05>
+----
+
+[[use-cases-and-demos]]
+=== 用例和演示
+
+一般来说，在Mule应用程序中使用SAP Connector有两个主要场景：
+
+* 入站方案：连接器从SAP系统接收IDoc或BAPI数据到您的Mule应用程序。要在此模式下使用连接器，您必须将SAP Endpoint元素放入流中，并通过设置`IDoc`类型（以SAP IDoc格式接收数据）或`Function / BAPI`来接收数据来自BAPI）。
+
+* 出站方案：连接器通过执行BAPI或通过RFC发送IDoc将数据推入SAP实例。要在此模式下使用连接器，只需在入站端点之后的任何位置将SAP Endpoint放入流中即可。
+
+以下列出了集成SAP系统的四个基本示例。
+
+*Note*：您的SAP实例中的某些设置可能会有所不同，具体取决于它是如何定制的。这些演示场景中使用的值基于SAP ERP IDES（国际演示和教育系统），该系统是预配置系统，涵盖最常见的SAP部署模块和场景。
+
+[[inbound-scenario-idoc]]
+
+==  1。入站方案 -  IDoc  - 使用Studio Visual Editor
+
+使用充当IDoc服务器的SAP入站端点。 JCo服务器需要注册SAP实例。出于这个原因，它需要客户端和服务器配置属性。本示例以SAP IDoc格式接收数据。
+
+image:user-manual-68938.png[SAP入站IDoc流程]
+
+. 将SAP Connector从连接器选项板拖放到流程的开头。
+. 双击SAP图标以打开“端点属性”窗格并配置以下属性：
++
+[%header%autowidth.spread]
+|===
+|字段 |  XML属性 |值
+|显示名称 | `doc:name`  | `SAP`
+| Exchange模式 | `exchange-pattern`  | `request-response`
+|连接器配置 | `connector-ref`  | `SapConnector`
+|输入 | `type`  | `IDoc`
+|对象名称 | `functionName`  |例如`MATMAS05`
+| RFC类型 | `rfcType`  | `Transactional RFC (tRFC)`
+|输出XML  | `outputXml`  | `enabled (checked)`
+|网关主机 | `jcoGwHost`  | `${sap.jcoGwHost}`
+|网关服务 | `jcoGwService`  | `${sap.jcoGwService}`
+|计划ID  | `jcoProgramId`  | `${sap.jcoProgramId}`
+|连线计数 | `jcoConnectionCount`  | `${sap.jcoConnectionCount}`
+|===
++
+image:sap-inbound-idoc-settings.png[SAP入站IDoc设置]
++
+. 在流程末尾添加记录器组件以显示结果数据。
+
+===  1。入站方案 -  IDoc  - 使用Studio XML编辑器
+
+[source,xml,linenums]
+----
+<sap:inbound-endpoint connector-ref="SapConnector"
+        exchange-pattern="request-response"
+        type="idoc"
+        functionName="MATMAS05"
+        rfcType="trfc"
+        outputXml="true"
+        jcoGwHost="${sap.jcoGwHost}"
+        jcoGwService="${sap.jcoGwService}"
+        jcoProgramId="${sap.jcoProgramId}"
+        jcoConnectionCount="${sap.jcoConnectionCount}"
+        doc:name="SAP"/>
+----
+
+*Note*：此演示流程的完整XML代码可以在<<Example Code>>中与其他示例流程一起找到。
+
+=== 入站 -  IDOC  - 运行时间
+
+. 部署Mule应用程序。
+. 登录到SAPGUI桌面应用程序。
+. 发布SAP实例的IDoc示例。 SAP交易代码`BD10`可用于此目的。
++
+image:sap-inbound-idoc-sapgui.png[SAP入站IDoc运行时SAPGUI]
++
+.  IDoc数据显示在Studio的控制台中。
++
+image:sap-inbound-idoc-console.png[SAP Inbound IDoc运行时控制台]
+
+[[inbound-scenario-bapi]]
+==  2。入站方案 -  BAPI  - 使用Studio Visual Editor
+
+使用充当BAPI服务器的SAP入站端点。 JCo服务器需要注册SAP实例。出于这个原因，它需要客户端和服务器配置属性。
+
+image:user-manual-ecdcc.png[SAP入站BAPI流程]
+
+. 将连接器选项板中的HTTP端点拖放到流程的开头。
+. 将SAP Connector元素放在它旁边。
+. 双击SAP图标以打开“端点属性”窗格并配置以下属性：
++
+[%header%autowidth.spread]
+|===
+|字段 |  XML属性 |值
+|显示名称 | `doc:name`  | `SAP`
+| Exchange模式 | `exchange-pattern`  | `request-response`
+|连接器配置 | `connector-ref`  | `SapConnector`
+|输入 | `type`  | `Function / BAPI`
+|对象名称 | `functionName`  |例如`BAPI_USER_GETLIST`
+| RFC类型 | `rfcType`  | `Transactional RFC (tRFC)`
+|输出XML  | `outputXml`  | `enabled (checked)`
+|网关主机 | `jcoGwHost`  | `${sap.jcoGwHost}`
+|网关服务 | `jcoGwService`  | `${sap.jcoGwService}`
+|计划ID  | `jcoProgramId`  | `${sap.jcoProgramId}`
+|连线计数 | `jcoConnectionCount`  | `${sap.jcoConnectionCount}`
+|===
++
+image:sap-inbound-bapi-settings.png[SAP入站BAPI设置]
++
+. 在流程的最后添加一个Logger组件，以在Web浏览器中显示BAPI响应。
+
+===  2。入站方案 -  BAPI  - 使用Studio XML编辑器
+
+
+[source,xml,linenums]
+----
+<sap:inbound-endpoint connector-ref="SapConnector"
+        exchange-pattern="request-response"
+        type="function"
+        functionName="STFC_CONNECTION"
+        rfcType="trfc"
+        outputXml="true"
+        jcoConnectionCount="${sap.jcoConnectionCount}"
+        jcoGwHost="${sap.jcoGwHost}"
+        jcoGwService="${sap.jcoGwService}"
+        jcoProgramId="${sap.jcoProgramId}"
+        doc:name="SAP" />
+----
+
+
+*Note*：此演示流程的完整XML代码可以在<<Example Code>>中与其他示例流程一起找到。
+
+=== 入站 -  BAPI  - 运行时间
+
+. 部署Mule应用程序。
+. 登录到您的SAPGUI桌面应用程序。
+. 执行触发BAPI的自定义ABAP程序。在本例中，我们使用事务代码`SA38`来调用程序`Z_MULE_TEST_TRFC`。这触发了标准函数`STFC_CONNECTION`。
++
+image:sap-inbound-bapi-sapgui.png[SAP入站BAPI运行时SAPGUI]
+
+.  BAPI数据显示在Studio的控制台中。
++
+image:sap-inbound-bapi-console.png[SAP入站BAPI运行时控制台]
++
+这是BAPI XML的结构：
++
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<STFC_CONNECTION>
+    <import>
+        <REQUTEXT>TESTING TRFC</REQUTEXT>
+    </import>
+    <export>
+        <ECHOTEXT type="field"></ECHOTEXT>
+        <RESPTEXT type="field"></RESPTEXT>
+    </export>
+</STFC_CONNECTION>
+----
+
+[[outbound-scenario-idoc]]
+==  3。出站方案 -  IDoc  - 使用Studio Visual Editor
+
+使用SAP出站端点将数据发送到SAP系统，由SAP以SAP IDoc格式接收数据并通过SAP应用程序处理。
+
+image:sap-connector-outbound-idoc-flow.png[SAP出站IDoc流]
+
+. 将连接器选项板中的HTTP端点拖放到流程的开头。
+. 在它旁边放置SAP Connector元素。
+. 双击SAP图标以打开“端点属性”窗格并配置以下属性：
++
+[%header%autowidth.spread]
+|===
+|字段 |  XML属性 |值
+|显示名称 | `doc:name`  | `SAP`
+| Exchange模式 | `exchange-pattern`  | `request-response`
+|连接器配置 | `connector-ref`  | `SapConnector`
+|输入 | `type`  | `IDoc`
+|对象名称 | `functionName`  |例如`DEBMAS01`
+| RFC类型 | `rfcType`  | `Synchronous RFC (sRFC)`
+|输出XML  | `outputXml`  | `enabled (checked)`
+|===
++
+image:sap-outbound-idoc-settings.png[SAP出站IDoc设置]
++
+. 在HTTP和SAP端点之间放置DataWeave组件以构建IDoc。由于IDoc是嵌套结构，因此DataWeave可能不会显示所有字段，如下例所示：
++
+[source, code, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+    DEBMAS01: {
+        IDOC: {
+        }
+    }
+}
+----
++
+.. 通过编辑Transform Message组件中的映射添加缺少的字段。
++
+.. 对于IDoc，请始终检查项目`@BEGIN`和`@SEGMENT`以正确构建最终的XML。
+.. 设置必填字段的值。
++
+image:sap-outbound-idoc-dw3.png[SAP Outbound IDoc DataWeave完成]
++
+.. 生成的XML应如下所示：
++
+[source,xml,linenums]
+<?xml version="1.0" encoding="UTF-8"?>
+<DEBMAS01>
+   <IDOC BEGIN="1">
+     <EDI_DC40 SEGMENT="1">
+       <TABNAM> EDI_DC40 </TABNAM>
+       <DIRECT> 2 </DIRECT>
+       <IDOCTYP> DEBMAS01 </IDOCTYP>
+       <MESTYP> DEBMAS </MESTYP>
+       <SNDPOR> MULESOFT </SNDPOR>
+       <SNDPRT> LS </SNDPRT>
+       <SNDPRN> MULESOFT </SNDPRN>
+       <RCVPOR> MULESOFT </RCVPOR>
+       <RCVPRT> LS </RCVPRT>
+       <RCVPRN> MULESOFT </RCVPRN>
+     </EDI_DC40>
+     <E1KNA1M SEGMENT="1">
+       <MSGFN> 005 </MSGFN>
+       <KUNNR> 0000099500 </KUNNR>
+       <KTOKD>子Zag2 </KTOKD>
+       <LAND1> SK </LAND1>
+       <NAME1> MuleSoft 99003 2nd </NAME1>
+       <SPRAS> E </SPRAS>
+       <SPRAS_ISO> EN </SPRAS_ISO>
+     </E1KNA1M>
+   </IDOC>
+</DEBMAS01>
++
+. 添加记录器组件以显示处理后的IDoc的结果。
+
+===  3。出站方案 -  IDoc  - 使用Studio XML编辑器
+
+
+[source,xml,linenums]
+----
+<sap:outbound-endpoint connector-ref="SapConnector"
+        exchange-pattern="request-response"
+        type="idoc"
+        functionName="DEBMAS01"
+        rfcType="srfc"
+        outputXml="true"
+        doc:name="SAP"/>
+----
+
+*Note*：此演示流程的完整XML代码可以在<<Example Code>>中与其他示例流程一起找到。
+
+=== 出站 -  IDOC  - 运行时间
+
+. 部署Mule应用程序。
+. 点击HTTP Endpoint中指定的URL（例如`+http://localhost:8081+`）以触发将IDoc从Mule应用程序发送到要处理的SAP实例。
++
+image:sap-outbound-idoc-console.png[SAP出站IDoc控制台]
+
+
+[[outbound-scenario-bapi]]
+==  4。出站方案 -  BAPI  - 使用Studio可视化编辑器
+
+使用SAP出站端点将数据从Mule应用程序发送到SAP，数据由BAPI函数处理。
+
+image:sap-connector-outbound-bapi-flow.png[SAP出站BAPI流]
+
+. 将连接器选项板中的HTTP端点拖放到流程的开头。
+. 在它旁边放置SAP Connector元素。
+. 双击SAP图标以打开“端点属性”窗格并配置以下属性：
++
+[%header%autowidth.spread]
+|===
+|字段 |  XML属性 |值
+|显示名称 | `doc:name`  | `SAP`
+| Exchange模式 | `exchange-pattern`  | `request-response`
+|连接器配置 | `connector-ref`  | `SapConnector`
+|输入 |输入 | `Function / BAPI`
+|对象名称 | `functionName`  |例如`BAPI_USER_GETLIST`
+| RFC类型 | `rfcType`  | `Synchronous RFC (sRFC)`
+|输出XML  | `outputXml`  | `enabled (checked)`
+|===
++
+image:sap-outbound-bapi-settings.png[SAP出站BAPI设置]
++
+. 在HTTP和SAP端点之间放置一个DataWeave组件。由于IDoc是嵌套结构，因此DataWeave可能不会显示所有字段，如下例所示：
++
+[source, code,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+    "BAPI_USER_GETLIST": {
+        import: {
+        },
+        export: {
+        },
+        tables: {
+        }
+    }
+}
+----
++
+. 生成的XML应如下所示：
++
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<BAPI_USER_GETLIST>
+    <import>
+        <MAX_ROWS>5</MAX_ROWS>
+        <WITH_USERNAME/>
+    </import>
+</BAPI_USER_GETLIST>
+----
++
+. 在流程末尾添加一个Logger组件，以在Web浏览器中显示BAPI获得的结果。
+
+===  4。出站方案 -  BAPI  - 使用Studio XML编辑器
+
+[source,xml,linenums]
+----
+<sap:outbound-endpoint connector-ref="SapConnector"
+        exchange-pattern="request-response"
+        type="function"
+        functionName="BAPI_USER_GETLIST"
+        rfcType="srfc"
+        outputXml="true"
+        doc:name="SAP"/>
+----
+
+*Note*：此演示流程的完整XML代码可以在<<Example Code>>中与其他示例流程一起找到。
+
+=== 出站方案 -  BAPI  - 运行时间
+
+. 部署Mule应用程序。
+. 点击HTTP端点中指定的URL（例如`+http://localhost:8081+`）以触发BAPI。您应该得到一个包含五个现有用户列表的XML。
++
+image:sap-outbound-bapi-console.png[SAP出站BAPI控制台]
+
+[[best-practices]]
+== 最佳实践
+
+阅读以下有关设计和配置使用SAP连接器的应用程序的最佳实践。
+
+=== 设计技巧
+
+为了充分利用SAP Connector提供的功能，设计时最佳实践表明您应该按以下特定顺序构建应用程序：
+
+1.配置连接器。
+2.测试连接。
+3.启动DataSense元数据提取。
+4.建立你的其他流程。
+5.添加和配置DataMapper  |  DataWeave。
+
+=== 使用DataSense
+
+如果您打算将SAP端点与 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[的DataMapper]或 link:/mule-user-guide/v/3.9/dataweave-language-introduction[DataWeave]转换器结合使用来映射和转换数据，则可以使用Anypoint Studio的 link:/anypoint-studio/v/6/datasense[DataSense]功能。
+
+. 按照详细的 link:/anypoint-studio/v/6/datasense[DataSense]指示将端点放入您的流程中，然后使用SAP Connector将 link:/anypoint-studio/v/6/testing-connections[测试连接]放入SAP中。
+. 在您的流程中，定义端点中的对象名称，该名称应该是BAPI或IDoc的完整名称。您也可以按照以下部分中的说明查找BAPI或IDoc。
+. 为了更好地体验DataMapper，请使用XML Version选择器来选择`XML Version 2` `(DataMapper)`。 `XML Version 1`功能正常，但映射体验要差于版本2中的映射体验。
+. 将DataMapper拖放到您的流中，在SAP端点之前或之后，然后单击DataMapper转换器以显示DataMapper属性编辑器。在从SAP收集元数据后，Mule会自动将输入或输出（相对于DataMapper的SAP端点位置）用于映射和转换数据。
+. 定义SAP的特定映射，然后保存您的流程。
+
+=== 在多个应用程序之间共享JCo依赖关系
+
+按照SAP提供的说明安装JCo库，但请记住，某些JAR文件必须位于您的应用程序`CLASSPATH`中，并且动态链接库（`dll/so/jnilib`）必须位于您的{{2} }。
+
+连接器和JCo JAR文件必须位于您的应用程序`CLASSPATH`中并共享相同的目录：
+
+*  `mule-transport-sap-{version}.jar`
+*  `sapjco-3.0.x.jar`
+*  `sapidoc-3.0.x.jar`
+
+如果您将多个应用程序部署到同一台服务器上，请将所有JAR保留在一个文件夹中，而不是为每个应用程序重复使用它们。 Mule不支持这种方式，但是有一个解决方法。
+
+对于SAP连接器，MuleSoft建议将JAR存储在以下目录中：
+
+*  `$MULE_HOME/lib/user`
+*  `$MULE_HOME/lib/native`
+
+通过将这些库放入这些库中，您可以在同一个Mule实例中运行的所有应用程序中共享这些库。由于SAP JCo配置是单例，因此如果采用这种方式，则所有应用程序都共享相同的配置，包括JCo目标存储库。
+
+要使此设置生效，您还必须手动配置`wrapper.conf`文件以添加对`$MULE_HOME/lib/native`目录的支持。
+
+你到目前为止所做的就足以在Mule Standalone实例中运行它，但是为了使它在Anypoint Studio运行时正常运行，并且能够在开发它时测试你的应用程序，必须执行以下操作：
+
+* 将以下命令行参数添加到JRE默认虚拟机参数`-Djava.library.path=PATH`。这处理本地库
+* 修改您的POM以包含用于支持文件`mule-transport-sap-{version}.jar`的`<scope>provided</scope>`
+
+== 关于应用程序CLASSPATH
+
+您的应用程序库目录自动启用以支持动态库。如果您不包括它们，那么您还需要告诉Mule SAP JCo动态链接库驻留的位置。要做到这一点，您可以执行以下任一操作：
+
+* 配置`LD_LIBRARY_PATH`环境变量。
+* 通过添加第`wrapper.java.library.path.{N}=PATH/TO/SAP-JCO/LIB-DIR`行来配置Mule包装器配置文件`$MULE_HOME/conf/wrapper.conf`。
+
+Do _not_合并两种策略，例如将JCo库放入Mule实例共享lib目录中（例如，`$MULE_HOME/lib/user`）和应用程序内部的SAP连接器库（例如`$MULE_HOME/apps/YOUR_APP/lib`）。这会导致类加载器问题，因为JCo库在静态字段（单例）中保存配置。
+
+[[tips]]
+== 提示
+
+=== 查找SAP对象
+
+自从Mule Runtime 3.5.0和SAP Connector 2.2.2发布以来，Studio允许搜索BAPI或IDoc。
+
+. 双击SAP端点以打开属性编辑器。
++
+image:user-manual-30730.png[“scaledwidth =”70％“，SAP对象设置]
++
+. 指定要搜索的SAP对象类型。
+. 单击选择按钮以打开SAP功能搜索向导。
++
+image:user-manual-9fce3.png[“scaledwidth =”70％“，SAP对象搜索]
++
+. 输入一个有效的过滤器（至少应输入一个字符）。您可以使用通配符星号（`&#42;`）来搜索所有名称为"begin with"的BAPI / IDoc。
+. 显示结果后，可以右键单击每行以导出BAPI（XML版本1或2）或IDoc的XML或XSD表示。当选择结果中的一行时，可以按下选择按钮来设置对象名称的值。
++
+image:sap-tip-object-export.png[“scaledwidth =”70％“，SAP对象导出]
++
+. 此外，您可以单击详细信息按钮（在对象名称旁边）显示该特定BAPI或IDoc的XML结构和XSD定义。最后，您可以通过单击“导出”选项导出这些定义。
++
+image:sap-tip-object-details.png[“scaledwidth =”70％“，SAP对象详细信息]
+
+[[example-code]]
+== 示例代码
+
+[source,xml,linesnum]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:context="http://www.springframework.org/schema/context" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" 
+xmlns:http="http://www.mulesoft.org/schema/mule/http" 
+xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" 
+xmlns:sap="http://www.mulesoft.org/schema/mule/sap" 
+xmlns="http://www.mulesoft.org/schema/mule/core" 
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+xmlns:spring="http://www.springframework.org/schema/beans"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xsi:schemaLocation="http://www.springframework.org/schema/beans 
+http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core 
+http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sap 
+http://www.mulesoft.org/schema/mule/sap/current/mule-sap.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking 
+http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/http 
+http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/dw 
+http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.springframework.org/schema/context 
+http://www.springframework.org/schema/context/spring-context-current.xsd">
+
+    <!-- Credentials -->
+    <context:property-placeholder location="sap.properties"/>
+
+    <!-- Connection config -->
+    <sap:connector name="SapConnector" jcoClient="${sap.jcoClient}"
+        jcoUser="${sap.jcoUser}" jcoPasswd="${sap.jcoPasswd}" 
+        jcoLang="${sap.jcoLang}" jcoAsHost="${sap.jcoAsHost}"
+        jcoSysnr="${sap.jcoSysnr}"  jcoPoolCapacity="${sap.jcoPoolCapacity}" 
+        jcoPeakLimit="${sap.jcoPeakLimit}" doc:name="SAP" 
+        validateConnections="true" jcoTrace="true" jcoTraceToLog="true" />
+
+    <!-- HTTP endpoint -->
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+
+    <!-- Inbound IDoc -->
+    <flow name="idocServer">
+        <sap:inbound-endpoint exchange-pattern="request-response" 
+        connector-ref="SapConnector" type="idoc" functionName="MATMAS05" 
+        rfcType="trfc" outputXml="true" jcoGwHost="${sap.jcoGwHost}" 
+        jcoGwService="${sap.jcoGwService}" jcoProgramId="${sap.jcoProgramId}" 
+        jcoConnectionCount="${sap.jcoConnectionCount}" responseTimeout="10000" 
+        doc:name="SAP"/>
+        <logger level="INFO" doc:name="Logger" message="#[payload]"/>
+    </flow>
+
+    <!-- Inbound BAPI -->
+    <flow name="bapiServer">
+        <sap:inbound-endpoint connector-ref="SapConnector" type="function" 
+        functionName="STFC_CONNECTION" rfcType="trfc" outputXml="true" 
+        jcoGwHost="${sap.jcoGwHost}" jcoGwService="${sap.jcoGwService}" 
+        jcoProgramId="${sap.jcoProgramId}" 
+        jcoConnectionCount="${sap.jcoConnectionCount}" responseTimeout="10000" 
+        doc:name="SAP" exchange-pattern="request-response"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+
+    <!-- Outbound IDoc -->
+    <flow name="idocClient">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/idoc" 
+        doc:name="HTTP"/>
+        <dw:transform-message doc:name="IDoc">
+           <dw:set-payload>
+              <![CDATA[%dw 1.0
+                 %output application/xml
+                 ---
+                 {
+                    DEBMAS01: {
+                        IDOC @(BEGIN: "1"): {
+                            "EDI_DC40" @(SEGMENT: "1"): {
+                                TABNAM: "EDI_DC40",
+                                DIRECT: "2",
+                                IDOCTYP: "DEBMAS01",
+                                MESTYP: "DEBMAS",
+                                SNDPOR: "MULESOFT",
+                                SNDPRT: "LS",
+                                SNDPRN: "MULESOFT",
+                                RCVPOR: "MULESOFT",
+                                RCVPRT: "LS",
+                                RCVPRN: "MULESOFT"
+                            },
+                            "E1KNA1M" @(SEGMENT: "1"): {
+                                MSGFN: "005",
+                                KUNNR: "0000099500",
+                                KTOKD: "ZAG2",
+                                LAND1: "SK",
+                                NAME1: "MuleSoft 99003 2nd",
+                                SPRAS: "E",
+                                SPRAS_ISO: "EN"
+                            }
+                        }
+                    }
+                 }]]>
+           </dw:set-payload>
+        </dw:transform-message>
+        <sap:outbound-endpoint exchange-pattern="request-response" 
+        connector-ref="SapConnector" type="idoc" functionName="DEBMAS01" 
+        outputXml="true" responseTimeout="10000" doc:name="SAP" rfcType="trfc"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+
+    <!-- Outbound BAPI -->
+    <flow name="bapiClient">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/bapi" 
+        doc:name="HTTP"/>
+        <dw:transform-message doc:name="BAPI Params">
+            <dw:set-payload>
+               <![CDATA[%dw 1.0
+                 %output application/xml
+                 ---
+                 {
+                    "BAPI_USER_GETLIST": {
+                        import: {
+                            "MAX_ROWS": "5",
+                            "WITH_USERNAME": ""
+                        }
+                    }
+                 }]]>
+                </dw:set-payload>
+            </dw:transform-message>
+        <sap:outbound-endpoint connector-ref="SapConnector" type="function" 
+        functionName="BAPI_USER_GETLIST" outputXml="true" responseTimeout="10000" 
+        doc:name="SAP"/>
+        <logger level="INFO" doc:name="Logger" message="#[payload]"/>
+    </flow>
+</mule>
+----
+
+
+[[see-also]]
+== 另请参阅
+
+*  http://mulesoft.github.io/mule-sap-connector/[下载SAP示例]。
+*  link:/mule-user-guide/v/3.9/sap-connector-advanced-features[SAP连接器高级功能]。
+*  link:/mule-user-guide/v/3.9/sap-connector-troubleshooting[SAP故障排除]。
+*  https://www.anypoint.mulesoft.com/exchange/?search=SAP%20template [SAP模板]。
+*  link:/mule-user-guide/v/3.9/anypoint-connectors[Anypoint连接器]。
+*  link:/release-notes/sap-connector-release-notes[SAP连接器发行说明]。
+*  https://websmp201.sap-ag.de/public/connectors [SAP Service Marketplace（SMP）]。
+*  https://support.sap.com/en/index.html [SAP JCo 3.0版本和支持策略 - 请参阅支持说明1077727（要求您登录SAP支持门户以查看）]。

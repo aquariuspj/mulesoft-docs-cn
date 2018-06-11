@@ -1,0 +1,2921 @@
+=  Anypoint CLI
+:keywords: administration, api, organization, users, gateway, theme, cli
+
+image:logo-cloud-active.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-active.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-disabled.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+Anypoint Platform提供了一个脚本和命令行工具来与之交互：
+
+*  link:/anypoint-exchange/[Anypoint Exchange]
+*  link:/access-management[访问管理]
+将Mule应用程序部署到MuleSoft托管（CloudHub）和客户托管的Mule运行时的*  link:/runtime-manager/[运行时管理器]
+*  link:/runtime-manager/virtual-private-cloud[室性早搏]
+*  link:/runtime-manager/cloudhub-dedicated-load-balancer[Cloudhub负载平衡器]
+*  link:/api-manager/[API管理器]
+*  link:/design-center/[设计中心]
+
+通过用于*Anypoint Platform*和*Anypoint Platform Private Cloud Edition*的交互式shell和标准CLI模式。
+
+== 假设
+
+本文档假设您熟悉我们的 link:/api-manager/tutorials[API管理器教程]，并且您可以 link:/api-manager/tutorial-manage-an-api[使用Anypoint Platform管理您的API]。
+
+== 安装
+
+[IMPORTANT]
+--
+Anypoint-CLI是一个 link:https://nodejs.org/en/[Node.js的]应用程序。在计算机上安装Anypoint CLI之前，首先需要确保在计算机上安装了Node.js运行时环境。除此之外，您还需要使用默认的Node.js软件包管理器（npm）来安装Anypoint CLI。
+遵循NodeJS文档来获取这两种资源。 +
+您还需要在计算机上安装Git版本管理系统。 Git文档站点提供了安装说明和特定操作系统下载链接。
+--
+
+在安装了Node.js（带有npm）和git之后，您可以通过打开命令行界面并键入以下命令来安装Anypoint CLI：
+
+[source,Example]
+----
+$ npm install -g anypoint-cli
+----
+
+[NOTE]
+密切关注选项的顺序。它是`npm install -g anypoint-cli`，而不是`npm install anypoint-cli -g`。
+
+如果您的计算机上已经运行Anypoint CLI，则可以运行以下命令获取最新版本：
+
+[source,Example]
+----
+$ npm install -g anypoint-cli@latest
+----
+
+[NOTE]
+根据您系统的配置，您可能需要使用管理员凭据运行这些命令。
+
+[NOTE]
+====
+如果您使用Anypoint Platform私有云版本托管整个平台，请确保您首先将`~/.anypoint/credentials`文件中的“主机”字段设置为您在本地托管平台的地址。通过这样做，此CLI将解决您的本地安装问题，而不是在线平台。
+
+您也可以通过向启动CLI的命令添加一个`host`参数来实现相同目的：
+
+[source,Example]
+----
+anypoint-cli --host myhost.company.com
+----
+
+====
+
+=== 解决安装问题
+
+如果在安装过程中，npm会引发{{0}​​}错误，请确保您的计算机上安装了git客户端，并且git协议未被防火墙或网络阻止。
+
+== 用法
+
+Anypoint-CLI的每个实例都可以使用以下任何参数：
+
+[%header,cols="15,75a,10a"]
+|===
+| {参数{1}}说明| 必
+|用户名 | 您的Anypoint平台用户名。 +
+您也可以使用环境变量（例如，`export ANYPOINT_USERNAME=<name>`）|  *Yes*
+|密码 | 您的Anypoint平台密码。 +
+您也可以使用环境变量（例如，`export ANYPOINT_PASSWORD=<pwd>`）|  *Yes*
+|组织| 您的组织在Anypoint平台中。 +
+您也可以使用环境变量（例如，`export ANYPOINT_ORG=<name>`）| 否
+|环境| 您的Anypoint-CLI环境。 +
+您也可以使用环境变量（例如，`export ANYPOINT_ENV=<name>`）| 否
+|===
+
+=== 登录
+
+如上所述，用户名和密码参数是必需的。但是，如果您选择通过您的用户名，则Anypoint Platform CLI会提示您输入密码。
+
+[source,Example,linenums]
+----
+> anypoint-cli --username="user"
+Password: ****
+----
+
+如果您选择在运行Anypoint-CLI时传递凭据，我们强烈建议将这两个参数作为环境变量传递：`ANYPOINT_USERNAME`和`ANYPOINT_PASSWORD`。
+
+[source,Example,linenums]
+----
+> export ANYPOINT_USERNAME="username"
+> export ANYPOINT_PASSWORD="password"
+> anypoint-cli
+----
+
+推荐的证书传递方式是使用位于Linux和OSx的`~/.anypoint/`目录中的`credentials`文件或Windows中的`C:\Users\USERNAME \.anypoint\`。 +
+
+[NOTE]
+`/.anypoint/`目录不会在安装过程中自动创建，因此您需要在相应系统的用户目录中创建它。
+
+使用以下结构设置名为`credentials`的空白文件：
+
+[source,credentials,linenums]
+----
+{
+ "default": {
+  "username": "yourAnypointUserName",
+  "password": "yourAnypointPassword"
+ },
+ "otherProfile": {
+  "username": "",
+  "password": "",
+  "organization": "",
+  "environment": "",
+  "host": ""
+ }
+}
+----
+请注意，除非设置了`ANYPOINT_PROFILE`环境变量，否则将使用"default"配置文件：
+
+CLI还允许您使用`--bearer`选项为您的帐户传递令牌。 +
+您需要用您的用户名和密码登录+ https：//anypoint.mulesoft.com/accounts/login+端点以获取您的无记名值，然后将该值传递给CLI：
+
+[source,Example]
+----
+> anypoint-cli --host anypoint.mulesoft.com --bearer 00d3ba76-bfaf-416e-960b-5d2ba33df97b
+----
+
+您的会话在令牌持有者到期时过期。 +
+如果您同时发送用户名和密码以及令牌承载，则CLI优先承载登录。
+
+
+[source,Example,linenums]
+----
+> export ANYPOINT_PROFILE="otherProfile"
+> anypoint-cli
+----
+
+然后运行不带任何参数的anypoint-cli命令：
+
+[source,Example,linenums]
+----
+> anypoint-cli
+----
+
+环境变量覆盖凭证文件参数，命令行参数覆盖环境变量。如果您未传递命令行参数，则使用默认的配置文件属性。
+
+
+[IMPORTANT]
+--
+在使用Anypoint-CLI时要记住一些注意事项：
+
+. 如果您未设置环境，系统会自动将您发送到`production`。 +
+. 您的Anypoint会话将根据 link:/access-management/organization#manage-the-master-organization-s-settings[主组织的设置]中配置的*Default session timeout*过期。 +
+.  Anypoint-CLI适用于自动完成。您可以开始输入命令或参数的名称，然后点击`tab`进行自动填充，或者双击`tab`查看所有可能选项的列表。
+--
+
+一旦你有了你的参数，你就可以传递命令。
+
+== 命令列表
+
+Anypoint Platform CLI为不同的用例场景提供命令：
+
+*  <<Commands For Administrating your Anypoint Platform Account>>
+*  <<Commands for API Manager>>
+*  <<Commands for Administrating your Design Center Applications>>
+*  <<Commands for Managing Exchange Assets>>
+*  <<Commands for Administrating your CloudHub Application>>
+*  <<Commands for Managing your Locally Deployed Applications Managed by Runtime Manager>>
+*  <<Commands for Managing Your Local PCF Deployed Applications>>
+*  <<Commands for Managing your Local Servers>>
+*  <<Commands for Administrating your Local Server Groups>>
+*  <<Commands for Administrating your Local Cluster Servers>>
+*  <<Commands for Managing Alerts for your Locally Deployed Applications Managed by Runtime Manager>>
+*  <<Commands for Mananging your CloudHub Dedicated Load balancer>>
+*  <<Commands for Managing your CloudHub VPC>>
+*  <<Commands for Specifying Environments and Business Groups>>
+
+
+[TIP]
+--
+Anypoint Platform CLI提供三个默认选项：
+
+*  `--help`选项显示该命令的使用情况信息。
+*  `-o`或`--output`选项可让您将命令的输出指定为定义的格式。 +
+支持的值是`table`，`text`和`json`。对于非交互式会话，默认为`text`，对于交互式会话，默认为`table`。
+*  `-f`或`--fields`选项允许您定义要输出的字段。 +
+您可以在命令后传递`--fields`选项以获取要输出的所有可能字段的列表。
+--
+
+用于管理您的Anypoint平台帐户的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<account user describe>> | 显示帐户详细信息
+| <<account business-group list>> | 列出业务组
+| <<account business-group describe>> | 显示业务组的详细信息
+| <<account environment list>> | 列出环境
+| <<account environment create>> | 创建新环境
+| <<account environment delete>> | 删除一个环境
+| <<account environment describe>>  | 显示环境的详细信息
+|===
+
+API Manager的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<api-mgr api list>>  | 列出API Manager中的所有API
+| <<api-mgr api-version delete>>  | 删除API版本
+| <<api-mgr api-version list>>  | 在API Manager中列出API的所有版本
+| <<api-mgr applications approve>>  | 批准给定的应用程序
+| <<api-mgr applications approve-tier-change>>  | 批准SLA层更改
+| <<api-mgr applications delete>>  | 删除给定的应用程序
+| <<api-mgr applications list>>  | 列出给定API版本的所有应用程序
+| <<api-mgr applications reject>>  | 拒绝给定的应用程序
+| <<api-mgr applications reject-tier-change>>  | 拒绝SLA层更改
+| <<api-mgr applications restore>>  | 恢复给定的应用程序
+| <<api-mgr applications revoke>>  | 撤销给定的应用程序
+| <<api-mgr applications set-tier>>  | 为给定的应用程序设置SLA层
+| <<api-mgr definition copy>>  | 将API定义从一个API复制到另一个
+| <<api-mgr definition download>>  | 将API定义下载到本地目录
+| <<api-mgr definition upload>>  | 将本地API定义上传到API Manager
+| <<api-mgr endpoint configure>>  | 配置给定API版本的端点
+| <<api-mgr endpoint describe>>  | 显示给定API版本的端点配置
+| <<api-mgr policy apply>>  | 将策略应用于给定的API版本
+| <<api-mgr policy copy>>  | 将策略配置从一个API版本复制到另一个。这样做会删除源API版本中不存在的策略
+| <<api-mgr policy describe>>  | 显示给定策略的说明和可用配置属性
+| <<api-mgr policy disable>>  | 从给定的API版本中禁用策略
+| <<api-mgr policy edit>>  | 编辑给定API版本的策略配置
+| <<api-mgr policy enable>>  | 在给定的API版本上启用策略
+| <<api-mgr policy list>>  | 列出政策
+| <<api-mgr policy remove>>  | 从给定的API版本中删除策略
+| <<api-mgr portal copy>>  | 将API门户从源复制到目标
+| <<api-mgr portal list>>  | 列出API的所有门户
+| <<api-mgr portal open>>  | 在浏览器中打开API门户
+| <<api-mgr tiers add>>  | 创建SLA层
+| <<api-mgr tiers copy>>  | 将SLA层从一个API版本复制到另一个
+| <<api-mgr tiers delete>>  | 删除SLA层
+| <<api-mgr tiers deprecate>>  | 弃用SLA层
+| <<api-mgr tiers edit>>  | 编辑SLA层
+| <<api-mgr tiers list>>  | 列出API版本的SLA层
+| <<api-mgr tiers reactivate>>  | 重新激活SLA层
+| <<api-mgr proxy download>>  | 将代理的ZIP存档下载到本地目录
+|===
+
+用于管理设计中心应用程序的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+|  <<designcenter project create>>  | 创建一个新的Design Center项目
+|  <<designcenter project delete>>  | 删除Design Center项目
+|  <<designcenter project download>>  | 下载Design Center项目的内容
+|  <<designcenter project publish>>  | 将设计中心项目发布到Exchange
+|  <<designcenter project upload>>  | 将项目内容上传到Design Center
+|  <<designcenter project list>>  | 列出所有Design Center项目
+|===
+
+用于管理Exchange资产的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<exchange asset upload>>  | 上传Exchange资产
+| <<exchange asset modify>>  | 修改Exchange资产
+| <<exchange asset download>>  | 下载Exchange资产
+| <<exchange asset list>>  | 列出所有资产
+| <<exchange asset page download>>  | 从Exchange下载资产的说明页面
+| <<exchange asset page modify>>  | 从Exchange更改资产的说明页面
+| <<exchange asset page upload>>  | 从Exchange上传资产的描述页面
+| <<exchange asset page delete>>  | 从Exchange中删除资产的说明页面
+| <<exchange asset page list>>  | 列出给定资产的所有页面
+| <<exchange asset copy>>  | 复制Exchange资产
+| <<exchange asset delete>>  | 从Exchange中删除资产
+| <<exchange asset deprecate>>  | 弃用资产
+| <<exchange asset undeprecate>>  | 取消资产
+| <<exchange asset describe>>  | 显示给定资产的信息
+|===
+
+用于管理您的CloudHub应用程序的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<runtime-mgr cloudhub-alert list>> | 列出环境中的所有警报
+| <<runtime-mgr cloudhub-alert-history describe>> | 描述闹钟的历史
+| <<runtime-mgr cloudhub-application list>> | 列出环境中的所有应用程序
+| <<runtime-mgr cloudhub-application describe>> | 显示应用程序详细信息
+| <<runtime-mgr cloudhub-application describe-json>> | 显示原始应用程序JSON响应
+| <<runtime-mgr cloudhub-application stop>> | 停止正在运行的应用程序
+| <<runtime-mgr cloudhub-application start>> | 启动应用程序
+| <<runtime-mgr cloudhub-application restart>> | 重新启动正在运行的应用程序
+| <<runtime-mgr cloudhub-application delete>> | 删除一个应用程序
+| <<runtime-mgr cloudhub-application deploy>> | 部署新的应用程序
+| <<runtime-mgr cloudhub-application modify>> | 修改现有的应用程序，可选择更新zip文件
+//  | <<runtime-mgr application revert-runtime>> | 将应用程序还原到其以前的运行时
+| <<runtime-mgr cloudhub-application download-logs>> | 将应用程序日志下载到指定的目录
+| <<runtime-mgr cloudhub-application tail-logs>> | 尾巴应用程序日志
+| <<runtime-mgr cloudhub-application copy>> | 复制CloudHub应用程序
+//  | <<runtime-mgr cloudhub-application upgrade-runtime>> | 将应用程序运行时升级到最新的修补程序版本，或者如果指定了某个版本，则将该应用程序运行时升级到该版本。
+//  | <<runtime-mgr cloudhub-application downgrade-runtime>> | 将应用程序运行时降级到先前的运行时版本，或者如果指定了版本，则将其降级到该版本。
+|===
+
+用于管理由运行时管理器管理的本地部署的应用程序的=== 命令
+
+[CAUTION]
+为了Anypoint Platform CLI识别您的目标服务器，每台服务器都需要手动注册到该平台。
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<runtime-mgr standalone-application artifact>>  | 下载应用程序工件二进制文件
+| <<runtime-mgr standalone-application deploy>>  | 向本地服务器，服务器组或群集部署新应用程序
+| <<runtime-mgr standalone-application describe-json>>  | 显示原始独立应用程序JSON响应
+| <<runtime-mgr standalone-application modify>>  | 更改独立应用程序工件
+| <<runtime-mgr standalone-application start>>  | 启动独立应用程序
+| <<runtime-mgr standalone-application delete>>  | 删除独立应用程序
+| <<runtime-mgr standalone-application describe>>  | 显示独立应用程序的详细信息
+| <<runtime-mgr standalone-application list>>  | 列出环境中的所有独立应用程序
+| <<runtime-mgr standalone-application restart>>  | 重新启动独立应用程序
+| <<runtime-mgr standalone-application stop>>  | 停止独立应用程序
+| <<runtime-mgr standalone-application copy>>  | 复制独立应用程序
+|===
+
+用于管理本地PCF已部署应用程序的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<runtime-mgr pcf-application delete>>  | 删除PCF应用程序
+| <<runtime-mgr pcf-application describe>>  | 显示PCF应用程序的详细信息
+| <<runtime-mgr pcf-application list>>  | 列出环境中的所有PCF应用程序
+| <<runtime-mgr pcf-application restart>>  | 重新启动PCF应用程序
+| <<runtime-mgr pcf-application stop>>  | 停止PCF应用程序
+| <<runtime-mgr pcf-application deploy>>  | 向PCF空间部署新应用程序
+| <<runtime-mgr pcf-application describe-json>>  | 显示原始PCF应用程序JSON响应
+| <<runtime-mgr pcf-application modify>>  | 编辑部署到PCF空间的应用程序
+| <<runtime-mgr pcf-application start>>  | 启动PCF应用程序
+|===
+
+
+用于管理本地服务器的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<runtime-mgr server describe>>  | 描述服务器
+| <<runtime-mgr server modify>>  | 修改服务器
+| <<runtime-mgr server token>>  | 获取服务器注册令牌。该令牌需要用于注册新的服务器
+| <<runtime-mgr server delete>>  | 删除服务器
+| <<runtime-mgr server list>>  | 更改独立应用程序工件
+//  | <<runtime-mgr server register>>  | 注册新的服务器。返回下载到`directory`路径的签名证书
+|===
+
+用于管理本地服务器组的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<runtime-mgr serverGroup create>>  | 从服务器创建服务器组
+| <<runtime-mgr serverGroup describe>>  | 描述服务器组
+| <<runtime-mgr serverGroup modify>>  | 修改服务器组
+| <<runtime-mgr serverGroup add server>>  | 将服务器添加到服务器组
+| <<runtime-mgr serverGroup delete>>  | 删除服务器组
+| <<runtime-mgr serverGroup list>>  | 列出环境中的所有服务器组
+| <<runtime-mgr serverGroup remove server>>  | 从服务器组中删除服务器
+|===
+
+用于管理本地群集服务器的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<runtime-mgr cluster add server>>  | 将服务器添加到集群
+| <<runtime-mgr cluster delete>>  | 删除群集
+| <<runtime-mgr cluster list>>  | 列出环境中的所有群集
+| <<runtime-mgr cluster remove server>>  | 从集群中删除服务器
+| <<runtime-mgr cluster create>>  | 创建新的群集
+| <<runtime-mgr cluster describe>>  | 描述服务器群集
+| <<runtime-mgr cluster modify>>  | 修改集群
+|===
+
+
+管理Runtime Manager管理的本地部署应用程序的警报的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<runtime-mgr standalone-alert describe>>  | 描述警报
+| <<runtime-mgr standalone-alert create>>  | 为独立运行时创建新警报
+| <<runtime-mgr standalone-alert modify>>  | 修改独立运行时的警报
+| <<runtime-mgr standalone-alert list>>  | 列出环境中独立运行时的所有警报
+|===
+
+用于管理您的CloudHub专用负载均衡器的命令=== 
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<cloudhub load-balancer list>> | 列出组织中的所有负载平衡器
+| <<cloudhub load-balancer describe>> | 显示LB详情
+| <<cloudhub load-balancer describe-json>> | 显示原始LB JSON响应
+| <<cloudhub load-balancer create>> | 创建负载平衡器
+| <<cloudhub load-balancer start>> | 启动负载均衡器
+| <<cloudhub load-balancer stop>> | 停止负载平衡器
+| <<cloudhub load-balancer delete>> | 删除负载平衡器
+| <<cloudhub load-balancer ssl-endpoint add>> | 将额外的证书添加到现有的负载均衡器
+| <<cloudhub load-balancer ssl-endpoint remove>> | 从负载平衡器中移除证书
+| <<cloudhub load-balancer ssl-endpoint set-default>> | 设置负载平衡器将要提供的默认证书
+| <<cloudhub load-balancer ssl-endpoint describe>> | 显示特定证书的负载平衡器配置
+| <<cloudhub load-balancer whitelist add>> | 将IP或IP范围添加到负载平衡器白名单
+| <<cloudhub load-balancer whitelist remove>> | 从负载平衡器白名单中删除IP或IP范围
+| <<cloudhub load-balancer mappings describe>> | 列出负载平衡器的代理映射规则。如果未指定certificateName，则会显示默认SSL端点的映射
+| <<cloudhub load-balancer mappings add>> | 在指定的索引处添加代理映射规则如果未指定certificateName，则会显示默认SSL端点的映射
+| <<cloudhub load-balancer mappings remove>> | 删除代理映射规则如果未指定certificateName，则会显示默认SSL端点的映射
+| <<cloudhub load-balancer dynamic-ips enable>> | 启用动态IP
+| <<cloudhub load-balancer dynamic-ips disable>> | 禁用动态IP
+| <<cloudhub region list>> | 列出所有受支持的区域
+| <<cloudhub runtime list>> | 列出所有可用的运行时间
+|===
+
+用于管理CloudHub VPC的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<cloudhub vpc list>> | 列出所有VPC
+| <<cloudhub vpc describe>> | 显示VPC详细信息
+| <<cloudhub vpc describe-json>> | 显示原始VPC JSON响应
+| <<cloudhub vpc create>> | 创建一个新的VPC
+| <<cloudhub vpc delete>> | 删除现有的VPC
+| <<cloudhub vpc environments add>> | 将VPC关联修改为Runtime Manager环境。
+| <<cloudhub vpc environments remove>> | 将VPC关联修改为Runtime Manager环境。
+| <<cloudhub vpc business-groups add>> | 与业务组列表共享VPC。
+| <<cloudhub vpc business-groups remove>> | 与业务组列表共享VPC。
+| <<cloudhub vpc dns-servers set>> | 设置使用您的内部DNS服务器解析的域名。如果没有选项使用，内部DNS将被禁用
+| <<cloudhub vpc dns-servers unset>> | 清除使用内部DNS服务器解析的列表域名
+| <<cloudhub vpc firewall-rules describe>> | 在此VPC中显示Mule应用程序的防火墙规则
+| <<cloudhub vpc firewall-rules add>> | 为此VPC中的Mule应用程序添加防火墙规则
+| <<cloudhub vpc firewall-rules remove>> | 删除此VPC中Mule应用程序的防火墙规则
+|===
+
+指定环境和业务组的=== 命令
+
+[%header,cols="35a,65a"]
+|===
+| {命令{1}}说明
+| <<use environment>> | 使指定的环境处于活动状态
+| <<use business-group>> | 使指定的业务组处于活动状态
+|===
+
+Anypoint-CLI调用应该具有以下形式：
+[source,Example]
+----
+$ anypoint-cli [params] [command]
+----
+
+如果您选择不传递命令，则Anypoint-CLI将在*interactive mode*中运行。
+如果您选择通过特定命令并发生错误，应用程序将退出并返回问题描述。
+
+=== 帐户用户描述
+
+[source,Example]
+----
+> account user describe  [options]
+----
+
+此命令只是返回您帐户的信息。这包括您的用户名，您的全名，您的电子邮件地址以及您帐户的创建日期。 +
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+=== 帐户业务组列表
+
+[source,Example]
+----
+> account business-group list [options]
+----
+
+该命令显示全部 link:/access-management/organization#business-groups[商业团体]。它返回业务组的名称，类型（“主”或“业务单位”）和ID。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+
+=== 帐户业务组描述
+
+[source,Example]
+----
+> account business-group describe  [options] <name>
+----
+
+此命令显示您在<name>中传递的业务组的信息。 +
+如果未指定<name>，则该命令会在当前会话中描述业务组。
+
+[NOTE]
+--
+如果您的业务组或组织名称包含空格，则需要在`"`个字符之间放置其名称。
+
+----
+> account business-group describe "QA Organization"
+----
+--
+
+它返回诸如所有者，类型，订阅信息，组的权利以及在哪个环境中运行的数据。
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 帐户环境列表
+
+[source,Example]
+----
+> account environment list [options]
+----
+该命令列出了Anypoint平台中的所有环境。它会返回你的环境名称，它的ID以及它是否被沙箱化。 +
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+=== 帐户环境创建
+
+[source,Example]
+----
+> account environment create [options] <name>
+----
+该命令使用您在<name>中设置的名称创建新环境。 +
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还会使用`--type`选项。使用`--type`选项指定环境类型。 +
+环境类型支持的值是：
+
+* 设计
+* 生产
+* 沙箱
+
+如果未指定类型，则该命令会创建一个生产环境。
+
+=== 帐户环境删除
+
+[source,Example]
+----
+> account environment delete  [options] <name>
+----
+该命令删除在<name> +中指定的环境
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 帐户环境删除
+
+[source,Example]
+----
+> account environment describe [options] <name>
+----
+
+该命令删除在<name> +中指定的环境
+如果未提供<name>，则此命令将返回有关当前会话环境的信息。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr api列表
+
+[source,Example]
+----
+> api-mgr api list [options] <searchText>
+----
+该命令列出API Manager中的所有API。
+
+您可以在`searchText`中指定API名称以获取特定API的结果。 +
+此命令列出了API名称，API的最新版本，API的版本计数以及自上次更新以来的时间。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,40a,30a"]
+|===
+| {命令{1}}说明 |  示例
+|  - 限制 | 要检索的结果数量 |  `api-mgr api list --limit 2`
+|  -  offset  | 补偿传递的API数量 |  `api-mgr api list --offset 3`
+|  - 对 | 进行排序将结果排序传递给 |  `api-mgr api list --sort "Latest Version"`的字段名称中
+|===
+
+===  api-mgr api-version删除
+
+[source,Example]
+----
+> api-mgr api-version delete [options] <apiName> <version>
+----
+
+该命令将删除在`apiName`中传递的API的`version`中指定的版本。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr api版本列表
+
+[source,Example]
+----
+> api-mgr api-version list [options] <apiName>
+----
+
+该命令列出`apiName`中指定的所有API版本。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr应用程序批准
+
+[source,Example]
+----
+> api-mgr applications approve [options] <clientId> <apiName> <apiVersion>
+----
+
+此命令批准来自客户端ID在`clientId`中传递给在`apiName`中指定的API和在`apiVersion`中传递的版本的应用程序的访问请求。
+
+[TIP]
+--
+您可以使用<<api-mgr applications list>>命令获取您想要与之交互的应用程序的客户端ID。
+--
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr应用程序批准更改
+
+[source,Example]
+----
+> api-mgr applications approve-tier-change [options] <clientId> <apiName> <apiVersion>
+----
+
+此命令批准客户端ID在`clientId`中传递给在`apiName`中指定的API和在`apiVersion`中传递的版本的应用程序的SLA层更改。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[TIP]
+--
+您可以使用<<api-mgr applications list>>命令获取您想要与之交互的应用程序的客户端ID。
+--
+
+===  api-mgr应用程序删除
+
+[source,Example]
+----
+>  api-mgr applications delete [options] <clientId> <apiName> <apiVersion>
+----
+
+此命令会将与在`clientId`中传递的客户端ID相关联的应用程序与在`apiVersion`中指定的版本在`apiName`中传递的API一起删除。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[TIP]
+--
+您可以使用<<api-mgr applications list>>命令获取您想要与之交互的应用程序的客户端ID。
+--
+
+
+===  api-mgr应用程序列表
+
+[source,Example]
+----
+> api-mgr applications list [options] <apiName> <apiVersion> [searchText]
+----
+
+此命令显示有关您的API的访问请求状态为`pending`，`approved`或`revoked`的应用程序的信息。
+
+[TIP]
+您可以在searchText中指定关键字，以将结果限制为包含这些特定关键字的API。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,40a,30a"]
+|===
+| {命令{1}}说明 |  示例
+|  -  tier-requests  | 传递时，此命令仅列出具有待处理的SLA层更改请求的应用程序。 |  `api-mgr applications list --tier-requests`
+|  - 限制 | 要检索的结果数量 |  `api-mgr applications list --limit 2`
+|  -  offset  | 补偿传递的API数量 |  `api-mgr applications list --offset 3`
+|  - 对 | 进行排序将结果排序传递给 |  `api-mgr applications list --sort "Latest Version"`的字段名称中
+|===
+
+===  api-mgr应用程序拒绝
+
+[source,Example]
+----
+> api-mgr applications reject [options] <clientId> <apiName> <apiVersion>
+----
+
+此命令拒绝将应用程序传递给在`apiName`中传递的API以及在`apiVersion`中指定的版本。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[TIP]
+--
+您可以使用<<api-mgr applications list>>命令获取您想要与之交互的应用程序的客户端ID。
+--
+
+===  api-mgr应用程序拒绝层更改
+
+[source,Example]
+----
+> api-mgr applications reject-tier-change [options] <clientId> <apiName> <apiVersion>
+----
+
+此命令会拒绝应用程序请求的SLA层更改，该应用程序使用在`apiName`中传递的API以及在`apiVersion`中指定的版本在`clientId`中传递的客户端ID。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[TIP]
+--
+您可以使用<<api-mgr applications list>>命令获取您想要与之交互的应用程序的客户端ID。
+--
+
+===  api-mgr应用程序还原
+
+[source,Example]
+----
+> api-mgr applications restore [options] <clientId> <apiName> <apiVersion>
+----
+
+此命令使用在`apiName`中传递的API和在`apiVersion`中指定的版本，恢复与在`clientId`中传递的客户端ID关联的请求的应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[TIP]
+--
+您可以使用<<api-mgr applications list>>命令获取您想要与之交互的应用程序的客户端ID。
+--
+
+
+撤消===  api-mgr应用程序
+
+[source,Example]
+----
+> api-mgr applications revoke [options] <clientId> <apiName> <apiVersion>
+----
+
+此命令将与在`clientId`中传递的客户端ID相关联的应用程序废弃为在`apiName`中传递的API以及在`apiVersion`中指定的版本。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[TIP]
+--
+您可以使用<<api-mgr applications list>>命令获取您想要与之交互的应用程序的客户端ID。
+--
+
+===  api-mgr应用程序设置层
+
+[source,Example]
+----
+> api-mgr applications set-tier [options] <tierId> <clientId> <apiName> <apiVersion>
+----
+
+此命令将在`tierId`中为与`clientId`中传递的客户端ID关联的应用程序以及以`apiName`传递的API和`apiVersion`中指定的版本设置SLA层。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[NOTE]
+您可以使用<<api-mgr tiers add>>命令创建一个层。
+
+===  api-mgr定义副本
+
+[source,Example]
+----
+> api-mgr definition copy [options] <source> <target>
+----
+
+该命令将传递给`source`的API中的定义复制到在`target`中传递的API中。 +
+参数"source"和"target"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+例如：
+
+[source,Example]
+----
+> api-mgr definition copy Services/api-1/1.0 Development/api-1/1.0
+----
+
+从_Services_组织复制名为`api-1`和版本`1.0`的API的定义到_Development_组织。 +
+如果Anypoint Platform CLI正在使用服务组织，则该命令可以简单地将应用程序名称作为`source`：
+
+[source,Example]
+----
+> api-mgr definition copy api-1/1.0 Development/api-1/1.0
+----
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr定义下载
+
+[source,Example]
+----
+> api-mgr definition download [options] <apiName> <version> <directory>
+----
+
+该命令将在`version`中指定的版本的`apiName`中传递的API的API定义下载到在`directory`中传递的本地目录中。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+
+===  api-mgr定义上传
+
+[source,Example]
+----
+> api-mgr definition upload [options] <apiName> <version> <directory>
+----
+
+此命令将`directory`中传递的目录中的API定义上传到在`version`中传递的版本在`apiName`中传递的API。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,40a,30a"]
+|===
+| {命令{1}}说明 |  示例
+|  -  swagger  | 当API定义很大时，传递 |  `api-mgr definition upload --swagger --root swagger.yaml test-api 1 /Users/sample/Documents`
+|  -  root  | 定义要上传的API定义的根文件 |  `api-mgr definition upload --root sample.raml test-api 1 /Users/sample/Documents`
+|===
+
+===  api-mgr端点配置
+
+[source,Example]
+----
+> api-mgr endpoint configure [options] <apiName> <apiVersion>
+----
+通过此命令，可以为`apiName`中指定的API版本`apiVersion`配置端点。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,70a"]
+|===
+| {命令{1}}说明
+|   -  p，--withProxy             | 指示端点是否应使用代理。通过`false`将所有代理专用选项设置为`null`。
+|   -  c，--isCloudHub            | 指示是否应配置CloudHub代理。通过`true`将代理的`--port`设置为Cloudhub的默认值，并将`--referencesUserDomain`设置为`false`。
+|   -  r，--referencesUserDomain  | 指示代理是否应引用用户域
+|   - 类型<value>              | 端点类型
+|   -  uri <value>               | 实现URI
+|   -  getUriFromRAML            | 从RAML获取实现URI
+|   - 方案<value>            | 代理方案
+|   - 端口<value>              | 代理端口
+|   - 路径<value>              | 代理路径
+|   -  responseTimeout           | 响应超时
+|===
+
+
+===  api-mgr端点描述
+
+[source,Example]
+----
+> api-mgr endpoint describe [options] <apiName> <apiVersion>
+----
+
+此命令描述在`apiName`中传递的API的端点，其版本在`apiVersion`中传递。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+
+===  api-mgr政策适用
+
+[source,Example]
+----
+> api-mgr policy apply [options] <policyId> <apiName> <apiVersion>
+----
+
+此命令将`policyId`中传递的策略分别应用于在`apiName`和`apiVersion`中传递的API和版本。
+
+[TIP]
+--
+您可以使用<<api-mgr policy list>>命令了解每个默认策略的策略ID。
+--
+
+
+[CAUTION]
+--
+必须使用`-c`或`--config`选项以JSON格式传递策略配置属性：
+
+[source,Example]
+----
+api-mgr policy apply ip-blacklist test-api 1 -c '{"ips": "123.1.1.1"}'
+----
+
+--
+
+除了`-c` / `--config`选项外，该命令还会使用默认的`--help`，`-f` / `--fields`和`-o` / {{6} }选项。
+
+[TIP]
+--
+您可以使用<<api-mgr policy describe>>选项来检查每个默认策略的默认字段名称和值。 +
+--
+
+===  api-mgr政策副本
+
+[source,Example]
+----
+> api-mgr policy copy [options] <source> <target> [policyId]
+----
+
+该命令将在`source`中传递的API中的所有策略复制到在`target`中传递的API。 +
+参数"source"和"target"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。
+
+当提供"policyId"参数时，仅复制具有该匹配ID的策略。 +
+例如：
+
+[source,Example]
+----
+> api-mgr policy copy Services/api-1/1.0 Development/api-1/1.0
+----
+
+从_Services_组织复制名为`api-1`和版本`1.0`的API策略到_Development_组织。
+
+[source,Example]
+----
+> api-mgr policy copy Services/api-1/1.0 Development/api-1/1.0 ip-blacklist
+----
+
+只复制ip-blacklist策略。
+
+如果Anypoint Platform CLI正在使用服务组织，则该命令可以简单地将应用程序名称作为`source`：
+
+[source,Example]
+----
+> api-mgr definition copy api-1/1.0 Development/api-1/1.0
+----
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr政策描述
+
+[source,Example]
+----
+> api-mgr policy describe [options] <policyId>
+----
+
+此命令显示在`policyId`中传递的策略的描述。
+
+[TIP]
+--
+您可以使用<<api-mgr policy list>>命令了解每个默认策略的策略ID。
+--
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr政策禁用
+
+[source,Example]
+----
+> api-mgr policy disable [options] <policyId> <apiName> <apiVersion>
+----
+
+此命令分别在`apiName`和`apiVersion`中禁用API中传递的`policyId`中传递的策略和传递的版本。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[TIP]
+--
+您可以使用<<api-mgr policy list>>命令了解每个默认策略的策略ID。
+--
+
+===  api-mgr政策编辑
+
+[source,Example]
+----
+> api-mgr policy edit [options] <policyId> <apiName> <apiVersion>
+----
+此命令分别编辑在`policyId`中传递的API和版本中传递的策略`apiName`和`apiVersion`中传递的策略。
+
+[TIP]
+--
+您可以使用<<api-mgr policy list>>命令了解每个默认策略的策略ID。
+--
+
+[CAUTION]
+--
+必须使用`-c`或`--config`选项以JSON格式传递策略配置属性：
+
+[source,Example]
+----
+api-mgr policy edit ip-blacklist test-api 1 -c '{"ips": "123.1.1.1"}'
+----
+
+--
+
+除了`-c` / `--config`选项外，该命令还会使用默认的`--help`，`-f` / `--fields`和`-o` / {{6} }选项。
+
+[TIP]
+--
+您可以使用<<api-mgr policy describe>>选项来检查每个默认策略的默认字段名称和值。 +
+--
+
+===  api-mgr政策启用
+
+[source,Example]
+----
+> api-mgr policy enable [options] <policyId> <apiName> <apiVersion>
+----
+
+此命令启用在`policyId`中传递的策略，并在`apiName`和`apiVersion`中传递版本。
+
+[TIP]
+--
+您可以使用<<api-mgr policy list>>命令了解每个默认策略的策略ID。
+--
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr政策清单
+
+[source,Example]
+----
+> api-mgr policy list [options] [apiName] [apiVersion]
+----
+
+该命令列出了所有可用的策略。 +
+当提供`apiName`和`apiVersion`时，此命令将返回应用于指定API的策略。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr政策删除
+
+[source,Example]
+----
+> api-mgr policy remove [options] <policyId> <apiName> <apiVersion>
+----
+
+此命令分别从`apiName`和`apiVersion`中移除在`policyId`中传递的API和版本中传递的策略。
+
+[TIP]
+--
+您可以使用<<api-mgr policy list>>命令了解每个默认策略的策略ID。
+--
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr门户副本
+
+[source,Example]
+----
+> api-mgr portal copy [options] <source> <target>
+----
+
+该命令将API门户从在`source`中传递的API复制到在`target`中传递的API。 +
+参数"source"和"target"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+例如：
+
+[source,Example]
+----
+> api-mgr portal copy Services/api-1/1.0 Development/api-1/1.0
+----
+
+将_Services_组织的名为`api-1`和版本`1.0`的API门户复制到_Development_组织。 +
+如果Anypoint Platform CLI正在使用服务组织，则该命令可以简单地将应用程序名称作为`source`：
+
+[source,Example]
+----
+> api-mgr portal copy api-1/1.0 Development/api-1/1.0
+----
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+
+===  api-mgr门户列表
+
+[source,Example]
+----
+> api-mgr portal list [options] <apiName>
+----
+
+该命令列出与在`apiName`中传递的API相关联的所有门户。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+打开===  api-mgr门户
+
+该命令仅适用于交互模式。
+
+[source,Example]
+----
+> api-mgr portal open [options] <apiName> <version>
+----
+
+此命令在您的浏览器中打开在`apiName`和`version`中传递的API和版本的API门户。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+
+===  api-mgr层添加
+
+[source,Example]
+----
+> api-mgr tiers add [options] <apiName> <apiVersion>
+----
+
+此命令为在`apiName`和`version`中传递的API和版本创建SLA层。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,70a"]
+|===
+| {命令{1}}说明
+|   -  a，--autoApprove  | 指示是否应该自动批准SLA层。
+|   - 名称 |  SLA层名称
+|   -  description  |  SLA层描述
+|   -  l，--limit  |  SLA层限制的单个实例，格式为`--limit A,B,C`，其中：
+
+*  "A"是一个布尔值，指示此限制是否可见。
+*  "B"是每"C"个时间段的请求数量。
+*  "C"是时间段单位。时间段选项是：
+**  `ms`（毫秒）
+**  `sec`（第二）
+**  `min`（分钟）
+**  `hr`（小时）
+**  `d`（日）
+**  `wk`（周）
+**  `mo`（月）
+**  `yr`（年）
+
+例如：`--limit true,100,min`是每分钟100个请求的"visible"限制。 +
+
+[TIP]
+要创建多个限制，您可以提供多个`--limit`选项。 +
+例如。 `-l true,100,sec -l false,20,min`
+
+|===
+
+===  api-mgr层复制
+
+[source,Example]
+----
+> api-mgr tiers copy [options] <source> <target>
+----
+此命令将SLA层从在`source`中传递的API复制到在`target`中传递的API。 +
+参数"source"和"target"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+例如：
+
+[source,Example]
+----
+> api-mgr tiers copy Services/api-1/1.0 Development/api-1/1.0
+----
+
+将_Services_组织的名为`api-1`和版本`1.0`的API复制到_Development_组织。 +
+如果Anypoint Platform CLI正在使用服务组织，则该命令可以简单地将应用程序名称作为`source`：
+
+[source,Example]
+----
+> api-mgr tiers copy api-1/1.0 Development/api-1/1.0
+----
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+
+===  api-mgr层删除
+
+[source,Example]
+----
+> api-mgr tiers delete [options] <tierId> <apiName> <apiVersion>
+----
+
+此命令分别从`apiName`和`apiVersion`中删除在`tierId`中传递的SLA层和来自API的版本。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+
+===  api-mgr层不赞成使用
+
+[source,Example]
+----
+> api-mgr tiers deprecate [options] <tierId> <apiName> <apiVersion>
+----
+
+该命令弃用`apiName`和`apiVersion`在`tierId`中传递的SLA层。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr层次编辑
+
+[source,Example]
+----
+> api-mgr tiers edit [options] <tierId> <apiName> <apiVersion>
+----
+
+此命令分别编辑与在`apiName`和`apiVersion`中传递的API和版本关联的`tierId`中传递的SLA层。
+
+[CAUTION]
+所有传递的数据将替换原始数据，而不会执行深度合并或比较。 +
+必须传递完整的SLA层数据。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,70a"]
+|===
+| {命令{1}}说明
+|   -  a，--autoApprove  | 指示是否应该自动批准SLA层。
+|   - 名称 |  SLA层名称
+|   -  description  |  SLA层描述
+|   -  l，--limit  |  SLA层限制的单个实例，格式为`--limit A,B,C`，其中：
+
+*  "A"是一个布尔值，指示此限制是否可见。
+*  "B"是每"C"个时间段的请求数量。
+*  "C"是时间段单位。时间段选项是：
+**  `ms`（毫秒）
+**  `sec`（第二）
+**  `min`（分钟）
+**  `hr`（小时）
+**  `d`（日）
+**  `wk`（周）
+**  `mo`（月）
+**  `yr`（年）
+
+例如：`--limit true,100,min`是每分钟100个请求的"visible"限制。 +
+
+[TIP]
+要创建多个限制，您可以提供多个`--limit`选项。 +
+例如。 `-l true,100,sec -l false,20,min`
+
+|===
+
+===  api-mgr等级列表
+
+[source,Example]
+----
+> api-mgr tiers list [options] <apiName> <apiVersion>
+----
+
+此命令分别列出在`apiName`和`apiVersion`中传递的API和版本的所有SLA层。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,40a,30a"]
+|===
+| {命令{1}}说明 |  示例
+|  - 限制 | 要检索的结果数量 |  `api-mgr tiers list --limit 2`
+|  -  offset  | 补偿传递的API数量 |  `api-mgr tiers list --offset 3`
+|  - 对 | 进行排序将结果排序传递给 |  `api-mgr tiers list --sort "Latest Version"`的字段名称中
+|===
+
+
+===  api-mgr分层重新启用
+
+[source,Example]
+----
+> api-mgr tiers reactivate [options] <tierId> <apiName> <apiVersion>
+----
+
+该命令重新激活在`tierId`中传递的针对在`apiName`和`apiVersion`中传递的API和版本的SLA层。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  api-mgr代理下载
+
+[source,Example]
+----
+> api-mgr proxy download [options] <apiName> <apiVersion> <directory>
+----
+
+此命令将<apiName>和<apiVersion>使用的代理的ZIP归档下载到在<directory>中传递的本地目录中。 +
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还会使用`-gatewayVersion`选项。如果未指定，则该命令默认为最新版本。
+
+===  designcenter项目创建
+
+[source,Example]
+----
+> designcenter project create [options] <name>
+----
+
+此命令使用<name>中指定的名称创建一个新的Design Center项目。
+
+[IMPORTANT]
+该命令不支持Mule应用程序类型。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,40a,30a"]
+|===
+| {命令{1}}说明 |  示例
+|   - 类型（必需） | 项目类型。 +
+这是必填栏。
+
+支持的值是：
+
+*  RAML
+*  RAML片段 |  `designcenter project create --type raml`
+|   -  fragment-type  | 如果应用程序类型是RAML片段，则为片段类型。
+
+如果类型选项设置为raml-fragment，则此字段是必需的
+
+支持的片段类型是：
+
+* 性状
+* 资源类型
+* 库
+* 键入
+* 用户文档 |  `designcenter project create --type raml-fragment --fragment-type user-documentation`
+|===
+
+===  designcenter项目删除
+
+[source,Example]
+----
+> designcenter project delete [options] <name>
+----
+
+该命令删除`name`中指定的Design Center项目。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+项目下载===  designcenter
+
+[source,Example]
+----
+> designcenter project download [options] <name> <targetDir>
+----
+
+该命令将`name`中传递的Design Center项目下载到您在`targetDir`中指定的本地目录。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  designcenter项目发布
+
+[source,Example]
+----
+> designcenter project publish [options] <projectName>
+----
+
+此命令将在`projectName`中传递的Design Center项目发布到Exchange。 +
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[TIP]
+从exchange.json中提取未指定的选项
+
+[%header,cols="30a,40a,30a"]
+|===
+| {命令{1}}说明 |  示例
+|   - 名称 | 资产的名称 |  `designcenter project publish --name sampleProject`
+|   -  main  | 主文件名的名称。 |  `designcenter project publish --main sample.xml`
+|   -  apiVersion  | 如果您的项目是API规范项目，则为API版本。 |  `designcenter project publish --main sample.raml --apiVersion 1.0`
+|   -  tags  | 逗号分隔的标签列表。 |  `designcenter project publish --tags test,sample,integration`
+|   -  groupId  | 资产的groupId。 |  `designcenter project publish --groupId com.mulesoft.com`
+|   -  assetId   | 资产的assetId。 |  `designcenter project publish --assetId project`
+|   - 版本 | 资产的版本。 |  `designcenter project publish --version 1.0`
+|===
+
+===  designcenter项目上传
+
+[source,Example]
+----
+> designcenter project upload [options] <name> <projDir>
+----
+
+该命令从您在`projDir`中传递的本地目录中上载Design Center项目，并使用在`name`中传递的名称命名该项目。
+
+默认情况下，该命令忽略所有隐藏的文件和目录。要包含隐藏的文件和目录，请使用`--include-dot-files`选项。 +
+当使用`--include-dot-files`选项时，该命令会从指定的目录中上传隐藏的文件和文件夹。
+
+除`--include-dot-files`外，此命令还使用默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项。
+
+===  designcenter项目列表
+
+[source,Example]
+----
+> designcenter project list [options] [searchText]
+----
+
+该命令列出您的所有Design Center项目。 +
+您可以开始输入项目名称，然后按`tab`以使Anypoint-CLI自动填充该项目，或者您可以双击`tab`以获取您可以传递的所有值的完整列表。 +
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 交换资源上传
+
+[source,Example]
+----
+> exchange asset upload [options] <assetIdentifier> [filePath]
+----
+
+此命令使用在<assetIdentifier>中传递的ID上载oas，wsdl，http或自定义资产。 +
+如果[filePath]指向ZIP存档文件，则该存档必须包含描述资产的"exchange.json"文件。 +
+参数"assetIdentifier"的格式应如下所示：<group_id> / <asset_id> / <version>。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,40a,30a"]
+|===
+| {命令{1}}说明 |  示例
+|   -  apiVersion  |  资产API版本.3 + <。<|  `exchange asset upload --apiVersion 1.0 --name testProject --classifier custom`
+|   - 名称       |  资产名称
+|   - 分类器 |  资产分类器+
+有效的分类符为`custom`，`oas`和`wsdl`。
+|===
+
+=== 交换资产修改
+
+[source,Example]
+----
+> exchange asset modify [options] <assetIdentifier>
+----
+
+此命令修改用<assetIdentifier>标识的Exchange资产。 +
+参数"assetIdentifier"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,40a,30a"]
+|===
+| {命令{1}}说明 |  示例
+|  - 名称 | 新的资产名称.2 + <。<|  `exchange asset modify --name newName --tags test,sample`
+|  - 标签 | 资产的逗号分隔标签
+|===
+
+=== 交换资产下载
+
+[source,Example]
+----
+> exchange asset download [options] <assetIdentifier> <directory>
+----
+
+该命令将用<assetIdentifier>标识的Exchange资产下载到在<directory>中传递的目录。 +
+参数"assetIdentifier"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 交换资产清单
+
+[source,Example]
+----
+> exchange asset list [options] [searchText]
+----
+
+此命令列出Exchange中的所有资产。
+
+[TIP]
+您可以在searchText中指定关键字，以将结果限制为包含这些特定关键字的API。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,40a,30a"]
+|===
+| {命令{1}}说明 |  示例
+|  - 限制 | 要检索的结果数量 |  `exchange asset list --limit 2`
+|  -  offset  | 补偿传递的API数量 |  `exchange asset list --offset 3`
+|  - 对 | 进行排序将结果排序传递给 |  `exchange asset list --sort "Latest Version"`的字段名称中
+|===
+
+
+=== 交换资产页面下载
+
+[source,Example]
+----
+> exchange asset page download [options] <assetIdentifier> <directory> [pageName]
+----
+
+此命令将[pageName]中指定的描述页面下载到<assetIdentifier>标识的Exchange资产中，并传输到<directory>中传递的目录。 +
+如果未指定[pageName]，则此命令会下载所有页面。
+
+[NOTE]
+该命令仅支持发布的页面。
+
+参数"assetIdentifier"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+描述页面以Markdown格式下载。未指定"name"时，将下载所有页面。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 交换资产页面修改
+
+[source,Example]
+----
+> exchange asset page modify [options] <assetIdentifier> <pageName>
+----
+
+此命令将修改<pageName>中指定的描述页面，以用<assetIdentifier>标识的Exchange资产。
+
+[NOTE]
+该命令仅支持发布的页面。
+
+参数"assetIdentifier"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，此命令还会使用`--name`选项设置新资产页面名称。
+
+=== 交换资产页面上传
+
+[source,Example]
+----
+> exchange asset page upload [options] <assetIdentifier> <pageName> <mdPath>
+----
+
+此命令使用在<pageName>中指定的名称，将<mdPath>中传递的路径的资产描述页面上载到使用<assetIdentifier>标识的Exchange资产。 +
+命名页面"home"使上载页面成为Exchange资产的主要描述页面。
+
+[NOTE]
+该命令仅支持发布的页面。
+
+参数"assetIdentifier"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 交换资产页面删除
+
+[source,Example]
+----
+> exchange asset page delete [options] <assetIdentifier> <pageName>
+----
+
+此命令将删除<pageName>中指定的描述页面，用<assetIdentifier>标识该资产。 +
+如果未指定[pageName]，则此命令会下载所有页面。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+[NOTE]
+该命令仅支持发布的页面。
+
+参数"assetIdentifier"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 交换资产页面列表
+
+[source,Example]
+----
+> exchange asset page list <assetIdentifier>
+----
+
+此命令列出在<assetIdentifier>中传递的资产的所有页面。 +
+参数"assetIdentifier"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。
+
+[NOTE]
+该命令仅支持发布的页面。
+
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+
+=== 交换资产副本
+
+[source,Example]
+----
+> exchange asset copy [options] <source> <target>
+----
+
+该命令将Exchange资产从<source>复制到<target>。 +
+参数"source"和"target"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 交换资产删除
+
+[source,Example]
+----
+> exchange asset delete [options] <assetIdentifier>
+----
+
+该命令删除在<assetIdentifier>中传递的Exchange资产。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+参数"assetIdentifier"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 交换资产弃用
+
+[source,Example]
+----
+> exchange asset deprecate <assetIdentifier>
+----
+
+该命令弃用在<assetIdentifier>中传递的资产。
+
+参数"assetIdentifier"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 交换资产不推荐
+
+[source,Example]
+----
+> exchange asset undeprecate <assetIdentifier>
+----
+
+此命令不推荐在<assetIdentifier>中传递的资产。
+
+参数"assetIdentifier"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 交换资产描述
+
+[source,Example]
+----
+> exchange asset describe <assetIdentifier>
+----
+
+此命令描述在<assetIdentifier>中传递的资产。
+
+参数"assetIdentifier"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 运行时管理云端口警报列表
+
+[source,Example]
+----
+> runtime-mgr cloudhub-alert list [options]
+----
+此命令列出与您当前环境相关的所有警报
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr cloudhub-alert-history描述
+
+[source,Example]
+----
+> runtime-mgr cloudhub-alert-history describe [options] <name>
+----
+该命令描述在<name>中传递的警报的历史记录。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr cloudhub-应用程序列表
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application list [options]
+----
+
+该命令列出了Anypoint-CLI中可用的所有应用程序。它会返回您的应用程序名称，其状态，分配的vCore数量以及上次更新的时间。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr cloudhub-application描述
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application describe [options] <name>
+----
+
+此命令显示有关您在<name>中传递的应用程序的信息。 +
+您可以开始输入应用程序的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。 +
+它将返回数据，例如应用程序的域名，状态，上次更新时间，运行时版本，.zip文件名称，区域，监视和工作人员;以及用于持久队列和静态IP启用的“真”或“假”信息。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr cloudhub-application describe-json
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application describe-json  [options] <name>
+----
+
+该命令返回您在<name>中指定的应用程序的原始JSON响应。 +
+您可以开始输入应用程序的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr cloudhub-application stop
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application stop  [options] <name>
+----
+
+该命令会停止您在<name> +中指定的正在运行的应用程序
+您可以开始输入应用程序的名称，然后按`tab`以使Anypoint-ClI自动完成它，或者您可以双击`tab`以查看可以传递的所有值的完整列表。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr cloudhub-application开始
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application start [options] <name>
+----
+
+该命令启动您在<name> +中指定的正在运行的应用程序
+您可以开始输入应用程序的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr cloudhub-application restart
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application restart  [options] <name>
+----
+
+此命令将重新启动您在<name> +中指定的正在运行的应用程序
+您可以开始输入应用程序的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr cloudhub-application删除
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application delete [options] <name>
+----
+
+该命令将删除您在<name>中指定的正在运行的应用程序
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr cloudhub-application deploy
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application deploy  [options] <name> <zipfile>
+----
+
+此命令使用您在<name>中设置的名称部署您在<zipfile>中指定的Mule可部署归档.zip文件。 +
+您可以开始输入应用程序的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。 +
+您必须提供本地硬盘驱动器中可部署zip文件的绝对路径或相对路径，并且您提供给应用程序的名称必须是唯一的。
+
+这个命令可以使用的选项有：
+[%header,cols="30a,70a"]
+|===
+| {选项{1}}说明
+|  - 运行时                                   | 运行时环境的名称
+|  - 工人                                      | 工人数量。 （默认值为'1'）
+|  -  workerSize                                |  vCore中工作人员的大小。 （默认值为'1'）
+|  - 地区                                        | 要部署到的地区的名称。 +
+有关所有支持区域的列表，请使用<<cloudhub region list>>命令。
+|  - 属性                                    | 设置属性（名称：值）。可以多次指定。 +
+要设置的属性必须用引号括起来，字符`:`和`=`必须转义。 +
+（例如`--property "salesforce.password:qa\=34534"`）。
+
+该属性的名称不支持字符`:`。
+|  -  propertiesFile                         | 使用此文件中的值覆盖所有属性。文件格式是名称中的一行或多行：值格式。在本地硬盘中设置属性文件的绝对路径。
+|  -  persistentQueues                    | 启用或禁用持久队列。可以采取“真”或“假”值。 （默认情况下，此值为'false'）
+|  -  persistentQueuesEncrypted   | 启用或禁用持久队列加密。可以采取“真”或“假”值。 （默认情况下，此值为'false'）
+|  -  staticIPsEnabled                                       | 启用或禁用静态IP。可以采用“启用”或“禁用”值。 （默认情况下，此值为'已禁用'）
+|  -  autoRestart                             | 不响应时自动重新启动应用程序。可以采取“真”或“假”值。 （默认情况下，此值为'false'）
+|  - 帮助                                                  | 输出使用情况信息
+|===
+请注意，从Anypoint-CLI您将无法分配静态IP。你可以简单地启用和禁用它们。
+
+输入任何选项后，您可以双击`tab`键以查看所有可能选项的完整列表。
+例如：
+[source,Example]
+----
+> deploy <app name> --runtime [tab][tab]
+----
+列出您可以选择的所有可能的运行时间。
+
+[IMPORTANT]
+====
+如果您不使用任何选项进行部署，则应用程序将使用所有默认值进行部署。
+====
+
+===  runtime-mgr cloudhub-application修改
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application modify  [options] <name> [zipfile]
+----
+该命令更新现有应用程序的设置。或者，您可以通过上传新的.zip文件来更新它。 +
+您可以开始输入应用程序的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。
+该命令可以采用与*deploy*选项相同的选项。
+
+您也可以开始输入您的选项，然后点击`tab`以自动填充CLI为您自动填充。
+
+// TODO检查回退运行时弃用
+// === runtime-mgr应用程序恢复运行时
+//
+// [来源，例子]
+// ----
+// > runtime-mgr application revert-runtime [options] <name>
+// ----
+//此命令将在<name>中定义的应用程序还原到其以前的运行时环境。 +
+//您可以开始输入您的应用程序名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。 +
+//除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`以外，此命令不会使用任何选项。
+
+===  runtime-mgr cloudhub-application下载日志
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application download-logs [options] <name> <directory>
+----
+该命令将<name>中指定的应用程序下载到指定的目录。 +
+您可以开始输入应用程序的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。 +
+请记住，与您在UI中看到的相反，从CLI下载的日志不会将系统日志与工作日志分开。
+
+===  runtime-mgr cloudhub-application尾日志
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application tail-logs [options] <name>
+----
+
+该命令尾部应用程序日志。 +
+您可以开始输入应用程序的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+// === runtime-mgr cloudhub-application upgrade-runtime
+//
+// [来源，例子]
+// ----
+// > runtime-mgr cloudhub-application upgrade-runtime [options] <name>
+// ----
+//
+//此命令将在`name`中传递的应用程序的运行时版本升级到最新的修补程序版本。如果使用`-v` / `--version`选项指定特定的运行时版本，则此命令会将应用程序的运行时更新为该版本。 +
+//除了`--version`选项外，该命令还采用默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项。
+//
+// === runtime-mgr cloudhub-application downgrade-runtime
+//
+// [来源，例子]
+// ----
+// > runtime-mgr cloudhub-application downgrade-runtime [options] <name>
+// ----
+//此命令将在`name`中传递的应用程序的运行时版本降级为以前的运行时版本。如果使用`-v` / `--version`选项指定特定的运行时版本，则此命令会将应用程序的运行时更新为该版本。 +
+//除了`--version`选项外，该命令还采用默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项。
+
+===  runtime-mgr cloudhub-应用程序副本
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application copy [options] <source> <target>
+----
+
+此命令将在`source`中传递的CloudHub应用程序复制到在`target`中传递的目标。 +
+参数"source"和"target"的格式应如下所示：（[group_id] /）<asset_id> / <version>。 +
+如果未指定"group_id"，则它将默认为当前选定的组织标识。 +
+例如：
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application copy Services:QA/application-1 Development:QA/application-2
+----
+将名为`application-1`的应用程序从_Services_组织的QA环境复制到_Development_组织的QA环境。 +
+如果Anypoint Platform CLI在服务组织中使用QA环境，则该命令可以简单地将应用程序名称作为`source`：
+
+[source,Example]
+----
+> runtime-mgr cloudhub-application copy application-1 Development/QA/application-2
+----
+
+[NOTE]
+运行此命令需要您的用户具有对安装了CLI的操作系统的`/tmp`目录的读/写访问权限。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr独立应用程序工件
+
+[source,Example]
+----
+> runtime-mgr standalone-application artifact [options] <identifier> <directory>
+----
+
+该命令将`identifier`应用程序的应用程序工件下载到`directory`中传递的目录。 +
+"identifier"参数可以是应用程序ID或名称。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr独立应用程序部署
+
+[source,Example]
+----
+> runtime-mgr standalone-application deploy [options] <targetIdentifier> <name> <zipfile>
+----
+
+此命令将作为路径`zipfile`中的zip文件传递的应用程序部署到在`targetIdentifier`中传递的内部部署目标。 +
+"targetIdentifier"参数可以是目标ID或名称。 +
+目标可以是服务器，服务器组或集群。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr独立应用程序describe-json
+
+[source,Example]
+----
+> runtime-mgr standalone-application describe-json [options] <identifier>
+----
+
+此命令将在`identifier`中传递的应用程序描述为原始JSON响应。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr独立应用程序修改
+
+[source,Example]
+----
+> runtime-mgr standalone-application modify [options] <identifier> <zipfile>
+----
+
+此命令将以`zipfile`传递的zip文件应用程序作为路径修改在`identifier`中传递的独立应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr独立应用程序启动
+
+[source,Example]
+----
+> runtime-mgr standalone-application start [options] <identifier>
+----
+
+该命令启动在`identifier`中传递的应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr独立应用程序删除
+
+[source,Example]
+----
+> runtime-mgr standalone-application delete [options] <identifier>
+----
+
+该命令删除在`identifier`中传递的应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+===  runtime-mgr独立应用程序描述
+
+[source,Example]
+----
+> runtime-mgr standalone-application describe [options] <identifier>
+----
+
+此命令描述在`identifier`中传递的独立应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr独立应用程序列表
+
+[source,Example]
+----
+> runtime-mgr standalone-application list [options]
+----
+
+该命令列出所有独立应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr独立应用程序重新启动
+
+[source,Example]
+----
+> runtime-mgr standalone-application restart [options] <identifier>
+----
+
+此命令重新启动在`identifier`中传递的应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr独立应用程序停止
+
+[source,Example]
+----
+> runtime-mgr standalone-application stop [options] <identifier>
+----
+
+该命令将停止在`identifier`中传递的独立应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr独立应用程序副本
+
+[source,Example]
+----
+> runtime-mgr standalone-application copy [options] <source> <target> <targetIdentifier>
+----
+
+该命令将在`source`中传递的独立应用程序复制到在`target`中传递的目标以及在`targetIdentifier`中传递的服务器，服务器组或集群ID或名称。 +
+例如，`source`和`destination`两个参数都使用格式`<organizationName>:<environmentName>/<appName>`来表示：
+
+[source,Example]
+----
+> runtime-mgr standalone-application copy Services:QA/application-1 Development:QA/application-2 123456
+----
+将名为`application-1`的应用程序从_Services_组织的QA环境复制到服务器Id 123456中的_Development_组织的QA环境。+
+如果Anypoint Platform CLI在服务组织中使用QA环境，则该命令可以简单地将应用程序名称作为`source`：
+
+[source,Example]
+----
+> runtime-mgr standalone-application copy application-1 Development/QA/application-2 123456
+----
+
+[NOTE]
+运行此命令需要您的用户具有对安装了CLI的操作系统的`/tmp`目录的读/写访问权限。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr pcf-application删除
+
+[source,Example]
+----
+> runtime-mgr pcf-application delete [options] <appId>
+----
+
+该命令删除在`appId`中传递的PCF应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+=== 运行时管理pcf应用程序描述
+
+[source,Example]
+----
+> runtime-mgr pcf-application describe [options] <appId>
+----
+
+此命令描述在`appId`中传递的PCF已部署的应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr pcf-application列表
+
+[source,Example]
+----
+> runtime-mgr pcf-application list [options]
+----
+
+该命令列出了所有PCF部署的应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr pcf-application restart
+
+[source,Example]
+----
+> runtime-mgr pcf-application restart [options] <appId>
+----
+
+此命令将重新启动您在`appId`中传递的PCF已部署应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr pcf-application停止
+
+[source,Example]
+----
+> runtime-mgr pcf-application stop [options] <appId>
+----
+
+该命令停止在`appId`中传递的PCF已部署的应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr pcf-application部署
+
+[source,Example]
+----
+> runtime-mgr pcf-application deploy [options] <name> <zipfile>
+----
+
+此命令将使用在`name`中传递的名称ID在`zipfile`中传递的应用程序部署到您的PCF实例。 +
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30,70"]
+|===
+|值 |说明
+|   - 运行时版本[版本]  | 运行版本
+|   -  replication [factor]  | 复制因子
+|   -  property [property]  | 设置属性（名称：值）。可以多次指定
+|   -  propertiesFile [propertiesFile]  | 使用此文件中的值覆盖所有属性。文件格式为名称=值格式中的1行或更多行
+|   -  binding [binding]  | 设置服务绑定（serviceName.key：value）。可以多次指定
+|   -  bindingsFile [sindingsFile]  | 使用此文件中的值覆盖所有属性。文件格式为serviceName.key：值格式中的一行或多行
+|===
+
+===  runtime-mgr pcf-application describe-json
+
+[source,Example]
+----
+> runtime-mgr pcf-application describe-json [options] <appId>
+----
+
+此命令显示在`appId`中传递的PCF已部署应用程序的原始JSON描述。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr pcf-application修改
+
+[source,Example]
+----
+> runtime-mgr pcf-application modify [options] <appId> [zipfile]
+----
+
+此命令使用在`zipfile`中传递的ZIP文件应用程序修改在`appId`中传递的PCF已部署的应用程序。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30,70"]
+|===
+|值 |说明
+|   - 运行时版本[版本]  | 运行版本
+|   -  replication [factor]  | 复制因子
+|   -  property [property]  | 设置属性（名称：值）。可以多次指定
+|   -  propertiesFile [propertiesFile]   | 使用此文件中的值覆盖所有属性。文件格式为名称=值格式中的1行或更多行
+|   -  binding [binding]  | 设置服务绑定（serviceName.key：value）。可以多次指定
+|   -  bindingsFile [sindingsFile]  | 使用此文件中的值覆盖所有属性。文件格式为serviceName.key：值格式中的一行或多行
+|===
+
+===  runtime-mgr pcf-application开始
+
+[source,Example]
+----
+> runtime-mgr pcf-application start [options] <appId>
+----
+
+该命令启动在`appId`中传递的PCF已部署的应用程序。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 运行时管理服务器描述
+
+[source,Example]
+----
+> runtime-mgr server describe [options] <serverId>
+----
+
+此命令描述在`serverId`中传递的服务器。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 运行时管理服务器修改
+
+[source,Example]
+----
+> runtime-mgr server modify [options] <serverId>
+----
+
+该命令修改在`serverId`中传递的服务器。 +
+为了更新群集的ID，您需要传递`--name`选项。
+
+除了`--name`选项之外，该命令还采用默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项。
+
+=== 运行时管理服务器令牌
+
+[source,Example]
+----
+> runtime-mgr server token [options]
+----
+
+该命令获取服务器注册令牌。该令牌需要用于注册新的服务器。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 运行时-mgr服务器删除
+
+[source,Example]
+----
+> runtime-mgr server delete [options] <serverId>
+----
+
+该命令将删除在`serverId`中传递的服务器。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+=== 运行管理器服务器列表
+
+[source,Example]
+----
+> runtime-mgr server list [options]
+----
+
+此服务器列出您环境中的所有服务器。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+// TODO：不推荐使用服务器寄存器
+// === runtime-mgr服务器寄存器
+//
+// [来源，例子]
+// ----
+// > runtime-mgr server register [options] <name> <directory>
+// ----
+//
+//这个命令注册一个名为`name`的新服务器。该命令返回一个下载到`directory`路径的签名证书。
+//
+//除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项，该命令还会执行：
+//
+// [％header，cols = "30,70"]
+//  | ===
+//  |值 |说明
+//  |   - 签名<signatureStr>  | 对签名证书请求进行签名。
+//  |   -  mule <version>  |  Mule版本
+//  |   - 网关<version>  | 网关版本
+//  | ===
+
+=== 运行时-mgr serverGroup创建
+
+[source,Example]
+----
+> runtime-mgr serverGroup create [options] <name> [serverIds...]
+----
+
+此命令使用随后作为参数传递的服务器标识创建一个名称在`name`中传递的服务器组。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr serverGroup描述
+
+[source,Example]
+----
+> runtime-mgr serverGroup describe [options] <serverGroupId>
+----
+
+此命令描述在`serverGroupId`中传递的服务器组。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr serverGroup修改
+
+[source,Example]
+----
+> runtime-mgr serverGroup modify [options] <serverGroupId>
+----
+
+该命令修改在`serverGroupId`中传递的服务器组。 +
+为了更新群集的ID，您需要传递`--name`选项。
+
+除了`--name`选项之外，该命令还采用默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项。
+
+
+===  runtime-mgr serverGroup添加服务器
+
+[source,Example]
+----
+> runtime-mgr serverGroup add server [options] <serverGroupId> <serverId>
+----
+
+此命令将在`serverId`中传递的服务器添加到在`serverGroupId`中传递的服务器组中。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 运行时-mgr serverGroup删除
+
+[source,Example]
+----
+> runtime-mgr serverGroup delete [options] <serverGroupId>
+----
+
+该命令将删除在`serverGroupId`中传递的服务器组。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+===  runtime-mgr serverGroup列表
+
+[source,Example]
+----
+> runtime-mgr serverGroup list [options]
+----
+
+该命令列出环境中的所有服务器组。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr serverGroup删除服务器
+
+[source,Example]
+----
+> runtime-mgr serverGroup remove server [options] <serverGroupId> <serverId>
+----
+
+此命令将从在`serverGroupId`中传递的服务器组中删除在`serverId`中传递的服务器。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr集群添加服务器
+
+[source,Example]
+----
+> runtime-mgr cluster add server [options] <clusterId> <serverId>
+----
+
+该命令将`clusterId`中的集群添加到在`serverId`中传递的服务器。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr集群删除
+
+[source,Example]
+----
+> runtime-mgr cluster delete [options] <clusterId>
+----
+
+该命令将删除在`clusterId`中传递的集群。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+=== 运行管理器集群列表
+
+[source,Example]
+----
+> runtime-mgr cluster list [options]
+----
+
+该命令列出环境中的所有群集。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  runtime-mgr集群删除服务器
+
+[source,Example]
+----
+> runtime-mgr cluster remove server [options] <clusterId> <serverId>
+----
+
+该命令将从在`clusterId`中传递的集群中移除在`serverId`中传递的服务器。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 运行管理器集群创建
+
+[source,Example]
+----
+> runtime-mgr cluster create [options] <name>
+----
+
+该命令使用在`name`中传递的ID创建一个集群。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+[%header,cols="30,70"]
+|===
+|值 | 说明
+|  - 多播 | 群集是否应该是多播
+|  - 服务器<id:ip>  | 服务器ID和IP地址对。后者对于多播群集是可选的。提供多个值来添加多个服务器
+|===
+
+描述=== 运行时管理员群集
+
+[source,Example]
+----
+> runtime-mgr cluster describe [options] <clusterId>
+----
+
+该命令描述在`clusterId`中传递的集群。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 运行时管理器集群修改
+
+[source,Example]
+----
+> runtime-mgr cluster modify [options] <clusterId>
+----
+
+该命令修改在`clusterId`中传递的集群。 +
+为了更新群集的ID，您需要传递`--name`选项。
+
+除了`--name`选项之外，该命令还采用默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项。
+
+
+
+
+描述===  runtime-mgr独立警报
+
+[source,Example]
+----
+> runtime-mgr standalone-alert describe [options] <alertId>
+----
+
+此命令描述在`alertId`中传递的警报。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+创建=== 运行时管理器独立警报
+
+[source,Example]
+----
+> runtime-mgr standalone-alert create [options] <name>
+----
+
+此命令为ID为`name`的独立运行时创建新警报。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30,70"]
+|===
+|值 |说明
+|   - 严重程度<val>  | 警报严重程度
+|   -  resourceType <type>  | 警报资源类型
+|   - 资源[id]  | 警报资源ID。可以使用多种类型。如果没有提供所有资源的警报触发器。根据资源类型资源可以是应用程序，服务器，服务器组或群集。
+|   - 条件<val>  | 警报触发条件
+|   - 句点[分钟]  | 以分钟为单位的条件持续时间
+|   - 阈值[num]  | 条件阈值编号
+|   - 运算符[类型]  | 条件运算符说明与阈值的关系。
+|   - 主题<string>  | 警报通知电子邮件主题
+|   - 内容<string>  | 警报通知电子邮件正文
+|   - 收件人[用户名]  | 发送警报通知的用户名。可以多次使用来指定多个用户名。
+|   - 电子邮件[email地址]  | 电子邮件发送警报通知。可以多次使用来指定多个电子邮件。
+|===
+
+=== 运行时管理单机警报修改
+
+[source,Example]
+----
+> runtime-mgr standalone-alert modify [options] <alertId>
+----
+
+该命令修改在`alertId`中传递的警报。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30,70"]
+|===
+|值 |说明
+|   - 名称<val>  | 警报名称
+|   - 严重程度<val>  | 警报严重程度
+|   -  resourceType <type>  | 警报资源类型
+|   - 资源[id]  | 警报资源ID。可以使用多种类型。如果没有提供所有资源的警报触发器。根据资源类型资源可以是应用程序，服务器，服务器组或群集。
+|   - 条件<val>  | 警报触发条件
+|   - 句点[分钟]  | 以分钟为单位的条件持续时间
+|   - 阈值[num]  | 条件阈值编号
+|   - 运算符[类型]  | 条件运算符说明与阈值的关系。
+|   - 主题<string>  | 警报通知电子邮件主题
+|   - 内容<string>  | 警报通知电子邮件正文
+|   - 收件人[用户名]  | 发送警报通知的用户名。可以多次使用来指定多个用户名。
+|   - 电子邮件[email地址]  | 电子邮件发送警报通知。可以多次使用来指定多个电子邮件。
+|===
+
+=== 运行管理程序独立警报列表
+
+[source,Example]
+----
+> runtime-mgr standalone-alert list [options]
+----
+
+此命令列出当前环境中独立运行时的所有警报。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+
+
+===  cloudhub负载平衡器列表
+
+[source,Example]
+----
+> cloudhub load-balancer list [options]
+----
+该命令列出了Anypoint平台中的所有负载平衡器。它显示负载均衡器的名称，域，其状态以及负载均衡器绑定到的VPC Id。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+描述===  cloudhub负载平衡器
+
+[source,Example]
+----
+> cloudhub load-balancer describe [options] <name>
+----
+此命令显示有关在<name>中指定的负载均衡器的信息。 +
+您可以开始输入负载平衡器的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看可以传递的所有值的完整列表。 +
+它显示负载均衡器的名称，域，其状态以及负载均衡器绑定到的VPC Id。
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  cloudhub负载平衡器describe-json
+
+[source,Example]
+----
+> cloudhub load-balancer describe [options] <name>
+----
+此命令显示在<name>中指定的负载均衡器的原始JSON响应。 +
+您可以开始输入负载平衡器的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看可以传递的所有值的完整列表。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  cloudhub负载平衡器创建
+
+[source,Example]
+----
+> cloudhub load-balancer create [options] <vpc> <name> <certificate> <privateKey>
+----
+该命令使用变量中的指定值创建负载均衡器。
+[%header,cols="12,53a,35a"]
+|===
+|值 |说明 |示例
+|  vpc  |此负载均衡器绑定到的VPC的名称。 +
+*If your VPC name contains spaces, you need to pass it between ´"´ characters*  |  VPC-演示
+| 名称 |负载平衡器的名称。 |  newtestloadbalancer
+| 证书 |本地硬盘中证书的`.pem`文件的绝对路径。 +
+*Your certificate files need to be pem encoded and not encrypted*  |  /用户/骡/文档/ cert.pem
+|  privateKey  |本地硬盘中私钥的`.pem`文件的绝对路径。 +
+*Your private key file needs to be passphraseless*  |  /用户/骡/文档/ privateKey.pem
+|===
+
+[CAUTION]
+--
+您在<name>中传递的负载平衡器的名称必须是唯一的。 +
+默认情况下，您的负载均衡器通过https监听外部请求，并通过http与您的工作人员进行通信。 +
+如果您在VPC中配置Mule应用程序以使用https进行侦听，请确保在使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-mappings-add[负载平衡器映射添加]命令创建映射列表时将`upstreamProtocol`设置为https。
+--
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,70a"]
+|===
+|值 |说明
+| http  | 指定负载平衡器HTTP行为。它可以设置为`on`（接受http请求并将其转发给您配置的默认_sslendpoint_）`off`（拒绝所有http请求）或`redirect`（重定向至https）。
+| clientCertificate  | 客户端证书文件
+| verificationMode   | 指定客户端验证模式。它可以设置为`on`（始终验证）`off`（不验证）或`optional`（验证可选）。
+| crl  | 证书吊销列表文件
+| tlsv1   | 除TLSv1.1和TLSv1.2外，还支持TLSv1
+| dynamic-ips  | 使用动态IP，通过重新启动不会持久
+|===
+
+[NOTE]
+Cloudhub不实施在线证书状态协议（OCSP）。为了让您的证书撤销列表保持最新状态，建议您使用 link:https://anypoint.mulesoft.com/apiplatform/anypoint-platform/#/portals/organizations/68ef9520-24e9-4cf2-b2f5-620025690913/apis/8617/versions/85955/pages/107964[REST API]以编程方式更新您的证书。
+
+更多的配置信息可以在专用的 link:/runtime-manager/cloudhub-dedicated-load-balancer[负载平衡器文档]页面的 link:/runtime-manager/cloudhub-dedicated-load-balancer#managing-certificates[证书部分]中找到。
+
+===  cloudhub负载均衡器启动
+
+[source,Example]
+----
+> cloudhub load-balancer start [options] <name>
+----
+该命令将启动在<name>中指定的负载平衡器。 +
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+
+===  cloudhub负载平衡器停止
+
+[source,Example]
+----
+> cloudhub load-balancer stop [options] <name>
+----
+该命令将停止在<name>中指定的负载平衡器。 +
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+===  cloudhub负载平衡器删除
+
+[source,Example]
+----
+> cloudhub load-balancer delete [options] <name>
+----
+
+该命令将删除<name>中指定的负载均衡器。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+===  cloudhub load-balancer ssl-endpoint add
+
+[source,Example]
+----
+> cloudhub load-balancer ssl-endpoint add [options] <name> <certificate> <privateKey>
+----
+该命令使用传递的证书和私钥将SSL端点添加到<name>中指定的负载均衡器。
+
+[%header,cols="12a,53a,35a"]
+|===
+|值 |说明 |示例
+| 名称 |负载平衡器的名称。 |  newtestloadbalancer
+| 证书 |本地硬盘中证书的`.pem`文件的绝对路径。 +
+*Your certificate files need to be pem encoded and not encrypted*  |  /用户/骡/文档/ cert.pem
+|  privateKey  |本地硬盘中私钥的`.pem`文件的绝对路径。 +
+*Your private key file needs to be passphraseless*  |  /用户/骡/文档/ privateKey.pem
+|===
+
+[NOTE]
+Cloudhub不实施在线证书状态协议（OCSP）。为了让您的证书撤销列表保持最新状态，建议您使用 link:https://anypoint.mulesoft.com/apiplatform/anypoint-platform/#/portals/organizations/68ef9520-24e9-4cf2-b2f5-620025690913/apis/8617/versions/2321502/pages/107964[REST API]以编程方式更新您的证书。
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="15a,85a"]
+|===
+|值 |说明
+| http  | 指定负载平衡器HTTP行为。它可以设置为`on`（接受http请求并将其转发给您配置的默认_sslendpoint_）`off`（拒绝所有http请求）或`redirect`（重定向至https）。
+| clientCertificate  | 客户端证书文件
+| verificationMode   | 指定客户端验证模式。它可以设置为`on`（始终验证）`off`（不验证）或`optional`（验证可选）。
+| crl  | 证书吊销列表文件
+| tlsv1   | 除TLSv1.1和TLSv1.2外，还支持TLSv1
+|===
+
+更多的配置信息可以在专用的 link:/runtime-manager/cloudhub-dedicated-load-balancer[负载平衡器文档]页面的 link:/runtime-manager/cloudhub-dedicated-load-balancer#managing-certificates[证书部分]中找到。
+
+===  cloudhub负载均衡器ssl-endpoint删除
+
+[source,Example]
+----
+> cloudhub load-balancer ssl-endpoint remove [options] <name> <certificateName>
+----
+此命令从<name>中指定的负载平衡器中移除<certificateName>中指定的ssl证书。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+=== 云端负载均衡器ssl-endpoint set-default
+
+[source,Example]
+----
+> cloudhub load-balancer ssl-endpoint set-default [options] <name> <certificateName>
+----
+此命令将在<certificateName>中指定的证书设置为在<name>中传递的负载均衡器的默认证书。 +
+
+您可以开始输入负载平衡器的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看可以传递的所有值的完整列表。 +
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="30a,70a"]
+|===
+|值 |说明
+| http  | 指定负载平衡器HTTP行为
+|===
+
+===  cloudhub load-balancer ssl-endpoint描述
+
+[source,Example]
+----
+> cloudhub load-balancer ssl-endpoint describe [options] <name> <certificateName>
+----
+此命令显示有关在<certificateName>中指定的证书在<name>中传递的负载均衡器配置的信息。 +
+您可以开始输入负载平衡器的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看可以传递的所有值的完整列表。 +
+
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+===  cloudhub负载平衡器白名单添加
+
+[source,Example]
+----
+> cloudhub load-balancer whitelist add [options] <name> <cidrBlock>
+----
+该命令将<cidrBlock>中指定的IP地址范围添加到<name>中指定的负载均衡器的白名单。
+
+[NOTE]
+白名单在负载均衡器级别运行，而不是在CN证书级别。确保您只传递在 link:https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing#IPv4_CIDR_blocks[CIDR表示法]中格式化的IP地址。
+
+您可以开始输入负载平衡器的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看可以传递的所有值的完整列表。 +
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+===  cloudhub负载平衡器白名单删除
+
+[source,Example]
+----
+> cloudhub load-balancer whitelist remove <name> <cidrBlock>
+----
+该命令将<cidrBlock>中指定的IP地址或IP地址范围移除到<name>中指定的负载均衡器的白名单。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+=== 描述了cloudhub负载平衡器映射
+
+[source,Example]
+----
+> cloudhub load-balancer mappings describe <name> [certificateName]
+----
+此命令列出<name>中指定的负载均衡器的映射规则。 +
+如果未传递`certificateName`，Anypoint CLI将返回默认SSL端点的映射。
+
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+===  cloudhub负载平衡器映射添加
+
+[source,Example]
+----
+> cloudhub load-balancer mappings add [options] <name> <index> <inputUri> <appName> <appUri> [certificateName]
+----
+此命令将在通过`certificateName`选项下传递的CN中的<index>中指定的优先级索引向<name>中指定的负载均衡器添加代理映射规则。 +
+如果未传递`certificateName`，则Anypoint CLI会将映射添加到默认SSL端点。
+
+
+[%header,cols="12a,68a,20a"]
+|===
+|值 |说明 |示例
+| name  |应用此规则的负载均衡器的名称。 | testloadbalancer
+|索引 |规则的优先级。  | 1
+| inputUri  |您输入的网址 | example.com的URI名称
+| appName  |请求转发到的输出网址应用的名称 | {app} -example
+| appUri  |请求转发到的输出网址应用的URI  | /
+|===
+
+对于上例中的值，对于`my-superapp.api.example.com/status?limit=10`的输入调用，将为应用程序调用端点`my-superapp-example: /status?limit=10`。
+
+该命令还需要`--upstreamProtocol`选项。 +
+`--upstreamProtocol`选项设置您的应用程序使用的协议在内部与负载均衡器进行通信。如果没有设置upstreamProtocol，则将HTTP用作默认值。
+
+[%header,cols="12a,68a,20a"]
+|===
+|   -  upstreamProtocol <protocol>  | 在HTTP端口8091或HTTPS端口8092中查找上游应用程序。+
+支持的值：http，https  |   -  upsetreamProtocol http
+|   -  {certificateName {1}} |
+|===
+
+===  cloudhub负载平衡器映射删除
+
+[source,Example]
+----
+> cloudhub load-balancer mappings remove [options] <name> <index> [certificateName]
+----
+此命令从<index>中指定的优先级索引和指定为`certificateName`选项的CN中删除<name>中指定的负载均衡器中的代理映射规则。
+
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+如果未传递`certificateName`，则Anypoint CLI将删除默认SSL端点的映射。
+
+=== 云端负载均衡器动态启用
+
+[source,Example]
+----
+> cloudhub load-balancer dynamic-ips enable [options] <name>
+----
+此命令为<name>中指定的负载均衡器启用动态IP。
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+=== 云端负载均衡器动态禁用
+
+[source,Example]
+----
+> cloudhub load-balancer dynamic-ips disable [options] <name>
+----
+此命令将禁用<name>中指定的负载均衡器的动态IP。
+此命令不包含任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`
+
+
+=== 云环境区域列表
+
+[source,Example]
+----
+> cloudhub region list [options]
+----
+该命令列出了所有支持的区域。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 云端运行时列表
+[source,Example]
+----
+> cloudhub runtime list [options]
+----
+该命令列出了所有支持的运行时。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  cloudhub vpc列表
+
+[source,Example]
+----
+> cloudhub vpc list [options]
+----
+该命令列出所有可用的VPC。它返回网络的ID，区域和环境，以及它是否是默认的VPC。
+
+===  cloudhub vpc描述
+
+[source,Example]
+----
+> cloudhub vpc describe [options] <name>
+----
+此命令显示有关在<name>中指定的VPC的信息。 +
+您可以开始输入VPC的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  cloudhub vpc describe-json
+
+[source,Example]
+----
+> cloudhub vpc describe [options] <name>
+----
+此命令显示在<name>中指定的VPC的原始JSON响应。 +
+您可以开始输入VPC的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  cloudhub vpc创建
+
+[source,Example]
+----
+> cloudhub vpc create [options] <name> <region> <cidrBlock> [environments...]
+----
+此命令使用<name>中<region>中指定的区域中的名称创建VPC，<cidrBlock>中以<cidrBlock>形式传递无等域间路由（CIDR）块，使用 link:https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing#IPv4_CIDR_blocks[CIDR表示法]并将其关联到随后作为参数传递的 link:/access-management/environments[环境（S）]。
+
+[NOTE]
+VPC需要绑定到组织内的业务组。创建VPC时，请确保使用<<cloudhub vpc business-groups add, business-groups add>>命令为其分配业务组。
+
+除了默认的`--help`选项外，该命令还会使用`--default`选项。通过后，将VPC创建为所选环境的默认VPC。
+
+===  cloudhub vpc删除
+
+[source,Example]
+----
+> cloudhub vpc delete <name>
+----
+该命令删除<name>中指定的VPC。
+
+[WARNING]
+在删除之前，该命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  cloudhub vpc环境添加
+
+[source,Example]
+----
+> cloudhub vpc environments add [options] <vpc> [environments...]
+----
+此命令将<vpc>中定义的VPC分配给之后作为参数传递的环境。 +
+`--default`选项允许将VPC设置为组织的默认值，该值适用于没有显式关联VPC的所有环境。
+
+该命令也采用默认的`--help`选项。
+
+===  cloudhub vpc环境删除
+
+[source,Example]
+----
+> cloudhub vpc environments remove [options] <vpc> [environments...]
+----
+此命令从之后作为参数传递的环境中移除<vpc>中定义的VPC。 +
+除了默认的`--help`选项外，该命令还采用`--default`选项，该选项将此VPC作为环境的默认VPC删除。
+
+===  cloudhub vpc business-groups添加
+
+[source,Example]
+----
+> cloudhub vpc business-groups add [options] <vpc> <businessGroups...>
+----
+此命令将<vpc>中定义的VPC分配给此后作为参数传递的业务组。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  cloudhub vpc business-groups删除
+[source,Example]
+----
+> cloudhub vpc business-groups remove [options] <vpc> <businessGroups...>
+----
+该命令将从<vpc>中定义的VPC从之后以+作为参数传递的业务组中删除
+
+[WARNING]
+在从指定资源中删除VPC之前，此命令不会提示两次。如果您发送删除指令，它不会要求确认。
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  cloudhub vpc dns-servers设置
+
+[source,Example]
+----
+> cloudhub vpc dns-servers set [options] <vpc>
+----
+此命令设置本地主机名称（内部域名）的列表，使用您需要提供其IP地址（无论是私人地址还是公共地址）的DNS服务器进行解析。 +
+只要提供了这些专用域，您的工作人员就可以使用您的专用DNS解析它们，因此您仍然可以使用专用网络的内部主机名。
+
+[NOTE]
+运行Mule版本3.5.x，3.6.x，3.7.4,3.8.0-HF1,3.8.1和3.8.2的工作人员支持此功能。
+
+
+除了默认的`--help`，`-f` / `--fields`和`-o` / `--output`选项外，该命令还需要：
+
+[%header,cols="20a,80a"]
+|===
+| {选项{1}}说明
+| 服务器 |  DNS用于解析特殊域的DNS服务器。最多可以指定3次
+| 域 | 要在特殊DNS服务器列表上解析的域。可以多次指定
+|===
+
+您可以根据需要传递尽可能多的域名，以及最多3个IP地址。 +
+例如，`$ cloudhub vpc dns-servers set --domain example.com --server 192.168.1.10 <VPC Name>`。
+
+每次运行此命令时，都会覆盖先前的DNS设置命令。 +
+要删除DNS集，您需要使用<<cloudhub vpc dns-servers unset,vpc dns-servers unset>>命令。
+
+=== 未设置cloudhub vpc dns-servers
+
+[source,Example]
+----
+> cloudhub vpc dns-servers unset [options] <vpc>
+----
+此命令将清除使用来自在<vpc>中传递的VPC中的DNS服务器解析的本地主机名称（内部域名）的列表
+
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+===  cloudhub vpc防火墙规则描述
+
+[source,Example]
+----
+> cloudhub vpc firewall-rules describe <vpc>
+----
+此命令描述<vpc>中定义的VPC的所有防火墙规则。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+
+===  cloudhub vpc防火墙规则添加
+
+[source,Example]
+----
+> cloudhub vpc firewall-rules add [options] <vpc> <cidrBlock> <protocol> <fromPort> [toPort]
+----
+此命令使用变量：+中设置的值向在<vpc>中定义的VPC添加防火墙规则
+
+[%header,cols="18a,62a,20a"]
+|===
+|值 |说明 |示例
+|  vpc  |此负载均衡器绑定到的VPC的名称。 +
+*If your VPC name contains spaces, you need to pass it between ´"´ characters*  |  VPC-演示
+|  cidrBlock  | 防火墙的CIDR表示法中的IP地址允许  |  192.0.1.0/27
+| 协议 | 在规则中使用的协议。它可以是`tcp`或`udp`  |  tcp
+|  fromPort  | 防火墙将允许请求的端口。它可以从0到65535  |  8888
+|  toPort  |  *optional*如果需要端口范围，则`fromPort`和`toPort`变量定义此范围 |  8090
+|===
+
+[CAUTION]
+--
+创建VPC时，请确保允许您的出站地址。 +
+默认情况下，所有IP地址都被阻止，并且您需要为您的VPC防火墙规则授予IP地址或地址范围。
+--
+
+您可以开始输入VPC的名称，然后按`tab`以使Anypoint-CLI自动完成它，或者您可以双击`tab`以查看您可以传递的所有值的完整列表。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+
+=== 删除cloudhub vpc防火墙规则
+
+[source,Example]
+----
+> cloudhub vpc firewall-rules remove <vpc> <index>
+----
+此命令从<index>中传递的索引处的<vpc>中指定的VPC内部的工作人员中删除防火墙规则。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 使用环境
+
+该命令仅适用于交互模式。
+
+[source,Example]
+----
+> use environment [options] <name>
+----
+该命令激活在<name>中指定的环境。 +
+此命令不会采用任何选项，默认设置除外：`--help`，`-f` / `--fields`和`-o` / `--output`。
+
+=== 使用业务组
+
+该命令仅适用于交互模式。
+
+[source,Example]
+----
+> use business-group  [options] <name>
+----
+此命令使您在<name>中指定的业务组处于活动状态。
+
+[NOTE]
+--
+如果您的业务组或组织名称包含空格，则需要在`"`个字符之间放置其名称。
+
+----
+> use business-group "QA Organization"
+----
+--
+
+=== 出口
+
+[source,Example]
+----
+> exit [options]
+----
+该命令退出Anypoint-CLI。 +
+除了默认设置：`--help`，`-f` / `--fields`和`-o` / `--output`以外，此命令不会采用任何选项。Anypoint Platform为您提供命令行与之互动的工具：

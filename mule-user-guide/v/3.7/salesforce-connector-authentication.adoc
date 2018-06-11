@@ -1,0 +1,269 @@
+=  Salesforce连接器身份验证
+:keywords: anypoint studio, esb, connector, endpoint, salesforce, authentication
+
+要访问Salesforce实例中的数据，您需要使用OAuth或基本身份验证来验证应用程序的请求。
+
+基本认证是最容易实现的。您只需在全局配置中提供凭据，然后在应用程序中的任何Salesforce连接器中引用该全局配置。基本认证通常建议用于内部应用程序。另一方面，实现OAuth需要一些额外的步骤，但如果您的服务暴露给外部用户，则可能会首选它，因为它可以确保更好的安全性。
+
+本文档举例说明了OAuth和基本配置，但重点介绍了基本认证。有关如何通过OAuth连接到Salesforce的深入说明，请参阅 link:/mule-user-guide/v/3.7/using-a-connector-to-access-an-oauth-api[使用连接器访问OAuth API]。
+
+== 假设
+
+本文档假设您拥有可访问数据的Salesforce帐户。它还假定您熟悉Anypoint Studio中的 link:/mule-user-guide/v/3.7/salesforce-connector[Salesforce连接器]。
+
+== 基本认证
+
+要访问Salesforce数据，请向Salesforce提供：
+
+* 用户名
+
+* 密码
+
+* 安全令牌
+
+[NOTE]
+====
+不要将基本身份验证中所需的安全令牌与OAuth身份验证中所需的安全令牌混淆。
+
+在这里，令牌引用您的用户，而不是您的应用程序（就像在OAuth中那样）。您无需注册任何应用即可获取此代码：您可以在Salesforce帐户内的用户设置中找到它。
+====
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Obtain your user Security Token from your Salesforce account.
++
+*Where do I get my Security Token?*
++
+.. Log in to your Salesforce account. From your account menu (your account is labeled with your name), select *Setup*.
+.. In the left navigation bar, under the *My Settings* heading, click to expand the **Personal **folder. 
+.. Click *Reset My Security Token*. Salesforce resets the token and emails you the new one.
+.. Access the email that Salesforce sent and copy the new token onto your local clipboard.
+. Create a new Mule Project and drag a Salesforce connector into your flow.
+. Specify the *Topic* value. This is a text string you use to organize records around common themes. Mule permits any topic string that Salesforce allows.
+. Enter the message processor's properties editor, then click the green plus sign to create a new link:/mule-user-guide/v/3.7/global-elements[Global Element] to set up connection parameters.
+ +
+image:SelectConnectorConfig.png[SelectConnectorConfig]
+
+. You are prompted to select between two types of global elements. Pick the one named *Salesforce*.
+. Provide the required credentials: *Username*, *Password*, and *Security Token*. (*URL* is optional; configure this only if you want to override the default URL.)
++
+image:GE-1.png[GE-1]
++
+[TIP]
+====
+In the image above, the fields hold link:/mule-user-guide/v/3.7/configuring-properties[parametrized references] to a configuration file placed in the `src` folder of your project. You can also directly provide the actual values into the fields if you don't plan to change these.
+====
+
+. Click *Test Connection* to make sure the credentials are valid.
+....
+[tab,title="XML Editor"]
+....
+. Obtain your user Security Token from your Salesforce account.
++
+[collapsed]
+----
+Where do I get my Security Token?
+
+.. Log in to your Salesforce account. From your account menu (your account is labeled with your name), select *Setup*.
+
+.. In the left navigation bar, under the *My Settings* heading, click to expand the **Personal **folder. 
+
+.. Click *Reset My Security Token*. Salesforce resets the token and emails you the new one.
+
+.. Access the email that Salesforce sent and copy the new token onto your local clipboard.
+----
+
+. Create a new Mule Project and add an `sfdc:global-element` at the start of your file. link:/mule-user-guide/v/3.7/global-elements[Global Elements] set up reusable connection parameters.
++
+[source, xml, linenums]
+----
+<sfdc:config name="Salesforce" username="${mule.env}.properties.username" password="${mule.env}.properties.password" securityToken="${mule.env}.properties.securityToken" url="${mule.env}.properties.url" doc:name="Salesforce">
+        <sfdc:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sfdc:config>
+----
++
+You must provide four required credentials: *username*, *password*, *securityToken*. The *url* parameter is optional. You can either directly provide these values in the fields or add link:/mule-user-guide/v/3.7/configuring-properties[parameterized references] to a configuration file.
+
+. When adding a Salesforce message processor to a Mule flow, reference this global element through the attribute `config-ref`. The topic value is required and is a text string used to group records around a common theme. Mule permits any topic string that Salesforce allows.
++
+[source, xml, linenums]
+----
+<sfdc:subscribe-topic config-ref="Salesforce" topic="" doc:name="Salesforce (Streaming)"/>
+----
+....
+------
+
+=== 最佳实践
+
+您可以将凭据硬编码到Salesforce全局配置属性中，也可以引用包含这些值的配置文件。为了更简单的维护和更好的项目重用性，Mule建议您使用配置文件。如果您需要部署到访问凭证不同的不同环境（例如，生产，开发和质量保证），将这些值保存在单独的文件中尤其有用。
+
+=== 完整代码示例
+
+以下示例显示了使用基本身份验证的Salesforce连接的示例最低配置。
+
+[source, xml, linenums]
+----
+<mule xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd">
+ 
+    <sfdc:config name="SalesforceConfig" username="${mule.env}.properties.username" password="${mule.env}.properties.password" securityToken="${mule.env}.properties.securityToken" doc:name="Salesforce">
+        <sfdc:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sfdc:config>
+ 
+    <flow name="salesforce-exFlow1" doc:name="salesforce-exFlow1">
+        <file:inbound-endpoint responseTimeout="10000" path="SomePath" doc:name="File"/>
+        <sfdc:create config-ref="Salesforce" type="Contact" doc:name="Salesforce">
+            <sfdc:objects ref="#[message.payload]"/>
+        </sfdc:create>
+    </flow>
+ 
+</mule>
+----
+
+==  OAuth身份验证
+
+[WARNING]
+====
+目前，当通过OAuth进行身份验证时，DataSense无法访问Salesforce元数据，这意味着您错过了一些非常实用的设计时间Studio功能，例如自动完成返回字段， link:/anypoint-studio/v/5/datamapper-concepts[的DataMapper]自动检测数据结构以及浏览有效负载数据通过元数据可视化器。
+====
+
+Salesforce连接器还支持通过 link:http://oauth.net/[OAuth的]标准进行身份验证。 OAuth的关键优势在于您的服务的最终用户的安全。用户不是直接向第三方服务（OAuth客户端）提供凭证，而只是发放范围和持续时间有限的安全令牌。通过提供第三方服务，他的账户访问权限有限，用户可以减轻他的风险;用户实际凭据的存储位置越多，其中之一被黑客入侵和恶意使用的机会就越大。
+
+OAuth允许API提供者：
+
+* 向API的消费者授予对安全数据的有限访问权限
+
+* 避免向API使用者披露最终用户的访问凭据
+
+* 保留权力随时撤销消费者对最终用户安全数据的访问权限
+
+要通过OAuth连接到Salesforce，您必须先注册您的应用程序并获得*consumer token*和*consumer secret*。请记住，这些都不是基本身份验证中使用的访问令牌;这些令牌是指你的应用程序，而不是你的用户。
+
+一旦你获得了这些令牌，你必须：
+
+*  配置包含您从Salesforce获取的OAuth连接凭证的全局元素。一定要配置一个回调URL。
+
+*  创建包含*Authorize* Salesforce消息处理器的认证流程。
+
+*  创建一个接收已经过身份验证的用户的流。将此流程的地址设置为在注册服务时在Salesforce中设置的*Callback URL*。
+
+有关如何使用Salesforce执行这些步骤的详细说明，请阅读 link:/mule-user-guide/v/3.7/using-a-connector-to-access-an-oauth-api[使用连接器访问OAuth API。]
+
+=== 完整代码示例
+
+以下示例表示使用OAuth身份验证的Salesforce连接的示例最低配置。
+
+[WARNING]
+====
+请注意，为了使此示例有效，您必须提供*consumerKey*和*consumerSecret*的值，这些值是通过向Salesforce的开发人员门户注册应用程序而获得的。
+====
+
+[source, xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns="http://www.mulesoft.org/schema/mule/core"
+    xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+ 
+    <sfdc:config-with-oauth name="salesforce-oauth"
+        consumerKey="" consumerSecret="" doc:name="Salesforce (OAuth)">
+        <sfdc:oauth-callback-config domain="localhost" localPort="8081" remotePort="8081" path="oauthcallback"/>
+    </sfdc:config-with-oauth>
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>   
+ 
+    <flow name="authorize" doc:name="authorize">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="authorize" doc:name="HTTP">
+            <{{0}}"/>
+            <http:error-response-builder statusCode="404" reasonPhrase="An error has occurred authorizing the connector"/>
+        </http:listener>
+        <sfdc:authorize config-ref="salesforce-oauth" display="PAGE" doc:name="Salesforce"/>
+    </flow>
+    <flow name="sfdctestFlow1" doc:name="sfdctestFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="run" doc:name="HTTP"/>
+        <sfdc:create config-ref="salesforce-oauth" type="Contact" accessTokenId="#[flowVars.OAuthAccessTokenId]" doc:name="Salesforce">
+            <sfdc:objects ref="#[payload]"/>
+        </sfdc:create>
+    </flow>
+    <flow name="unauthorize" doc:name="unauthorize">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="unauthorize" doc:name="HTTP">
+            <{{0}}"/>
+        </http:listener>     
+        <sfdc:unauthorize config-ref="salesforce-oauth"
+            accessTokenId="#[message.inboundProperties.'http.query.params'.accessTokenId]" doc:name="Salesforce"/>
+    </flow>
+</mule> 
+----
+
+== 在Salesforce连接器中启用SAML SSO
+
+通过SAML实施SSO为组织提供了一种解决方案，用于将服务提供商与身份提供商分开的用户管理。 Salesforce目前为不同的SSO和SAML配置（如不同的SAML流）提供支持，并同时充当服务提供商和身份提供商。
+
+出于整合的目的，SSO不是很有用，因为SSO是面向浏览器的，而不是面向应用的。这使得SSO不适合应用程序集成开发。
+
+另一方面，OAuth2是SSO不在应用程序集成端的一切。 OAuth2需要单个用户交互来授权应用程序，然后整个集成依赖于应用程序中存储的令牌，也就是说，OAuth2是面向应用程序的。
+
+Mule通过提供SAML和OAuth2解决了与Salesforce的SSO集成问题。 Mule解决方案使用OAuth2获取令牌。在授权步骤中，不是登录到Salesforce，而是登录到身份提供者。
+
+=== 为Salesforce配置SAML和SSO
+
+请参阅Salesforce的 link:https://help.salesforce.com/HTViewHelpDoc?id=sso_saml.htm[配置单一登录的SAML设置]。根据您的需求和您的身份提供商的配置设置Salesforce SSO和SAML配置。
+
+启用`My domain`功能并将域上的所有登录重定向到您的身份提供商URL。
+
+通过`My Domain`功能，您可以为应用程序选择一个自定义域名。 `My Domain`网址可​​以是：`https://customer.my.salesforce.com/`适用于生产型组织，或`https://customer-developer-edition.my.salesforce.com/`适用于开发者版本。通过配置`My Domain`，可以支持单点登录，改善用户体验，并允许用户使用SSO访问其环境中的深层链接。
+
+使用Saleforce的*Setup*> *Company Profile*> *My Domain*配置`My Domain`。由于用户到达Salesforce时可能无法通过身份验证，因此唯一的域是可以发现特定组织的SAML配置的机制。为了充分利用SAML的桌面和移动应用程序，部署我的域，这大大提高了基于Web浏览器的单点登录的用户体验。
+
+===  Mule Flow
+
+假设：
+
+*  Salesforce SAML配置已完成
+
+*  Salesforce应用程序已启用OAuth2（使用者密钥，秘密和回拨URL）
+
+[source, xml, linenums]
+----
+<sfdc:config-with-oauth name="Salesforce__OAuth_"  consumerKey="your_oauth2_key" consumerSecret="your_oauth2_secret" doc:name="Salesforce (OAuth)">
+    <sfdc:oauth-callback-config  domain="localhost" localPort="8082"  path="authcallback"/>
+</sfdc:config-with-oauth>
+<flow name="saml_authorize" doc:name="SAML Authorize">
+    <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8080" doc:name="HTTP" path="authorize"/>
+    <set-payload doc:description="Setting up your organization domain" value="my-custom-domain-dev-ed.my.salesforce.com" doc:name="Set Payload"/>
+    <set-variable value="myuser" variableName="user" doc:name="Username that hit this endpoint" />
+    <sfdc:authorize authorizationUrl="https://#[payload]/services/oauth2/authorize" accessTokenId="#[user]" config-ref="Salesforce__OAuth_"display="POPUP" doc:name="Salesforce OAuth + SAML authorization"/>
+    <sfdc:get-user-info config-ref="Salesforce__OAuth_" doc:name="Salesforce" accessTokenId="#[user]"/>
+    <logger message="#[payload]" level="INFO" doc:name="Logger"/>       
+</flow>
+----
+
+*Note*：根据您的Mule应用程序部署，此流程可能会有所不同。在云部署（CloudHub）的情况下需要< https:connector >。
+
+=== 流程说明
+
+在运行时，用户可以访问其Mule存储的Salesforce自定义域。授权消息处理器使用域，并且Salesforce将用户重定向到其自定义域的登录页面，该页面是其身份提供商的网页。 +
+登录后，用户被重定向到最初请求的资源，这是Oauth认证请求。用户允许应用程序，令牌被发布并存储在Mule。
+
+此流程中最重要的部分是能够在<sfdc:authorize>消息处理器上使用MEL表达式。这使得可以在运行时（以及可选的每个用户）动态配置OAuth2端点。
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.7/salesforce-connector-reference[Salesforce连接器参考]
+
+* 使用Mule阅读关于 link:/mule-user-guide/v/3.7/using-a-connector-to-access-an-oauth-api[连接到OAuth API]的内容
+
+* 详细了解 link:http://oauth.net/[OAuth的]
+
+* 请参阅关于通过OAuth授权您的服务的 link:http://wiki.developerforce.com/page/Using_OAuth_to_Authorize_External_Applications[Salesforce文档]

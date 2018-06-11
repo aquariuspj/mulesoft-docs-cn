@@ -1,0 +1,363 @@
+=  SAP连接器故障排除
+:keywords: sap, connector, troubleshooting
+：imagesdir：./_images
+
+此页面包含 link:/mule-user-guide/v/3.8/mulesoft-enterprise-java-connector-for-sap-reference[SAP连接器]的常见问题排查建议。
+
+
+[[checking-log-files]]
+== 检查日志文件
+
+Mule在`$MULE_HOME\logs`目录中存储日志文件（基于每个应用程序）：
+
+*  `mule.log`  - 默认的Mule日志文件。
+*  `mule-app-YOUR_APP_NAME.log`  - 每个应用程序日志文件。
+
+[[enabling-jco-trace]]
+== 启用JCo Trace
+
+JCo Trace可以从Mule外部启用并接受以下Java启动环境属性：
+
+*  `-Djco.trace_level=N`（其中0 \ <= N \ <= 10，10 =最详细的跟踪）
+*  `-Djco.trace_path=<PATH>`（可选）
+
+要在连接器级别启用跟踪，请执行以下步骤：
+
+. 将属性`jcoTrace`设置为`true`或提供值为`1`的扩展JCo属性`jco.client.trace`或`jco.server.trace`。
+. 在Mule启动时为`-Djco.trace_level=N`提供一个值。 *JCo offers trace levels from 0 to 10*。跟踪数据量随着所选跟踪级别的增加而增加。每个跟踪级别还包含来自较低跟踪级别的所有跟踪数据。有关跟踪数据的详细信息，请参阅下表。如果您使用高JCo跟踪级别以及大量JCo呼叫和传输内容，请确保有足够的磁盘空间可用。 *Default value is 0*。
++
+[%header%autowidth,cols="^,^,<"]
+|===
+|跟踪级别 | AS Java严重性级别 | JCo 3跟踪内容
+| `0`  | `NONE`  |无痕迹。
+| `1`  | `ERROR`  | JCo版本和运行时环境信息。 +
+JCo内部错误和异常，无应用错误。
+| `2`  | `WARNING`  | JCo警告消息（例如，非ABAP系统例外）。
+| `3`  | `INFO`  | JCo信息消息（例如，ABAP例外）。
+| `4`  | `PATH`  | RFC调用和重要的公共API调用。
+| `5`  | `DEBUG`  |重要的内部中间件调用。 +
+代码页信息。
+| `6`  | `DEBUG`  |连接属性。 +
+ASCII内容数据（前1000个字符的结构/前5行表格）。
+RFC元数据（名称，类型，偏移量，长度，导入/导出选项）和| `7`  | `DEBUG` {{4}
+内容数据的附加十六进制值。
+| `8`  | `DEBUG`  |全内容数据转储（无字符或行限制）。 +
+调用者堆栈跟踪信息（例如，用于getClient（） - 标识应用程序）。
+| `9`  | `DEBUG`  |没有附加信息（保留供将来使用）。
+| `10`  | `DEBUG`  |没有附加信息（保留供将来使用）。
+|===
++
+. 或者，您可以为`-Djco.trace_path=<PATH>`提供值。这应该是存储跟踪文件的现有目录的完整路径，但还可以应用其他特殊值：
+*  `stdout`  -  JCo跟踪信息发送到标准*output*流。
+*  `stderr`  -  JCo跟踪信息发送到标准*error*流。
+
+如果`-Djco.trace_path`未设置，则跟踪文件将存储在工作目录中。对于Mule独立版，通常是`$MULE_HOME/bin`文件夹。
+
+[[common-errors]]
+== 常见错误
+
+[[error-jco-missing-libs]]
+===  JCo丢失图书馆
+
+==== 问题
+
+当测试连接或尝试部署Mule应用程序时，通常会发生此异常，而不加载一个或多个所需的SAP JCo依赖关系：
+
+* 缺少JCo本机库
++
+[source, code, linenums]
+----
+java.lang.ExceptionInInitializerError: JCo initialization failed with java.lang.UnsatisfiedLinkError: no sapjco3 in java.library.path
+----
++
+[.center.text-center]
+image:sap-error-jco-libs1.png[SAP错误JCo本地库]
+
+* 缺少JCo JAR
++
+[source, code]
+----
+java.lang.NoClassDefFoundError: com/sap/conn/jco/JCoTraceListener
+----
++
+[.center.text-center]
+image:sap-error-jco-libs2.png[SAP错误JCo JAR]
+
+* 缺少IDoc JAR
++
+[source, code]
+----
+java.lang.NoClassDefFoundError: com/sap/conn/idoc/IDocMetaDataUnavailableException
+----
++
+[.center.text-center]
+image:sap-error-jco-libs3.png[SAP错误IDoc JAR]
+
+==== 解
+
+要将这些库添加到项目中，请单击全局元素属性窗口中的*Add File*按钮，在该窗口中您可以看到带有红色感叹号的列出的库，然后浏览并选择相应的文件。 SAP库将自动添加到项目类路径中。
+
+[TIP]
+通过右键单击Package Explorer中的项目，导航到*Build Path*> *Configure Build Path*，可以在项目构建路径中看到这些库。
+
+[[error-jco-classloader-conflicts]]
+===  JCo类加载器冲突
+
+[source]
+----
+java.lang.ExceptionInInitializerError: JCo initialization failed with java.lang.UnsatisfiedLinkError: Native Library /home/mule/sap-errors/lib/jco/libsapjco3.so already loaded in another classloader
+----
+
+==== 问题
+
+从全局配置加载本机库时，该文件的副本放置在`$YOUR_APP/src/main/app/lib`内，但"original"不会被删除。因此，如果在测试连接或部署应用程序时与JCo jar文件共享相同的目录，则会得到此异常。
+
+[.center.text-center]
+image:sap-error-jco-classloader-folder.png[SAP错误JCo类加载器文件夹]
+
+==== 解
+
+*  *Straightforward approach:*只需从您的JCo罐子所在的目录中删除_duplicate_本地库文件。
+
+[.center.text-center]
+image:sap-error-jco-classloader-fix.png[SAP错误JCo类加载程序修复]
+
+*  *Best-practice approach:*配置环境变量`LD_LIBRARY_PATH`来保存动态链接库，并在同一Mule运行时服务器中部署的多个应用程序之间共享。
+
+[NOTE]
+有关更多信息，请查看 link:/mule-user-guide/v/3.8/sap-connector#share-jco-dependencies-between-several-applications[在多个应用程序中共享JCo依赖关系]。
+
+[[error-jco-version-conflicts]]
+===  JCo版本冲突
+
+[source, code, linenums]
+----
+java.lang.ExceptionInInitializerError: Native library sapjco3 is too old. Found library System-defined path to libsapjco3.so has version "720.612", but required is at least version "720.713".
+----
+
+==== 问题
+
+最常见的原因是采用了不同版本的本地库和JCo罐子。
+
+==== 解
+
+验证以下内容：
+
+*  JCo与底层JVM兼容。在64位模式下运行的JVM和运行在32位模式下的JVM上的32位JCo需要64位JCo。
+* 在Microsoft®Windows®上，JCo需要Microsoft Visual Studio 2005 C / C ++运行时库。
+*  `sapjco.jar`和`sapjco3.dll`或`sapjco3.so`或`sapjco3.jnilib`个文件必须来自*same JCo package*。
++
+[NOTE]
+====
+要检查您正在使用的JCo库的版本，请执行以下操作之一：
+
+* 从用户界面（Windows）：
+	。浏览到sapjco3.jar文件所在的目录。
+	。右键点击`sapjco3.jar`文件。
+	。从上下文菜单中选择*Open With*。
+	。单击Java 2 Platform Standard Edition二进制文件。
+	。 SAP Java Connector（JCo）对话框将弹出，显示有关所使用的JCo和Java版本的信息。
+
+* 从控制台：
+	。打开终端控制台。
+	。导航到`sapjco3.jar`文件所在的目录。
+	。执行命令`java -jar sapjco3.jar -version`。
+	。将弹出一个SAP Java连接器（JCo）对话框，显示有关所使用的JCo和Java版本的信息。
+
+[.center.text-center]
+image:sap-jco-version.png[“scaledwidth =”60％“，查看JCo版本]
+====
+
+[[error-jco-renaming-conflicts]]
+===  JCo重命名冲突
+
+[source,code]
+----
+java.lang.ExceptionInInitializerError: Illegal JCo archive "sapjco3-3.0.11.jar". It is not allowed to rename or repackage the original archive "sapjco3.jar"
+----
+
+==== 问题
+
+自*JCo 3.0.11*发布以来，您无法将任何SAP JCo库文件的名称从其原始名称更改为JCo，因为它们不会被JCo识别。
+
+==== 解
+
+如果您使用的是*Maven*，建议的解决方法是使用属性`<stripVersion>true</stripVersion>`配置*maven-dependency-plugin*。这样，复制JCo工件时，所有依赖库的版本号将被剥离。
+
+更多信息可在 link:http://maven.apache.org/plugins/maven-dependency-plugin/usage.html[Apache Maven依赖项插件]的外部获得。
+
+[[error-transformer-needs-a-valid-endpoint]]
+=== 变形器需要有效的端点
+
+[source, code]
+----
+java.lang.IllegalStateException: This transformer needs a valid endpoint
+----
+
+==== 问题
+
+SAP端点的`outputXml`属性已设置为`false`，因此禁用`sap:object-to-xml`转换器的隐式使用。
+
+image:sap-connector-troubleshooting-1b2c9.png[小号]
+
+image:sap-connector-troubleshooting-output-xml.png[变压器错误]
+
+==== 解
+
+* 选项A：将`outputXml`的值更改为`true`。
+
+* 选项B：向流中添加一个`sap:object-to-xml`变换器。
+
+image:sap-connector-troubleshooting-03a65.png[变压器修理]
+
+[[error-message-not-a-sap-object]]
+=== 消息不是SAP对象
+
+[source, code, linenums]
+----
+org.mule.api.transport.DispatchException: Message is not a SAP object, it is of type "byte[]". Check the transformer for this Connector "SapConnector". Failed to route event via endpoint: SapOutboundEndpoint{endpointUri=sap://function, connector=SapConnector
+{
+ name=SapConnector
+ lifecycle=start
+ this=4571cebe
+ numberOfConcurrentTransactedReceivers=4
+ createMultipleTransactedReceivers=true
+ connected=true
+ supportedProtocols=[sap]
+ serviceOverrides=<none>
+}
+,  name='endpoint.sap.function', mep=ONE_WAY, properties={evaluateFunctionResponse=false, bapiTransaction=false, functionName=BAPI_MATERIAL_AVAILABILITY, rfcType=srfc, outputXml=true}, transactionConfig=Transaction{factory=null, action=INDIFFERENT, timeout=0}, deleteUnacceptedMessages=false, initialState=started, responseTimeout=10000, endpointEncoding=UTF-8, disableTransportTransformer=false}. Message payload is of type: byte[]
+----
+
+==== 问题
+
+正如在异常消息中清楚地指出的那样，端点期望具有输入参数的SAP对象执行BAPI或IDoc，但是没有提供任何对象或对象格式错误。
+
+==== 解
+
+创建一个表示对BAPI或IDoc的调用的SAP对象。这里有两个选项：
+
+1.使用BAPI调用创建代表SAP对象的XML。
+2.提供一个XML定义并使用该定义内的输入来创建实际的SAP调用。
+
+[[error-icoc-metadata-unavailable]]
+===  IDoc元数据不可用
+
+[source, code, linenums]
+----
+RfcException: [mc-vmware|a_rfc] message: (3) IDOC_ERROR_METADATA_UNAVAILABLE: The meta data for the IDoc type "??????????????????????????å å" with extension "  ORDSAPB6L B60CL          ???" is unavailable.
+    Return code: RFC_FAILURE(1)
+    error group: 104
+    key: RFC_ERROR_SYSTEM_FAILURE
+----
+
+==== 问题
+
+RFC目标应该支持*Unicode*。
+
+==== 解
+
+使用事务*SM59*在您的SAP实例中配置Unicode支持。
+
+[[error-cannot-join-a-transaction]]
+=== 无法加入交易
+
+[source, code]
+----
+SAP Connector Cannot Join Transaction of Type [org.mule.TransactionClass]
+----
+
+类型`[srfc|trfc|qrfc]`的操作将是无状态的，因为SAP Transport暂时不支持多事务。
+
+[[error-missing-tid-handler]]
+=== 缺少TID处理程序
+
+[source, code, linenums]
+----
+[10-11 08:02:26] ERROR SapJcoServerDefaultListener [JCoServerThread-1]: Exception occured on idoc_send connection 3-10.30.9.26|sapgw00|idoc_send: check TID fault: No transaction handler is installed. Unable to process tRFC/qRFC requests.
+RfcException: [mule.local|MULESOFT_IDOC_SEND_TEST]
+    message: check TID fault: No transaction handler is installed. Unable to process tRFC/qRFC requests.
+    Return code: RFC_FAILURE(1)
+    error group: 104
+    key: RFC_ERROR_SYSTEM_FAILURE
+Exception raised by myhost.com.ar|MULESOFT_IDOC_SEND_TEST
+    at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcServer.playbackTRfc(MiddlewareJavaRfc.java:2625)
+    at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcServer.handletRfcRequest(MiddlewareJavaRfc.java:2546)
+    at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcServer.listen(MiddlewareJavaRfc.java:2367)
+    at com.sap.conn.jco.rt.DefaultServerWorker.dispatch(DefaultServerWorker.java:284)
+    at com.sap.conn.jco.rt.DefaultServerWorker.loop(DefaultServerWorker.java:369)
+    at com.sap.conn.jco.rt.DefaultServerWorker.run(DefaultServerWorker.java:245)
+    at java.lang.Thread.run(Thread.java:680)
+----
+
+==== 问题
+
+没有定义TID处理程序。
+
+==== 解
+
+将`rfcType`设置为`<sap:inbound-endpoint />`中的`trfc`或`qrfc`。
+
+[[error-parameter-not-supported]]
+不支持=== 参数
+
+[source, code, linenums]
+----
+Root Exception stack trace:
+RfcException: [null]
+message: Parameter 'type' not supported: 'f'
+Return code: RFC_INVALID_PARAMETER(19)
+error group: 101
+key: RFC_ERROR_PROGRAM
+ 
+at com.sap.conn.rfc.api.RfcOptions.checkParameters(RfcOptions.java:182)
+at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcClient.connect(MiddlewareJavaRfc.java:1328)
+at com.sap.conn.jco.rt.ClientConnection.connect(ClientConnection.java:731)
++ 3 more (set debug level logging or '-Dmule.verbose.exceptions=true' for everything)
+----
+
+==== 问题
+
+SAP扩展属性（在Map bean中配置或作为端点地址参数）应具有有效的名称。如果您提供了无效的属性名称，您将收到与上述类似的错误消息。
+
+在此示例中，JCo库报告名称为_type_的参数无效。
+
+==== 解
+
+提供一个有效的属性名称。完整的扩展属性列表可以在 link:/mule-user-guide/v/3.8/sap-connector-advanced-features#jco-extended-properties[这里]中找到。
+
+[[error-multiple-jco-servers]]
+==== 多个JCo服务器正在运行
+
+[source, code, linenums]
+----
+ERROR 2012-07-05 10:11:30,525 [WrapperListener_start_runner] com.mulesoft.mule.transport.sap.SapMessageReceiver: Error connecting to server
+com.sap.conn.jco.JCoException: (101) JCO_ERROR_CONFIGURATION: Server configuration for sapavalara-1.0-SNAPSHOT-gettax is already used for a running server
+at com.sap.conn.jco.rt.StandaloneServerFactory.update(StandaloneServerFactory.java:358)
+at com.sap.conn.jco.rt.StandaloneServerFactory.getServerInstance(StandaloneServerFactory.java:176)
+at com.sap.conn.jco.server.JCoServerFactory.getServer(JCoServerFactory.java:74)
+at com.mulesoft.mule.transport.sap.jco3.SapJcoRfcServer.initialise(SapJcoRfcServer.java:46)
+at com.mulesoft.mule.transport.sap.jco3.SapJcoServerFactory.create(SapJcoServerFactory.java:60)
+at com.mulesoft.mule.transport.sap.SapMessageReceiver.doConnect(SapMessageReceiver.java:56)
+at org.mule.transport.AbstractTransportMessageHandler.connect(AbstractTransportMessageHandler.java:218)
+at org.mule.transport.AbstractConnector.registerListener(AbstractConnector.java:1254)
+----
+
+==== 问题
+
+不能有两个或多个具有相同配置参数集的JCo服务器，即使它们具有不同的配置名称。
+
+==== 解
+
+服务器组密钥（确定JCo服务器连接的唯一性）由以下属性给出：
+
+*  `jco.server.gwhost`
+*  `jco.server.gwserv`
+*  `jco.server.progid`
+
+因此，只要它们具有`gwhost`，`gwserv`和`progid`的不同值，您就可以在同一Mule实例中启动两台服务器（JCo将此信息保存在Singleton类中）。
+
+[[see-also]]
+== 另请参阅
+*  link:/mule-user-guide/v/3.8/sap-connector[SAP连接器文档]。
+*  link:/mule-user-guide/v/3.8/sap-connector-advanced-features[SAP连接器高级功能]。

@@ -1,0 +1,237 @@
+= 入站路由器
+
+== 概述
+
+入站路由器在将服务传递给服务组件之前控制和处理由服务接收的消息。通常情况下，入站路由器用于过滤收到的消息，汇总一组传入的消息，或在收到消息时重新排序消息。入站路由器也用于注册一个服务的多个入站端点。您可以将入站路由器链接在一起，以便在将消息传递到组件之前，必须匹配每个路由器。如果没有路由器接受当前消息，您还可以配置被调用的 link:/mule-user-guide/v/3.2/catch-all-strategies[全面战略]。
+
+入站路由器与出站路由器的不同之处在于端点已经是已知的（因为消息已经被接收），所以路由器的目的是控制如何给组件发送消息。
+
+所有入站路由器都在`<inbound>`元素内的服务上配置。如果没有配置入站路由器，默认情况下使用InboundPassThroughRouter将传入消息传递给组件。
+
+=== 仅匹配第一个路由器
+
+默认情况下，消息必须匹配并由服务中的*all*入站路由器处理，然后才能传递到服务组件。如果要配置服务，以便仅通过条件匹配的第一个路由器处理该消息，则将`<inbound>`元素上的`matchAll`属性设置为false。
+
+[TIP]
+这是Mule 2.0的新特性。以前，该消息默认情况下仅由第一个匹配路由器处理。
+
+=== 入站示例
+
+[source, xml, linenums]
+----
+<inbound>    <stdio:inbound-endpoint system="IN" />     <catch-all-strategy>        <jms:outbound-endpoint queue="failure.queue"/>    </catch-all-strategy>    <selective-consumer-router>       <mulexml:jxpath-filter pattern="(msg/header/resultcode)='success'"/>    </selective-consumer-router></inbound>
+----
+
+此示例使用选择性消费者路由器，如果'resultcode'元素的值为'success'，它将接受消息。如果消息符合此过滤条件，则消息将传递给组件。如果消息不匹配，则调用catch-all策略，该策略通过其配置的端点发送消息，在这种情况下为JMS队列，名为'failure.queue'。
+
+本页面的其余部分介绍可以使用的入站路由器。有关入站路由器配置元素和属性的更多详细信息，请参阅 link:/mule-user-guide/v/3.2/inbound-router-configuration-reference[入站路由器配置参考]。
+
+== 无路由器
+
+如果未在入站中定义路由器，则通过端点接收的所有消息都将由服务组件处理。
+
+[source, xml, linenums]
+----
+<inbound>    <jms:inbound-endpoint queue="foo.bar"/>    <vm:inbound-endpoint path="foo.bar.local"/></inbound>
+----
+
+== 选择性消费者
+
+选择性消费者是入站路由器，可以将一个或多个过滤器应用于传入消息。如果过滤器匹配，则将消息转发给组件。否则，该消息将转发到路由器上的全部策略。如果未配置全部捕获，则会忽略该消息并记录警告。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <selective-consumer-router>    <mulexml:jxpath-filter expression="msg/header/resultcode = 'success'"/>  </selective-consumer-router>  <forwarding-catch-all-strategy>    <jms:endpoint topic="error.topic"/>  </forwarding-catch-all-strategy></inbound>
+----
+
+有关在此路由器上使用过滤器的信息，请参阅 link:/mule-user-guide/v/3.2/using-filters[使用过滤器]。请注意，在应用入站变压器后，默认情况下将过滤器应用于消息。如果您需要在消息上执行过滤器而不应用任何转换，则可以设置此路由器上的`transformFirst`属性来控制是否应用转换。
+
+[source, xml, linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <forwarding-catch-all-strategy>    <jms:endpoint topic="error.topic"/>  </forwarding-catch-all-strategy>  <selective-consumer-router transformFirst="false">    <mulexml:jxpath-filter expression="msg/header/resultcode = 'success'"/>  </selective-consumer-router></inbound>
+----
+
+== 幂等消息过滤器
+
+幂等过滤器通过检查传入消息的唯一消息ID来确保服务仅接收唯一消息。 ID可以使用在`idExpression`属性中定义的表达式从消息中生成。默认情况下，使用的表达式是`#[message:id]`，这意味着基础端点必须支持唯一的消息ID才能使其工作。否则，会抛出`UniqueIdNotSupportedException`。
+
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/routing/IdempotentMessageFilter.html[org.mule.routers.IdempotentMessageFilter]提供了一个简单的幂等过滤器实现。默认实现使用简单的基于文件的机制来存储消息ID，但您可以扩展此类以将ID存储在数据库中，而不是通过实现 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/store/ObjectStore.html[的ObjectStore]接口。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <idempotent-receiver-router idExpression="#[message:id]-#[header:foo]">    <simple-text-file-store directory="./idempotent"/>  </idempotent-receiver-router></inbound>
+----
+
+可选的`idExpression`属性确定应该用作唯一消息ID的内容。如果不使用此属性，则默认使用`#[message:id]`。
+
+上面显示的嵌套元素配置接收到的消息ID的存储位置。在这个例子中，它们被存储到磁盘，以便路由器可以记住重新启动之间的状态。如果没有指定`directory`属性，则使用默认值`${mule.working.dir}/objectstore`，其中`mule.working.dir`是为Mule实例配置的工作目录。
+
+如果未配置存储，则默认使用InMemoryObjectStore。
+
+== 幂等安全哈希消息过滤器
+
+该过滤器通过使用消息摘要算法计算消息的散列，确保只有唯一的消息才能被服务接收。这种方法提供了一个无限小的碰撞几率，并可用于过滤消息重复。请注意，哈希是在表示消息的整个字节数组上计算的，所以任何前导或尾随空格或无关字节（如填充）都可以为相同的语义消息内容生成不同的哈希值。因此，您应该确保消息不包含无关的字节。当消息不支持唯一标识符时，此路由器很有用。
+
+此过滤器的配置如下所示：
+
+[source, xml, linenums]
+----
+<inbound>    <vm:inbound-endpoint path="foo.bar.local"/>    <idempotent-secure-hash-receiver-router messageDigestAlgorithm="SHA26">        <simple-text-file-store directory="./idempotent"/>    </idempotent-secure-hash-receiver-router></inbound>
+----
+
+Idempotent安全哈希消息过滤器也使用对象库，它们的配置方式与Idempotent Message Filter相同。可选的`messageDigestAlgorithm`属性决定了将要使用的散列算法。如果未指定此属性，则使用默认算法SHA-256。
+
+== 收集聚合器
+
+Collection Aggregator在转发它们之前对具有匹配组ID的传入消息进行分组。组ID可以来自相关ID或将消息链接在一起的另一个属性。
+
+您可以指定`timeout`属性来确定路由器等待邮件完成组等待的时间（以毫秒为单位）。默认情况下，如果预期消息在`timeout`时间内未收到，则会抛出异常并且不会转发消息。从Mule 2.2开始，可以将`failOnTimeout`属性设置为`false`，以防止引发异常，并简单地转发到目前为止收到的任何消息。
+
+聚合器基于<<Selective Consumer>>，因此您也可以将过滤器应用于消息。这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <collection-aggregator-router timeout="6000" failOnTimeout="false">    <payload-type-filter expectedType="org.foo.some.Object"/>  </collection-aggregator-router></inbound>
+----
+
+== 消息分块聚合器
+
+在诸如 link:/mule-user-guide/v/3.2/outbound-routers[列表消息分配器]的出站路由器将消息拆分为多个部分之后，消息分块聚合器路由器会将这些部分重新组合为一条消息。聚合器使用由出站路由器设置的关联ID来标识哪些部分属于相同的消息。该聚合器基于<<Selective Consumer>>，所以过滤器也可以应用于消息。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <message-chunking-aggregator-router>    <expression-message-info-mapping correlationIdExpression="#[header:correlation]"/>    <payload-type-filter expectedType="org.foo.some.Object"/>  </message-chunking-aggregator-router></inbound>
+----
+
+可选的`expression-message-info-mapping`元素允许您使用表达式在消息中标识关联标识。如果未指定此元素，则使用`MuleMessage.getCorrelationId()`。
+
+Message Chunking聚合器还接受Collection Aggregator下描述的`timeout`和（如Mule 2.2）`failOnTimeout`属性。
+
+== 自定义关联聚合器
+
+该路由器用于配置自定义消息聚合器。 Mule提供了一个具有执行消息聚合的模板方法的抽象实现。聚合路由器的一个常见用途是合并多个请求的结果，例如"ask this set of vendors for the best price of X"。
+
+聚合器基于<<Selective Consumer>>，因此您也可以将过滤器应用于消息。它还接受Collection Aggregator下描述的`timeout`和（如Mule 2.2）`failOnTimeout`属性。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <custom-correlation-aggregator-router class="org.mule.CustomAgregator">    <payload-type-filter expectedType="org.foo.some.Object"/>  </custom-correlation-aggregator-router></inbound>
+----
+
+有一个AbstractEventAggregator为自定义聚合器提供线程安全的实现，您可以使用它来编写自定义聚合器路由器。例如，Mule发行版中包含的 link:/mule-user-guide/v/3.2/loan-broker-example[贷款经纪人]示例使用自定义BankQuotesInboundAggregator路由器来汇总银行报价。
+
+== 相关重排序器
+
+相关重新排序器路由器将阻止一组消息并使用消息相关序列属性对它们进行重新排序。 `java.util.Comparator`用于对消息进行排序。该路由器基于<<Selective Consumer>>，这意味着可以将过滤器应用于传入消息。它还接受Collection Aggregator下描述的`timeout`和（如Mule 2.2）`failOnTimeout`属性。
+
+[source, xml, linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar.local"/>  <correlation-resequencer-router>    <mulexml:jxpath-filter expression="msg/header/resultcode = 'success'"/>  </correlation-resequencer-router></inbound>
+----
+
+== 转发路由器
+
+此路由器允许将消息转发到出站路由器，而无需先由组件处理。它本质上充当入站和出站端点之间的桥梁。这在开发人员不需要对入站消息执行任何逻辑但需要通过网络将其转发到驻留在另一个目标上的组件（如远程Mule节点或应用程序）的情况下非常有用。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<service name="FileReader">  <inbound>    <file:inbound-endpoint path="/temp/myfiles/in"/>      <forwarding-router/>  </inbound>  <echo-component/>  <outbound>    <tcp:outbound-endpoint host="192.168.0.6" port="12345">      <object-to-byte-array-transformer/>    </tcp:outbound-endpoint>  </outbound></service>
+----
+
+当文件在本地文件系统上可用时，会触发一个事件来创建消息，然后通过TCP自动将消息转发到192.168.0.6。请注意，已配置了`outboundTransformer`。这将用于在消息的有效载荷通过TCP分派之前进行转换。有一个回声组件被配置，但是当使用转发使用者时，组件调用被跳过，并且该消息被直接转发出站路由器。
+
+对于大多数转发场景，建议将该服务配置为网桥。但是，如果您需要有选择地仅转发某些事件，而其他组件则处理其他事件，则需要使用此路由器。
+
+转发路由器扩展了<<Selective Consumer>>，因此您可以在此路由器上配置过滤器。
+
+== 窃听路由器
+
+WireTap入站路由器允许您将某些消息路由到不同的端点以及组件。 image:Wiretap+Router.jpeg[窃听+路由器]
+
+要将所有消息复制到特定组件，请在WireTap路由器上配置出站端点：
+
+[source, xml, linenums]
+----
+<inbound>    <vm:inbound endpoint path="FromUser"/>    <wire-tap-router>        <vm:outbound-endpoint path="tapped.channel"/>    </wire-tap-router></inbound>
+----
+
+在以下情况中，未指定任何组件，因此将使用隐式桥接将来自入站VM通道的所有数据复制到出站端点。但是，假设您想要将一些数据转发到另一个名为WireTapReceiver的组件，并基于过滤器。为了说明起见，在将组件发送到FromTapper VM通道之前，该组件简单地在"INTERCEPTED:"前加上消息。 WireTapReceiver组件的代码如下所示：
+
+[source, java, linenums]
+----
+public class WireTapReceiver {    public String handleInterceptedData (String aMessage) {        //Just Prepend the message with a label        return "\nINTERCEPTED: "+aMessage;    }}
+----
+
+以下是Mule服务的配置：
+
+[source, xml, linenums]
+----
+<model name="default">    <service name="StdComp">        <inbound>            <vm:inbound-endpoint path="In"/>            <wire-tap-router>                <vm:outbound-endpoint path="ToTapper"/>            </wire-tap-router>        </inbound>        <outbound>            <pass-through-router>                <vm:outbound-endpoint path="ToClient"/>            </pass-through-router>        </outbound>    </service>    <service name="wiretapper">        <inbound>            <vm:inbound-endpoint path="ToTapper"/>        </inbound>        <component class="org.myclass.WireTapReceiver"/>        <outbound>            <pass-through-router>                <vm:outbound-endpoint path="FromTapper"/>            </pass-through-router>        </outbound>    </service></model>
+----
+
+注意：Mule为窃听端点使用单独的调度程序线程。
+
+=== 在WireTap路由器中使用过滤器
+
+WireTap路由器在过滤和不过滤都很有用。如果被过滤，它可以用于记录或记录特定的消息或将需要额外处理的消息复制到不同的组件。如果未使用过滤器，则可以制作组件接收的所有消息的备份副本。这里的行为与拦截器的行为类似，但拦截器可以通过阻止消息到达组件来更改消息流。 WireTap路由器不能改变消息流，只是按需复制。
+
+在前面的示例中，StdComp服务从In端点接收消息，路由器将消息传递给组件并将其复制到vm：// ToTapper端点。 WireTapper组件监听此通道，并在处理后将消息转发到FromTapper端点。
+
+WireTap路由器基于选择性消费者路由器，因此可以采用`SelectiveConsumer`支持的任何 link:/mule-user-guide/v/3.2/using-filters[过滤器]。在此示例中，只有符合过滤器表达式的消息才会复制到vm：// ToTapper端点。
+
+[source, xml, linenums]
+----
+<wire-tap-router>    <wildcard-filter pattern="the quick brown*"/>    <vm:outbound-endpoint path="tapped.channel"/></wire-tap-router>
+----
+
+=== 使用多个WireTap路由器
+
+您可以为同一服务使用多个WireTap路由器：
+
+[source, xml, linenums]
+----
+<inbound>    <endpoint address="vm://In"/>    <wire-tap-router>        <wildcard-filter pattern="the quick brown*"/>        <vm:outbound-endpoint path="ToTapper"/>    </wire-tap-router>    <wire-tap-router>        <wildcard-filter pattern="the slow green*"/>        <vm:outbound-endpoint path="ToOtherTapper"/>    </wire-tap-router></inbound>
+----
+
+在这个例子中，输入被传递给组件，并根据过滤器复制到两个目标中的一个。
+
+Wire-tapped组件中的=== 方法调用
+
+您可以使用特定方法调用您的服务。例如，如果您的入站端点不是`vm://In`，但`axis\:http://localhost\:8080/services`，或者您的组件StdComp是具有方法`foo()`的自定义组件，则可以调用Web服务及其方法{ 3}}通过以下端点：
+
+`http\://localhost\:8080/services/StdComp?method=foo&param=bar`
+
+当这个消息被接线到接收组件时，如果接收组件没有方法`foo()`，Mule可能会失败并发生异常。为避免此问题并确保调用所需的方法，可以通过指定`?method=methodName`或指定`?method=`来覆盖消息的方法，以便调用`onCall()`方法。例如：
+
+[source, xml, linenums]
+----
+<wire-tap-router>    <outbound-endpoint addres="vm://inboundEndpoint3?connector=vm2"/></wire-tap-router>...<service name="serviceComponent3">    <inbound>        <inbound-endpoint address="vm://inboundEndpoint3?connector=vm2&amp;method=" synchronous="false"/>    </inbound>    <component class="org.mule.components.simple.LogComponent"/></service>
+----
+
+=== 额外的WireTap路由器功能
+
+WireTap路由器支持以下附加功能：
+
+* 支持事务，因此消息的转发可以启动或加入事务，只要端点 link:/mule-user-guide/v/3.2/transaction-management[支持交易]。
+*  Reply-To可用于路由来自此端点的回复。
+
+== 自定义入站路由器
+
+您可以通过在`<custom-inbound-router>`元素上指定自定义路由器类并使用Spring属性来配置自定义入站路由器。或者，您还可以配置出站端点，以防例如实施自定义窃听路由器所需的情况。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<inbound>    <vm:inbound-endpoint path="foo.bar.local"/>    <custom-inbound-router class="org.my.CustomInboundRouter">        <mulexml:jxpath-filter expression="msg/header/resultcode = 'success'"/>        <spring:properties>            <spring:property key="key1" value="value1"/>             <spring:property key="key2" value="value2"/>         </spring:properties>        <vm:outbound-endpoint path="out"/>    </custom-inbound-router></inbound>
+----

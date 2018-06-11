@@ -1,0 +1,120 @@
+=  Python组件参考
+
+尽管Mule中有丰富的元素可供选择，但您可能会发现自己需要将一些自定义代码放在一起来执行复杂任务的一部分。如果您习惯于使用Ruby进行编码，那么Ruby组件是理想的多功能工具，可以在这些情况下重用。 Mule还包含其他语言的等效脚本组件。 Ruby组件对于现有系统的现代化也很方便，因为您可以简单地将旧的代码行放入组件中，而不必通过一系列不同的Mule组件重新设计代码的行为。 Python脚本通常在运行时执行（客户端请求）;脚本中嵌入的自定义逻辑可用于触发应用程序执行数据库事务，或修改您的网页界面。
+
+Python还允许开发人员配置拦截器并更改脚本中特定属性的值或引用。拦截器配置为在消息流经组件时为消息提供附加服务。例如，开发人员可以配置拦截器，以在处理消息时执行特定事件的调度或记录。 Python组件还包含一个自定义拦截器，它允许您配置Spring元素的设置。使用*Advanced*标签访问*Script Properties*，然后为脚本中的特定属性定义值和引用。
+
+在使用Python时，输入或附加脚本到组件是唯一需要的配置。
+
+[TIP]
+放置Python组件实际上与放置 link:/mule-user-guide/v/3.5/script-component-reference[脚本组件]然后选择Python引擎相同。
+
+== 配置
+
+常规选项卡=== 
+
+要配置Python组件，请从Message Flow画布上双击Python图标打开*Pattern Properties*窗格。使用“常规”选项卡指定脚本的文件位置，或者只需在脚本文本窗口中键入脚本即可。脚本引擎是Python。
+
+image:PythonPropGen.png[PythonPropGen]
+
+[%header%autowidth.spread]
+|===
+| {面板{1}}说明
+| *Display*  |默认为通用组件名称。将*Display Name*更改为字母数字，以反映组件的特定角色，即`Welcome Page Python Script`。
+| *Script* a |
+*Script Text*：键入组件将直接加载到此空间的脚本。
+
+*Script File*：输入要由组件加载的脚本的位置。该文件可以驻留在类路径或本地文件系统中。
+
+*Bean Reference*：允许您添加一个Java bean，它将多个对象封装到一个bean中。然后，脚本组件可以在适用时存储和重新使用该Bean。
+|===
+
+=== 高级选项卡
+
+使用*Advanced*选项卡可以选择配置拦截器和（取决于拦截器）输入Spring值。您还可以选择指定脚本属性，这些属性是用于更改或更改脚本中的属性的键/值对。有关使用高级选项卡的信息，请参阅 link:/mule-user-guide/v/3.5/script-component-reference[脚本组件参考]页面。
+
+image:python_advanced.png[python_advanced]
+
+=== 拦截
+
+拦截器修改脚本中特定属性的值或引用。它们被配置为在消息流经组件时为消息提供附加服务。例如，您可以配置拦截器，以在处理消息时执行特定事件的调度或记录。 Script组件还包含一个自定义拦截器，它允许您配置Spring元素的设置。
+
+拦截器使开发人员能够为组件提供附加服务，例如记录事务的能力以及记录每个事务的时间的能力。使用*Add Custom Interceptor*创建一个可以引用Spring对象的自定义拦截器。 *Interceptor Stack*可让您捆绑多个拦截器。使用拦截器堆栈在Python组件上应用多个拦截器。拦截器按堆栈中定义的顺序应用。
+
+=== 脚本属性
+
+配置这些参数以定义属性键及其关联值。这使脚本组件能够快速查找与关键字相关联的值。
+
+== 示例
+
+以下示例使用 link:https://en.wikipedia.org/wiki/Change-making_problem[“贪婪硬币兑换器”算法]将一种货币转换为另一种货币。它使用一些变换器来转换输入数据，然后应用Python算法来转换货币。
+
+[source, xml, linenums]
+----
+<flow name="greedy">
+     <http:inbound-endpoint host="localhost" port="8081"/>
+    <http:body-to-parameter-map-transformer />
+     
+    <set-payload value="#[payload['amount']]" />
+    <transformer ref="StringToNumber" />
+    <transformer ref="DollarsToCents"/>
+         
+         
+    <scripting:component doc:name="GBP Currency Script">
+        <scripting:script file="greedy.py">
+            <property key="currency" value="GBP"/>
+        </scripting:script>
+    </scripting:component>
+                 
+</flow>
+----
+
+以下是实现该算法的python文件的内容：
+
+[source, code, linenums]
+----
+# Adapted from "Python Algorithms: Greedy Coin Changer" by Noah Gift
+# http://www.oreillynet.com/onlamp/blog/2008/04/python_greedy_coin_changer_alg.html
+  
+import sys
+  
+class Change:
+    def __init__(self, currency, amount):
+        self.amount = amount
+        if currency == "USD":
+            self.coins = [1,5,10,25]
+            self.coin_lookup = {25: "quarters", 10: "dimes", 5: "nickels", 1: "pennies"}
+        elif currency == "GBP":
+            self.coins = [1,2,5,10,20,50,100,200]
+            self.coin_lookup = {200: "two_pounds", 100: "pounds", 50: "fifty_pence", 20: "twenty_pence", 10: "ten_pence", 5: "five_pence", 2: "two_pence", 1: "pennies"}
+        #else:
+        #   print "Currency $currency not recognized"
+        #   exit 1
+        self.result = ""
+  
+    def printer(self,num,coin):
+        if num:
+            if coin in self.coin_lookup:
+                if self.result == "":
+                    self.result = '%1.0f %s' % (num, self.coin_lookup[coin])
+                else:
+                    self.result = '%s, %1.0f %s' % (self.result, num, self.coin_lookup[coin])
+  
+    def recursive_change(self, rem):
+        if len(self.coins) == 0:
+            return []
+        coin = self.coins.pop()
+        num, new_rem = divmod(rem, coin)
+        self.printer(num,coin)
+        return self.recursive_change(new_rem) + [num]
+  
+c = Change(currency, payload)
+c.recursive_change(c.amount)
+result = "[" + c.result + "]"
+----
+
+== 继续
+
+* 请参阅通用的 link:/mule-user-guide/v/3.4/script-component-reference[脚本组件参考]，了解脚本如何与单向和请求响应端点一起工作。
+
+* 有关更多信息，请参阅Mule ESB页面 link:/mule-user-guide/v/3.4/scripting-module-reference[脚本模块]。

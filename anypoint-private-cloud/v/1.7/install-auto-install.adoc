@@ -1,0 +1,103 @@
+= 使用命令行安装程序安装Anypoint私有云
+
+本主题介绍如何使用自动化安装程序安装Anypoint Platform Private Cloud Edition。自动安装程序使您可以从命令行指定所有必需的参数。
+
+[WARNING]
+====
+在运行安装程序之前，请确保您的系统满足最低系统要求。
+====
+
+== 先决条件
+
+要运行自动安装程序，请确保您可以在环境中的所有服务器上拥有超级用户权限。
+
+在运行安装程序之前，您需要以下内容：
+
+* 安装中每台服务器的IP地址。
+* 每台服务器上Docker安装的路径
+* 您的Anypoint平台私有云版许可证文件
+
+== 关于安装脚本
+
+自动安装由两个脚本组成：
+
+*  `gravity install`：开始安装并在安装期间处理服务器内通信。该脚本还将该平台安装在服务器上。
+*  `gravity join`：在每台附加服务器上安装平台。
+
+您在安装的每个节点上运行的脚本以及`role`参数的值取决于您正在执行的安装类型：
+
+[%header,cols="4*a"]
+|===
+|如果您正在安装...  |运行...  | `flavor`参数的值 | `role`参数的值
+1  | `flavor=one`  | `role=demo_node`上的|单节点配置 | `gravity install`}
+1节点 | `flavor=three`  | `role=general_node`上的| 3节点配置 | {{0}
+|  | `gravity join`剩余的2个节点 | N / A  | `role=general_node`
+{1}节点 | `flavor=six`  | `role=app_node`上的| 6节点配置 | {{0}
+|  | `gravity join`  | N {A}  | `role=app_node`
+其余3个节点 |上的|  | `gravity join`不适用 | `role=data_node`
+|===
+
+在安装单节点配置时，自动安装程序还会安装和配置演示LDAP服务器。
+
+== 运行命令行安装
+
+. 从您的客户成功代表获取`anypoint-1.7.0-installer.tar.gz`档案。
+. 将存档复制到群集中的每个服务器节点。
+. 解压缩gzip压缩文件：
++
+----
+tar xvf anypoint-1.7.0-installer.tar.gz
+----
+
+. 在群集中的其中一个节点上运行以下命令：
++
+----
+sudo ./gravity install --advertise-addr=<installer_IP> --token=<secret token> --cluster=<cluster name> --cloud-provider=generic --flavor=<flavor name> --license="$(cat license.pem)" --docker-device=<device> --role=<role>
+----
++
+使用以下值：
++
+[%header,cols="2*a"]
+|===
+| {参数{1}}说明
+| installer_IP  | 指定用于访问节点的IP地址。
+| secret_token  | 指定安装期间用于服务器内部通信的安全令牌。该令牌必须由运行安装程序的相同用户生成。
+| cluster_name  | 定义您的群集的名称。
+| flavor  | 指定群集中的节点数量。有效值为：`one`，`three`和`six`。
+|设备 | 指定每台服务器上Docker设备的路径。使用`lsblk`列出可用设备。
+|角色 | 指定运行命令的服务器的角色。有效值为：`general_node`，`data_node`和`app_node`。
+|===
+
+. 如果您正在执行多节点安装，请在`./gravity install`命令运行时运行以下命令。如果您正在执行单节点安装，请跳过此步骤：
++
+使用您在上一个命令中提供的相同值。
++
+----
+sudo ./gravity join <installer_IP> --advertise-addr=<node_IP> --token=<secret_token> --docker-device=<device> --role=<role>
+----
++
+此命令会使每个节点加入由`./gravity install`命令创建的集群。
++
+等待`./gravity install`和`./gravity join`命令完成。这可能要花点时间。
+
+. 从您运行`./gravity install`的节点，输入重力外壳：
++
+----
+sudo gravity enter
+----
+
+. 通过在重力外壳中运行以下命令来创建Ops Center和Anypoint Platform用户
++
+[NOTE]
+在运行此脚本之前，请将`email`，`name`和`password`参数替换为您环境的相应值。这些是系统管理员用来管理系统的凭证。
++
+----
+curl -X POST http://bandwagon-mulesoft.default.svc.cluster.local/api/complete -H "Content-Type:application/json" -d '{"organization": "Test Org", "email": "username@mulesoft.com", "name": "username", "password": "my_password", "support": false}'
+----
+
+
+== 另请参阅
+
+*  link:/anypoint-private-cloud/v/1.7/prereq-workflow[工作流程：安装和验证物理服务器的先决条件]
+*  link:install-installer[运行Anypoint平台私有云版安装程序]
+*  link:demo-ldap-server[关于演示LDAP服务器]

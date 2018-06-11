@@ -1,0 +1,80 @@
+= 着色库
+:keywords: devkit, shading, library, jar, plugin, artifacts, shade, maven, classpath, collision, conflict
+
+DevKit 3.5.3及更高版本支持使用"shaded" .jar文件（即包含其依赖库的类和包的"uber" .jar文件（可选择重定位各种包和类） 0}}。
+
+Maven Shade插件可用于构建自定义连接器库.jar，与其所有库类依赖项捆绑在一起，确保其库类依赖项在运行时不与在Mule内已使用的任何库的其他版本冲突/冲突。
+
+== 使用前
+
+在推进Maven Shade插件之前，建议首先考虑以下方法之一作为阴影的替代方法：
+
+* 使用Mule正在使用的相同版本的库
+* 使用一个完全不同的库，其包和类不会与Mule使用的库相冲突
+
+当上述两种替代方法都不适用于您的自定义连接器时，使用Maven Shade插件可能是最后一种可行的选择。
+
+==  Shade插件的功能
+
+Maven Shade插件负责重命名碰撞类的包。它还会将调用类的字节代码改为使用阴影包中的重定位类。通过执行这些操作，Maven Shade插件可以确保连接器所需的类 - 与Mule所使用的相同类的另一个版本相冲突 - 可以在同一个JVM类路径中和平共处，从而避免外观运行时类和方法的"Not Found"错误。
+
+== 使用Shade插件
+
+* 为自定义连接器的`pom.xml`文件添加一个依赖项，用于任何依赖项.jar，该依赖项对一个或多个包含与Mule使用的类相冲突的类.jar具有传递依赖性。
+* 将阴影插件添加到自定义连接器项目的`pom.xml`文件的构建插件部分。
+* （可选）为"mule-devkit-maven-plugin"添加显式配置，以确保阴影连接器jar已正确构建，以便安装到Anypoint Studio中
+
+以下示例配置用于处理冲突的Apache Commons Compress库：
+
+[source,xml, linenums]
+----
+<dependencies>
+   <dependency>
+       <groupId>org.apache.commons</groupId>
+       <artifactId>commons-compress</artifactId>
+       <version>1.8.1</version>
+   </dependency>
+</dependencies>
+----
+
+
+[source,xml, linenums]
+----
+<build>
+ <plugins>
+   <plugin>
+     <groupId>org.apache.maven.plugins</groupId>
+     <artifactId>maven-shade-plugin</artifactId>
+     <version>3.0.0</version>
+     <configuration>
+       <!-- Custom shade configuration -->
+       <artifactSet>
+         <includes>
+            <include>org.apache.commons:commons-compress</include> <!-- the.group.id:the-artifact-id -->
+         </includes>
+       </artifactSet>
+       <relocations>
+         <relocation>
+            <pattern>org.apache.commons.compress</pattern> <-- original.package.name -->
+            <shadedPattern>com.mycompany.shaded.org.apache.commons.compress</shadedPattern> <!-- new.shaded.package.name -->
+         </relocation>
+       </relocations>
+      </configuration>
+   </plugin>
+   
+   <plugin> <!-- Use this explicit plugin configuration to properly install a shaded custom connector in Anypoint Studio -->
+     <groupId>org.mule.tools.devkit</groupId>
+     <artifactId>mule-devkit-maven-plugin</artifactId>
+     <version>${mule.devkit.version}</version>
+     <extensions>true</extensions>
+     <configuration>
+       <attachShadedJar>true</attachShadedJar>
+       <attachConnectorLibs>false</attachConnectorLibs>
+       <skipStudioPluginPackage>${devkit.studio.package.skip}</skipStudioPluginPackage>
+     </configuration>
+   </plugin>
+   
+   <!-- Other plugins -->
+ </plugins>
+</build>
+----

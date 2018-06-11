@@ -1,0 +1,120 @@
+{0}}使用CXF消费Web服务
+:keywords: anypoint, studio, connectors, soap, wsdl, cxf, api
+
+[NOTE]
+向外部Web服务发送请求时，建议的方法是使用 link:/mule-user-guide/v/3.6/web-service-consumer[Web服务使用者]而不是CXF模块。
+
+本页描述如何使用CXF客户端消息处理器来使用Web服务。
+
+有4种方式可以使用Web服务。前3个对应于 link:/mule-user-guide/v/3.6/building-web-services-with-cxf[构建Web服务]的3种方式：
+
+. 从WSDL生成并使用客户端
+. 使用基于JAX-WS服务+的接口的客户端
+. 使用基于"simple"前端Web服务接口的客户端
+. 使用JAX-WS Java客户端API
+
+最后两个选项仅在您的服务具有Java接口时才可用，这意味着它们的使用通常限于在组织内使用。
+
+==  WSDL第一个JAX-WS客户端
+
+您可以使用CXF生成的客户端作为出站端点。首先，您使用CXF中的 http://cxf.apache.org/docs/wsdl-to-java.html[WSDL到Java]工具或 http://cxf.apache.org/docs/maven-cxf-codegen-plugin-wsdl-to-java.html[Maven插件]生成CXF客户端。 （注意：CXF传输不支持封装类型的Web服务方法调用，您可能需要创建绑定文件或直接更改WSDL，有关更多详细信息，请参阅 http://cxf.apache.org/docs/wsdl-to-java.html[WSDL到Java工具页面]。
+
+接下来，使用以下属性将客户端配置为出站端点：
+
+*  `clientClass`：由CXF生成的客户端类，它扩展了javax.xml.ws.Service。
+
+*  `port`：用于与服务进行通信的WSDL端口
+
+*  `wsdlLocation`：服务的WSDL位置。 CXF使用它来配置客户端。
+
+*  `operation`：要在Web服务上调用的操作名称。传递给出站路由器的对象必须与此操作的方法签名匹配。如果你的方法需要多个参数，它们必须放在Object []数组中。
+
+这是一个简单的例子：
+
+[source,xml, linenums]
+----
+<flow name="csvPublisher">
+  ...
+  <cxf:jaxws-client
+         clientClass="org.apache.hello_world_soap_http.SOAPService"
+         port="SoapPort"
+         wsdlLocation="classpath:/wsdl/hello_world.wsdl"
+         operation="greetMe"/>
+  <outbound-endpoint address="http://localhost:63081/services/greeter"/>
+</flow>
+----
+
+==  JAX-WS代码优先客户端
+
+您还可以为您的JAX-WS服务构建客户端，而无需从WSDL生成客户端。要做到这一点，你需要一个你的服务接口和本地所有数据对象的副本来使用。如果您已经可以访问用于构建服务的代码，则可以简化使用Web服务的过程。
+
+[source,xml, linenums]
+----
+<flow name="csvPublisher">
+  ...
+  <cxf:jaxws-client serviceClass="org.example.HelloService" operation="sayHi"/>
+  <outbound-endpoint address="http://localhost:63081/services/greeter"/>
+</flow>
+----
+
+== 使用JAX-WS客户端API
+
+本节介绍如何使用JAX-WS客户端API与Web服务进行通信。这使您可以与骡子配置以外的Web服务进行通话。
+
+有两种方法可以使用CXF客户端。首先，您可以使用CXF WSDL to Java工具从WSDL生成客户端。其次，如果您通过"code-first"方法建立了服务，则可以使用服务接口来构建客户端代理对象。
+
+使用CXF客户端时，它会自动发现Mule实例（只要您在同一个JVM / Classloader中）并将其用于传输。因此，如果您已经从WSDL生成了一个客户端，那么通过Mule调用一个服务可以像下面这样简单：
+
+[source,xml, linenums]
+----
+HelloWorldService service = new HelloWorldService();
+HelloWorld hello = service.getSoapPort();
+ 
+// Possibly set an alternate request URL:
+// ((BindingProvider) greeter).getRequestContext().put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY,
+                                                       "http://localhost:63081/greeter");
+String sayHi = hello.sayHi();
+----
+
+== 构建客户端代理
+
+以下是如何使用 link:/mule-user-guide/v/3.6/building-web-services-with-cxf[使用CXF构建Web服务]中开发的服务构建客户端的示例：
+
+[source,xml, linenums]
+----
+QName SERVICE_NAME = new QName("http://server.hw.demo/", "HelloWorld");
+QName PORT_NAME = new QName("http://server.hw.demo/", "HelloWorldPort");
+ 
+Service service = Service.create(SERVICE_NAME);
+ 
+// Endpoint Address
+String endpointAddress = http://localhost:63081/hello";
+ 
+// Add a port to the Service
+service.addPort(PORT_NAME, SOAPBinding.SOAP11HTTP_BINDING, endpointAddress);
+         
+HelloWorld hw = service.getPort(HelloWorld.class);
+ 
+System.out.println(hw.sayHi("World"));
+----
+
+== 简单的前端客户端
+
+您可以为简单的基于前端的服务构建客户端，而无需从WSDL生成客户端。要做到这一点，你需要一个你的服务接口和本地所有数据对象的副本来使用。如果您已经可以访问用于构建服务的代码，则可以简化使用Web服务的过程。
+
+[source,xml, linenums]
+----
+<flow name="csvPublisher">
+  ...
+  <cxf:simple-client serviceClass="org.example.HelloService" operation="sayHi"/>
+  <outbound-endpoint address="http://localhost:63081/services/greeter"/>
+</flow>
+----
+
+== 其他资源
+
+*  http://cxf.apache.org/docs/developing-a-consumer.html[开发一个JAX-WS消费者]
+
+*  http://cxf.apache.org/docs/wsdl-to-java.html[WSDL到Java]
+
+*  http://cxf.apache.org/docs/maven-cxf-codegen-plugin-wsdl-to-java.html[CXF Maven插件]

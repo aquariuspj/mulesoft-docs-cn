@@ -1,0 +1,212 @@
+= 将任意平台私有云版本1.6.0迁移到1.6.1（单节点）
+
+本主题介绍如何将单节点安装Anypoint Platform私有云版本1.6.0迁移到版本1.6.1。
+
+[WARNING]
+在迁移过程中，每个节点都可能会因迁移而停机。
+
+== 先决条件
+
+在迁移之前，请确保您已经完成并满足以下先决条件：
+
+* 按照 link:backup-and-disaster-recovery[关于备份和恢复]中所述执行系统备份。
+
+* 确保您的环境满足 link:system-requirements[关于最低系统要求]中描述的所有系统和网络要求
+
+* 启用TCP端口`5973`，`3022`，`7373`节点以启用与数据库集群的通信。
+
+* 确保您有权在启动迁移工具的节点上运行`sudo`命令。
+
+* 确保`kubectl`命令在您执行迁移的节点中可用。要验证是否安装了`kubectl`，请运行以下命令：
++
+----
+$ sudo gravity enter
+$ kubectl
+----
+
+* 确保您已在单节点安装中运行以下脚本。您必须运行此脚本以避免安装中的数据丢失。
++
+----
+https://anypoint-anywhere.s3.amazonaws.com/1.6.1-GA/mounts-data-migration.sh?Signature=rt5yMRQrqHEJQh6rMHWJ%2BqdyX6s%3D&Expires=1536705930&AWSAccessKeyId=AKIAITTY5MSTT3INJ7XQ
+----
+
+
+== 执行升级
+
+. 从您的客户成功代表获取`anypoint-1.6.1-installer.tar.gz`档案。
+
+. 使用`ssh`登录到您的安装节点。
+
+. 将安装程序上传到您的安装节点。
+
+. 解压缩安装程序存档。
++
+----
+mkdir anypoint-1.6.1
+tar -xzf anypoint-1.6.1-installer.tar.gz -C anypoint-1.6.1
+----
+
+. 转到`anypoint-1.6.1`目录，然后运行上传脚本。
++
+----
+cd anypoint-1.6.1
+sudo ./upload
+----
++
+根据您的网络配置，此命令可能需要一段时间才能完成。等到命令完成后再继续下一步。
+
+*Note:*如果此命令失败，可能是由于`/ tmp中缺少空格。
+
+. 下载安装脚本并将其复制到群集中的每个节点。
+.. 从以下网址下载脚本
++
+----
+https://anypoint-anywhere.s3.amazonaws.com/1.6.1-GA/manual_update_161.sh?Signature=xTkDlF%2F1OKFYtjG2lXPZcuc2itY%3D&Expires=1536705930&AWSAccessKeyId=AKIAITTY5MSTT3INJ7XQ
+----
+
+.. 将脚本复制到您运行`./upload`的目录。
+
+. 导出RBAC引导程序包。
++
+从主节点运行以下命令：
++
+----
+./manual_update_161.sh export-rbac
+----
+
+. 缩减部署
++
+从主节点运行以下命令：
++
+----
+./manual_update_161.sh scale-down
+----
+
+
+. 启动更新操作
++
+从主节点运行以下命令：
++
+----
+./manual_update_161.sh start-update
+----
++
+这个命令的输出应该类似于以下内容：
++
+----
+./manual_update_161.sh start-update
+Initiating the update process, setting it in manual mode
+updating anypoint from 1.5.2 to 1.6.1
+update operation (3f097853-64dd-4201-973f-2bb4a686c9ee) has been started
+
+The update operation has been created in manual mode.
+----
+
+. 引导系统更新过程
++
+从主节点运行以下命令：
++
+----
+./manual_update_161.sh bootstrap-system
+----
+
+. 执行系统更新
++
+通过登录到群集中的每个节点来执行以下命令。您必须在每个节点上顺序运行此命令。等到这个命令完成后再在下一个节点上运行它。
++
+----
+./manual_update_161.sh update-system
+----
+
+
+. 引导群集中的RBAC配置
++
+从主节点运行以下命令：
++
+----
+./manual_update_161.sh bootstrap-rbac
+----
+
+. 使用以下命令确定每个节点的名称：
++
+----
+sudo gravity enter
+kubectl get nodes
+----
+
+. 退出重力壳
++
+----
+exit
+----
+
+. 排空群集中的每个节点。
++
+在主节点上，在集群中的每个节点上运行以下命令。您必须传递每个节点的节点名称。
++
+----
+./manual_update_161.sh drain=<node-name>
+----
++
+这个命令的输出应该类似于以下内容：
++
+----
+./manual_update_161.sh drain=172.31.11.215
+Draining node 172.31.11.215
+node "172.31.11.215" cordoned
+WARNING: Ignoring DaemonSet-managed pods: cassandra-p4mjy, stolon-keeper-d2get, gravity-site-tgme5, kube-dns-v18-41u28, log-forwarder-ujp6d; Deleting pods not managed by ReplicationController, ReplicaSet, Job, DaemonSet or StatefulSet: bandwagon; Deleting pods with local storage: bandwagon-mulesoft-install-35afd2-ingx2, gravity-site-tgme5, monitoring-app-install-39664d-l7xo4, pithos-app-install-95fa7b-58flh, site-app-post-install-916df9-03pol, stolon-app-install-5480c4-v6n81
+pod "exchange-api-db-migration-q8itn" evicted
+pod "site-app-post-install-916df9-03pol" evicted
+pod "pithos-app-install-95fa7b-58flh" evicted
+...
+...
+...
+----
++
+在继续之前，请确保所有Pod均处于`running`或`pending`状态。没有pod应该处于`crashloopbackoff`或`terminating`状态。
+
+. 使群集中的每个节点都可调度。
++
+在主节点上，为集群中的每个节点运行以下命令。您必须传递每个节点的节点名称。
++
+----
+./manual_update_161.sh uncordon=<node-name>
+----
+
+. 检查群集的状态。
++
+----
+kubectl get pods
+----
++
+验证群集中的所有Pod都正在运行。等到所有的豆荚都在运行后再继续下一个步骤。
+
+
+. 修复LDAP配置目录权限
++
+----
+./manual_update_161.sh fix-ldap
+----
+
+. 启动应用程序更新
++
+----
+./manual_update_161.sh update-app
+----
+
+. 完成并完成更新操作
++
+----
+./manual_update_161.sh finalize-update 
+----
+
+. 如果您在安装中运行负载平衡器，请更新负载平衡器上的运行状况检查。
++
+您必须启用端口10248才能进行负载均衡器运行状况检查。
+
+== 另请参阅
+
+*  link:/anypoint-private-cloud/v/1.6/upgrade-1.6.1[将任意平台私有云版本1.5.x迁移到1.6.1]
+*  link:/anypoint-private-cloud/v/1.6/upgrade-1.6.0-1.6.1[将任意平台私有云1.6.0版迁移到1.6.1]
+*  link:system-requirements[关于最低系统要求]
+*  link:managing-via-the-ops-center[使用Ops Center管理Anypoint平台私有云版]

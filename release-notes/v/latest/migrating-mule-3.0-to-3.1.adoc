@@ -1,0 +1,137 @@
+= 将Mule 3.0迁移到3.1
+:keywords: release notes,esb
+
+==  Spring Security升级到3.0.3
+
+[NOTE]
+这不适用于Mule 3.1-RC1。
+
+在Mule 3.1中，Spring Security已经从2.0.4升级到3.0.3。对于Mule配置，这应该是透明的，除了两个方面：
+
+* 架构更改
+*  Java包更改
+
+=== 架构更改
+
+Spring Security元素的模式有两种变化。首先，它现在位于http://www.springframework.org/schema/security/spring-security-3.0.xsd。其次，_authentication-provider_标记现在是_authentication-manager_的子项。结果是Spring Security 2的配置
+[source, xml, linenums]
+----
+<mule
+  xmlns:ss="http://www.springframework.org/schema/security"
+  xsi:schemaLocation="http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-2.0.xsd">
+  <ss:authentication-manager alias="authenticationManager"/>
+  <ss:authentication-provider>
+    <ss:user-service id="userService">
+      <ss:user name="ross" password="ross" authorities="ROLE_ADMIN" />
+      <ss:user name="anon" password="anon" authorities="ROLE_ANON" />
+    </ss:user-service>
+  </ss:authentication-provider>
+</mule>
+----
+必须更改为：
+[source, xml, linenums]
+----
+<mule
+  xmlns:ss="http://www.springframework.org/schema/security"
+  xsi:schemaLocation="http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-3.0.xsd">
+  <ss:authentication-manager alias="authenticationManager">
+    <ss:authentication-provider>
+      <ss:user-service id="userService">
+        <ss:user name="ross" password="ross" authorities="ROLE_ADMIN" />
+        <ss:user name="anon" password="anon" authorities="ROLE_ANON" />
+      </ss:user-service>
+    </ss:authentication-provider>
+  </ss:authentication-manager>
+</mule>
+----
+
+===  Java包更改
+
+在Spring Security 3中，许多Java类在不同的包中，而不是在Spring Security 2中。这需要对引用这些类的所有Mule配置进行更改。例如
+[source, xml, linenums]
+----
+<bean id="accessDecisionManager" class="org.springframework.security.vote.AffirmativeBased">
+----
+必须改为
+[source, xml, linenums]
+----
+<bean id="accessDecisionManager" class="org.springframework.security.access.vote.AffirmativeBased">
+----
+
+有关这些类的当前位置，请参阅http://static.springsource.org/spring-security/site/apidocs/index.html。
+
+== 重试策略
+
+Mule 2.x中的名称"Retry Policies"导致对这些行为的错误期望和误解，因此对于3.x，它们已经回到原来的"Reconnection Strategies"名称。架构元素已相应地重命名，以获取更多信息，请参阅 link:/mule-user-guide/v/3.7/configuring-reconnection-strategies[配置重新连接策略]。
+
+模式更改的摘要如下所示：
+
+[%header,cols="34,33,33"]
+|===
+|键入 | Mule 2.x config  | Mule 3.x配置
+|元素 | <retry-simple-policy>  | <reconnect>
+|元素 | <retry-forever-policy>  | <reconnect-forever>
+|元素 | <retry-custom-policy>  | <reconnect-custom-strategy>
+| {属性{3}}异步= "true"  |阻断= "false"
+|元素 | <retry-connect-notifier>  | <reconnect-notifier>
+|元素 | <retry-custom-notifier>  | <reconnect-custom-notifier>
+|===
+
+==  BPM传输
+
+由于我们通常不连接到外部BPM引擎，而是使用一个"inside" Mule来代理消息传递，因此BPM不再是传输，而是Mule 3.x的组件/消息处理器。这是一种更自然的契合，也可能是它应该始终如一的方式。传入组件的消息会自动推进进程，并且正在运行的进程可以将消息发送到任何出站端点。有关更多信息，请参阅 link:/mule-user-guide/v/3.7/jboss-jbpm-module-reference[BPM模块参考]。
+
+[NOTE]
+3.x中不再需要`<bpm:outbound-router>`元素，正在运行的进程可以将消息直接发送到任何出站端点。
+
+*Mule 2.x with jBPM config*
+[source, xml, linenums]
+----
+<bpm:connector name="jBpmConnector" bpms-ref="jbpm" />
+
+<service name="ToBPMS">
+    <inbound>
+        <inbound-endpoint ref="in" />
+    </inbound>
+    <outbound>
+        <filtering-router>
+            <bpm:outbound-endpoint process="MyProcess" />
+        </filtering-router>
+    </outbound>
+</service>
+
+<service name="FromBPMS">
+    <inbound>
+        <bpm:inbound-endpoint process="MyProcess" />
+    </inbound>
+    ...cut...
+</service>
+
+<spring:bean id="jbpm" class="org.mule.transport.bpm.jbpm.Jbpm" destroy-method="destroy">
+    <spring:property name="jbpmConfiguration">
+        <spring:ref local="jbpmConfig" />
+    </spring:property>
+</spring:bean>
+
+<spring:bean class="org.springmodules.workflow.jbpm31.LocalJbpmConfigurationFactoryBean">
+    <spring:property name="processDefinitions">
+        <spring:list>
+            <spring:bean class="org.springmodules.workflow.jbpm31.definition.ProcessDefinitionFactoryBean">
+                <spring:property name="definitionLocation">
+                    <spring:value>my-process.jpdl.xml</spring:value>
+                </spring:property>
+            </spring:bean>
+        </spring:list>
+    </spring:property>
+    ...cut...
+----
+*Equivalent Mule 3.x with jBPM config*
+[source, xml, linenums]
+----
+<bpm:jbpm name="jbpm" />
+
+<flow name="ToBPMS">
+    <inbound-endpoint ref="in" />
+    <bpm:process processName="MyProcess" processDefinition="my-process.jpdl.xml" />
+</flow>
+----

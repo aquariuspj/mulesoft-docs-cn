@@ -1,0 +1,172 @@
+= 使用过滤器
+
+*  <<Using in Flows>>
+*  <<Standard Filters>>
+*  <<Transport and Module Filters>>
+*  <<Creating Custom Filters>>
+
+过滤器指定必须满足的条件才能将消息路由到外部服务或继续在流程中进行。您可以使用Mule ESB附带的几种标准过滤器，或者您可以创建自己的过滤器。
+
+您可以创建一个全局过滤器，然后从您的流程中引用它。全局过滤器需要"name"属性，而配置在端点或路由器上的过滤器则不需要。
+
+[source, xml, linenums]
+----
+<!-- Globally defined filter with name attribute -->
+<payload-type-filter name="payloadFilter" expectedType="java.lang.String" />
+ 
+<flow>
+  <tcp:inbound-endpoint host="locahost" port="1234">
+    <!-- Here we reference the filter defined globally using it for this endpoint -->
+    <filter ref="payloadFilter"/>
+  </tcp:inbound-endpoint>
+  <echo-component/>
+</flow>
+----
+
+有关每个过滤器的配置的信息，请参阅 link:/mule-user-guide/v/3.4/filters-configuration-reference[过滤器配置参考]。
+
+== 在流程中使用
+
+如果条件评估为false，则过滤器返回null。否则，他们会返回消息。在流的情况下，假的条件将停止处理该消息的流。如果流上定义的入站端点具有请求 - 响应交换模式，并且流中没有<response>块，则所使用的响应仅为流中最后一个消息处理器的结果，该结果将为空。
+
+== 标准过滤器
+
+Mule包含以下可用于路由器的标准过滤器：
+
+=== 有效负载类型过滤器
+
+检查消息内有效内容对象的类类型。
+
+[source, xml, linenums]
+----
+<payload-type-filter expectedType="java.lang.String"/>
+----
+
+=== 表达式过滤器
+
+表达式过滤器评估表达式。如果该表达式的值为true，则该消息被通过。否则，该消息被丢弃。
+
+有关表达式的更多信息，请参阅 link:/mule-user-guide/v/3.4/mule-expression-language-mel[Mule表达语言MEL]。
+
+===  RegEx过滤器
+
+将消息有效载荷应用 http://www.regular-expressions.info/[正则表达式]模式。过滤器将`toString()`应用于有效内容，因此您可能还希望使用<<And Filter>>将<<Payload Type Filter>>应用于该消息，以确保有效内容是字符串。
+
+[source, xml, linenums]
+----
+<regex-filter pattern="the quick brown (.*)"/>
+----
+
+=== 通配符筛选器
+
+将通配符模式应用于消息负载。过滤器将`toString()`应用于有效内容，因此您可能还希望使用<<And Filter>>将<<Payload Type Filter>>应用于该消息，以确保有效内容是字符串。
+
+对于字符串"the quick brown fox jumped over the lazy dog"，以下模式将匹配：
+
+*  * x跳过懒狗
+* 快速*
+*  *fox*
+
+[source, xml, linenums]
+----
+<wildcard-filter pattern="the quick brown *"/>
+----
+
+=== 异常类型过滤器
+
+与异常类型匹配的过滤器。
+
+[source, xml, linenums]
+----
+<exception-type-filter expectedType="java.lang.RuntimeException"/>
+----
+
+=== 消息属性过滤器
+
+该过滤器允许您根据消息的一个或多个属性的值向路由器添加逻辑。此过滤器功能非常强大，因为消息属性已公开，允许您引用任何特定于传输的或用户定义的属性。例如，您可以匹配HTTP事件的一个或多个HTTP标头，匹配JMS中的属性和电子邮件等等。
+
+默认情况下，比较是区分大小写的。您可以设置`caseSensitive`属性来覆盖此行为。
+
+[source, xml, linenums]
+----
+<message-property-filter pattern="Content-Type=text/xml" caseSensitive="false"/>
+----
+
+表达式总是一个关键值对。如果您想使用更复杂的表达式，则可以使用<<Logic Filters>>。以下示例显示了两个过滤器：
+
+[source, xml, linenums]
+----
+<and-filter>
+  <message-property-filter pattern="JMSCorrelationID=1234567890"/>
+  <message-property-filter pattern="JMSReplyTo=null"/>
+</and-filter>
+----
+
+=== 逻辑滤波器
+
+有三种逻辑过滤器可以与其他过滤器一起使用：并且或者和不是。逻辑滤波器可以嵌套，以便表达更复杂的逻辑。
+
+==== 和过滤器
+
+An和Filter组合两个过滤器，并且只接受符合*both*过滤条件的消息。
+
+[source, xml, linenums]
+----
+<and-filter>
+  <payload-type-filter expectedType="java.lang.String"/>
+  <regex-filter pattern="the quick brown (.*)"/>
+</and-filter>
+----
+
+==== 或过滤器
+
+Or过滤器会考虑两个过滤器，并在符合过滤器*either one*的条件时接受该消息。
+
+[source, xml, linenums]
+----
+<or-filter>
+  <payload-type-filter expectedType="java.lang.String"/>
+  <payload-type-filter expectedType="java.lang.StringBuffer"/>
+</or-filter>
+----
+
+==== 不是过滤器
+
+如果没有过滤器符合过滤器中的条件，*not*将接受该消息。
+
+[source, xml, linenums]
+----
+<not-filter>
+  <payload-type-filter expectedType="java.lang.String"/>
+</not-filter>
+----
+
+== 传输和模块过滤器
+
+几个骡运输和模块提供他们自己的过滤器。例如， link:/mule-user-guide/v/3.4/xml-module-reference[XML模块参考]包含一个过滤器，用于确定消息是否为XML。有关更多信息，请参阅 link:/mule-user-guide/v/3.4/transports-reference[传输参考]和 link:/mule-user-guide/v/3.4/modules-reference[模块参考]。
+
+== 创建自定义过滤器
+
+标准过滤器处理大多数过滤要求，但您也可以创建自己的过滤器。要创建过滤器，请实现具有单一方法的Filter接口：
+
+[source]
+----
+public boolean accept(MuleMessage message);
+----
+
+如果消息与过滤器强加的条件相匹配，则此方法返回true。否则，它返回false。
+
+然后，您可以使用带`<custom-filter...>`元素的过滤器，使用`class`属性指定您创建的自定义过滤器类，并使用`<spring:property>`子元素指定任何必需的属性。例如：
+
+[source, xml, linenums]
+----
+<outbound>
+  <filtering-router>
+    <http:outbound-endpoint address="http://localhost:65071/services/EnterOrder?method=create" exchange-pattern="request-response"/>
+      <custom-filter class="org.mule.transport.http.filters.HttpRequestWildcardFilter">
+        <spring:property name="pattern" value="/services/EnterOrder?wsdl"/>
+      </custom-filter>
+  </filtering-router>
+</outbound>
+----
+

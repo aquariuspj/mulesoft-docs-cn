@@ -1,0 +1,104 @@
+= 备份和恢复系统
+:keywords:on-prem, Anypoint Platform Private Cloud Edition, anypoint platform, on prem, on premise, on premises, backup, disaster recovery
+
+[WARNING]
+此产品以前名为Anypoint Platform On-​​Premises Edition。从1.5.1版本开始，它被命名为Anypoint Platform私有云版。
+
+
+== 创建备份
+
+要在发生系统故障时保留数据，您必须确保系统已自动备份。尽管MuleSoft建议您每小时备份一次系统，但您应该配置备份至少每天运行一次。
+
+您的备份存档必须存储在Anypoint群集外部的外部存储上。
+
+您必须从安装的主节点执行备份。如果您安装了六个服务器配置的平台，则只有三个服务器是主节点。如果您正在运行1或3节点安装，则所有节点都是主节点。
+
+
+1.确定哪个节点注册为主节点：
++
+----
+kubectl get nodes -o yaml|grep master -A 5|grep hostname
+----
++
+您可以在集群中的任何节点上运行此命令来确定哪些节点是主节点。
++
+要创建备份，您必须在集群中的主节点上运行以下命令。
+
+1.输入重力效用：
++
+----
+sudo gravity enter
+----
+
+1.创建一个备份存档：
++
+----
+gravity system backup gravitational.io/anypoint:0.0.0+latest /ext/share/backup.tar.gz
+----
++
+该命令在`/var/lib/gravity/planet/share/backup.tar.gz`中创建当前系统状态的存档。
+
+[WARNING]
+====
+运行备份命令后，您可能会看到以下错误消息：
+
+`Error from server: container "anypoint-backup" in pod "anypoint-backup-<pod-id>" is waiting to start: PodInitializing`
+
+这表示运行备份作业的Kubernetes窗格当前未运行。
+====
+
+== 执行系统还原
+
+要从备份还原系统，请使用现有群集或创建一个包含与正在还原的群集相同数量的服务器的新群集。
+
+1.登录到群集中的其中一个节点。
+
+1.将压缩的存档文件移至：`/var/lib/gravity/planet/share`。您可以通过以下命令安全地传输此文件：
++
+----
+scp /backup-path/to-restore.tar.gz your_username@remotehost.edu:/var/lib/gravity/planet/share
+----
+
+1.输入重力效用：
++
+----
+sudo gravity enter
+----
+
+1.从备份存档恢复集群：
++
+----
+gravity system restore gravitational.io/anypoint:0.0.0+latest /ext/share/to-restore.tar.gz
+----
+
+1.还原完成后运行以下脚本。此脚本重新创建每个吊舱以确保它使用恢复的秘密。
++
+----
+deployments=$(kubectl get deployments | awk 'NR>1 {print $1}')
+now=$(date "+%Y-%m-%d-%H-%M-%S")
+
+    #Recreate stolon-keeper pods to update database's certificate
+    kubectl delete pods --selector stolon-keeper=yes
+
+    # Wait for database pods to restart
+    while kubectl get pods | grep stolon-keeper | grep -q ContainerCreating; do
+        echo "Waiting for database pods..."
+        sleep 5s
+    done
+
+    # Patching deployment's metadata will trigger redeploy of pods automatically
+    for deployment in $deployments; do
+        kubectl patch deployment $deployment -p '{"spec":{"template":{"metadata":{"labels":{"restore": "'"$now"'"}}}}}'
+        sleep 5s
+        while kubectl get pods | grep -q -e ContainerCreating -e Pending; do
+            echo "Waiting for service pods..."
+            sleep 5s
+        done
+done
+----
+
+
+== 另请参阅
+
+*  link:install-workflow[工作流程：安装Anypoint平台私有云版]
+*  link:upgrade[迁移到任意平台私有云版本1.5.2]

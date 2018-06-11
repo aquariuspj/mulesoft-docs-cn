@@ -1,0 +1,129 @@
+=  XA交易
+:keywords: anypoint studio, xa, jms, vms, jdbc
+
+您可以使用*XA transaction*将来自多个事务资源（例如JMS，VM或JDBC资源）的一系列操作组合到一个非常可靠的全局事务中。
+
+
+link:https://en.wikipedia.org/wiki/X/Open_XA[* XA *（扩展架构）]标准是*X/Open group*标准，用于指定*global transaction manager*和*local transactional resource managers*之间的接口。 XA协议定义了一个两阶段提交协议，可用于更可靠地协调和排序跨多个服务器（甚至不同类型的服务器）的一系列"all or nothing"操作。每个本地XA资源管理器都支持 link:https://en.wikipedia.org/wiki/ACID[* A.C.I.D *属性]，这有助于确保XA资源管理器管理的资源中的操作序列完成"all or nothing"。通常包括本地XA资源管理器的事务性系统的示例包括数据库，应用程序服务器，消息队列和事务性高速缓存。
+
+然后，全局事务管理器负责协调参与全局事务的所有本地XA事务管理器之间的全局事务的事务语义。为此，两阶段提交中的每个准备和提交阶段在全局（通常通过网络）与每个本地XA资源管理器进行协调。
+
+XA全局事务的优点是一个全局事务管理器可以以通用和标准的方式与多个不同的事务资源进行通信和协调。如果任何本地资源管理器在全局事务中报告错误，则全局事务管理器将协调任何已准备好的操作在每个其他本地资源管理器中的回滚。
+例如，全局事务可能包含对一个或多个数据库的多个操作，以及在一个或多个主题上发送给JMS服务器的消息。如果在事务中出现任何错误，全局事务管理器保证每个资源都被重置为全局事务启动之前的状态。这使开发人员无需在应用程序之外包含复杂的回滚或恢复逻辑。
+
+XA全局事务的缺点是它们会给事务增加巨大的延迟，尤其是在资源分布在缓慢或不可靠的网络连接上的情况下，并且如果在全球分布式系统中出现系统物理故障时很难恢复交易。
+
+=  XA交易和业绩
+全局XA事务通常是协调多个XA资源的更可靠的方式，但通常会增加延迟，并且还经常需要额外的资源，例如外部事务管理器。此外，全球交易只与全球交易管理者本身一样可靠。为了获得更高的可靠性，您需要使用事务管理器，该事务管理器在全局事务处理通过准备阶段和提交阶段时也保持每个XA资源的状态。这可以确保在全局事务期间，事务管理器本身失败，或者失去与任何本地XA资源管理器的网络连接。
+
+= 在Mule流中实现XA事务
+Mule流可以定义全局事务的边界，其中可以包括各种连接器类型，然后全部事务都将参与全局事务。
+ 
+
+以下示例说明了两个连接器使用XA事务作为单个事务单元的流程。
+
+[source, xml, linenums]
+----
+<flow name="JmsToJdbc">
+  <jms:inbound-endpoint queue="my.queue" reuseSession="false"/>
+    <xa-transaction action="ALWAYS_BEGIN" timeout="60000"/>
+  </jms:inbound-endpoint>
+  <jdbc:outbound-endpoint address="writeTest" type="2">
+    <xa-transaction action="ALWAYS_JOIN"/>
+  </jdbc:outbound-endpoint>
+</flow>
+----
+
+除了上面显示的代码之外，此配置必须使用支持XA事务的传输。具体而言，此示例使用使用JMS link:http://docs.oracle.com/javaee/1.4/api/javax/jms/XAConnectionFactory.html[XA连接工厂]的JMS连接器和使用启用XA的数据源的JDBC连接器。
+
+[TIP]
+我们的默认和推荐的全局XA事务管理器是*Bitronix*，请阅读 link:/mule-user-guide/v/3.8/using-bitronix-to-manage-transactions[使用Bitronix管理事务]以了解如何在Mule中实现它的详细信息。 Bitronix事务管理器可以嵌入到您的Mule应用程序中，在这种情况下，您不必配置与外部全局XA事务管理器的连接。
+
+与多资源事务一样，如果使用XA事务配置入站连接器，则还必须将任何其他连接器配置为XA事务，并将操作设置为"ALWAYS_JOIN"以成为虚拟事务处理单元的一部分。 XA交易采用暂停/恢复的概念。如果您将一个流配置为使用设置为ALWAYS_BEGIN的XA事务，然后Mule将该消息转发到另一个流，并将XA事务设置为ALWAYS_BEGIN，则Mule会暂停第一个事务，直到第二个事务完成。
+
+== 设置轮询频率
+
+当您使用XA事务配置入站JMS连接器时，接收器每100毫秒轮询一次。您可以通过调整`pollingFrequency`属性来更改轮询频率。以下示例说明如何设置轮询频率。
+
+[source, xml, linenums]
+----
+<jms:inbound-endpoint queue="my.queue" reuseSession="false">
+  <xa-transaction action="ALWAYS_BEGIN" timeout="60000"/>
+  <properties>
+    <spring:entry key="pollingFrequency" value="5000"/>
+  </properties>
+</jms:inbound-endpoint>
+----
+
+此属性仅适用于在配置为使用XA事务的JMS入站连接器上使用默认传输`XaTransactedJmsMessageReceiver`的情况。如果您使用的是JBoss交易，请阅读 link:/mule-user-guide/v/3.8/jboss-transaction-manager-reference[JBoss事务管理器参考]以了解如何配置`timeout`值。
+
+每个Mule应用程序的一个Mule事务管理器== 
+
+尽管您根据连接器（即资源）和范围划分了事务，但Mule实际上使用*Mule Transaction Manager*来管理事务。它提供绑定和解除绑定事务的方法，并负责检索当前事务状态。
+
+Mule事务管理器是一个单独管理器，负责管理在Mule运行时中运行的所有事务。您最多可以在Mule应用程序中定义一个Mule事务管理器。您还可以通过在域项目中定义事务管理器来共享一个Mule事务管理器。
+
+== 在Mule应用程序中嵌入一个事务管理器
+您可以在Mule应用程序中嵌入一个全局事务管理器。请参阅 link:/mule-user-guide/v/3.8/using-bitronix-to-manage-transactions[使用Bitronix管理事务]了解如何实施我们的默认和推荐的XA Transaction Manager。
+
+== 指定Mule事务管理器
+如果您不在Mule应用程序内部使用嵌入式事务管理器（例如Bitronix事务管理器），则必须将连接信息配置到外部全局XA事务管理器。无论您使用哪个全局XA事务管理器供应商，每个XA资源之间的XA事务都使用标准的`javax.transaction.TransactionManager`接口在Mule流内进行管理。
+
+您还可以使用供应商特定的事务管理器连接器来支持XA事务。但是，Mule应用程序全局事务的一个限制是，如果您打算为您的事务使用`SUSPEND`语义，则必须使用Mule事务管理器来支持您的流程的XA事务。但是，根据您的应用程序服务器供应商，您可能有权访问其他事务管理器选项。下表总结了常用应用程序服务器上可用的事务管理器。
+
+[%header,cols="5*"]
+|===
+|应用服务器 |远程 |嵌入式 |常用位置 |查找类
+| JBoss  |   | image:check.png[（蜱）]  | java：/ TransactionManager a |
+
+----
+org.mule.transaction.lookup.JBossTransactionManagerLookupFactory
+----
+
+| JRun  |   | image:check.png[（蜱）]  | java：/ TransactionManager a |
+
+----
+org.mule.transaction.lookup.JRunTransactionManagerLookupFactory
+----
+
+|其他 |   | image:check.png[（蜱）]  |通过`jndiName`属性指定|
+
+----
+org.mule.transaction.lookup.GenericTransactionManagerLookupFactory
+----
+
+| Resin  |   | image:check.png[（蜱）]  | java：comp / TransactionManager a |
+
+----
+org.mule.transaction.lookup.Resin3TransactionManagerLookupFactory
+----
+
+| WebLogic  | image:check.png[（蜱）]  | image:check.png[（蜱）]  | javax.transaction.TransactionManager a |
+
+----
+org.mule.transaction.lookup.WeblogicTransactionManagerLookupFactory
+----
+
+| WebSphere  |   | image:check.png[（蜱）]  |专有API调用|
+
+----
+org.mule.transaction.lookup.WebsphereTransactionManagerLookupFactory
+----
+
+|===
+
+[WARNING]
+Mule Standalone不支持*WebLogic*的XA交易。 +
+在嵌入模式下使用Mule以便为WeblLogic使用XA事务。
+
+要配置您的Mule应用程序以使用特定的事务管理器，请按照以下示例配置`custom`  -  `transaction-manager `。
+
+[source, xml, linenums]
+----
+<custom-transaction-manager class="org.mule.transaction.lookup.WeblogicTransactionManagerLookupFactory" />
+----
+
+== 前进
+
+* 有关如何配置XA事务的详细信息，请参阅 link:/mule-user-guide/v/3.8/transaction-management[交易管理]。
+* 请参阅 link:/mule-user-guide/v/3.8/using-bitronix-to-manage-transactions[使用Bitronix管理事务]了解如何实施我们的默认和推荐的XA Transaction Manager +

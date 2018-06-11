@@ -1,0 +1,172 @@
+= 使用Bitronix管理事务
+:keywords: anypoint studio, studio, mule, bitorinox
+
+*_Enterprise_*
+
+在版本3.5.0之前，Mule使用JBoss事务管理器来配置 link:/mule-user-guide/v/3.7/xa-transactions[XA交易]。从版本3.5.0开始， link:https://github.com/mulesoft/btm[Bitronix]是Mule Enterprise的推荐事务管理器，因为它提供了开箱即用的支持XA事务恢复。
+
+[WARNING]
+====
+如果Mule服务器崩溃或失去与资源管理器（如JMS代理，数据库等）的连接，则可能导致事务在准备阶段和两阶段落实协议（2PC）的落实阶段之间异常失败）。在这种情况下，事务管理器需要运行恢复过程来完成发生故障期间发生的任何正在进行的事务。虽然这种失败不太可能发生，但在发生这种情况时需要一种机制来保持数据的一致性。
+
+Bitronix允许Mule在重新启动时自动恢复中断事务。另一方面，JBoss需要你手工实现这个过程，这是非常困难和耗时的。
+====
+
+== 先决条件
+
+本文假定您熟悉Mule中的 link:/mule-user-guide/v/3.7/shared-resources[共享资源]。
+
+== 在Mule中使用Bitronix
+
+=== 在单个应用程序中使用Bitronix
+
+要配置应用程序以使用Bitronix，请在流程之外声明事务管理器，如下所示。
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:bti="http://www.mulesoft.org/schema/mule/ee/bti"
+      xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+       http://www.mulesoft.org/schema/mule/ee/bti http://www.mulesoft.org/schema/mule/ee/bti/current/mule-bti-ee.xsd">
+    <bti:transaction-manager/>
+...
+</mule>
+----
+
+=== 在Mule域中的所有应用程序中使用Bitronix
+
+要在与Mule域相关的所有应用程序中使用Bitronix，请在您的`mule-domain-config.xml`中将Bitronix定义为交易管理器，如下所示。这样做会导致与该域关联的所有应用程序使用Bitronix，而无需在单个应用程序中声明事务管理器。有关域配置的更多详细信息，请参阅 link:/mule-user-guide/v/3.7/shared-resources[共享资源。]
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule-domain xmlns="http://www.mulesoft.org/schema/mule/ee/domain"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:bti="http://www.mulesoft.org/schema/mule/ee/bti"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/ee/bti http://www.mulesoft.org/schema/mule/ee/bti/current/mule-bti-ee.xsd
+               http://www.mulesoft.org/schema/mule/ee/domain http://www.mulesoft.org/schema/mule/ee/domain/current/mule-domain-ee.xsd
+               http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+  
+    <bti:transaction-manager/>
+  
+</mule-domain>
+----
+
+=== 配置Bitronix事务管理器
+
+在Mule容器中，只有Bitronix事务管理器的一个实例; Bitronix定义为其事务管理器的所有应用程序都使用此实例。因此，不能在_application_级别配置Bitronix事务管理器，只能在_domain_级别配置。
+
+Bitronix的默认配置值适用于大多数使用情况。但是，如果您想自定义事务管理器，可以使用系统属性或位于`$MULE_HOME/conf`目录中的`wrapper.conf`文件来完成。
+
+下表列出了Bitronix的配置属性。
+
+[%header,cols="34,33,33"]
+|===
+|配置属性 |描述 |默认值
+| `mule.bitronix.transactiontimeout`  | XA交易超时，以秒为单位 | 60
+| `mule.bitronix.recoveryinterval`  | XA事务的恢复执行间隔，以秒为单位 | 60
+| `mule.bitronix.serverId`  |事务管理器在XA事务日志中注册的唯一ID。此值对于每个Mule服务器必须是唯一的 |主机IP的组合，如果在HA中运行，则集群节点ID
+|===
+
+==  Bitronix和JMS
+
+Bitronix集成提供了一个JMS缓存连接工厂，只要您想在JMS中实现资源池，就必须使用它。下面的示例`mule-domain-config.xml`文件演示了如何与JMS连接工厂一起声明Bitronix事务管理器。
+
+*笔记：
+
+*  Bitronix和JMS不遵守高速缓存连接工厂，并且无论如何重新创建TCP连接
+工厂已设置。
+* 在以下示例中，*specification="1.1"*值是强制性的，因为Bitronix仅支持版本1.1。
+
+[source,xml, linenums]
+----
+<mule-domain xmlns="http://www.mulesoft.org/schema/mule/ee/domain"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:bti="http://www.mulesoft.org/schema/mule/ee/bti"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/ee/bti http://www.mulesoft.org/schema/mule/ee/bti/current/mule-bti-ee.xsd
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+ 
+    <spring:bean name="xaConnectionFactory" class="org.apache.activemq.ActiveMQXAConnectionFactory">
+        <spring:property name="brokerURL" value="vm://localhost?broker.persistent=false&amp;broker.useJmx=false"/>
+    </spring:bean>
+ 
+    <jms:activemq-xa-connector connectionFactory-ref="connectionFactoryPool" name="sharedJmsConnector" maxRedelivery="-1" specification="1.1" numberOfConsumers="1"/>
+ 
+    <bti:xa-caching-connection-factory name="connectionFactoryPool" minPoolSize="5" maxPoolSize="15" maxIdleTime="40" connectionFactory-ref="xaConnectionFactory"/>
+ 
+    <bti:transaction-manager/>
+ 
+</mule-domain>
+----
+
+[%header%autowidth.spread]
+|===
+| {属性{1}}说明
+| `minPoolSize`  |要保留在池中的最少JMS连接数。
+| `maxPoolSize`  |要保留在池中的最大JMS连接数。
+| `maxIdleTime`  |空闲连接在关闭之前可以保留在池中的最长时间（以秒为单位）。
+|===
+
+==  Bitronix和数据库连接器
+
+Bitronix集成为 link:/mule-user-guide/v/3.7/database-connector[数据库连接器]提供了一个数据源连接池，只要您想要在数据库连接器中实现资源池，就必须使用它。
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:bti="http://www.mulesoft.org/schema/mule/ee/bti"
+      xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+       http://www.mulesoft.org/schema/mule/ee/bti http://www.mulesoft.org/schema/mule/ee/bti/current/mule-bti-ee.xsd
+       http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+ 
+    <bti:transaction-manager/>
+ 
+    <spring:bean id="PostgresDataSource" class="org.postgresql.EmbeddedXADataSource" >
+        <spring:property name="databaseName" value="dbName"/>
+    </spring:bean>
+ 
+    <db:generic-config name="DBDefaultPool" dataSource-ref="PostgresDataSource"/>
+ 
+ 
+    <bti:xa-data-source-pool name="bitronixDataSource" minPoolSize="5" maxPoolSize="15" maxIdleTime="40" acquireIncrement="2" preparedStatementCacheSize="6" acquireTimeoutSeconds="50" dataSource-ref="PostgresDataSource"/>
+ 
+</mule>
+----
+
+[%header%autowidth.spread]
+|===
+| {属性{1}}说明
+| minPoolSize  |要在池中保留的最少JDBC连接数。
+| maxPoolSize  |要在池中保留的最大JDBC连接数。
+| maxIdleTime  |空闲连接在关闭之前可以保留在池中的最长时间（以秒为单位），以秒为单位。
+| acquireIncrement  |当池耗尽时，一次要获取的连接数。
+| preparedStatementCacheSize  |每个池连接缓存的语句数。默认为0，这意味着语句高速缓存被禁用。
+| acquireTimeoutSeconds  |调用`getConnection()`的客户端在池被耗尽时等待连接被检入或获取的时间（以秒为单位）。零意味着无限期地等待。
+|===
+
+== 事务恢复
+
+启用事务恢复不需要您配置。当Mule在系统崩溃后重新启动时，它会连接到XA事务中涉及的所有资源，并启动事务恢复过程，使所有系统保持一致状态。
+
+== 另请参阅
+
+* 详细了解如何操作
+link:/mule-user-guide/v/3.7/shared-resources[将Bitronix事务管理器定义为共享资源]为与域关联的多个应用程序。

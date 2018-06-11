@@ -1,0 +1,88 @@
+= 为Anypoint平台私有云版设置负载均衡器
+
+Anypoint Platform私有云版必须在具有多个服务器的生产环境中运行。要在服务器之间分配流量并限制对特定端口的访问，您必须安装并配置负载均衡器。
+
+[NOTE]
+在单个服务器开发环境中，MuleSoft建议使用负载平衡器。
+
+您可以将负载均衡器配置为使用任何方法分发客户端请求，但在大多数情况下，循环策略是理想的。此负载均衡器应可通过您网络中所有计算机都可访问的IP地址访问。
+
+您的负载平衡器必须路由以下TCP端口：
+
+[%header%autowidth.spread]
+|===
+|负载平衡器端口 |实例端口 | 内部使用情况
+| `80`  |  `30080`   |  HTTP重定向到HTTP。
+| `443`  |  `30443`  |  HTTPS端口
+| `8889`  |  `30889`  | 运行时连接的WebSocket端口
+| `9500`  |  `32009`  |  Ops中心访问端口
+|===
+
+
+在任何情况下，负载均衡器都必须侦听负载均衡器端口并将传入请求重定向到实例端口。您的Anypoint平台安装包括一个内部NGINX服务器，用于监听每个配置的实例端口，然后执行“内部使用情况”列中列出的操作。
+
+您的负载平衡器应轮询地址`HTTP:10248/healthz`，以在平台服务器上运行健康状况检查并确认它们可以访问。
+
+
+[NOTE]
+您无需在负载均衡器中配置SSL凭证。您可以使用Access Management进行配置。
+
+== 配置负载均衡器
+
+. 通过引用`/etc/nginx/stream.d/*`中定义的所有配置属性，在您的`/etc/nginx/nginx.conf`文件中启用流块。您可以通过添加以下内容来实现该目标：
++
+[souce, json, linenums]
+----
+stream {
+   include /etc/nginx/stream.d/*.conf;
+}
+----
+
+. 从`/etc/nginx/conf.d`中删除`default.conf`文件
+. 创建一个名为`/etc/nginx/stream.d`的文件夹，并在其中创建一个名为`onprem.conf`的文件
+. 将以下内容粘贴到`onprem.conf`
++
+[source, json, linenums]
+----
+server {
+   listen 80;
+   proxy_pass 0.0.0.0:30080;
+}
+
+server {
+   listen 443;
+   proxy_pass 0.0.0.0:30443;
+}
+
+server {
+   listen 8889;
+   proxy_pass 0.0.0.0:30889;
+}
+
+server {
+   listen 9500;
+   proxy_pass 0.0.0.0:32009;
+}
+
+server {
+   listen 9501;
+   proxy_pass 0.0.0.0:30083;
+}
+----
++
+
+. 在启动NGINX之前启用SELinux上的默认端口。逐个运行以下命令：
++
+----
+`semanage port -a -t http_port_t  -p tcp 8889`
+`semanage port -a -t http_port_t  -p tcp 9500`
+`semanage port -a -t http_port_t  -p tcp 9501`
+----
+
+. 启动NGINX：
++
+----
+service nginx restart
+----
+
+

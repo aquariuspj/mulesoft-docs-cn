@@ -1,0 +1,98 @@
+=  HTTPS传输参考
+
+作为服务事件流的一部分，安全HTTP传输提供了对通过HTTP公开服务以及从Mule服务向外部服务发出HTTP客户端请求的支持。 Mule支持安全入站，安全出站和安全轮询HTTP端点。这些端点支持HTTP规范的所有常见功能，例如ETag处理，cookie和keepalive。 HTTP 1.0和1.1均受支持。
+
+==  HTTPS连接器
+
+此连接器在Mule link:/mule-user-guide/v/3.2/http-transport-reference[HTTP传输]提供的内容之上提供安全HTTP连接。安全连接代表实体，可以是匿名的或由证书标识。 _key store_提供识别建立连接的实体所需的证书和相关私钥。此外，连接到可信系统。受信任系统的公用证书存储在_trust store_中，用于验证与远程系统建立的连接是否与期望的身份匹配。
+
+== 设置HTTPS服务器
+
+为了使用Mule安装HTTPS服务器，需要执行几个第一步。首先创建一个密钥库，这可以使用Java提供的keytool完成。您可以在Java安装的bin目录中找到它。一旦找到，您可以执行以下命令来创建密钥库：
+
+[source, code, linenums]
+----
+keytool -genkey -alias mule -keyalg RSA -keystore keystore.jks
+----
+
+这将在本地目录中创建一个名为keystore.jks的文件。理想情况下，这应该在MULE_HOME / conf目录中创建，如果要在多个应用程序中使用，或者如果在单个应用程序中使用，可以将其放入<MY MULE APP> / src / main / resources目录。
+
+密钥库一旦到位，需要将以下内容添加到您的mule配置文件中：
+
+[source, code, linenums]
+----
+ <https:connector name="httpsConnector">     <https:tls-key-store path="keystore.jks" keyPassword="<Your Password>" storePassword="<Your Password>"/> </https:connector>
+----
+
+如果密钥库位于<MY MULE APP> / src / main / resources目录中，那么您可以在路径中指定名称。否则，如果密钥库位于MULE_HOME / conf目录中，则必须将"$\{mule.home}/conf/keystore.jks"指定为路径。
+
+== 配置参考
+
+[%header,cols="2*"]
+|===
+|属性 |说明
+| tls-client a |
+使用以下属性配置客户端密钥存储区：
+
+* 路径：包含公共证书和私钥用于识别的密钥库的位置（将相对于当前类路径和文件系统进行解析，如果可能的话）
+*  storePassword：用于保护密钥库的密码
+* 类：使用的密钥库类型（Java类名称）
+
+| tls-key-store a |
+使用以下属性配置直接密钥存储：
+
+* 路径：包含公共证书和私钥用于识别的密钥库的位置（将相对于当前类路径和文件系统进行解析，如果可能的话）
+* 类：使用的密钥库类型（Java类名称）
+*  keyPassword：用于保护私钥的密码
+*  storePassword：用于保护密钥库的密码
+* 算法：密钥库使用的算法
+
+| tls-server a |
+配置信任库。属性是：
+
+* 路径：包含可信服务器公用证书的信任存储的位置（将相对于当前类路径和文件系统进行解析，如果可能的话）
+*  storePassword：用于保护信任存储的密码
+*  class：使用的信任存储的类型（Java类名称）
+* 算法：信任库使用的算法
+*  factory-ref：引用信任管理工厂
+*  explicitOnly：这是否是明确的信任存储
+*  requireClientAuthentication：是否需要客户端身份验证
+
+| tls-protocol-handler  |配置全局Java协议处理程序。它有一个属性，属性，它指定了`java.protocol.handler.pkgs`系统属性。
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"      xmlns:spring="http://www.springframework.org/schema/beans"      xmlns:https="http://www.mulesoft.org/schema/mule/https"    xsi:schemaLocation="        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd        http://www.mulesoft.org/schema/mule/https http://www.mulesoft.org/schema/mule/https/3.0/mule-https.xsd">    <https:connector name="httpConnector">        <https:tls-client path="clientKeystore" storePassword="mulepassword"/>        <https:tls-key-store path="serverKeystore" keyPassword="mulepassword" storePassword="mulepassword"/>        <https:tls-server path="trustStore" storePassword="mulepassword"/>    </https:connector>    <https:endpoint name="clientEndpoint" host="localhost" port="60202"                     connector-ref="httpConnector" /> </mule>
+----
+
+== 轮询连接器
+
+轮询连接器允许Mule轮询外部HTTP服务器并从结果中生成事件。这对于只提供Web服务很有用。此连接器提供了`PollingHttpConnector`的安全版本。它包含HTTPS连接器的所有属性以及以下可选属性：
+
+[%header,cols="10,90",width=70%]
+|===
+| {属性{1}}说明
+| pollingFrequency  |每个请求到远程http服务器之间等待的时间（以毫秒为单位）。
+| checkEtag  |如果标题存在，是否处理来自远程服务器的ETag标题。
+| discardEmptyContent  | Mule是否应放弃来自远程服务器的内容长度为零的任何消息。对于许多服务来说，零长度意味着没有数据可以返回。如果远程HTTP服务器确实返回了说明请求为空的内容，则用户可以在端点上配置内容过滤器以过滤这些消息。
+|===
+
+例如，在标题中定义HTTP命名空间后，可以像这样配置轮询连接器：
+
+[source, xml, linenums]
+----
+<http:polling-connector name="PollingHttpConnector" pollingFrequency="2000" />
+----
+
+==  HTTPS端点
+
+入站HTTPS端点通过HTTPS安全地公开服务，本质上使其成为HTTP服务器。如果需要轮询远程HTTP服务，则应该使用轮询HTTPS连接器配置此端点。
+
+出站HTTPS端点允许Mule通过SSL使用HTTP协议将请求安全地使用SSL发送到外部服务器或Mule入站HTTP端点。
+
+全局HTTPS端点可以被服务引用。服务可以使用本地配置元素来增加全局端点中定义的配置。
+
+有关配置HTTP端点的更多信息，请参阅 link:/mule-user-guide/v/3.2/http-transport-reference[HTTP传输参考]。

@@ -1,0 +1,462 @@
+= 关于OAuth授予类型
+
+OAuth提供以下授权类型，客户端可以在请求令牌时使用它来验证自己。
+
+*  AUTHORIZATION_CODE（*default*）
+*  IMPLICIT
+*  RESOURCE_OWNER_PASSWORD_CREDENTIALS
+*  CLIENT_CREDENTIALS
+
+每个都需要特定的OAuth提供者全局元素配置。
+
+
+== 授权码
+
+授权码授权类型是最常用的授权类型，也是最安全的。
+
+要实施授权码，您的客户需要定义以下信息：
+
+* 客户端ID
+
+* 客户端秘密
+
+* 重定向网址
+
+oauth2模块的以下典型配置包括授权代码客户端：
+
+[source, xml, linenums]
+----
+<oauth2-provider:config
+        name="oauth2Provider"
+        providerName="SampleAPI"
+        supportedGrantTypes="AUTHORIZATION_CODE"
+        port="8081"
+        authorizationEndpointPath="sampleapi/api/authorize"
+        accessTokenEndpointPath="sampleapi/api/token"
+        resourceOwnerSecurityProvider-ref="resourceOwnerSecurityProvider"
+        scopes="READ_RESOURCE POST_RESOURCE" doc:name="OAuth provider module">
+            <oauth2-provider:clients>
+                <oauth2-provider:client clientId="myclientid" secret="myclientsecret"
+                                        type="CONFIDENTIAL" clientName="Mule Bookstore" description="Mule-powered On-line Bookstore">
+                    <oauth2-provider:redirect-uris>
+                        <oauth2-provider:redirect-uri>http://localhost*</oauth2-provider:redirect-uri>
+                    </oauth2-provider:redirect-uris>
+                    <oauth2-provider:authorized-grant-types>
+                        <oauth2-provider:authorized-grant-type>AUTHORIZATION_CODE</oauth2-provider:authorized-grant-type>
+                    </oauth2-provider:authorized-grant-types>
+                    <oauth2-provider:scopes>
+                        <oauth2-provider:scope>READ_RESOURCE</oauth2-provider:scope>
+                        <oauth2-provider:scope>POST_RESOURCE</oauth2-provider:scope>
+                    </oauth2-provider:scopes>
+                </oauth2-provider:client>
+            </oauth2-provider:clients>
+    </oauth2-provider:config>
+----
+
+
+要测试此示例，请执行以下OAuth2舞步：
+
+. 使用包含客户端ID，要执行的授权类型，重定向URL以及要授权的范围的请求调用授权端点：
++
+[source, code, linenums]
+----
+http://localhost:8081/sampleapi/api/authorize?response_type=code&client_id=myclientid&scope=READ_RESOURCE&redirect_uri=http://localhost:8081/redirect
+----
++
+登录页面出现在浏览器中。用户登录后，提供商将重定向发送到`redirect_uri`。此重定向包括其他属性，包括访问代码。
++
+. 将访问代码发送到包含客户端ID，客户端密钥和先前调用中某些信息的请求中的令牌端点：
++
+[source, code, linenums]
+----
+http://localhost:8081/sampleapi/api/token?grant_type=authorization_code&client_id=myclientid&client_secret=myclientsecret&code=<use here the access code>&redirect_uri=http://localhost:8081/redirect
+----
++
+JSON响应出现：
++
+[source, code, linenums]
+----
+{
+    "scope":"READ_RESOURCE",
+    "expires_in":86400,
+    "token_type":"bearer",
+    "access_token":"huig0RVoGdFoz_mvBaV4ovfjj0Afe8yOAp_v2q0tunevsJVpD2HNRhx8lL6JnMDys7KE3O4TfijknWPzGJZ-NA"
+}
+----
++
+. 将`access_token`作为标题包含在您访问受保护资源的请求中：
++
+[source, code, linenums]
+----
+access_token=huig0RVoGdFoz_mvBaV4ovfjj0Afe8yOAp_v2q0tunevsJVpD2HNRhx8lL6JnMDys7KE3O4TfijknWPzGJZ-NA
+----
+
+== 隐
+
+隐式授权类型不如授权代码授权类型安全，但更易于使用。 Javascript客户端和移动应用程序通常使用这种授权类型。授权服务器直接发布访问令牌并跳过发布中间访问代码的步骤。
+
+以下OAuth2模块的典型配置包括隐式授权客户端：
+
+[source, xml, linenums]
+----
+<oauth2-provider:config
+        name="oauth2Provider"
+        providerName="SampleAPI"
+        supportedGrantTypes="IMPLICIT"
+        port="8082"
+        authorizationEndpointPath="sampleapi/api/authorize"
+        accessTokenEndpointPath="sampleapi/api/token"
+        resourceOwnerSecurityProvider-ref="resourceOwnerSecurityProvider"
+        scopes="READ_RESOURCE POST_RESOURCE" doc:name="OAuth provider module">
+            <oauth2-provider:clients>
+                <oauth2-provider:client clientId="myclientid2" secret="myclientsecret"
+                                        type="CONFIDENTIAL" clientName="Mule Bookstore" description="Mule-powered On-line Bookstore">
+                    <oauth2-provider:redirect-uris>
+                        <oauth2-provider:redirect-uri>http://localhost*</oauth2-provider:redirect-uri>
+                    </oauth2-provider:redirect-uris>
+                    <oauth2-provider:authorized-grant-types>
+                        <oauth2-provider:authorized-grant-type>TOKEN</oauth2-provider:authorized-grant-type>
+                    </oauth2-provider:authorized-grant-types>
+                    <oauth2-provider:scopes>
+                        <oauth2-provider:scope>READ_RESOURCE</oauth2-provider:scope>
+                        <oauth2-provider:scope>POST_RESOURCE</oauth2-provider:scope>
+                    </oauth2-provider:scopes>
+                </oauth2-provider:client>
+            </oauth2-provider:clients>
+    </oauth2-provider:config>
+----
+
+包含此配置的以下Mule流程：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:core="http://www.mulesoft.org/schema/mule/core"
+xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+xmlns:spring="http://www.springframework.org/schema/beans"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xmlns:mule-ss="http://www.mulesoft.org/schema/mule/spring-security" xmlns:ss="http://www.springframework.org/schema/security"
+xmlns:oauth2-provider="http://www.mulesoft.org/schema/mule/oauth2-provider"
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/spring-security http://www.mulesoft.org/schema/mule/spring-security/current/mule-spring-security.xsd
+http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security.xsd
+http://www.mulesoft.org/schema/mule/oauth2-provider http://www.mulesoft.org/schema/mule/oauth2-provider/current/mule-oauth2-provider.xsd">
+     
+ 
+    <oauth2-provider:config
+        name="oauth2ProviderImplicit"
+        providerName="SampleAPI"
+        supportedGrantTypes="IMPLICIT"
+        port="8082"
+        authorizationEndpointPath="sampleapi/api/authorize"
+        accessTokenEndpointPath="sampleapi/api/token"
+        resourceOwnerSecurityProvider-ref="resourceOwnerSecurityProvider"
+        scopes="READ_RESOURCE POST_RESOURCE" doc:name="OAuth provider module">
+            <oauth2-provider:clients>
+                <oauth2-provider:client clientId="myclientid2" secret="myclientsecret"
+                                        type="CONFIDENTIAL" clientName="Mule Bookstore" description="Mule-powered On-line Bookstore">
+                    <oauth2-provider:redirect-uris>
+                        <oauth2-provider:redirect-uri>http://localhost*</oauth2-provider:redirect-uri>
+                    </oauth2-provider:redirect-uris>
+                    <oauth2-provider:authorized-grant-types>
+                        <oauth2-provider:authorized-grant-type>TOKEN</oauth2-provider:authorized-grant-type>
+                    </oauth2-provider:authorized-grant-types>
+                    <oauth2-provider:scopes>
+                        <oauth2-provider:scope>READ_RESOURCE</oauth2-provider:scope>
+                        <oauth2-provider:scope>POST_RESOURCE</oauth2-provider:scope>
+                    </oauth2-provider:scopes>
+                </oauth2-provider:client>
+            </oauth2-provider:clients>
+    </oauth2-provider:config>
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8082" doc:name="HTTP Listener Configuration"/>
+ 
+    <flow name="protected-implicit" doc:name="DemoRestRouterFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/resources" doc:name="HTTP"/>    
+        <oauth2-provider:validate config-ref="oauth2ProviderImplicit" doc:name="Validate Token" scopes="READ_RESOURCE"/>
+        <set-payload value="#[ ['name' : 'payroll', 'uri' : 'http://localhost:8081/resources/payroll'] ]" doc:name="Set Payload"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+     
+</mule>
+----
+
+
+要测试此示例，请执行以下OAuth2舞步：
+
+. 使用包含客户端ID，要执行的授权类型，重定向URL以及要授权的范围的请求调用授权端点。请求的结构应该如下所示：
++
+[source, code, linenums]
+----
+http://localhost:8082/sampleapi/api/authorize?response_type=token&client_id=myclientid2&scope=READ_RESOURCE&redirect_uri=http://localhost:8082/redirect 
+----
+
+. 这会在浏览器中显示登录页面。用户登录后，提供程序将重定向发送到`redirect_uri`。此重定向已包含令牌，而不仅仅是访问代码：
++
+[source, code, linenums]
+----
+http://localhost:8082/redirect#access_token=d8gI_X7TLuAmYuZvlt0wx7sq1tnNgI9Ku9DazKAJYWXbB9QNzSTNxnXCeg75x5zZzT4zAcuCVkit6oBHkoSFow&token_type=bearer&expires_in=86399&scope=READ_RESOURCE
+----
+
+. 将`access_token`作为标题包含在您访问受保护资源的请求中：
++
+[source, code, linenums]
+----
+access_token=huig0RVoGdFoz_mvBaV4ovfjj0Afe8yOAp_v2q0tunevsJVpD2HNRhx8lL6JnMDys7KE3O4TfijknWPzGJZ-NA
+----
+
+== 资源所有者和密码凭证
+
+资源所有者密码凭据授权类型的安全性不如隐式和授权代码授权类型。客户端需要处理用户的凭证。这要求用户对客户端有很高的信任度。当受保护资源的使用者是相同服务的小部件时，通常会使用此授权类型。
+
+以下代码显示了OAuth2模块的典型配置包含资源所有者密码凭据：
+
+[source, xml, linenums]
+----
+<oauth2-provider:config
+        name="oauth2Provider"
+        providerName="SampleAPI"
+        supportedGrantTypes="RESOURCE_OWNER_PASSWORD_CREDENTIALS"
+        port="8083"
+        authorizationEndpointPath="sampleapi/api/authorize"
+        accessTokenEndpointPath="sampleapi/api/token"
+        resourceOwnerSecurityProvider-ref="resourceOwnerSecurityProvider"
+        scopes="READ_RESOURCE POST_RESOURCE" doc:name="OAuth provider module">
+            <oauth2-provider:clients>
+                <oauth2-provider:client clientId="myclientid3" secret="myclientsecret"
+                                        type="CONFIDENTIAL" clientName="Mule Bookstore" description="Mule-powered On-line Bookstore">
+                    <oauth2-provider:redirect-uris>
+                        <oauth2-provider:redirect-uri>http://localhost*</oauth2-provider:redirect-uri>
+                    </oauth2-provider:redirect-uris>
+                    <oauth2-provider:authorized-grant-types>
+                        <oauth2-provider:authorized-grant-type>PASSWORD</oauth2-provider:authorized-grant-type>
+                    </oauth2-provider:authorized-grant-types>
+                    <oauth2-provider:scopes>
+                        <oauth2-provider:scope>READ_RESOURCE</oauth2-provider:scope>
+                        <oauth2-provider:scope>POST_RESOURCE</oauth2-provider:scope>
+                    </oauth2-provider:scopes>
+                </oauth2-provider:client>
+            </oauth2-provider:clients>
+    </oauth2-provider:config>
+----
+
+以下Mule流程包含此配置：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:core="http://www.mulesoft.org/schema/mule/core"
+xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+xmlns:spring="http://www.springframework.org/schema/beans"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xmlns:mule-ss="http://www.mulesoft.org/schema/mule/spring-security" xmlns:ss="http://www.springframework.org/schema/security"
+xmlns:oauth2-provider="http://www.mulesoft.org/schema/mule/oauth2-provider"
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/spring-security http://www.mulesoft.org/schema/mule/spring-security/current/mule-spring-security.xsd
+http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security.xsd
+http://www.mulesoft.org/schema/mule/oauth2-provider http://www.mulesoft.org/schema/mule/oauth2-provider/current/mule-oauth2-provider.xsd">
+     
+ 
+    <oauth2-provider:config
+        name="oauth2ProviderRopc"
+        providerName="SampleAPI"
+        supportedGrantTypes="RESOURCE_OWNER_PASSWORD_CREDENTIALS"
+        port="8083"
+        authorizationEndpointPath="sampleapi/api/authorize"
+        accessTokenEndpointPath="sampleapi/api/token"
+        resourceOwnerSecurityProvider-ref="resourceOwnerSecurityProvider"
+        scopes="READ_RESOURCE POST_RESOURCE" doc:name="OAuth provider module">
+            <oauth2-provider:clients>
+                <oauth2-provider:client clientId="myclientid3" secret="myclientsecret"
+                                        type="CONFIDENTIAL" clientName="Mule Bookstore" description="Mule-powered On-line Bookstore">
+                    <oauth2-provider:redirect-uris>
+                        <oauth2-provider:redirect-uri>http://localhost*</oauth2-provider:redirect-uri>
+                    </oauth2-provider:redirect-uris>
+                    <oauth2-provider:authorized-grant-types>
+                        <oauth2-provider:authorized-grant-type>PASSWORD</oauth2-provider:authorized-grant-type>
+                        <oauth2-provider:authorized-grant-type>AUTHORIZATION_CODE</oauth2-provider:authorized-grant-type>
+                    </oauth2-provider:authorized-grant-types>
+                    <oauth2-provider:scopes>
+                        <oauth2-provider:scope>READ_RESOURCE</oauth2-provider:scope>
+                        <oauth2-provider:scope>POST_RESOURCE</oauth2-provider:scope>
+                    </oauth2-provider:scopes>
+                </oauth2-provider:client>
+            </oauth2-provider:clients>
+    </oauth2-provider:config>
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8083" doc:name="HTTP Listener Configuration"/>
+    <flow name="protected-ropwc" doc:name="DemoRestRouterFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/resources" doc:name="HTTP"/>        
+        <oauth2-provider:validate config-ref="oauth2ProviderRopc" doc:name="Validate Token" scopes="READ_RESOURCE"/>
+        <set-payload value="#[ ['name' : 'payroll', 'uri' : 'http://localhost:8081/resources/payroll'] ]" doc:name="Set Payload"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+     
+</mule>
+----
+
+
+测试这个例子：
+
+. 发送POST请求到包含用户名和密码的令牌端点：
++
+[source, code, linenums]
+----
+POST /sampleapi/api/token HTTP/1.1
+Host: localhost:8083
+Cache-Control: no-cache
+Content-Type: application/x-www-form-urlencoded
+ 
+grant_type=password&username=john&password=doe&client_id=myclientid3&client_secret=myclientsecret&scope=READ_RESOURCE
+----
++
+. 如果一切正常，则会显示JSON响应。例如：
++
+[source, code, linenums]
+----
+{
+    "scope": "READ_RESOURCE",
+    "expires_in": 86399,
+    "token_type": "bearer",
+    "access_token": "sgFJ8Y3VPcMOdldrFtCMcWe8VQLdOA8L6pcrqjTYA6L3G9bTIDiOFkiiSC2lmFx-RUKtkzTupW0ugU49hqHhpg"
+}
+----
++
+. 现在，您可以将`access_token`作为标题添加到访问受保护资源的请求中：
++
+[source, code, linenums]
+----
+access_token=sgFJ8Y3VPcMOdldrFtCMcWe8VQLdOA8L6pcrqjTYA6L3G9bTIDiOFkiiSC2lmFx-RUKtkzTupW0ugU49hqHhpg
+----
+
+== 客户端凭证
+
+客户端凭据授予类型是最安全的授予类型。当客户端是资源所有者或授权服务器之前已经安排了授权时，请使用此授权类型。在此授权类型中，如果客户端标识符和客户端密钥有效，则获取访问令牌。
+
+以下OAuth2模块的典型配置包括客户端凭证：
+
+[source, xml, linenums]
+----
+<oauth2-provider:config
+        name="oauth2Provider"
+        providerName="SampleAPI"
+        supportedGrantTypes="CLIENT_CREDENTIALS"
+        port="8084"
+        authorizationEndpointPath="sampleapi/api/authorize"
+        accessTokenEndpointPath="sampleapi/api/token"
+        resourceOwnerSecurityProvider-ref="resourceOwnerSecurityProvider"
+        scopes="READ_RESOURCE POST_RESOURCE" doc:name="OAuth provider module">
+            <oauth2-provider:clients>
+                <oauth2-provider:client clientId="myclientid4" secret="myclientsecret"
+                                        type="CONFIDENTIAL" clientName="Mule Bookstore" description="Mule-powered On-line Bookstore">
+                    <oauth2-provider:redirect-uris>
+                        <oauth2-provider:redirect-uri>http://localhost*</oauth2-provider:redirect-uri>
+                    </oauth2-provider:redirect-uris>
+                    <oauth2-provider:authorized-grant-types>
+                        <oauth2-provider:authorized-grant-type>CLIENT_CREDENTIALS</oauth2-provider:authorized-grant-type>
+                    </oauth2-provider:authorized-grant-types>
+                    <oauth2-provider:scopes>
+                        <oauth2-provider:scope>READ_RESOURCE</oauth2-provider:scope>
+                        <oauth2-provider:scope>POST_RESOURCE</oauth2-provider:scope>
+                    </oauth2-provider:scopes>
+                </oauth2-provider:client>
+            </oauth2-provider:clients>
+    </oauth2-provider:config>
+----
+
+以下Mule流程包含此配置：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:core="http://www.mulesoft.org/schema/mule/core"
+xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+xmlns:spring="http://www.springframework.org/schema/beans"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xmlns:mule-ss="http://www.mulesoft.org/schema/mule/spring-security" xmlns:ss="http://www.springframework.org/schema/security"
+xmlns:oauth2-provider="http://www.mulesoft.org/schema/mule/oauth2-provider"
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/spring-security http://www.mulesoft.org/schema/mule/spring-security/current/mule-spring-security.xsd
+http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security.xsd
+http://www.mulesoft.org/schema/mule/oauth2-provider http://www.mulesoft.org/schema/mule/oauth2-provider/current/mule-oauth2-provider.xsd">
+     
+ 
+    <oauth2-provider:config
+        name="oauth2ProviderClientCreds"
+        providerName="SampleAPI"
+        supportedGrantTypes="CLIENT_CREDENTIALS"
+        port="8084"
+        authorizationEndpointPath="sampleapi/api/authorize"
+        accessTokenEndpointPath="sampleapi/api/token"
+        resourceOwnerSecurityProvider-ref="resourceOwnerSecurityProvider"
+        scopes="READ_RESOURCE POST_RESOURCE" doc:name="OAuth provider module">
+            <oauth2-provider:clients>
+                <oauth2-provider:client clientId="myclientid4" secret="myclientsecret"
+                                        type="CONFIDENTIAL" clientName="Mule Bookstore" description="Mule-powered On-line Bookstore">
+                    <oauth2-provider:redirect-uris>
+                        <oauth2-provider:redirect-uri>http://localhost*</oauth2-provider:redirect-uri>
+                    </oauth2-provider:redirect-uris>
+                    <oauth2-provider:authorized-grant-types>
+                        <oauth2-provider:authorized-grant-type>CLIENT_CREDENTIALS</oauth2-provider:authorized-grant-type>
+                    </oauth2-provider:authorized-grant-types>
+                    <oauth2-provider:scopes>
+                        <oauth2-provider:scope>READ_RESOURCE</oauth2-provider:scope>
+                        <oauth2-provider:scope>POST_RESOURCE</oauth2-provider:scope>
+                    </oauth2-provider:scopes>
+                </oauth2-provider:client>
+            </oauth2-provider:clients>
+    </oauth2-provider:config>
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8082" doc:name="HTTP Listener Configuration"/>
+    <flow name="protected-client-creds" doc:name="DemoRestRouterFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/resources" doc:name="HTTP"/>    
+        <oauth2-provider:validate config-ref="oauth2ProviderClientCreds" doc:name="Validate Token" scopes="READ_RESOURCE"/>
+        <set-payload value="#[ ['name' : 'payroll', 'uri' : 'http://localhost:8081/resources/payroll'] ]" doc:name="Set Payload"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+     
+</mule>
+----
+
+测试这个例子：
+
+. 发送POST请求到包含用户名和密码的令牌端点：
++
+[source, code, linenums]
+----
+POST /sampleapi/api/token HTTP/1.1
+Host: localhost:8082
+Cache-Control: no-cache
+Content-Type: application/x-www-form-urlencoded
+ 
+grant_type=client_credentials&client_id=myclientid4&client_secret=myclientsecret&scope=READ_RESOURCE
+----
++
+. 如果一切正常，则会显示JSON响应。例如：
++
+[source, code, linenums]
+----
+{
+    "scope": "READ_RESOURCE",
+    "expires_in": 86400,
+    "token_type": "bearer",
+    "access_token": "4juchYVW5ZNNSH_OOU0jxziixjdJ7yhdZTJW5tbi80cJO3oAF-lTD6D05gw2EKA9yxUuOLf-f_oVBX6z0aRI9w"
+}
+----
+
+. 将`access_token`作为标题包含在访问受保护资源的请求中：
++
+[source, xml]
+----
+access_token=4juchYVW5ZNNSH_OOU0jxziixjdJ7yhdZTJW5tbi80cJO3oAF-lTD6D05gw2EKA9yxUuOLf-f_oVBX6z0aRI9w
+----

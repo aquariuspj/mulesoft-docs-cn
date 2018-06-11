@@ -1,0 +1,104 @@
+=  Mule对象商店
+:keywords: object store, objects, persist
+
+*object store*是用于在Mule中存储对象的工具。 Mule在需要数据保存以供日后检索时使用对象存储。在内部，Mule在各种过滤器，路由器和其他需要在消息之间存储状态的消息处理器中使用对象存储。在大多数情况下，Mule会自动创建和管理对象库，因此不需要用户配置。
+
+== 配置
+
+在大多数情况下，Mule会为您创建和管理对象库，因此不需要进行配置。但是，在以下情况下，您可以显式配置对象存储：
+
+. 配置幂等消息过滤器或成功范围时。
+. 配置必须使用对象存储来保存信息的自定义组件。
+. 当存储或检索来自Mule流的信息时，可通过对象存储模块作为扩展提供。
+
+Mule提供了两种类型的对象存储：
+
+*  *In-memory store*  - 在Mule 3.5.0之前，内存存储是默认设置。从Mule 3.5.0开始，持久存储是默认设置。有关更多信息，请参阅 link:/mule-user-guide/v/3.6/cache-scope[缓存范围]文档中的"Object Stores and Clustering"。
+
+*  *Persistent store*  - 当明确配置对象存储为持久对象时，Mule会保留数据。 Mule在文件系统中创建一个默认持久性存储。
+
+[TIP]
+从Mule 3.5.0开始，为所有新的缓存策略创建的默认对象库支持集群模式，除了使用旧的默认缓存策略的缓存范围之外。有关详细信息，请参阅 link:/mule-user-guide/v/3.5/cache-scope[缓存范围]中的对象存储和群集部分。
+
+== 示例
+
+以下示例演示了如何在以下三种情况下配置对象存储：
+
+具有内存对象存储的. 幂等过滤器
+具有持久对象存储的. 幂等过滤器
+. 直到成功使用内存对象存储区
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core"
+    xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+
+<!-- Global object store definition for a Listable Object Store, used in Flow 3 below. -->
+
+    <spring:beans>
+        <spring:bean id="myListableObjectStore" class="org.mule.util.store.SimpleMemoryObjectStore"/>
+    </spring:beans>
+
+
+<!--  Idempotent Filter with In Memory Object Store -->
+
+    <flow name="Flow1_idempotentWithInMemoryStore" doc:name="Flow1_idempotentWithInMemoryStore">
+        <http:inbound-endpoint host="localhost" port="8081" path="idempotentInMemory" />
+        <idempotent-message-filter idExpression="#[message.payload]" throwOnUnaccepted="true" storePrefix="Idempotent_Message" doc:name="Idempotent Message">
+            <in-memory-store name="myInMemoryObjectStore" entryTTL="120" expirationInterval="3600" maxEntries="60000" />
+        </idempotent-message-filter>
+        <set-payload value="YAY!" doc:name="Set Payload" />
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload value="NAY!" doc:name="Set Payload" />
+        </catch-exception-strategy>
+    </flow>
+
+
+<!--  Idempotent Filter with Persistent File Store -->
+
+    <flow name="Flow2_idempotentWithTextFileStore" doc:name="Flow2_idempotentWithTextFileStore">
+        <http:inbound-endpoint host="localhost" port="8081" path="idempotentTextFile" />
+        <idempotent-message-filter idExpression="#[message.payload]" throwOnUnaccepted="true" storePrefix="Idempotent_Message" doc:name="Idempotent Message">
+            <simple-text-file-store
+                name="mySimpleTextFileStore"
+                directory="#[server.tmpDir + '/objectstore']"
+                entryTTL="120"
+                expirationInterval="3600"
+                maxEntries="60000" />
+        </idempotent-message-filter>
+        <set-payload value="YAY!" doc:name="Set Payload" />
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload value="NAY!" doc:name="Set Payload" />
+        </catch-exception-strategy>
+    </flow>
+
+
+<!--  Until Successful Scope with In Memory Object Store -->
+
+    <flow name="Flow3_UntilSuccessfulWithListableObjectStore" doc:name="UntilSuccessfulWithListableObjectStore">
+        <http:inbound-endpoint host="localhost" port="8081" path="hey" />
+        <until-successful objectStore-ref="myListableObjectStore" maxRetries="15" secondsBetweenRetries="1" doc:name="Until Successful">
+            <processor-chain doc:name="Processor Chain">
+                <message-filter throwOnUnaccepted="true">
+                    <expression-filter expression="return Math.random() &lt; 0.1" doc:name="Expression" />
+                </message-filter>
+                <logger message="This eventually happens." doc:name="Logger" />
+            </processor-chain>
+        </until-successful>
+        <set-payload value="Completed" doc:name="Set Payload" />
+    </flow>
+
+</mule>
+----
+
+== 另请参阅
+
+* 详细了解 link:http://mulesoft.github.io/objectstore-connector/[对象存储连接器]。
+* 了解 link:/runtime-manager/managing-application-data-with-object-stores[CloudHub实现对象存储]。

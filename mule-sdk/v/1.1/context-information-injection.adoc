@@ -1,0 +1,71 @@
+= 上下文信息注入
+
+:keywords: mule, sdk, context, inject, event, location
+
+要获取有关正在处理操作或源的上下文的信息，可以将参数添加到操作或源中。这些参数不会出现在UI中，但它们会被SDK注入运行时。
+
+== 组件位置
+
+在执行操作或使用源代码时，您可能希望获得有关组件位置的一些背景信息，主要用于记录目的。为了达到这个目的，你可以定义一个`ComponentLocation`作为参数，并且它会被注入。
+
+以下示例显示了在启动源时如何记录组件位置：
+
+[source, java, linenums]
+----
+
+@Alias("listener")
+public class HttpListener extends Source<InputStream, HttpRequestAttributes> {
+
+  private static final Logger LOGGER = getLogger(HttpListener.class);
+
+  @Connection
+  private ConnectionProvider<HttpServer> serverProvider;
+
+  @Parameter
+  private ComponentLocation location;
+
+  @Parameter
+  private String path;
+
+  private HttpServer server;
+
+  @Override
+  public void onStart(SourceCallback<InputStream, HttpRequestAttributes> sourceCallback) throws MuleException {
+    server = serverProvider.connect();
+    if (LOGGER.isDebugEnabled()) {
+      LOGGER.debug("Starting HTTP Listener %s on path %s", location.getLocation(), path);
+    }
+    server.listen(path);
+  }
+// ...
+}
+----
+
+== 跟踪事件
+
+*Available since version 1.1*
+
+为了能够通过日志跟踪事件，可以在操作和源回调中使用`CorrelationInfo`参数。此关联信息提供处理事件的事件ID和关联ID。
+
+您只需向您的操作方法或源回调中添加一个`CorrelationInfo`参数即可。该实例将填充方法或回调运行的事件信息。
+
+此简化示例显示如何使用`CorrelationInfo`：
+
+[source, java, linenums]
+----
+public class ObjectStoreOperations {
+  private static final Logger LOGGER = getLogger(ObjectStoreOperations.class);
+// ...
+  @Throws(StoreErrorTypeProvider.class)
+  public void store(String key,
+                    @Content TypedValue<Serializable> value,
+                    ObjectStore objectStore,
+                    CorrelationInfo correlationInfo) {
+      objectStore.store(key, value);
+      if (LOGGER.isDebugEnabled()) {
+        LOGGER.debug("Object stored with key: %s .The event id is: %s", key, correlationInfo.getEventId());
+      }
+  }
+// ...
+}
+----

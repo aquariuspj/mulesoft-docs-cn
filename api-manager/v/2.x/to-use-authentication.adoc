@@ -1,0 +1,105 @@
+= 使用Mule Provider进行OAuth 2.0身份验证
+:keywords: oauth, raml, token, validation, policy
+
+在尝试向受OAuth 2.0访问令牌实施使用外部提供者策略保护的API发送请求之前，您需要获取访问令牌。使用查询参数或授权标头在发送到API的所有请求中包含令牌，如下一过程中的Postman示例所示。下表总结了这种用法：
+
+[%header,cols="3*a"]
+|===
+包含令牌的|位置 |示例 |注释
+|查询参数 | `?access_token=123`  |作为URI的一部分包含在内
+|授权标头 | `Authorization:Bearer 123`  |标头由一个key：value对组成，其中授权是关键字，值的组成如下：
+  `"Bearer" + <space> + <token, for example, 123>`
+|===
+
+收到请求后，OAuth 2.0使用外部提供商策略的访问令牌实施将向OAuth提供商的`/validate`网址发送请求，以确保令牌的有效性。
+
+*To use and test authentication:*
+
+在此过程中，您将通过将OAuth 2.0访问令牌实施使用外部提供者策略应用于JSONPlaceholder服务API，构建早期教程。 API的RAML定义需要包含OAuth 2.0的安全方案。您可以从API Manager可用策略列表中将任何必需的RAML片段包含在您的API中，以执行策略。
+
+在API的门户网站上，您请求访问API，并且您接收凭据以从您的应用程序访问JSONPlaceholder API。您对应用程序接收到的凭据进行base64编码以访问API。使用编码凭证，您可以从提供商处获得访问令牌 -  link:/api-manager/v/2.x/aes-oauth-faq[OAuth舞蹈]的步骤1-2。使用令牌调用JSONPlaceholder服务 -  OAuth舞蹈的步骤3-6。如果令牌未正确验证，则会向客户端应用程序返回一个`403`错误消息;否则，API返回结果，即用户列表 -  OAuth舞蹈的第7步。
+
+. 分别使用 link:/design-center/v/1.0/design-raml-api-task[API Designer]和 link:/api-manager[API管理器]创建和部署JSONPlaceholder代理。
++
+您可以
+用于创建JSONPlaceholder服务API的 link:https://docs.mulesoft.com/api-manager/v/2.x/_attachments/jsonplaceholderapi.zip[下载RAML]。
++
+. 在JSONPlaceholder API的RAML中，包含OAuth 2.0访问令牌实施策略所需的RAML片段。添加授权URI，访问令牌URI和授权授权;将securedBy节点添加到要保护的资源和方法的方法名称后面，如以下代码片段所示：
++
+[source,yaml,linenums]
+----
+#%RAML 1.0
+title: placeholder
+version: 1.0.development
+baseUri: http://jsonplaceholder.typicode.com
+securitySchemes:
+  oauth_2_0:
+    description: |
+      This API supports OAuth 2.0 for authenticating all API requests.
+    type: OAuth 2.0
+    ...
+        403:
+          description: |
+            Bad OAuth request (wrong consumer key, bad nonce, expired timestamp...). Unfortunately,
+            re-authenticating the user won't help here.
+    settings:
+      authorizationUri: https://auth-provider-testing.cloudhub.io/external/authorize
+      accessTokenUri: https://auth-provider-testing.cloudhub.io/external/access_token
+      authorizationGrants: [authorization_code, password, client_credentials, implicit]
+      ...
+/users:
+  get:
+    securedBy: [oauth_2_0]
+----
++
+.  link:/api-manager/v/2.x/using-policies#applying-and-removing-policies[应用OAuth 2.0访问令牌强制]。
++
+* 将范围留为空白。
+* 在*Access Token validation endpoint url*中，使用具有验证路径的提供者的URL：`+https://<your-provider-app-name>.cloudhub.io/external/validate+`
++
+image::building-an-external-oauth-2.0-provider-application-8353f.png[建筑物的外部的-OAuth的2.0提供者的应用程序8353f，高度= 393，宽度= 417]
++
+. 为API创建一个API门户。
+. 请求将客户端应用程序访问到JSONplaceholder服务API。
++
+您获取请求应用程序的客户端ID和客户端密钥。
++
+. 将客户端ID和客户端密码编码为base64。
++
+`echo '<Client Id>:<Client Secret>' | base64`
++
+. 使用编码的凭证从提供商获取访问令牌。
++
+例如，假设编码的凭证是YmQ2 ... UY5NkYK。使用此curl命令请求访问令牌（Windows用户需要下载`curl`工具）：
++
+----
+curl -i -X POST -H 'Content-Type: application/x-www-form-urlencoded' -H 'Authorization: Basic YmQ2...UY5NkYK' -d 'grant_type=password&username=max&password=mule' 'https://auth-provider-testing.cloudhub.io/external/access_token' -k
+----
++
+提供者返回访问令牌：
++
+----
+HTTP/1.1 200
+Content-Type: application/json; charset=UTF-8
+Date: Fri, 14 Oct 2016 21:41:44 GMT
+MULE_ENCODING: UTF-8
+Server: nginx
+Content-Length: 250
+Connection: keep-alive
+
+{"access_token":"Fy6l_dsnzVFoduMPS3xx6RUeraVDJlWT37ql7ngxFWkERZ9wq4Uy9J1GC57_vzzCGUCGOF0KVDCg6bR2qTQd7A","refresh_token":"Mx0LRTA7_N4TVdg86MXk0dRSIsSLRIcFcI3O9T0T_hy6MPhrjxA797ew-mGD0Nom-1CcTvU4CHOCLnOKSZfpAw","token_type":"bearer","expires_in":1800}
+----
++
+. 在Postman中，使用访问令牌调用JSONPlaceholder服务API：
++
+* 选择GET操作并输入JSONPlaceholder服务API的URL以获取用户列表：`+http://jsonplaceholderapi.cloudhub.io/users+`。
+* 在“标题”选项卡上，为密钥选择授权。对于该值，键入`Bearer`，后跟提供程序为客户端应用程序返回的访问令牌。
+* 点击*Send*。
++
+调用成功并且API返回JSONPlaceholder用户列表。
++
+image::building-an-external-oauth-2.0-provider-application-1da90.png[建筑物的外部的-OAuth的2.0提供者的应用程序1da90]
+
+== 另请参阅
+
+*  link:/anypoint-exchange/about-portals[关于公共门户]

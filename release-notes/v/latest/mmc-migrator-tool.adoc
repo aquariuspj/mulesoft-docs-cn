@@ -1,0 +1,122 @@
+=  MMC Migrator工具
+:keywords: mmc, migration
+
+该工具使您能够将Mule管理控制台（MMC）实例中的服务器配置数据迁移到Runtime Manager实例。 MMC正在被运行时管理器完全取代，并且最终将被弃用，所以我们建议您尽可能方便地执行此迁移。迁移过程包括执行两个脚本并处理两个手动步骤。
+
+下载 http://s3.amazonaws.com/MuleEE/mmc-arm-migrationscripts-1.0.0.zip[迁移工具]。
+
+== 迁移范围
+
+本文档中介绍的步骤使您可以从MMC实例迁移以下内容：
+
+* 服务器数据，包括当前状态。这需要将MMC上注册的服务器与运行时管理器上的服务器相匹配。
+*  link:/runtime-manager/managing-servers#create-a-server-group[服务器组]
+*  link:/runtime-manager/managing-servers#create-a-cluster[集群]
+*  Mule应用程序.zip文件
+* 有关服务器上Mule应用程序部署的信息及其当前状态
+
+迁移工具不负责迁移：
+
+* 警报。
+* 用户权限。
+
+这两件事必须手动处理，因为两个平台都遵循关于它们的不同概念模型。有关如何配置 link:/runtime-manager/alerts-on-runtime-manager[邮件提醒]和 link:/access-management/roles[用户角色]的信息，请参阅Runtime Manager文档。
+
+== 先决条件（在运行MMC转储脚本之前）
+
+由于MMC和运行时管理器在其概念模型中有一些差异，请记住，某些转角情况不能迁移到Runtime Manager中。在这些情况下，您必须首先在MMC中更改您的配置，然后才能运行转储脚本。
+
+在运行转储脚本之前，请确保符合以下条件的*NONE*：
+
+*  *Server groups contain nested clusters or other nested server groups*。
+*  *A single server is a member of multiple server groups*，它只能属于一个。
+*  *Servers that belong to a Server Group also have deployments that target them individually as single servers*
+*  *Clusters in MMC are in a yellow state*。它们必须全部处于OK状态（所有节点正在运行）
+
+虽然上面列出的所有情况都是MMC中的可能配置，但它们在运行时管理器中不受设计支持。请进行必要的调整以使这些兼容。
+
+== 需要考虑的事项
+
+*  *The Mule instances that are registered in MMC must be named identically as what you name them when registering them on Runtime Manager*。如果您希望使用不同名称在运行时管理器中注册它们，则必须执行以下操作之一：
+
+在运行MMC转储脚本之前，** 在MMC上重命名它们
+** 最初将它们注册到运行时管理器上，它们具有与MMC上相同的名称，并且仅在完成整个迁移过程后重命名它们
+
+*  *Inactive servers won't be migrated*。他们的信息将被丢弃，但在将服务器信息导入到Runtime Manager时不会将其考虑在内。
+*  *Runtime Manager supports Mule Runtime versions 3.6.0 and newer*。如果在MMC中处理较旧的Mule Runtime版本，则在迁移它们之前，需要将这些版本升级到较新的Mule版本。
+*  *Applications that are not included in at least one active deployment in MMC won't be migrated*。这意味着转储文件将不包含相应的应用程序.zip。
+
+==  MMC转储内容
+
+* 包含每个当前处于活动状态的应用程序的可部署*.zip*文件的文件夹。
+* 扩展名为*.dmp*的转储文件，其中包含有关服务器，服务器组，群集，存储库中的应用程序和部署的信息。
+
+== 逐步迁移
+
+将您的Mule Runtime实例从MMC迁移到Runtime Manager意味着三个高级别步骤：
+
+*Step 1*：运行*MMC Dump Script*从MMC中提取结构信息和应用程序文件
+
+为了运行此脚本，请按照下列步骤操作：
+
+.  link:http://s3.amazonaws.com/MuleEE/mmc-arm-migrationscripts-1.0.0.zip[下载]脚本文件
+. 打开MMC控制台并导航至*Administration -> Admin Shell*
+
+image::mmc-migrator-tool-2601c.png[]
+
+将脚本文件的内容作为文本粘贴到画布中
+点击*Evaluate*按钮。
+
+image::mmc-migrator-tool-041f0.png[]
+
+这会根据mmc-data文件夹（位于名为mmcDump的新文件夹）中的MMC实例中的内容创建转储。请参阅<<MMC Dump Contents>>以了解您可以在其中找到的内容。
+
+
+*Step 2*：手动处理Mule Runtime实例，将它们与MMC分离并将它们注册到Runtime Manager中
+
+. 停止执行所有正在运行的Mule Runtime实例（通过MMC控制台或通过命令行）
+. 对于每个Mule Runtime实例，打开它的文件夹`$MULE_HOME/app`，然后删除其中的所有内容。
+
++
+[NOTE]
+您可能想利用这个机会将您的服务器更新为新版本的Mule Runtime。如果是这样的话，那么这最后一步与您在服务器上使用全新的Mule Runtime安装无关。请注意，只要这些新的Mule Runtime实例在注册时命名相同，则迁移过程应将它们视为相同，无论它们是否使用较新的Mule Runtime版本运行。如果实例在具有相同IP地址的服务器上，那么集群和服务器组的所有耦合都应该由脚本实现。
+
+
+运行时管理器中的.  link:/runtime-manager/managing-servers#add-a-server[寄存器] Mule Runtime实例（使用与MMC中相同的名称）。有关如何执行此操作的详细信息，请参阅 link:/runtime-manager/installing-and-configuring-mule-agent[安装和配置Mule Agent]
+. 通过命令行 link:/mule-user-guide/v/3.8/starting-and-stopping-mule-esb[开始你的骡子运行时间]
+
+
+*Step 3*：运行*Runtime Manager Import Script*将提取的信息引入Runtime Manager
+ 通过以下命令：
+
+[code]
+----
+java -jar rtm-import-1.0.0.jar -H anypoint.mulesoft.com -D /Users/your_user/your_folder/dump_folder -V v1 -U your_user -P your_password -E your_env_id -O your_org_id
+----
+
+导入过程命令可能包含以下参数：
+
+[%header,cols="20,40,40"]
+|===
+| {PARAM {1}}名称 | 说明
+|   -  D  | 	  - 转储路径	|	 MMC转储文件夹路径
+|   -  H  | 	  -  anypoint-url 	|	 Anypoint Url
+|   -  V  |	  -  api-version 	|	 Api版本
+|   -  U  |	  - 任意点用户 |	任意点用户名
+|   -  P  |	  -  anypoint-pass  |	 Anypoint密码
+|   -  E  |	  -  environment-id  |	环境标识
+|   -  O  |	  -  organization-id  |	组织标识
+|===
+
+[TIP]
+您也可以使用*-h*或*-help*参数执行jar来访问帮助。
+
+
+
+[NOTE]
+要获取您的环境ID和组织ID的必需值，您必须使用 link:/runtime-manager/anypoint-platform-cli[运行时管理器CLI]。通过此工具，运行命令 link:/runtime-manager/anypoint-platform-cli#account-business-group-list[`帐户业务组列表']和 link:/runtime-manager/anypoint-platform-cli#account-environment-list[`帐户环境清单']。每个都会返回组织中的所有可用业务组/环境的列表，以及每个对应的ID。
+
+
+
+[TIP]
+如果您愿意，您可以一次运行一次该脚本来处理整套服务器，而不是一次运行多个单独的批次服务器。如果只在运行时管理器上注册一些服务器，然后运行此脚本，它将配置已注册的服务器，并忽略有关转储文件中存在但不在平台上的其他服务器的数据，而不会产生任何错误。如果您随后注册了更多服务器并再次运行脚本，那么在平台中已配置的服务器将被忽略，并且该脚本将只配置新添加的服务器。

@@ -1,0 +1,236 @@
+= 脚本示例
+
+此页面提供了使用 link:/mule-management-console/v/3.8/automating-tasks-using-scripts[脚本]的示例。您可以复制和修改这些示例脚本以供自己使用。这些脚本包含必须替换您自己的值或参数的占位符。
+
+== 何时使用脚本
+
+脚本对于想要自动化的任务很有用。通常，您需要跨几个或甚至很多Mule服务器执行任务。您可能还需要定期执行这些任务，例如每天或每周。虽然可以手动执行它们，但考虑编写脚本来完成这项工作是有意义的。
+
+脚本有好几种用途。
+
+* 自定义警报升级操作。当控制台检测到警报时，您可以自定义执行的升级操作。例如，您可能希望向一个或多个用户发送电子邮件，记录有关警报条件的消息或执行SNMP升级。有关示例脚本，请参阅下面的示例部分，以执行SNMP升级并发送电子邮件。
+* 从多个Mule服务器下载日志文件。
+* 更改一些Mule服务器配置属性值。您可能需要更改可通过批量操作设置的某些配置属性。
+* 监视某些服务器操作，无论是警报还是其他操作，并定期发送预定的报告或电子邮件通知。
+* 重新启动服务器。
+
+为了帮助脚本，控制台提供了一套辅助工具类。这些帮助程序类专门用于使您可以轻松地向用户发送电子邮件，向控制台中列出的用户组发送电子邮件并触发SNMP升级。
+
+== 提示示例
+
+控制台包含一组类，以帮助您在控制台内发出警报时采取操作。在出现警报时，开箱即可支持发送电子邮件或SNMP陷阱。您也可以构建自己的自定义操作。
+
+如果您选择构建自定义操作，则可以使用`AlertActionBuilder`类配置操作。该类允许您侦听特定服务器的警报，过滤警报，然后采取一些特定的操作。
+
+任何自定义操作的基本格式如下所示：
+
+* 为您的警报操作指定一个名称。
+* 指定该操作适用的服务器。
+* 或者，指定一个过滤器。
+* 指定要采取的操作。
+* 安装该操作。
+
+以下是`AlertActionBuilder`类的代码：
+
+[source, java, linenums]
+----
+import com.mulesoft.console.alert.builder.AlertActionBuilder;
+new AlertActionBuilder()
+    .name("EmailAction")
+    .servers("test")
+    .filter(...)
+    .doAction(...)
+    .install(applicationContext);
+----
+
+被调用的`AlertActionBuilder`方法如下所示：
+
+*  `name()`：您的警报操作的名称（必需）。当`install`方法被调用时，它使用该名称来确定是否存在具有相同名称的先前安装的操作。如果找到匹配的操作，则`install`方法将卸载先前安装的操作，然后安装此新操作。
+*  `servers()`：服务器名称的可选列表。如果指定，则仅对指定的服务器执行操作。
+*  `filter()`：AlertFilter在执行操作之前过滤掉一些警报（基于过滤条件）
+*  `doAction()`：引发警报时要采取的AlertAction。
+
+== 示例电子邮件警报
+
+您可以使用`EmailActionBuilder`类配置电子邮件警报操作。这是一个简单的例子，通过电子邮件发送警报：
+
+[source, java, linenums]
+----
+import com.mulesoft.console.alert.builder.AlertFactory
+import com.mulesoft.console.alert.builder.AlertActionBuilder;
+import com.mulesoft.console.alert.builder.EmailActionBuilder;
+ 
+new AlertActionBuilder()
+    .name("EmailAction")
+    .doAction(
+           new EmailActionBuilder()
+                .server("localhost")
+                .port(8025)
+                .from("mmc@mulesoft.com")
+                .to("you@mulesoft.com")
+                .build())
+    .install(applicationContext);
+----
+
+使用`EmailActionBuilder`类中的方法，您可以自定义SMTP服务器，端口，发件人和地址，并指定邮件的主题和正文。
+
+您可以使用`EmailActionBuilder`类的`subject()`和`body()`方法自定义主题和正文的生成方式。例如：
+
+[source, java, linenums]
+----
+import com.mulesoft.console.alert.builder.AlertFactory 
+import com.mulesoft.console.alert.builder.AlertActionBuilder;
+import com.mulesoft.console.alert.builder.EmailActionBuilder;
+ 
+def action = new AlertActionBuilder()
+    .name("EmailAction")
+    .doAction(
+           new EmailActionBuilder()
+                .server("localhost")
+                .port(8025)
+                .from("mmc@mulesoft.com")
+                .to("you@mulesoft.com")
+                .subject({ "Test subject: ${it.description}" } as AlertFactory)
+                .body({ "Test body: ${it.description}" } as AlertFactory)
+                .build())
+    .install(applicationContext);
+"Email alert successful installed"
+----
+
+在上面的代码示例中，`subject()`和`body()`方法使用`AlertFactory`从RaisedAlert生成一个`String`变量。
+
+这是一个更复杂的示例，它指定了用户名和密码，并且还指定SSL与Gmail一起使用：
+
+[source, java, linenums]
+----
+import com.mulesoft.console.alert.builder.AlertFactory
+import com.mulesoft.console.alert.builder.AlertActionBuilder;
+import com.mulesoft.console.alert.builder.EmailActionBuilder;
+ 
+new AlertActionBuilder()
+    .name("EmailAction")
+    .servers("test")
+    .doAction(
+           new EmailActionBuilder()
+                .useSSL()
+                .server("smtp.gmail.com")
+                .port(465)
+                .from("xxx@gmail.com")
+                .username("xxx@gmail.com")
+                .password("xxx")
+                .to("xxx@xxx.com")
+                .subject({ "You have an alert! ${it.description}" } as AlertFactory)
+                .body({ "${it.description}" } as AlertFactory)
+                .build())
+    .install(applicationContext);
+"Email alert successful installed"
+----
+
+在电子邮件主题或正文中插入表达式== 
+
+您可以通过将表达式本身放置在大括号中，然后插入美元符号（$）符号来在电子邮件主题或正文中插入表达式;那是：
+
+[source, code, linenums]
+----
+${<expression>}
+----
+
+上面的例子对主体和主体都这样做;例如：
+
+[source, code, linenums]
+----
+{{.subject({ "You have an alert! ${it.description}" } }...
+----
+
+如上所示封闭的表达式被转换为一个字符串。
+
+== 脚本为警报执行SNMP升级
+
+`SnmpActionBuilder`类包含一些方法，允许您创建从发出警报发送SNMP陷阱的脚本。您必须指定三个参数：SNMP OID（对象标识符），要绑定的本地地址以及要发送到的目标地址。
+
+[source, java, linenums]
+----
+import com.mulesoft.console.alert.builder.AlertFactory
+import com.mulesoft.console.alert.builder.AlertActionBuilder;
+import com.mulesoft.console.alert.builder.SnmpActionBuilder;
+new AlertActionBuilder()
+            .name("SnmpAction")
+            .servers("MyServer")
+            .doAction(
+                new SnmpActionBuilder()
+                    .oid("1.3.6")
+                    .localAddress("udp:127.0.0.1/40162")
+                    .targetAddress("udp:127.0.0.1/40163")
+                    .build())
+            .install(applicationContext);
+"SNMP trap alert successful installed"
+----
+
+默认情况下，`SnmpActionBuilder`将`RaisedAlert.getDescription`的值作为SNMP陷阱的值发送。您可以使用`AlertFactory`自定义此值。例如，假设你想发送当前的内存使用量作为值。您可以如下设置代码：
+
+[source, java, linenums]
+----
+import com.mulesoft.console.alert.builder.AlertFactory
+import com.mulesoft.console.alert.builder.AlertActionBuilder;
+import com.mulesoft.console.alert.builder.SnmpActionBuilder;
+new AlertActionBuilder()
+            .name("SnmpAction")
+            .servers("MyServer")
+            .doAction(
+                new SnmpActionBuilder()
+                    .oid("1.3.6")
+                    .localAddress("udp:127.0.0.1/40162")
+                    .targetAddress("udp:127.0.0.1/40163")
+                    .value({ it.getActualValue() } as AlertFactory)
+                    .build())
+            .install(applicationContext);
+"SNMP trap alert successful installed"
+----
+
+`getActualValue`方法返回当前内存使用情况以提高内存警报。
+
+实现自定义操作的== 脚本
+
+以下是在发生警报时实施自定义操作的示例脚本。在此示例脚本中，自定义操作仅打印一条消息。但是，您可以轻松替换自己的操作。要使用此脚本，请编写自己的自定义操作，然后将该脚本粘贴到管理外壳中。
+
+[source, java, linenums]
+----
+import com.mulesoft.common.server.ServerHealthEvent
+import org.mule.galaxy.event.annotation.Async
+import org.mule.galaxy.event.annotation.BindToEvent
+import org.mule.galaxy.event.annotation.OnEvent
+ 
+@BindToEvent(com.mulesoft.common.server.ServerHealthEvent)
+class AnnoTestListener {
+ 
+    @Async @OnEvent
+    public void onServerHealthEvent(ServerHealthEvent event) {
+        println "===> server health alert"
+    }
+ 
+}
+ 
+// main block
+def em = applicationContext.getBean('eventManager')
+assert em != null
+ 
+// remove the previous listener, if any
+eventManager.listeners.each {
+    if (it.class.simpleName == AnnoTestListener.class.simpleName) {
+        eventManager.removeListener(it)
+        println "Removed previous listener"
+    }
+}
+em.addListener(new AnnoTestListener())
+----
+
+重新启动服务器的== 脚本
+
+以下示例脚本可用于重新启动服务器。在此示例中，要重新启动的服务器称为MyServer。要使用此脚本，您需要将MyServer更改为您自己的服务器的名称。
+
+[source, code, linenums]
+----
+svrMgr = applicationContext.getBean("serverManager")
+svr = svrMgr.getServerByName("MyServer", false)
+foo = svrMgr.restartServerNow(svr.getId())
+----

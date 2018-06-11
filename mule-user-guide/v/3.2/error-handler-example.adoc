@@ -1,0 +1,132 @@
+= 错误处理程序示例
+
+错误处理程序示例演示如何使用Spring bean作为Mule ESB服务组件实现以及如何将消息发布到多个出站端点。该示例由两个服务组成：ExceptionManager和BusinessErrorManager。 BusinessErrorManager是一种简单的服务，用于在收到消息时将消息记录到控制台。在此示例中，它用于通过JMS接收BusinessException消息以模拟真实世界的异常处理应用程序。
+
+ExceptionManager是一种接收异常消息并根据异常类型执行某些操作的服务。例如，如果收到致命异常，则会将电子邮件发送给系统管理员。如果收到标准系统异常，则会将其记录到本地文件系统上的文件中。此示例的目的不是实现异常处理程序，而是要演示以下功能：
+
+* 错误处理程序中的所有服务组件都在相同的Mule配置文件中配置为Spring bean。
+* 错误管理器在其上配置了多个出站端点，并且该示例演示了如何分派到不同的端点。
+* 系统中的消息是Java对象，需要与XML进行转换。该示例演示了将多个变压器链接在一起。
+
+image:http://images.mulesoft.org/Errorhandlersample.gif[图片]
+
+== 运行应用程序
+
+要立即开始，只需将预构建的应用程序存档（mule-example-errorhandler.zip）复制到应用程序文件夹（$ MULE_HOME / apps），然后按照以下运行示例中所述启动Mule。
+
+要停止Mule，请在Mule控制台窗口中键入'CTRL-C'
+
+=== 运行示例
+
+. 在命令提示符/ shell中，导航到Mule分布根下的`apps/mule-example-errorhandler`。
+. 使用您的环境的SMTP设置编辑`classes/email.properties`文件。错误处理程序示例需要这些设置才能发送警报电子邮件。
+来自`$MULE_HOME`目录的. 统计信息。显示Mule启动画面。
+. 打开另一个控制台窗口并导航到`apps/mule-example-errorhandler/test-data/out`目录。该目录包含三个文件：MuleException.xml，BusinessException.xml和FatalException.xml。
+. 将这些文件中的每一个都逐一移动到`../in`目录中，以查看会发生什么。每种异常类型都会触发不同的端点。请注意，FatalException.xml文件将导致Mule使用您在`conf/email.properties`中指定的属性发送电子邮件。
+. 要停止Mule，请在Mule控制台窗口中键入'CTRL-C'。
+
+== 构建示例
+
+根据您使用的构建工具（Ant或Maven），您可以通过简单运行"ant"或"mvn"来构建示例。这将编译示例类，生成应用程序zip文件并将其复制到$ MULE_HOME / apps。
+
+== 配置Spring Bean
+
+Mule对Spring的强大支持可以很容易地从Mule配置中配置Spring bean，并将它们注入到服务流中。例如，以下是处理BusinessException的bean：
+
+[source,xml]
+----
+<spring:bean id="businessHandler" class="org.mule.example.errorhandler.handlers.BusinessHandler">    <spring:property name="endpointName" value="ExceptionQueue"/>    <spring:property name="errorManager">        <spring:ref local="errorManager"/>    </spring:property></spring:bean>
+----
+
+有关在Mule中配置Spring的更多信息，请参阅 link:/mule-user-guide/v/3.2/using-spring-beans-as-service-components[使用Spring Bean作为服务组件]。
+
+== 共用组件
+
+另外， link:/mule-user-guide/v/3.2/configuring-java-components[汇集Java组件]将维护一个将被重用的对象实例池，其中一个线程在任何时候都使用一个实例。
+
+[source,xml]
+----
+<pooled-component>    <prototype-object class="org.mule.example.errorhandler.ErrorManager">        <properties>            <spring:entry key="handlers">                <spring:list>                    <spring:ref local="fatalHandler"/>                    <spring:ref local="defaultHandler"/>                    <spring:ref local="businessHandler"/>                </spring:list>            </spring:entry>        </properties>    </prototype-object></pooled-component>
+----
+
+
+== 的Transport
+
+这个例子使用三种流行的Mule运输工具：
+
+===  link:/mule-user-guide/v/3.2/file-transport-reference[文件传输参考]
+
+Mule支持监视任何文件或通配符模式的目录。在这个例子中，只有以.XML扩展名结尾的文件被Mule拾取和处理。
+
+[source,xml]
+----
+<file:inbound-endpoint path="${app.home}/test-data/in">    <file:filename-wildcard-filter pattern="*.xml"/>    <transformer ref="XMLToExceptionBean ExceptionBeanToErrorMessage" /></file:inbound-endpoint>
+----
+
+Mule还可以使用出站端点写入文件，如下所示。该端点使用Mule的表达式文件名解析器来构造输出文件名。 expression-filename-parser元素配置ExpressionFilenameParser，它可以使用Mule支持的任何表达式语言为当前消息构造一个文件名。阅读下面的表达式。
+
+[source,xml]
+----
+<file:outbound-endpoint path="${app.home}/test-data/exceptions"     outputPattern="Exception-[function:uuid].xml">    <transformer ref="ErrorMessageToExceptionBean" />    <transformer ref="ExceptionBeanToXML" /></file:outbound-endpoint>
+----
+
+
+===  link:/mule-user-guide/v/3.2/jms-transport-reference[JMS传输参考]
+
+使用Mule敏感的默认设置为ActiveMQ允许在此示例中使用单行配置来设置此JMS传输。
+
+[source,xml]
+----
+<jms:activemq-connector name="JMSConnector"/>
+----
+
+===  link:/mule-user-guide/v/3.2/email-transport-reference[电子邮件传输参考]
+
+Mule支持大多数常见的电子邮件协议和配置选项。
+
+另外， link:/mule-user-guide/v/3.2/configuring-properties[物业占位符]用于配置电子邮件传输。
+
+[source,xml]
+----
+<context:property-placeholder location="email.properties"/>
+----
+
+
+这允许使用使用Spring从属性文件加载并在Mule配置中引用的Ant样式属性。
+
+== 使用表达式
+
+Mule丰富的表达式语言支持允许您操纵消息的几乎任何方面，并且对于路由和过滤尤其有用。表达式可以是xpath，xquery，ognl，mvel，头文件，函数等等。详细了解 link:/mule-user-guide/v/3.2/using-expressions[使用表达式]。
+
+除了上面用于定义输出文件名的用法之外，Errorhandler示例还使用groovy表达式来过滤出站端点上的异常。
+
+[source,xml]
+----
+<expression-filter evaluator="groovy" expression="payload.throwable instanceof org.mule.api.DefaultMuleException"/>
+----
+
+
+== 链接变形金刚
+
+您可以将变压器链接在一起，以便一台变压器的输出成为下一台变压器的输入。要链变换器，您可以在transformer-refs或responseTransformer-refs属性中创建一个空格分隔的变换器列表，或者创建多个<transformer>元素，如下所示。
+
+[source,xml]
+----
+<transformer ref="XMLToExceptionBean ExceptionBeanToErrorMessage" />
+----
+
+
+[source,xml]
+----
+<transformer ref="ErrorMessageToExceptionBean" /><transformer ref="ExceptionBeanToXML" /><transformer ref="StringToEmailMessage"/>
+----
+
+有关变形金刚的更多信息（包括最佳做法），请阅读 link:/mule-user-guide/v/3.2/using-transformers[使用变形金刚]。
+
+== 摘要
+
+* 当Mule启动时，ErrorManager和BusinessErrorManager组件被创建为Spring bean，并被用作服务组件实现。
+* 将异常文件复制到`apps/mule-example-errorhandler/test-data/in`目录时，会调用错误处理程序的默认入站端点，并且目标处理程序会执行一些异常处理。
+* 准备好传递消息时，该方法返回，并且Mule调用服务上的出站路由器。
+* 异常管理器将消息转换为一个异常bean，从中确定异常类型。出站路由器根据异常类型进行过滤。
+* 匹配有效负载类型的第一个路由器用于路由消息。

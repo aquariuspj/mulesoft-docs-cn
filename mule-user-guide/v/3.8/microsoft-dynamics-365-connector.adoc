@@ -1,0 +1,896 @@
+=  Microsoft Dynamics 365连接器
+:keywords: microsoft, dynamics, 365, crm, connector, oauth
+
+_选择_
+
+版本：1.0.0
+
+用于Anypoint平台的Microsoft Dynamics 365客户关系管理（CRM）连接器支持与Microsoft Dynamics 365 Web API集成。
+
+*Release Notes*： link:/release-notes/microsoft-dynamics-365-release-notes[Microsoft Dynamics 365连接器发行说明] +
+*Sample*： link:_attachments/ms-dynamics-365-demo.zip[ms-dynamics-365-demo.zip]
+
+
+该连接器可让您执行以下操作：
+
+* 授权或未授权服务器访问。
+* 创建，更新和删除实体。
+* 检索单个实体或查询多个实体。
+* 关联和取消关联实体。
+* 执行操作。
+
+== 先决条件
+
+本文档假定您熟悉Mule， link:/mule-user-guide/v/3.8/anypoint-connectors[Anypoint连接器]和Anypoint Studio Essentials。为了提高您对Studio的熟悉度，请考虑完成一个或多个Anypoint Studio教程。此外，本页假设您对 link:/mule-user-guide/v/3.8/mule-concepts[骡流]和 link:/mule-user-guide/v/3.8/global-elements[骡全球元素]有基本的了解。
+
+登录portal.azure.com上的Microsoft Azure Active Directory门户，获取您的应用的客户端ID和密码。
+
+在开始之前：
+
+* 您需要访问由Azure Active Directory利用的Microsoft Dynamics 365实例（联机或内部部署）;也就是说，Azure Active Directory是提供对应用程序访问的身份提供者。
+* 将Anypoint Studio中的DataSense超时设置为长于500秒的持续时间。您可以从首选项菜单> Anypoint Studio> DataSense> DataSense连接超时设置此值。
+
+== 关于连接器术语
+
+* 操作 - 允许副作用（如数据修改）的操作，不能进一步组合以避免非确定性行为。
+* 复杂类型 - 由一组属性组成的无钥匙命名结构化类型。复杂类型通常用作模型实体中的属性值，或用作操作的参数或返回值。
+* 实体 - 实体类型的实例，例如帐户或机会。
+* 实体集 - 实体的命名集合，例如，帐户是包含帐户实体的实体集。实体的密钥唯一标识实体集内的实体。
+* 实体类型 - 用键命名结构化类型。实体类型定义实体的命名属性和关系，并且可以通过来自其他实体类型的单一继承来派生。
+* 枚举类型或枚举类型 - 命名的基本类型，其值被命名为具有基础整数值的常量。
+* 功能 - 没有副作用并可能支持进一步合成的操作，例如，使用附加的过滤器操作，功能或操作。
+
+== 安装和配置连接器
+
+. 下载并安装Java 8（最新版本）或Java 7（由Oracle弃用）。
++
+link:http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html[JDK 8下载]
++
+. 单击任务栏中的Anypoint Exchange image:365-exchange-icon.png[365交换图标]图标，搜索365，然后按照提示安装连接器。
+
+此连接器不需要*Note:* JCE。
+
+== 使用Anypoint Studio可视化编辑器创建新的Mule项目
+
+. 在Anypoint Studio中，单击文件>新建> Mule项目。
+. 指定一个项目名称并单击完成。
+. 搜索"http"并将HTTP连接器拖到画布上。点击绿色
+连接器配置旁边的加号，然后单击菜单中的确定以接受默认值。
+. 搜索"365"并将Microsoft Dynamics 365 CRM连接器拖到画布上。
+单击连接器配置旁边的绿色加号，然后指定您的访问凭据。
+. 单击用于身份验证的连接策略：
++
+**  Microsoft Dynamics 365 OAuth 2.0连接
+**  Microsoft Dynamics 365 OAuth 2.0用户名 - 密码
+
+=== 配置OAuth 2.0连接
+
+此配置提供对Microsoft Dynamics 365 Web API的访问。
+
+. 单击连接器配置右侧的绿色加号。
+. 提供客户端ID和秘密值。
+. 如果未提供令牌，请选择一项操作：
++
+..  EXCEPTION（默认） - 如果没有令牌，则会导致异常。
+..  STOP_FLOW  - 如果没有令牌，则停止运行Mule项目。
++
+. 如果需要，请按 link:/mule-user-guide/v/3.8/using-a-connector-to-access-an-oauth-api[使用连接器访问OAuth API]中所述在全局元素属性中设置OAuth选项卡。
+
+要在Connection配置中实现OAuth 2.0，您需要使用Mule Runtime 3.6.5，ESB 3.7.6或3.8.5或更高版本。
+
+=== 配置OAuth 2.0用户名 - 密码
+
+. 单击连接器配置右侧的绿色加号。
+. 提供以下凭据以启用对Microsoft Dynamics 365服务器的访问：
++
+** 客户端ID  - 在您向Azure Active Directory注册时分配给您的应用程序的应用程序ID。你可以在Azure Portal中找到它。单击Active Directory，单击该目录，选择该应用程序，然后单击配置。
+** 客户端秘密 - 您在应用程序注册门户中为您的应用程序创建的应用程序秘密。这不应该在本机应用程序中使用，因为客户机密不能可靠地存储在设备上。这对于Web应用程序和Web API来说是必需的，它们能够在服务器端安全地存储客户机密钥。
+** 用户名 - 用于初始化会话的用户名。
+** 密码 - 用于验证用户的密码。
+** 资源 -  Web API的应用程序标识URI（受保护的资源）。这必须是根URI，而不指定CRM版本。例如：`+https://YOUR_ORG.crm.dynamics.com/+`
+** 令牌请求端点 - 用于获取访问令牌的令牌端点。示例：`+https://login.windows.net/TENANT_ID/oauth2/token+`其中TENANT_ID是Azure Active Directory标识。
+** 读取超时 - 消费者之前等待响应的持续时间（以毫秒为单位）
+超时。零（0）意味着永远等待。
+** 连接超时 - 指定用户在超时之前尝试建立连接的持续时间（以毫秒为单位）。零（0）意味着永远等待。
++
+. 单击测试连接以确保您的凭证在服务器端点处被接受。
+. 如果存在，请单击启用DataSense以让应用程序从服务器获取元数据。
+
+有关设置“池化配置文件”选项卡的信息，请参阅 link:/mule-user-guide/v/3.8/tuning-performance#about-pooling-profiles[关于汇集配置文件]。
+
+有关设置重新连接选项卡的信息，请参阅 link:/mule-user-guide/v/3.8/configuring-reconnection-strategies[配置重新连接策略]。
+
+== 运行流程
+
+. 在包资源管理器中，右键单击您的项目名称，然后单击运行方式> Mule应用程序。
+. 检查控制台以查看应用程序何时启动。如果没有错误发生，您应该看到这些消息：
+
+[source,xml,linenums]
+----
+************************************************************
+INFO  2017-05-14 22:12:42,003 [main] org.mule.module.launcher.DeploymentDirectoryWatcher: 
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Mule is up and kicking (every 5000ms)                    +
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+INFO  2017-05-14 22:12:42,006 [main] org.mule.module.launcher.StartupSummaryDeploymentListener: 
+**********************************************************
+*  - - + DOMAIN + - -               * - - + STATUS + - - *
+**********************************************************
+* default                           * DEPLOYED           *
+**********************************************************
+
+************************************************************************
+* - - + APPLICATION + - -   * - - + DOMAIN + - -  * - - + STATUS + - - *
+************************************************************************
+* myapp                     * default             * DEPLOYED           *
+************************************************************************
+----
+
+== 配置连接器操作
+
+*  xref：authop [授权 - （仅OAuth 2.0连接）]
+*  xref：unauthop [Unauthorize  - （仅OAuth 2.0连接）]
+* 外部参照：createop [创建]
+*  xref：createmultop [创建多个]
+* 外部参照：delop [删除]
+*  xref：delmultop [删除多个]
+* 外部参照：disop [取消关联]
+*  xref：doactop [Do action]
+* 外部参照：invop [调用]
+* 外部参照：锐拓[检索]
+*  xref：retmultop [检索多个]
+*  xref：retmultqop [通过查询检索多个]
+* 外部参照：upop [更新]
+*  xref：upmultop [更新多个]
+
+
+[[authop]]
+=== 授权访问Dynamics 365服务器
+
+. 将操作设置为授权（仅限OAuth 2.0连接）。
+. 将State字段的值留空，它由Mule内部处理。
+. 提供服务提供商给您的访问令牌URL。
+. 提供发布令牌的端点（必需）：示例：`+https://login.windows.net/TENANT/oauth2/token+`，其中TENANT是Azure Active Directory标识。
+. 提供授权URL（必需） - 指示资源所有者被重定向到授予连接器的权限。示例：`+https://login.microsoftonline.com/TENANT/oauth2/authorize+`，其中TENANT是Azure Active Directory标识。
+. 提供访问令牌ID（必需） - 用于标识呼叫的访问令牌的ID
+. 指定作用域（必需） - 对于OpenID Connect，作用域必须包含openid，这意味着在同意UI中转换为登录权限。
+. 指定Response_mode（必填） - 此字段指定用于将结果令牌发送回您的应用程序的方法。要使用Mule，其值必须为`query`。
+. 指定资源（必需） - 这是Web API（受保护资源）的App ID URI。要查找Web API的App ID URI，请在Azure门户中单击Active Directory，单击该目录，单击该应用程序，然后单击配置。例如：`+https://YOUR_ORG.crm.dynamics.com/+`。
+
+[[unauthop]]
+=== 从Dynamics 365服务器取消对授权的授权
+
+. 将操作设置为取消授权（仅限OAuth 2.0连接）。
+. 提供用于授权访问Microsoft Dynamics 365服务器的访问令牌URL。
+
+[[createop]]
+=== 创建一个实体
+
+. 将操作设置为创建。
+. 指定逻辑名称（必需），它是小写的模式名称。
+. 根据MEL表达式为默认值定义可选属性，或手动将属性设置为一个或多个键和值映射对。
+
+[[createmultop]]
+=== 创建多个实体
+
+. 将操作设置为创建多个。
+. 指定逻辑名称（必需），它是小写的模式名称。
+. 单击使用单个事务以指示如果事务失败，事务将回滚。
+. 单击 image:365-add-expression-icon.png[365附加表达图标]为逻辑名称属性添加MEL表达式。
+. 从MEL表达式中定义可选属性，或手动将属性设置为一个或多个键和值映射对。
+
+[[delop]]
+=== 删除一个实体
+
+. 将操作设置为删除。
+. 为ID字段指定MEL表达式。
+. 指定一个逻辑名称（必需）。
+
+[[delmultop]]
+=== 删除多个实体
+
+. 设置操作删除多个。
+. 指定逻辑名称（必需），它是小写的模式名称。
+. 根据MEL表达式为默认值定义可选属性，或手动将属性设置为一个或多个键和值映射对。
+
+[[disop]]
+=== 解除关联实体
+
+. 将操作设置为取消关联。
+. 指定逻辑名称（必需），它是小写的模式名称。
+. 根据MEL表达式为默认值定义可选属性，或手动将属性设置为一个或多个键和值映射对。
+
+[[doactop]]
+=== 执行操作
+
+. 将操作设置为执行操作。
+. 指定操作名称（必需）。
+. 指定有界实体ID。
+. 指定有界实体类型。
+. 根据MEL表达式为默认值定义可选属性，或手动将属性设置为一个或多个键和值映射对。
+
+[[invop]]
+=== 调用Web API
+
+. 将操作设置为调用。
+. 为Web API指定URI或MEL表达式。
+. 指定一个HTTP方法（必需）：DELETE，GET，PATCH，POST或PUT。
+. 从表达式指定请求HTTP标题或手动指定。
+. 指定放置在主体中的JSON字符串值（必需）
+的请求。
+
+[[retop]]
+=== 检索实体
+
+. 设置要检索的操作。
+. 为ID字段指定MEL表达式。
+. 指定一个逻辑名称（必需）。
+
+[[retmultop]]
+=== 检索多个实体
+
+. 设置操作以检索多个。
+. 为要检索的内容指定数据查询URL或MEL表达式。
+. 指定要检索的页面中的页面抓取大小。默认值是100页。
+
+[[retmultqop]]
+=== 按查询检索多个实体
+
+. 设置操作以检索多个查询。
+. 指定查询语言。
+. 配置您想要检索的查询。了解更多信息
+关于DataSense问题，请参阅 link:/anypoint-studio/v/6/datasense-query-language[DataSense查询语言]。
+. 指定要检索的页面中的页面抓取大小。默认值是100页。
+
+[[upop]]
+=== 更新实体
+
+. 将操作设置为更新。
+. 指定逻辑名称（必需），它是小写的模式名称。
+. 根据MEL表达式为默认值定义可选属性，或手动将属性设置为一个或多个键和值映射对。
+
+[[upmultop]]
+=== 更新多个实体
+
+. 设置操作以更新多个。
+. 指定逻辑名称（必需），它是小写的模式名称。
+. 单击使用单个事务以指示如果事务失败，它将回滚。
+. 单击 image:365-add-expression-icon.png[365附加表达图标]为逻辑名称属性添加MEL表达式。
+. 将默认或手动设置属性的可选属性定义为一个或多个键和值映射对。
+
+== 示例：Microsoft Dynamics 365
+
+本示例演示如何使用Microsoft Dynamics 365连接器。
+
+要构建和运行此演示项目，您需要：
+
+具有至少Mule 3.5运行时的*  Anypoint Studio。
+*  Microsoft Dynamics 365连接器v1.0.0或更高版本。
+*  Azure Active Directory利用Dynamics 365。
+
+=== 测试流程
+
+. 使用Anypoint Exchange或使用“文件”菜单中的“导入”命令将演示项目导入工作区。
+. 在`/src/main/app/mule-app.properties`文件中为OAuth 2用户名 - 密码配置指定您的OAuth 2凭据：
++
+**  dynamics365.username  - 用于初始化会话的用户名。
+**  dynamics365.password  - 用于验证用户的密码。
+**  dynamics365.resource  -  Web API的App ID URI，它是一种安全资源。该资源必须是不指定CRM版本的根URI。例如：`+https://YOUR_ORG.crm.dynamics.com/+`
+**  dynamics365.clientId  - 在您向Azure Active Directory注册时分配给您的应用程序的应用程序ID。你可以在Azure Portal中找到它。单击Active Directory，单击该目录，选择该应用程序，然后单击配置。
+**  dynamics365.clientSecret  - 您在应用程序注册门户中为您的应用程序创建的应用程序秘密。这不应该在本地应用程序中使用，因为客户机密钥不能可靠地存储在设备上。 Web应用程序和Web API需要客户机密，它们能够在服务器端安全地存储客户机密钥。
+**  dynamics365.tokenRequestEndpoint  - 调用来获取访问令牌的令牌端点。 +
+示例：`+https://login.windows.net/TENANT_ID/oauth2/token`其中TENANT_ID是Azure Active Directory标识。
++
+. 指定DataSense连接超时时间超过200秒，因为连接器发出多个请求来提供DataSense信息。
+. 在Studio中运行项目。
+. 在浏览器中输入`0.0.0.0:8081`以访问演示的选择菜单。
+. （可选）您可以配置连接超时和读取超时。
+连接超时是与服务器进行初始连接的超时时间。
+读取超时是等待从服务器读取数据的超时时间。
+
+您可以使用`+http://0.0.0.0:8081+`中的选择菜单来测试流程，也可以使用卷曲工具或其他任何工具（Chrome / Mozilla Firefox扩展）来发布JSON，以便在调用URL时发布主体。
+
+
+=== 示例：解析模板
+
+分析模板。
+
+image:365-demo-parse-template.png[365-演示解析模板]
+
+[source,xml,linenums]
+----
+<flow name="PARSE_DEMO_TEMPLATE">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+    <parse-template location="form.html" doc:name="Parse Template"/>
+    <set-property propertyName="content-type" value="text/html" encoding="US-ASCII" mimeType="text/html" doc:name="Property"/>
+</flow>
+----
+
+=== 示例：创建空联系人
+
+创建稍后在其他流程中需要的空联系人实体。
+
+GET  -  HTTP端点侦听以下URL：`+http://0.0.0.0:8081/createContact+`
+
+image:365-demo-create-empty-contact.png[365-演示创建空接触]
+
+[source,xml,linenums]
+----
+<flow name="CREATE_EMPTY_CONTACT_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/createContact" doc:name="HTTP"/>
+    <logger message="Requested 'Create Contact Operation'" level="INFO" doc:name="Logger"/>
+    <dynamics365:create config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="contact" doc:name="Microsoft Dynamics 365"/>
+    <logger message="Received Response from 'Create Contact Operation'" level="INFO" doc:name="Logger"/>
+</flow>
+----
+
+=== 示例：创建空机会
+
+创建稍后在其他流程中需要的空机会实体。
+
+GET  -  HTTP端点侦听：`+http://0.0.0.0:8081/createOpportunity+`
+
+image:365-demo-create-empty-oppo.png[365-演示创建空，OPPO]
+
+[source,xml,linenums]
+----
+<flow name="CREATE_EMPTY_OPPORTUNITY_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/createOpportunity" doc:name="HTTP"/>
+    <logger message="Requested 'Create Opportunity Operation'" level="INFO" doc:name="Logger"/>
+    <dynamics365:create config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="opportunity" doc:name="Microsoft Dynamics 365"/>
+    <logger message="Received Response from 'Create Opportunity Operation'" level="INFO" doc:name="Logger"/>
+</flow>
+----
+
+=== 示例：创建账户
+
+创建具有指定属性的帐户，并将帐户与联系人相关联。
+
+POST  -  HTTP端点在`+http://0.0.0.0:8081/createAccount+`处侦听
+
+请求示例：
+
+[source,xml,linenums]
+----
+{"AccountName":"Test Account Name","CreditOnHold":true,
+"CreditLimit":1000,"ContactID":"CONTACT_ID"}`
+----
+
+image:365-demo-create-account.png[365-演示创建账户]
+
+[source,xml,linenums]
+----
+<flow name="CREATE_ACCOUNT_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/createAccount" 
+    doc:name="HTTP"/>
+    <logger message="Requested 'Create Account Operation'" level="INFO" 
+    doc:name="Logger"/>
+    <dw:transform-message doc:name="Transform Message">
+        <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	name: payload.AccountName,
+	creditonhold: payload.CreditOnHold,
+	creditlimit: payload.CreditLimit,
+	"primarycontactid@odata.bind": "/contacts(" ++ payload.ContactID ++ ")"
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <dynamics365:create config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" 
+     logicalName="account" doc:name="Microsoft Dynamics 365">
+        <dynamics365:attributes ref="#[payload]"/>
+    </dynamics365:create>
+    <logger message="Received Response from 'Create Account Operation'" level="INFO" 
+    doc:name="Logger"/>
+</flow>
+----
+
+=== 示例：创建多个实体
+
+在单个批量请求中创建相同类型的多个实体。
+
+POST  -  HTTP端点侦听：`+http://0.0.0.0:8081/createMultipleAccounts+`
+
+请求示例：
+
+[source,xml,linenums]
+----
+[{"AccountName":"Account Name 1","CreditOnHold":true,"CreditLimit":1500},
+{"AccountName":"Account Name 2","CreditOnHold":false,"CreditLimit":2000}]
+----
+
+image:365-demo-create-multi-ents.png[365示范创建的多的ENT]
+
+[source,xml,linenums]
+----
+<flow name="CREATE_MULTIPLE_ENTITIES_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/createMultipleAccounts" doc:name="HTTP"/>
+    <logger message="Requested 'Create Multiple Accounts Operation'" level="INFO" doc:name="Logger"/>
+    <dw:transform-message doc:name="Transform Message">
+        <dw:set-payload><![CDATA[%dw 1.0
+%input payload application/json
+%output application/java
+---
+payload map {
+      name: $.AccountName,
+      creditlimit : $.CreditLimit,
+      creditonhold : $.CreditOnHold
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <dynamics365:create-multiple config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365">
+        <dynamics365:attributes-list ref="#[payload]"/>
+    </dynamics365:create-multiple>
+    <logger message="Received Response from 'Create Multiple Entities Operation'" level="INFO" doc:name="Logger"/>
+    <json:object-to-json-transformer doc:name="Object to JSON"/>
+</flow>
+----
+
+=== 示例：更新实体
+
+更新具有指定属性的帐户。
+
+POST  -  HTTP端点侦听：`+http://0.0.0.0:8081/updateAccount+`
+
+请求示例：
+
+[source,xml]
+----
+{"EntityId":"ENTRY_ID","AccountName":"Updated Name","CreditLimit":1500}
+----
+
+image:365-demo-update-entity.png[365-演示更新实体]
+
+[source,xml,linenums]
+----
+<flow name="UPDATE_ENTITY_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/updateAccount" doc:name="HTTP"/>
+    <logger message="Requested 'Update Entity Operation'" level="INFO" doc:name="Logger"/>
+    <dw:transform-message doc:name="Transform Message">
+        <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	entityId: payload.EntityId,
+	attributes: {
+		creditlimit: payload.CreditLimit,
+		name: payload.AccountName
+	}
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <dynamics365:update config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365">
+        <dynamics365:attributes ref="#[payload]"/>
+    </dynamics365:update>
+    <logger message="'Update Entity Operation' has ended with success" level="INFO" doc:name="Logger"/>
+    <json:object-to-json-transformer doc:name="Object to JSON"/>
+</flow>
+----
+
+=== 示例：更新多个实体
+
+在单个批量请求中更新同一类型的多个实体。
+
+POST  -  HTTP端点侦听：`+http://0.0.0.0:8081/updateMultipleAccounts+`
+
+请求示例：
+
+[source,xml,linenums]
+----
+[{"EntityId":"ENTRY_ID","AccountName":"Updated Name 1"},
+{"EntityId":"ENTRY_ID","AccountName":"Updated Name 2"}]
+----
+
+image:365-demo-update-multi-ents.png[365-演示更新多的ENT]
+
+[source,xml,linenums]
+----
+<flow name="UPDATE_MULTIPLE_ENTITIES_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/updateMultipleAccounts" doc:name="HTTP"/>
+    <logger message="Requested 'Multiple Entities Operation'" level="INFO" doc:name="Logger"/>
+    <dw:transform-message doc:name="Transform Message">
+        <dw:set-payload><![CDATA[%dw 1.0
+%input payload application/json
+%output application/java
+---
+payload map {
+	entityId: $.EntityId,
+	attributes: {
+		name: $.AccountName
+	}
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <dynamics365:update-multiple config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365">
+        <dynamics365:attributes-list ref="#[payload]"/>
+    </dynamics365:update-multiple>
+    <logger message="Received Response from 'Update Multiple Entities Operation'" level="INFO" doc:name="Logger"/>
+    <json:object-to-json-transformer doc:name="Object to JSON"/>
+</flow>
+----
+
+=== 示例：删除实体
+
+删除指定类型的实体。
+
+POST  -  HTTP端点侦听：`+http://0.0.0.0:8081/deleteAccount+`
+
+请求示例：
+
+[source,xml]
+----
+{"EntityId":"ENTRY_ID"}
+----
+
+image:365-demo-delete-entity.png[365-演示删除实体]
+
+[source,xml,linenums]
+----
+<flow name="DELETE_ENTITY_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/deleteAccount" doc:name="HTTP"/>
+    <logger message="Requested 'Delete Entitiy Operation'" level="INFO" doc:name="Logger"/>
+    <dw:transform-message doc:name="Transform Message">
+        <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload.EntityId]]></dw:set-payload>
+    </dw:transform-message>
+    <dynamics365:delete config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365"/>
+    <logger message="'Delete Entity Operation' has ended with success" level="INFO" doc:name="Logger"/>
+</flow>
+----
+
+=== 示例：检索实体
+
+检索指定类型的实体。
+
+POST  -  HTTP端点侦听：`+http://0.0.0.0:8081/retrieveAccount+`
+
+请求示例：
+
+[source,xml]
+----
+{"EntityId":"ENTRY_ID"}
+----
+
+image:365-demo-retrieve-entity.png[365-演示检索实体]
+
+[source,xml,linenums]
+----
+<flow name="RETRIEVE_ENTITY_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/retrieveAccount" doc:name="HTTP"/>
+    <logger message="Requested 'Retrieve Entitiy Operation'" level="INFO" doc:name="Logger"/>
+    <dw:transform-message doc:name="Transform Message">
+        <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload.EntityId]]></dw:set-payload>
+    </dw:transform-message>
+    <dynamics365:retrieve config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365"/>
+    <logger message="Received Response from 'Retrieve Entitiy Operation'" level="INFO" doc:name="Logger"/>
+    <json:object-to-json-transformer doc:name="Object to JSON"/>
+</flow>
+----
+
+=== 示例：通过URL检索实体
+
+根据URL请求检索多个实体。
+
+GET  -  HTTP端点侦听：`+http://0.0.0.0:8081/retrieveAccountsByURL+`
+
+image:365-demo-retrieve-entities-by-url.png[365-演示检索实体按网址]
+
+[source,xml,linenums]
+----
+<flow name="RETRIEVE_ENTITIES_BY_URL_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/retrieveAccountsByURL" doc:name="HTTP"/>
+    <logger message="Requested 'Retrieve Multiple Operation'" level="INFO" doc:name="Logger"/>
+    <dynamics365:retrieve-multiple config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password"
+     dataQueryURL="${dynamics365.resource}/api/data/v8.2/accounts?$select=name,accountnumber&amp;$top=3"
+      doc:name="Microsoft Dynamics 365"/>
+    <logger message="Received Response from 'Retrieve Multiple Operation'" level="INFO" doc:name="Logger"/>
+    <json:object-to-json-transformer doc:name="Object to JSON"/>
+</flow>
+----
+
+=== 示例：按查询检索实体
+
+基于数据库查询语言检索多个实体。
+
+GET  -  HTTP端点侦听：`+http://0.0.0.0:8081/retrieveAccountsByQuery+`
+
+image:365-demo-retrieve-entities-by-query.png[365-演示检索实体，通过查询]
+
+[source,xml,linenums]
+----
+<flow name="RETRIEVE_ENTITIES_BY_QUERY_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/retrieveAccountsByQuery" doc:name="HTTP"/>
+    <logger message="Requested 'Retrieve Multiple By Query Operation'" level="INFO" doc:name="Logger"/>
+    <dynamics365:retrieve-multiple-by-query config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password"
+     query="dsql:SELECT accountid,accountnumber,name FROM account LIMIT 2" doc:name="Microsoft Dynamics 365"/>
+    <logger message="Received Response from 'Retrieve Multiple By Query Operation'" level="INFO"
+     doc:name="Logger"/>
+    <json:object-to-json-transformer doc:name="Object to JSON"/>
+</flow>
+----
+
+=== 示例：取消关联实体
+
+分散实体。提供作出请求的实体的ID和解散的密钥。
+
+POST  -  HTTP端点侦听：`+http://0.0.0.0:8081/disassociateEntities+`
+
+请求示例：
+
+[source,xml]
+----
+{"EntityId":"ENTRY_ID","EntityLinkKeys":["primarycontactid"]}
+----
+
+image:365-demo-disassociate-entities.png[365-演示解除关联实体]
+
+[source,xml,linenums]
+----
+<flow name="DISASSOCIATE_ENTITIES_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/disassociateEntities" doc:name="HTTP"/>
+    <logger level="INFO" doc:name="Logger" message="Requested 'Dissasociate Entities Operation'"/>
+    <dw:transform-message doc:name="Transform Message">
+        <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	entityId: payload.EntityId,
+	attributes: payload.EntityLinkKeys
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <dynamics365:disassociate config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365">
+        <dynamics365:attributes ref="#[payload]"/>
+    </dynamics365:disassociate>
+    <logger level="INFO" doc:name="Logger" message="Finished 'Dissasociate Entities Operation' with success"/>
+</flow>
+----
+
+=== 示例：执行操作
+
+调用WinOpportunity操作。
+
+POST  -  HTTP端点侦听：`+http://0.0.0.0:8081/doAction+`
+
+请求示例：
+
+[source,xml]
+----
+{"Subject":"Won Opportunity","Status":3,"OpportunityId":"OPPORTUNITY_ID"}
+----
+
+image:365-demo-do-action.png[365-DEMO-DO行动]
+
+[source,xml,linenums]
+----
+<flow name="DO_ACTION_DEMO">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/doAction" doc:name="HTTP"/>
+    <logger message="Requested 'Do Action Operation'" level="INFO" doc:name="Logger"/>
+    <dw:transform-message doc:name="Transform Message">
+        <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	OpportunityClose: {
+		subject: payload.Subject,
+		"opportunityid@odata.bind": "/opportunities(" ++ payload.OpportunityId ++ ")"
+	},
+	Status: payload.Status
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <dynamics365:do-action config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" actionName="WinOpportunity" doc:name="Microsoft Dynamics 365"/>
+    <logger message="Finished 'Do Action Operation'" level="INFO" doc:name="Logger"/>
+</flow>
+----
+
+
+
+=== 示例XML流
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:dynamics365="http://www.mulesoft.org/schema/mule/dynamics365" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/dynamics365 http://www.mulesoft.org/schema/mule/dynamics365/current/mule-dynamics365.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd">
+    <dynamics365:config-oauth-user-pass name="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" clientId="${dynamics365.clientId}" username="${dynamics365.username}" password="${dynamics365.password}" resource="${dynamics365.resource}" clientSecret="${dynamics365.clientSecret}" tokenRequestEndpoint="${dynamics365.tokenRequestEndpoint}" doc:name="Microsoft Dynamics 365: OAuth 2.0 Username-Password"/>
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="PARSE_DEMO_TEMPLATE">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <parse-template location="form.html" doc:name="Parse Template"/>
+        <set-property propertyName="content-type" value="text/html" encoding="US-ASCII" mimeType="text/html" doc:name="Property"/>
+    </flow>
+    <flow name="CREATE_EMPTY_CONTACT_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/createContact" doc:name="HTTP"/>
+        <logger message="Requested 'Create Contact Operation'" level="INFO" doc:name="Logger"/>
+        <dynamics365:create config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="contact" doc:name="Microsoft Dynamics 365"/>
+        <logger message="Received Response from 'Create Contact Operation'" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="CREATE_EMPTY_OPPORTUNITY_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/createOpportunity" doc:name="HTTP"/>
+        <logger message="Requested 'Create Opportunity Operation'" level="INFO" doc:name="Logger"/>
+        <dynamics365:create config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="opportunity" doc:name="Microsoft Dynamics 365"/>
+        <logger message="Received Response from 'Create Opportunity Operation'" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="CREATE_ACCOUNT_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/createAccount" doc:name="HTTP"/>
+        <logger message="Requested 'Create Account Operation'" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	name: payload.AccountName,
+	creditonhold: payload.CreditOnHold,
+	creditlimit: payload.CreditLimit,
+	"primarycontactid@odata.bind": "/contacts(" ++ payload.ContactID ++ ")"
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamics365:create config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365">
+            <dynamics365:attributes ref="#[payload]"/>
+        </dynamics365:create>
+        <logger message="Received Response from 'Create Account Operation'" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="CREATE_MULTIPLE_ENTITIES_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/createMultipleAccounts" doc:name="HTTP"/>
+        <logger message="Requested 'Create Multiple Accounts Operation'" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%input payload application/json
+%output application/java
+---
+payload map {
+      name: $.AccountName,
+      creditlimit : $.CreditLimit,
+      creditonhold : $.CreditOnHold
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamics365:create-multiple config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365">
+            <dynamics365:attributes-list ref="#[payload]"/>
+        </dynamics365:create-multiple>
+        <logger message="Received Response from 'Create Multiple Entities Operation'" level="INFO" doc:name="Logger"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+    <flow name="UPDATE_ENTITY_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/updateAccount" doc:name="HTTP"/>
+        <logger message="Requested 'Update Entity Operation'" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	entityId: payload.EntityId,
+	attributes: {
+		creditlimit: payload.CreditLimit,
+		name: payload.AccountName
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamics365:update config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365">
+            <dynamics365:attributes ref="#[payload]"/>
+        </dynamics365:update>
+        <logger message="'Update Entity Operation' has ended with success" level="INFO" doc:name="Logger"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+    <flow name="UPDATE_MULTIPLE_ENTITIES_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/updateMultipleAccounts" doc:name="HTTP"/>
+        <logger message="Requested 'Multiple Entities Operation'" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%input payload application/json
+%output application/java
+---
+payload map {
+	entityId: $.EntityId,
+	attributes: {
+		name: $.AccountName
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamics365:update-multiple config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365">
+            <dynamics365:attributes-list ref="#[payload]"/>
+        </dynamics365:update-multiple>
+        <logger message="Received Response from 'Update Multiple Entities Operation'" level="INFO" doc:name="Logger"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+    <flow name="DELETE_ENTITY_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/deleteAccount" doc:name="HTTP"/>
+        <logger message="Requested 'Delete Entitiy Operation'" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload.EntityId]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamics365:delete config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365"/>
+        <logger message="'Delete Entity Operation' has ended with success" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="RETRIEVE_ENTITY_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/retrieveAccount" doc:name="HTTP"/>
+        <logger message="Requested 'Retrieve Entitiy Operation'" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload.EntityId]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamics365:retrieve config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365"/>
+        <logger message="Received Response from 'Retrieve Entitiy Operation'" level="INFO" doc:name="Logger"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+    <flow name="RETRIEVE_ENTITIES_BY_URL_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/retrieveAccountsByURL" doc:name="HTTP"/>
+        <logger message="Requested 'Retrieve Multiple Operation'" level="INFO" doc:name="Logger"/>
+        <dynamics365:retrieve-multiple config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" dataQueryURL="${dynamics365.resource}/api/data/v8.2/accounts?$select=name,accountnumber&amp;$top=3" doc:name="Microsoft Dynamics 365"/>
+        <logger message="Received Response from 'Retrieve Multiple Operation'" level="INFO" doc:name="Logger"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+    <flow name="RETRIEVE_ENTITIES_BY_QUERY_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/retrieveAccountsByQuery" doc:name="HTTP"/>
+        <logger message="Requested 'Retrieve Multiple By Query Operation'" level="INFO" doc:name="Logger"/>
+        <dynamics365:retrieve-multiple-by-query config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" query="dsql:SELECT accountid,accountnumber,name FROM account LIMIT 2" doc:name="Microsoft Dynamics 365"/>
+        <logger message="Received Response from 'Retrieve Multiple By Query Operation'" level="INFO" doc:name="Logger"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+    <flow name="DISASSOCIATE_ENTITIES_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/disassociateEntities" doc:name="HTTP"/>
+        <logger level="INFO" doc:name="Logger" message="Requested 'Dissasociate Entities Operation'"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	entityId: payload.EntityId,
+	attributes: payload.EntityLinkKeys
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamics365:disassociate config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" logicalName="account" doc:name="Microsoft Dynamics 365">
+            <dynamics365:attributes ref="#[payload]"/>
+        </dynamics365:disassociate>
+        <logger level="INFO" doc:name="Logger" message="Finished 'Dissasociate Entities Operation' with success"/>
+    </flow>
+    <flow name="DO_ACTION_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/doAction" doc:name="HTTP"/>
+        <logger message="Requested 'Do Action Operation'" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	OpportunityClose: {
+		subject: payload.Subject,
+		"opportunityid@odata.bind": "/opportunities(" ++ payload.OpportunityId ++ ")"
+	},
+	Status: payload.Status
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamics365:do-action config-ref="Microsoft_Dynamics_365__OAuth_2_0_Username_Password" actionName="WinOpportunity" doc:name="Microsoft Dynamics 365"/>
+        <logger message="Finished 'Do Action Operation'" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+== 另请参阅
+
+*  link:_attachments/ms-dynamics-365-demo.zip[样品]
+*  link:/mule-user-guide/v/3.8/microsoft-dynamics-365-operations-connector[Microsoft Dynamics 365操作连接器]
+*  link:https://msdn.microsoft.com/en-us/library/mt607990.aspx[Web API术语]
+*  link:https://msdn.microsoft.com/en-us/library/mt607875.aspx[Web API  - 关联实体]
+*  link:https://msdn.microsoft.com/en-us/library/mt607719.aspx[Web API  - 批量请求]
+*  link:https://msdn.microsoft.com/en-us/library/gg328090.aspx[Web API  - 创建新实体]
+*  link:https://msdn.microsoft.com/en-us/library/mt607664.aspx[Web API  - 删除实体]
+*  link:https://msdn.microsoft.com/en-us/library/mt607875.aspx[Web API  - 取消关联实体]
+*  link:https://msdn.microsoft.com/en-us/library/mt628816.aspx[Web API  - 限制]
+*  link:https://msdn.microsoft.com/en-us/library/gg334767.aspx[Web API  - 使用Web API查询数据]
+*  link:https://msdn.microsoft.com/en-us/library/mt607871.aspx[Web API  - 检索实体]
+*  link:https://msdn.microsoft.com/en-us/library/mt607664.aspx[Web API  - 更新实体]
+*  link:https://msdn.microsoft.com/en-us/library/mt607600.aspx[Web API  - 使用Web API操作]

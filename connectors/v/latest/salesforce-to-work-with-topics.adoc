@@ -1,0 +1,104 @@
+= 使用Salesforce主题
+:keywords: salesforce connector, inbound, outbound, streaming, poll, dataweave, datasense
+：imagesdir：_images
+：图标：字体
+
+////
+需要有关Salesforce主题的信息
+////
+
+主题将Salesforce记录归入常见主题。如果一个或多个Salesforce记录符合用于定义主题的标准，Salesforce连接器允许Mule应用程序接收通知。
+
+== 创建或发布主题
+
+在您可以接收与主题关联的Salesforce更改的任何事件之前，必须先创建主题（PushTopic）。 PushTopic是Salesforce中的一个特殊对象，它将名称（主题名称）和Salesforce对象查询语言（SOQL）查询绑定在一起。一旦创建了PushTopic，您可以使用其名称来订阅它。
+
+在Design Center中，您可以使用创建（`create`）或发布主题（`publish-topic`）来创建主题。这些操作所需字段的示例：
+
+* 主题名称：`AccountUpdates`
+* 查询：`SELECT Id, Name FROM Account`
+
+`publish-topic`的XML示例：
+
+`<sfdc:publish-topic name="AccountUpdates" query="SELECT Id, Name FROM Account"/>`
+
+或者，在Salesforce中，您可以通过从Enter Apex Code窗口执行此类代码来创建主题，可通过系统日志访问该代码：
+
+[source, code, linenums]
+----
+PushTopic pushTopic = new PushTopic();
+pushTopic.ApiVersion = 23.0;
+pushTopic.Name = 'AllAccounts';
+pushTopic.Description = 'All records for the Account object';
+pushtopic.Query = 'SELECT Id, Name FROM Account';
+insert pushTopic;
+System.debug('Created new PushTopic: '+ pushTopic.Id);
+----
+
+== 订阅主题
+
+创建主题后，您可以通过订阅主题开始接收活动。为此，请将您的流程添加订阅主题（`subscribe-topic`）或重播主题（`replay-topic`）触发器。该触发器用作入站端点。每次订阅收到事件时，触发器都会执行Mule应用程序中的其余流程。对于下面的XML示例，它会在INFO级别向日志打印消息。
+
+在Design Center中，您使用Salesforce连接器的“订阅主题”或“重放主题”操作作为触发器。
+
+在XML中，您使用`subscribe-topic`或`replay-topic`作为触发器：
+
+[source, xml, linenums]
+----
+<flow name="accountUpdatesSubscription">
+    <!-- INBOUND ENDPOINT -->
+    <sfdc:subscribe-topic topic="AccountUpdates"/>
+    <!-- REST OF YOUR FLOW -->
+    <logger level="INFO" message="Received an event for Salesforce Object ID #[map-payload:Id]"/>
+</flow>
+----
+
+////
+骡子流被分成两部分。它的第一部分通常是入站端点（或HTTP连接器）和消息源。 Mule流是一个接收和生成事件的实体，稍后由其余流处理。另一部分是消息处理器的集合，用于处理由入站端点接收和生成的消息（也称为事件）。
+////
+
+== 重播主题中的事件
+
+用户可以指定要接收哪些事件，例如保留窗口内的所有事件或在特定事件之后开始的事件。默认仅接收订阅后发送的新事件。在24小时保留期限之外的事件被丢弃。
+
+重播主题（`replay-topic`）提供以下选项：
+
+* 全部（`ALL`）：订阅者接收所有事件，包括24小时保留期内的过去事件和订阅后发送的新事件。
+* 仅限新（`ONLY_NEW`）：订阅服务器接收客户订阅后广播的新事件。
+* 从重播ID（`FROM_REPLAY_ID`）：订阅者接收指定事件`replayId`后的所有事件。
+
+////
+重播选项：
+
+. 重播ID订阅者接收由其`replayId`值指定的事件后的所有事件。
+.   -  1  - 订户收到客户订阅后广播的新事件。
+订户接收所有事件，包括24小时保留窗口内的过去事件和订阅后发送的新事件。
+////
+
+从最后重播ID恢复：根据连接器处理的最后一个事件的重播ID，允许自动重播存储事件的选项。当连接器由于某种原因（例如服务器关闭或连接断开）而停止监听时，此功能可能很有用。如果存储的重播ID超出24小时保留期限，则重播选项将确定要重播的事件。
+
+在这个XML示例中，`replay-topic`充当记录器消息的入站端点：
+
+[source, xml, linenums]
+----
+<flow name="accountUpdatesReplay">
+    <!-- INBOUND ENDPOINT -->
+    <sfdc:replay-topic topic="AccountUpdates" replayId="1" replayOption="ALL" autoReplay="true"/>
+    <!-- REST OF YOUR FLOW -->
+    <logger level="INFO" message="Replayed events: #[payload]"/>
+</flow>
+----
+
+如果选择ALL或ONLY_NEW重播选项，则`replayId`值将被忽略。
+
+== 另请参阅
+
+link:/connectors/salesforce-about[关于Salesforce连接器]
+
+link:/connectors/salesforce-connector-tech-ref[Salesforce连接器技术参考]
+
+link:https://developer.salesforce.com/docs/atlas.en-us.api.meta/api/pushtopic.htm[Salesforce SOAP API文档：PushTopic]
+
+link:https://developer.salesforce.com/docs/atlas.en-us.api_streaming.meta/api_streaming/create_a_pushtopic.htm[Salesforce文档：创建一个PushTopic]
+
+link:https://workbench.developerforce.com/about.php[工作台]

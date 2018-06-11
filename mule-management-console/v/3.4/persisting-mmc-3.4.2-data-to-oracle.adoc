@@ -1,0 +1,703 @@
+= 持久化MMC 3.4.2数据到Oracle
+
+*_MMC Version 3.4.2 and Later_*
+
+本文档介绍了如何将环境和事务数据保存到Oracle数据库。按照<<Installing the Oracle Database>>的说明操作，然后按照<<Persisting Environment Data>>或<<Persisting Transaction Data>>持久性的具体说明设置用户，创建数据库并配置MMC实例以保存数据。
+
+[WARNING]
+请记住*environment data and transaction data must exist in two separate databases*（不管它们是在同一台服务器上还是在同一个平台上）。
+
+*Jump to:*
+
+*  *<<Persisting Environment Data>>*
+*  *<<Persisting Transaction Data>>*
+
+== 假设
+
+本文档假设您了解基本的 link:/mule-management-console/v/3.4/architecture-of-the-mule-management-console[Mule管理控制台的架构]。
+
+它还假定您已经安装：
+
+*  **MMC Version 3.4.2**。如果您需要升级到此版本，请从 http://www.mulesoft.com/support-login[客户门户]下载。
+*  *a* **Web application server such as Tcat, Tomcat, or JBoss**。有关硬件要求和支持的应用程序服务器，Java运行时环境和浏览器的最新信息，请参阅 link:/mule-user-guide/v/3.4/hardware-and-software-requirements[硬件和软件要求]。
+
+为了实际的目的，本文提到Tomcat作为servlet容器;但是，这里包含的说明也适用于Tcat或JBoss。如果使用Tcat或JBoss，请确保将Management Console .war文件解压到相应的目录中。有关其他信息，请参阅 link:/mule-management-console/v/3.4/installing-the-production-version-of-mmc[安装MMC的生产版本]。
+
+[NOTE]
+====
+在本文档中，`<MMC_HOME>`指的是安装MMC的目录。
+
+如果您使用的是试用版，则这是`<Mule install path>/mmc/webapps/mmc`。例如`/opt/mule/mule-enterprise-3.4.1/mmc/webapps/mmc`。
+
+如果您正在使用诸如Tomcat之类的应用程序服务器，则应该与`<Tomcat root>/webapps/mmc-console-3.4.1.`类似，例如`/var/lib/tomcat6/webapps/mmc-console-3.4.1`。
+====
+
+== 安装Oracle数据库
+
+以下示例使用Oracle数据库速成版11. *。概述的安装是基本的：将数据库服务器安装在本地计算机上，在安全性停用的情况下监听默认端口（与数据库的不安全连接）。
+
+=== 工具
+
+*  SQL Developer 3.0.04：+
+**  http://www.oracle.com/technetwork/developer-tools/sql-developer/downloads/index.html[下载最新版本]
+** 咨询 http://docs.oracle.com/cd/E25259_01/doc.31/e26419/toc.htm[Linux和Windows安装指南]
+*  Oracle数据库速成版11.x：+
+**  http://www.oracle.com/technetwork/products/express-edition/downloads/index.html[下载最新版本]
+** 咨询 http://docs.oracle.com/cd/E17781_01/index.htm[Linux和Windows安装指南]
+** 请参阅 http://www.oracle.com/pls/db112/homepage[完整的文档库]
+
+[IMPORTANT]
+
+*Important!* +
+ +
+不要试图用JDK 1.7运行SQL Developer。尽管SQL安装指南列出了适合安装的“JDK 1.6.11或更高版本”，但尝试使用JDK 1.7运行SQL Developer。会导致警告消息和来自SQL Developer的格式错误的SQL代码。
+
+=== 安装SQL Developer
+
+遵循列出的<<Tools>>文档提供的简单说明来解压缩安装程序并为SQL Developer运行可执行文件。
+
+=== 安装Oracle Express
+
+Oracle Express为Windows提供了一个简单的图形化安装程序，并为Linux提供了一个`.rpm`包。只需按照列出的<<Tools>>文档提供的说明操作即可。
+
+[NOTE]
+Windows和Linux都要求您具有管理员权限才能安装Oracle Express。
+
+=== 配置文件
+
+安装期间会自动生成文件`listener.ora`和`tnsnames.ora`。
+
+对于Linux，这些文件通常位于：`/u01/app/oracle/product/11.2.0/xe/network/admin`。
+
+在Windows上，`listener.ora`和`tnsnames.ora`通常位于：`C:\oraclexe\app\oracle\product\11.2.0\server\network\admin`。
+
+[source, code, linenums]
+----
+# listener.ora Network Configuration File:
+SID_LIST_LISTENER =
+    (SID_LIST =
+        (SID_DESC =
+             (SID_NAME = PLSExtProc)
+             (ORACLE_HOME = /u01/app/oracle/product/11.2.0/xe)
+             (PROGRAM = extproc)
+         )
+    (SID_DESC =
+        (SID_NAME = CLRExtProc)
+        (ORACLE_HOME = /u01/app/oracle/product/11.2.0/xe)
+        (PROGRAM = extproc)
+    )
+    (SID_DESC =
+        (SID_NAME = XE)
+        (ORACLE_HOME = /u01/app/oracle/product/11.2.0/xe)
+    )
+)
+ 
+LISTENER =
+    (DESCRIPTION_LIST =
+        (DESCRIPTION =
+            (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1))
+            (ADDRESS = (PROTOCOL = TCP)(HOST = 0.0.0.0)(PORT = 1521))
+        )
+    )
+ 
+DEFAULT_SERVICE_LISTENER = (XE)
+----
+
+ 点击查看tnsnames.ora的列表
+
+[source, code, linenums]
+----
+# tnsnames.ora Network Configuration File:
+ 
+XE =
+    (DESCRIPTION =
+        (ADDRESS = (PROTOCOL = TCP)(HOST = 0.0.0.0)(PORT = 1521))
+        (CONNECT_DATA =
+            (SERVER = DEDICATED)
+            (SERVICE_NAME = XE)
+        )
+    )
+ 
+EXTPROC_CONNECTION_DATA =
+    (DESCRIPTION =
+        (ADDRESS_LIST =
+            (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1))
+        )
+    (CONNECT_DATA =
+        (SID = PLSExtProc)
+        (PRESENTATION = RO)
+    )
+)
+ 
+ORACLR_CONNECTION_DATA =
+    (DESCRIPTION =
+        (ADDRESS_LIST =
+           (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1))
+     )
+    (CONNECT_DATA =
+        (SID = CLRExtProc)
+        (PRESENTATION = RO)
+    )
+)
+----
+
+
+[NOTE]
+对于`HOST`值，MuleSoft建议使用静态IP地址（例如`192.168.1.10`）或`0.0.0.0`地址。 MuleSoft还建议不要使用`localhost`或`HOST`的主机名。
+
+[IMPORTANT]
+请注意，如果文件`slqnet.ora`存在（通常在`/app/oracle/product/11.2.0/xe/network/admin`中），它可能包含一些已知会导致问题的选项。例如，除非您正在微调数据库，否则应该通过包含以下参数来禁用NFS安全性集成：`SQLNET.AUTHENTICATION_SERVICES = (NONE)`。
+
+== 坚持不懈的环境数据
+
+要设置Oracle数据库来保存MMC环境数据，您需要完成三个步骤：
+
+. 创建数据库用户和连接
+. 设置数据库表
+. 设置MMC
+
+[NOTE]
+====
+Mule管理控制台的嵌入式数据库文件位于：
+
+`<MMC installation path>/.mule/mmc/mmc-data/db`
+
+将MMC配置为使用外部数据库存储其持久数据后，请勿删除`mmc-data`文件夹。 `db`子文件夹不再使用，但`repository`，`version`和`workspaces`子文件夹将被Java内容存储库（JCR）内部设置使用。
+====
+
+=== 创建数据库用户和连接
+
+要使用SQL Developer GUI创建数据库用户，请完成以下步骤：
+
+. 启动SQL Developer：+
+.. 转到`<sqldeveloper install>/sqldeveloper`
+.. 根据您的操作系统启动SQL Developer：
++
+
+** 在Linux和Mac OS X上，运行`sqldeveloper.sh` shell脚本
+** 在Windows上，启动`sqldeveloper.exe`
++
+如果SQL开发人员要求提供完整的Java路径，请输入完整路径。典型的Java路径是：+
+** 的Linux：`/usr/java/jdk1.6.0_31/bin`
+** 视窗：`C:\Program Files\Java\jdk1.6.0_31\bin`
+. 在SQL Developer中，创建一个新的数据库连接：+
+.. 显示**New/Select Database connection**对话框。要这样做，请按照下列步骤操作：+
+... 点击左侧窗格中的*Connections*标签。
+... 右键单击*Connections*。
+... 选择*New Connec* *tion*。
+.. 在连接*Name*字段中，输入：`mmc_persistency_status`。
+.. 在*Username*字段中输入：`SYSTEM`。
+.. 在*Password*字段中，输入您在Oracle Express安装过程中发出的SYSTEM密码。
+.. 在*Hostname*字段中，确保主机名是正确的（如果在本地计算机上安装了Oracle，它将为`localhost`）。
+.. 在*SID*字段中输入`xe`。
+. 点击*Test*验证连接。测试完成后，确认消息`Status: Success`出现在对话框底部附近。
+. 点击*Save*保存您指定的连接设置。
+. 点击*Connect*，然后点击*Connections*标签上连接名称旁边的加号，展开连接元素菜单。
+. 按照以下步骤创建新的数据库用户：+
+.. 右键单击**Other Users,**，然后选择*Create User*以显示**Create/Edit User**对话框。
+.. 填写所需信息的字段。以下提供样本指导：
+
+** 用户名：`MMC_STATUS`
+** 新密码：`mmc123`
+** 默认表空间：`USERS`
+** 临时表空间：`TEMP`
+** 角色选项卡：`RESOURCE`，`CONNECT`
+** 系统权限选项卡：`CREATE TRIGGER`，`CREATE TABLE`，`CREATE SEQUENCE`
++
+[NOTE]
+此设置在USERS表空间上使用无限配额进行测试。
+
+. 点击*Apply*，然后点击*Close*。
+
+=== 设置数据库表
+
+在第一次运行时，JCR自动创建存储持久MMC信息所需的所有表。但是，您必须手动创建存储Quartz作业信息的表;否则会发生类似于以下的错误：
+
+[source, code, linenums]
+----
+ERROR: relation “qrtz_locks” does not exist.
+----
+
+要创建和插入表，请按照下列步骤操作：
+
+. 导航到`<MMC_HOME>/` WEB-INF / classes / quartz。
+. 找到SQL脚本`tables_oracle.sql`。
+. 以用户`MMC_STATUS`在目标数据库上执行`tables_oracle.sql`。
++
+[TIP]
+====
+*Use the sqlplus utility to execute tables_oracle.sql*
+
+. 要使用`sqlplus`实用程序运行`tables_oracle.sql`，请根据您的操作系统完成以下步骤之一：+
+*  *Windows:*从Windows开始菜单：选择*Programs*（或所有程序）> *Oracle Database Express 11g Edition*> *Run SQL Command Line*。这将打开`sqlplus`命令提示符。
+*  *In Linux:*打开适当的菜单（例如Gnome中的*Applications*或KDE中的*K*菜单），然后选择*Oracle Database 11g Express Edition*，然后选择{{5} }。
+. 打开`sqlplus`命令提示符后，键入：`connect MMC_STATUS/mmc123@XE`
+. 输入以下内容运行`tables_oracle.sql`脚本：+
+====
+
+[source, code, linenums]
+----
+start <path to script>/tables_oracle.sql
+----
+
+.. 要退出`sqlplus`，请键入：`exit`
+
+[NOTE]
+有关`sqlplus`命令的详细信息，请查阅 http://docs.oracle.com/cd/E11882_01/server.112/e16604/qstart.htm#SQPUG002[SQL * Plus参考指南]。
+
+此时，Oracle数据库已完全定义。
+
+=== 设置MMC以使用Oracle保存环境数据
+
+. 首先，安装适当的<<Drivers>>。
+. 然后，按照以下说明编辑以下配置文件：
+*  <<Modifying web.xml>>
+*  <<Modifying mmc-oracle.properties>>
+
+==== 驱动程序
+
+使用以下链接获取适当的驱动程序：
+
+*  http://www.oracle.com/technetwork/database/features/jdbc/index-091264.html[ojdbc5.jar]
+*  http://repo1.maven.org/maven2/org/quartz-scheduler/quartz-oracle/1.8.5/quartz-oracle-1.8.5.jar[石英甲骨文1.8.5.jar]
+
+[WARNING]
+石英Oracle jar必须与为石英提供的库版本（即`quartz-1.8.5.jar`
+
+将Oracle驱动程序复制到以下目录：`<MMC_HOME>/ WEB-INF/lib.`
+
+==== 常规设置
+
+本示例使用本文档前面用于设置Oracle数据库的参数。
+
+*  Oracle正在`localhost`和端口`1521`上监听SID：`XE`
+* 用户：`MMC_STATUS`
+* 密码：`mmc123`
+
+====  MMC配置
+
+配置MMC将数据存储在Oracle数据库中涉及两项基本任务：
+
+* 修改文件`web.xml`，告诉MMC使用Oracle而不是默认数据库
+* 修改文件`mmc-oracle.properties`以设置连接到Oracle数据库的参数
+
+===== 修改`web.xml`
+
+. 在`<MMC_HOME>/WEB-INF`目录中找到文件`web.xml`，然后打开它进行编辑。
+. 找到`spring.profiles.active`部分，如下所示。
++
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-derby</param-value>
+</context-param>
+----
+
+. 删除字符串`env-derby`，然后将其替换为`env-oracle`，如下所示。
++
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-oracle</param-value>
+</context-param>
+----
+
+. 如果您还计划将<<Persisting Transaction Data>>添加到Oracle，请删除字符串`tracking-h2`并将其替换为`tracking-oracle`。
+
+[TIP]
+`web.xml`配置文件中的`spring.profiles.active`部分允许您定义用于存储环境和/或跟踪数据的外部数据库。有关所有支持的数据库服务器的快速说明，请参阅 link:/mule-management-console/v/3.4/configuring-mmc-3.4.2-for-external-databases-quick-reference[为外部数据库配置MMC 3.4.2  - 快速参考]。
+
+=====  {修改{1}}
+
+在目录`<MMC_HOME>/WEB-INF/classes/META-INF/databases`中，找到文件`mmc-oracle.properties`，然后打开它进行编辑。
+
+下表列出了文件中包含的设置。根据需要修改值。一般而言，您需要修改的唯一值是`env.username`，`env.password`，`env.host`，`env.port`和`env.dbschema`。
+
+[%header,cols="34,33,33"]
+|===
+| {参数{1}}说明 |缺省
+| `env.driver`  |用于连接数据库的驱动程序 | `oracle.jdbc.driver.OracleDriver`
+| `env.script`  |用于在目标数据库中创建表的脚本 | `oracle`
+| `env.username`  |数据库用户 | `mmc_status`
+| `env.password`  |数据库用户的密码 | `mmc123`
+| `env.host`  |数据库服务器正在侦听的主机名或IP地址 | `localhost`
+| `env.port`  |数据库服务器正在侦听的端口 | `1521`
+连接到数据库的| `env.url`  |网址 | `jdbc:oracle:thin:${env.username}/${env.password}@${env.host}:${env.port}/${env.servicename}`
+| `env.servicename`  |用于连接到外部数据库的服务名称 | `XEXDB`
+|===
+
+=== 删除本地数据库文件
+
+要使配置更改生效，在启动MMC之前，您需要删除MMC默认使用的本地数据库文件。
+
+在Web应用程序服务器的根目录中，找到`mmc-data`目录（例如，`/var/lib/tomcat6/mmc-data`），然后删除`mmc-data`目录。
+
+[NOTE]
+在删除`mmc-data`之前，请制作此目录的备份副本并将其保存在安全的位置。如果您的新数据库配置出现问题，您可以使用`mmc-data`在测试环境中排除新数据库配置时恢复旧数据库配置。
+
+此时，将MMC配置为将环境数据存储在您指定的外部Oracle数据库中。
+
+=== 环境数据的灾难恢复
+
+开箱即用，MMC将持久状态数据存储在文件夹`<Mule install path>/.mule/mmc/mmc-data`中。如果由于某些原因数据库文件损坏，您可能需要删除`mmc-data`并从头开始，除非您有`mmc-data`的备份副本。但是拥有`mmc-data`的备份副本不会覆盖MMC主机本身完全丢失数据的灾难性故障，也不允许使用主动 - 被动配置进行即时恢复。
+
+一种可能的解决方案是将数据库备份到单个文件，然后将其复制到另一台机器。如果需要立即恢复，则可以使用此文件将数据库恢复到其原始状态。
+
+[WARNING]
+====
+当您将MMC还原到以前的状态时，请注意以下事项：
+
+* 您正在还原MMC状态数据，这与Business Events的持久性无关，后者使用完全不同的机制来存储数据。
+* 备份时注册的服务器已恢复，这意味着可能会出现以下情况之一：+
+** 服务器与另一个Mule实例配对。在这种情况下，通过MMC“取消配对”服务器，然后重新配对。这可能会影响部署和服务器组。
+** 服务器不再存在。取消配对服务器。
+** 另一台服务器使用与原始服务器相同的IP和端口。尝试识别原始服务器的当前IP和端口，然后重新配对。
+** 服务器连接正确，但在备份之后，已部署和/或未部署的应用程序未显示或显示不正确。根据需要取消部署/重新部署以消除未协调的状态。
+====
+
+此方案假定以下条件：
+
+*  Oracle Xpress 11.x
+* 数据库已经被创建，包括以下数据表：+
+** 用户：`MMC_STATUS`
+** 权限：+
+***  `EXP_FULL_DATABASE`
+***  `IMP_FULL_DATABASE`
+***  `DBA`
+* 访问数据库的工具：SQL Developer 3.0.04
+* 备份工具：`exp`（与Oracle分发包的二进制文件捆绑）
+* 还原工具：`imp`（与Oracle分发包的二进制文件捆绑在一起）
+* 任意转储文件名：`OracleMMCDB`
+
+==== 数据库备份过程
+
+[WARNING]
+数据库上的表包含二进制大对象（BLOB）。使用SQL Developer进行常规数据库导出不会导出BLOB内容，因此在还原数据库时，这些字段将标记为`NULL`。
+
+要备份数据库，请打开终端并发出以下命令：
+
+[source, code, linenums]
+----
+exp MMC_STATUS/mmc123 file=OracleMMCDB.dmp full=yes
+----
+
+文件`OracleMMCDB.dmp`将在`exp`实用程序驻留的相同文件夹中创建。
+
+有关`exp`命令参数的帮助，请运行：
+
+[source, code, linenums]
+----
+exp help=yes
+----
+
+==== 数据库恢复过程
+
+打开一个终端并运行以下命令：
+
+[source, code, linenums]
+----
+imp MMC_STATUS/mmc123 file=OracleMMCDB.dmp full=yes
+----
+
+[WARNING]
+该示例假定转储文件`OracleMMCDB.dmp`与`imp`实用程序位于同一文件夹中。如果不是这种情况，请在调用`imp`命令时指定`.dmp`文件的完整路径。
+
+有关`imp`命令参数的帮助，请运行：
+[source, code, linenums]
+----
+imp help=yes
+----
+
+*listing of imp output*：
+
+[source, code, linenums]
+----
+C:\QA\oracle.xe\app\oracle\product\11.2.0\server\bin>imp MMC_STATUS/mmc123 file=someOracleFile.dmp full=yes
+  
+Import: Release 11.2.0.2.0 - Production on Thu Mar 29 11:03:29 2012
+  
+Copyright (c) 1982, 2009, Oracle and/or its affiliates. All rights reserved.
+  
+Connected to: Oracle Database 11g Express Edition Release 11.2.0.2.0 - Production
+  
+Export file created by EXPORT:V11.02.00 via conventional path
+import done in WE8MSWIN1252 character set and AL16UTF16 NCHAR character set
+import server uses AL32UTF8 character set (possible charset conversion)
+. importing MMC_STATUS's objects into MMC_STATUS
+. . importing table "FILESYSTEM_VERSION_FSENTRY" 1 rows imported
+. . importing table "JR_CORE_BINVAL" 0 rows imported
+. . importing table "JR_CORE_BUNDLE" 187 rows imported
+. . importing table "JR_CORE_NAMES" 0 rows imported
+. . importing table "JR_CORE_REFS" 5 rows imported
+. . importing table "QRTZ_BLOB_TRIGGERS" 0 rows imported
+. . importing table "QRTZ_CALENDARS" 0 rows imported
+. . importing table "QRTZ_CRON_TRIGGERS" 2 rows imported
+. . importing table "QRTZ_FIRED_TRIGGERS" 0 rows imported
+. . importing table "QRTZ_JOB_DETAILS" 2 rows imported
+. . importing table "QRTZ_JOB_LISTENERS" 0 rows imported
+. . importing table "QRTZ_LOCKS" 5 rows imported
+. . importing table "QRTZ_PAUSED_TRIGGER_GRPS" 0 rows imported
+. . importing table "QRTZ_SCHEDULER_STATE" 0 rows imported
+. . importing table "QRTZ_SIMPLE_TRIGGERS" 0 rows imported
+. . importing table "QRTZ_TRIGGERS" 2 rows imported
+. . importing table "QRTZ_TRIGGER_LISTENERS" 0 rows imported
+. . importing table "REPO_FSENTRY" 8 rows imported
+. . importing table "SEARCH_INDEX_FSENTRY" 1 rows imported
+. . importing table "SEARCH_INDEX_W_FSENTRY" 1 rows imported
+. . importing table "VERSION_BINVAL" 0 rows imported
+. . importing table "VERSION_BUNDLE" 3 rows imported
+. . importing table "VERSION_NAMES" 0 rows imported
+. . importing table "VERSION_REFS" 0 rows imported
+. . importing table "WS1_FSENTRY" 1 rows imported
+Import terminated successfully without warnings.
+----
+
+*The listener.ora listing*：
+
+[source, code, linenums]
+----
+C:\QA\oracle.xe\app\oracle\product\11.2.0\server\bin>imp MMC_STATUS/mmc123 file=
+someOracleFile.dmp full=yes
+  
+Import: Release 11.2.0.2.0 - Production on Thu Mar 29 11:03:29 2012
+  
+Copyright (c) 1982, 2009, Oracle and/or its affiliates.  All rights reserved.
+  
+Connected to: Oracle Database 11g Express Edition Release 11.2.0.2.0 - Production
+  
+Export file created by EXPORT:V11.02.00 via conventional path
+import done in WE8MSWIN1252 character set and AL16UTF16 NCHAR character set
+import server uses AL32UTF8 character set (possible charset conversion)
+. importing MMC_STATUS's objects into MMC_STATUS
+. . importing table   "FILESYSTEM_VERSION_FSENTRY"          1 rows imported
+. . importing table               "JR_CORE_BINVAL"          0 rows imported
+. . importing table               "JR_CORE_BUNDLE"        187 rows imported
+. . importing table                "JR_CORE_NAMES"          0 rows imported
+. . importing table                 "JR_CORE_REFS"          5 rows imported
+. . importing table           "QRTZ_BLOB_TRIGGERS"          0 rows imported
+. . importing table               "QRTZ_CALENDARS"          0 rows imported
+. . importing table           "QRTZ_CRON_TRIGGERS"          2 rows imported
+. . importing table          "QRTZ_FIRED_TRIGGERS"          0 rows imported
+. . importing table             "QRTZ_JOB_DETAILS"          2 rows imported
+. . importing table           "QRTZ_JOB_LISTENERS"          0 rows imported
+. . importing table                   "QRTZ_LOCKS"          5 rows imported
+. . importing table     "QRTZ_PAUSED_TRIGGER_GRPS"          0 rows imported
+. . importing table         "QRTZ_SCHEDULER_STATE"          0 rows imported
+. . importing table         "QRTZ_SIMPLE_TRIGGERS"          0 rows imported
+. . importing table                "QRTZ_TRIGGERS"          2 rows imported
+. . importing table       "QRTZ_TRIGGER_LISTENERS"          0 rows imported
+. . importing table                 "REPO_FSENTRY"          8 rows imported
+. . importing table         "SEARCH_INDEX_FSENTRY"          1 rows imported
+. . importing table       "SEARCH_INDEX_W_FSENTRY"          1 rows imported
+. . importing table               "VERSION_BINVAL"          0 rows imported
+. . importing table               "VERSION_BUNDLE"          3 rows imported
+. . importing table                "VERSION_NAMES"          0 rows imported
+. . importing table                 "VERSION_REFS"          0 rows imported
+. . importing table                  "WS1_FSENTRY"          1 rows imported
+Import terminated successfully without warnings.
+----
+
+
+== 持久性交易数据
+
+要设置Oracle来保存您的MMC交易数据，您需要完成三个步骤：
+
+. 创建数据库用户和连接
+. 确定数据库配额
+. 设置MMC
+
+=== 创建数据库用户和连接
+
+您可以使用SQL Developer GUI创建数据库用户和连接。本文档中的<<Persisting Environment Data>>部分介绍了此过程。在那里你会找到关于启动SQL Developer并使用它来创建数据库用户和连接的详细说明。
+
+使用这些说明作为参考，打开*New/Select Database* *connection*对话框，然后使用以下参数创建新的数据库用户和连接：
+
+*  **Connection name:** `mmc_persistency_tracking`
+*  **Username:** `SYSTEM`
+*  *Password:*您在Oracle Express安装过程中发出的密码
+*  *Hostname:*安装Oracle服务器的机器的主机名
+*  **SID:** `xe`
+
+==== 验证并保存连接
+
+. 点击*Test*验证连接。测试完成后，确认消息`Status: Success`出现在对话框底部附近。
+. 点击*Save*保存您指定的连接设置。
+
+==== 配置连接
+
+. 点击*Connect*，然后点击*Connections*标签上连接名称旁边的加号，展开连接元素菜单。
+. 右键单击**Other Users,**，然后选择*Create User*以显示**Create/Edit User**对话框。
+. 填写所需信息的字段。以下提供样本指导：+
+
+* 用户名：`TRACKER`
+* 新密码：`tracker`
+* 默认表空间：`USERS`
+* 临时表空间：`TEMP`
+* 角色选项卡：`RESOURCE`，`CONNECT`
+* 系统权限选项卡：`CREATE ANY CONTEXT`，`CREATE ANY TABLE`，`CREATE ANY SEQUENCE`
+. 点击*Apply*，然后点击*Close*。
+
+=== 确定数据库配额
+
+数据库的大小当然会根据使用情况而有很大的不同，并且应该在考虑环境的实际使用的情况下确定数据库的配额。一种方法是通过执行负载测试并将结果外推到一段时间的实际使用情况。
+
+要确定数据库的实际大小，请启动Oracle的`sqlplus`实用程序（请参阅下文）并运行以下命令：
+
+[source, code, linenums]
+----
+select sum(bytes) from user_segments;
+----
+
+*Details on using the sqlplus utility to run commands*：
+
+
+. 根据您的操作系统，通过完成以下步骤之一访问Oracle Express菜单：+
+* 在Windows上：从Windows开始菜单：要打开*sqlplus*命令提示符，请选择*Programs*（或所有程序）> *Oracle Database Express 11g Edition*> *Run SQL Command Line*。
+* 在Linux上：打开适当的菜单（例如，Gnome中的*Applications*或KDE中的*K*菜单），选择*Oracle Database 11g Express Edition*，然后选择*Run SQL Command Line* 。
+. 打开`sqlplus`命令提示符后，键入：`connect TRACKER/tracker@XE`（在本例中，`TRACKER`是用户，`tracker`是密码）
+. 运行命令`select sum(bytes) from user segments;`
+. 要退出`sqlplus`，请键入：`exit`
++
+[NOTE]
+有关`sqlplus`命令的详细信息，请查阅 http://docs.oracle.com/cd/E11882_01/server.112/e16604/qstart.htm#SQPUG002[SQL * Plus参考指南]。
+
+输出应该类似于以下内容。
+
+[source, code, linenums]
+----
+SQL> connect TRACKER/tracker @XE
+Connected.
+SQL> select sum(bytes) from user_segments;
+  
+SUM(BYTES)
+----------
+    5832704
+  
+SQL>
+----
+
+This indicates that the current database size is 5.83 MB.
+
+=== Setting Up MMC to Use Oracle for Persisting Transaction Data
+
+==== Installing the Database Driver
+
+The driver is `ojdbc5.jar`. http://www.oracle.com/technetwork/database/features/jdbc/index-091264.html[Download] the driver, then copy the `ojdbc5.jar` file to the directory  `<MMC_HOME>/WEB-INF/lib/.`
+
+==== MMC Configuration
+
+Configuring MMC to store Business Events data on a Oracle database involves two basic tasks:
+
+* Modifying the file `web.xml` to tell MMC to use Oracle instead of its default database
+* Modifying the file `tracking-persistence-oracle.properties` to set the parameters for connecting to the Oracle database
+
+===== Modifying `web.xml`
+
+. In the directory `<MMC_HOME>/WEB-INF`, locate the file `web.xml`, then open it for editing.
+. Locate the `spring.profiles.active` section, shown below.
++
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-derby</param-value>
+</context-param>
+----
+
+. Delete the string `tracking-h2`, then replace it with `tracking-oracle`, as shown below.
++
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-oracle,env-derby</param-value>
+</context-param>
+----
+
+. If you are also planning to <<Persisting Environment Data>> to Oracle, delete the string `env-derby` and replace it with `env-oracle`.
+
+[TIP]
+The `spring.profiles.active` section in the `web.xml` configuration file allows you to define what external databases are used for storing environment and/or tracking data. For a quick instructions for all supported database servers, see link:/mule-management-console/v/3.4/configuring-mmc-3.4.2-for-external-databases-quick-reference[Configuring MMC 3.4.2 for External Databases - Quick Reference].
+
+==== Modifying `tracking-persistence-oracle.properties`
+
+In the directory `<MMC_HOME>/WEB-INF/classes/META-INF/databases`, locate the file `tracking-persistence-oracle.properties`, then open it for editing.
+
+Modify the included settings as needed, according to the table below. In general, the only values that you should need to modify are `mmc.tracking.db.username`, `mmc.tracking.db.password`, `mmc.tracking.db.host`, `mmc.tracking.db.port` and `mmc.tracking.db.servicename`.
+
+[%header,cols="34,33,33"]
+|===
+|Parameter |Description |Default
+|`mmc.tracking.db.platform` |Type of database server to connect to |`oracle(DriverVendor=oracle)`
+|`mmc.tracking.db.driver` |Driver to use for connecting to the database |`oracle.jdbc.driver.OracleDriver`
+|`mmc.tracking.db.host` |Hostname or IP address where the database server is listening |`localhost`
+|`mmc.tracking.db.port` |Port where the database server is listening |`1521`
+|`mmc.tracking.db.url` |URL for connecting to the database a|`jdbc:oracle:thin:@${mmc.tracking.db.host}:
+${mmc.tracking.db.port}
+/${mmc.tracking.db.servicename}`
+|`mmc.tracking.db.username` |Database user |`mmc_tracking`
+|`mmc.tracking.db.password` |Password for the database user |`mmc123`
+|`mmc.tracking.db.servicename` |Service name for connecting to the external database |`XEXB`
+|`mmc.max.events.exception.details.length` |Number of characters from a Business Events exception that will be stored in the tracking database. The maximum allowed is 261120. |`8000`
+|===
+
+Save the file with your modifications, if any.
+
+=== Removing Local Database Files
+
+For the configuration changes to take effect, before launching MMC you need to delete the local database files that MMC uses by default.
+
+In the root directory of your Web application server, locate the `mmc-data` directory (for example, `/var/lib/tomcat6/mmc-data`), then delete the `mmc-data` directory.
+
+[NOTE]
+Before you delete `mmc-data`, make a backup copy of this directory and store it in a safe location. If anything goes wrong with your new database configuration, you can use `mmc-data` to restore the old database configuration while you troubleshoot your new database config in a test environment.
+
+At this point, MMC, is configured to store tracking data on the external Oracle database that you specified.
+
+==== Troubleshooting Tips
+
+Error message:
+
+[source, code, linenums]
+----
+ORA-12519, TNS:no appropriate service handler found
+----
+
+If you get this error message, you will need to run the SQL command provided below, then restart the TNS listener.
+
+As user SYS, run:
+
+[source, code, linenums]
+----
+ALTER SYSTEM SET PROCESSES= 150 SCOPE=SPFILE;
+----
+
+To run the SQL command, you can use the `sqlplus` utility, as explained above.
+
+To restart your TNS listener:
+
+On Windows:
+
+. Log in as the user who installed Oracle Database Express, then open a DOS terminal.
+. Check the status of the TNS Listener by running the following command: `LSNRCTL STATUS`
+. To stop the TNS Listener, run `LSNRCTL STOP`
+. To start the TNS Listener, run `LSNRCTL START`
+
+On Unix/Linux:
+
+. Log in to the `oracle` system user, for example by running the command `su - oracle`.
+. Set the appropriate environment variables by performing these steps: +
+.. Navigate to the `bin` directory of the Oracle installation (typically, `/u01/app/oracle/product/11.2.0/xe/bin`).
+.. Run the command `source oracle_env.sh`.
+. After setting environment variables, check the TNS listener status by running `lsnrctl status`
+. To stop the TNS listener, run `lsnrctl stop`
+. To start the TNS listener, run `lsnrctl start`
+
+== See Also
+
+* Read more about link:/mule-management-console/v/3.4/setting-up-mmc[MMC setup].
+* Review the link:/mule-management-console/v/3.4/architecture-of-the-mule-management-console[Architecture of the Mule Management Console].

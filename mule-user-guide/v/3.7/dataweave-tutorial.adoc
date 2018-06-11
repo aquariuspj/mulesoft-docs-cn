@@ -1,0 +1,652 @@
+=  DataWeave教程
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+*_Enterprise_*
+
+本文逐步介绍一些基本的转换，您可以使用Anypoint Studio中的转换消息元素轻松完成转换。
+
+有关直接在DataWeave代码中编写的更高级示例，请参阅 link:/mule-user-guide/v/3.7/dataweave-examples[DataWeave示例]。
+
+
+== 重命名字段并计算表达式
+
+在本例中，作为输入的数据不仅与您需要的数据格式不同，还需要仅挑选其中的一些值，重命名它们，甚至从其他值中推断出一些值。
+
+假设您想根据从您使用的销售跟踪软件（以不同结构输出数据）获得的信息向发布T恤衫订单的Web服务发送SOAP请求。外部服务需要一个JSON输入，其中包含以下键集的值：
+
+* 大小
+* 电子邮件
+* 名
+* 地址1
+*  1地址
+* 城市
+*  stateOrProvince
+*  POSTALCODE
+* 国
+
+在本例中，假设您从销售跟踪软件获得的输出遵循此示例JSON文件的结构：
+
+[source, json, linenums]
+----
+{
+    "product":{
+        "price": "5",
+        "model": "MuleSoft Connect 2015"
+    },
+    "item_amount": "3",
+    "payment":{
+         "payment-type": "credit-card",
+         "currency": "USD",
+         "installments": "1"
+    },
+    "buyer":{
+        "email":"mike@hotmail.com",
+        "name":"Michael",
+        "address":"Koala Boulevard 314",
+        "city":"San Diego",
+        "state":"CA",
+        "postCode":"1345",
+        "nationality":"USA"
+    },
+ "shop": "main branch",
+    "salesperson": "Mathew Chow"
+}
+----
+
+然后，您只需选择其中一些字段，重命名一些字段，并假设"size"的值（因为它不是由输入提供的）。
+
+. 下载上面的示例 link:_attachments/dw_example1.json[作为一个文件。]
+. 将HTTP连接器拖到新流程中，选择您为前一示例创建的连接器配置。将连接器的路径设置为`ex1`
+. 选择HTTP连接器中的*Metadata*选项卡，然后点击*Add Metadata*。选择**Output:Payload**，然后点击旁边的编辑图标。
+
++
+image:add_metadatadw.png[图片]
+
+. 选择顶部的*Create new type*单选按钮，选择类型*JSON*，为其指定任何您想要的ID，然后浏览上面刚刚下载的示例JSON文件。
+. 请注意，现在，当您的画布选择HTTP连接器时，元数据资源管理器的*Output*选项卡应该显示出站负载中将出现的字段。
+
++
+image:ex2outputdw.png[图片]
+
+. 将 link:/mule-user-guide/v/3.7/web-service-consumer[Web服务使用者]拖到您的流程中。通过单击其属性编辑器中的绿色加号来为其创建全局配置。在*WSDL Location*字段中，粘贴以下网址：**http://tshirt-service.cloudhub.io/?wsdl**。请注意，当您这样做时，配置元素中的所有其他字段会自动完成。然后点击*Ok*。
+. 返回到Web服务使用者的属性编辑器，在*Operation*字段中选择*OrderTshirt*。请注意，虽然在画布中选择了Web服务消费者元素，但元数据资源管理器现在应该将有效负载中预期的一组字段显示为输入。
+
++
+image:ex2inputexpecteddw.png[图片]
+
++
+[TIP]
+====
+在对这些元数据进行更新后，您可能需要单击Web服务使用者。
+====
+
+. 将转换消息元素拖放到HTTP连接器和Web服务使用者之间。您会看到它的属性编辑器分为两部分：左侧的图形用户界面（包括输入，输出和它们之间的映射表示） - 右侧输出和右侧实际的DataWeave代码产生。
+
++
+image:ex2_flowdw.png[图片]
+
+. 请注意，由于有关于此组件的输入和期望输出的可用元数据，您可以看到每个元素的树形视图，并包含所有的字段。
+
+. 右键单击输入部分并选择*Edit Sample Data*，打开一个新选项卡，该选项卡显示了从您提供HTTP连接器的JSON示例构建的示例输入：
+
++
+[source, json, linenums]
+----
+{
+  "product": {
+  "price": "????",
+  "model": "????"
+},
+  "item_amount": "????",
+  "payment": {
+  "payment-type": "????",
+  "currency": "????",
+  "installments": "????"
+},
+  "buyer": {
+  "email": "????",
+  "name": "????",
+  "address": "????",
+  "city": "????",
+  "state": "????",
+  "postCode": "????",
+  "nationality": "????"
+},
+  "shop": "????",
+  "salesperson": "????"
+}
+----
+
++
+此示例输入将用于构建示例输出，但是，由于DataWeave代码的主体尚未引用输入的任何元素，因此如果现在编辑它，输出中仍然不会看到任何更改。
+
+
+. 使用GUI创建输入和输出字段之间的实际映射。只需单击并将输入中的字段拖动到输出中的字段即可。匹配所有相同的名称以及相似的名称，例如`state`和`stateOrProvince`或`nationality`和`country`。
+
++
+image:dw_mapping_tut1.png[制图]
+
++
+请注意您执行的每个操作如何在DataWeave代码中创建一行。现在你的DataWeave代码应该如下所示：
++
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+%namespace ns0 http://mulesoft.org/tshirt-service
+---
+{
+	ns0#OrderTshirt: {
+		email: payload.buyer.email,
+		name: payload.buyer.name,
+		address1: payload.buyer.address,
+		city: payload.buyer.city,
+		stateOrProvince: payload.buyer.state,
+		postalCode: payload.buyer.postCode,
+		country: payload.buyer.nationality
+	}
+}
+----
++
+
+[TIP]
+在上面的代码中，这些字段填充了对负载中元素的引用，这些元素通常在数据结构中找到几个级别，因此您需要使用*.*选择器深入查看。
+
+
+. 由于输入没有为`size`或`address2`提供值，因此您可以为它们提供文字表达式。双击输出中的`size`和`address2`字段，注意这是如何为您的DataWeave代码中的每个代码创建一行，使用固定值`null`加载它们。直接编辑DataWeave代码以将值"M"分配给`size`，并将`address2`保留为空。
+
++
+image:dw_tut1_fixed_vals.png[固定值]
+
+
+. 通过将填充"size"的文字表达式更改为条件表达式，我们可以使这更有趣。除非买方的状态是德克萨斯州，否则它在下面的代码中看到定义"size"的行如何更改，它将其设置为"M"，然后它将衬衫"XXL"。
++
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+%namespace ns0 http://mulesoft.org/tshirt-service
+---
+{
+    ns0#OrderTshirt: {
+        size: "M" unless payload.buyer.state == "TX" otherwise "XXL",
+        email: payload.buyer.email,
+        name: payload.buyer.name,
+        address1: payload.buyer.address,
+        address2: "????",
+        city: payload.buyer.city,
+        stateOrProvince: payload.buyer.state,
+        postalCode: payload.buyer.postCode,
+        country: payload.buyer.nationality
+    }
+}
+----
++
+
+. 点击编辑器右上角的`Preview`按钮。这将打开一个部分，根据您在输入中提供的示例数据显示输出数据的预览。请注意，现在大部分值都只包含`????`占位符。
++
+image:dw_buttons.png[预习]
+
+. 在您的输入部分中选择`payload`标签，并将相关字段中的`????`占位符替换为测试值。这样做时，请注意如何将这些值实时填充到预览值中，从而为您提供有关映射最终结果的实际表示。尝试使用TX填充输入示例中的"state"字段，并注意输出示例中的"size"字段如何实时更新。
+. 保存您的Mule项目并将其部署到Studio的虚拟服务器中，通过右键单击该项目并选择`Run As -> Mule Application`来尝试它。
+. 使用Postman（扩展名为Chrome）这样的工具，使用如下所示的JSON主体向http：// localhost：8081 / ex1发送HTTP POST请求：
+
+[source, json, linenums]
+----
+{
+    "product":{
+        "price": "5",
+        "model": "MuleSoft Connect 2015"
+    },
+    "item_amount": "3",
+    "payment":{
+         "payment-type": "credit-card",
+         "currency": "USD",
+         "installments": "1"
+    },
+    "buyer":{
+        "email":"mike@hotmail.com",
+        "name":"Michael",
+        "address":"Koala Boulevard 314",
+        "city":"San Diego",
+        "state":"CA",
+        "postCode":"1345",
+        "nationality":"USA"
+    },
+ "shop": "main branch",
+    "salesperson": "Mathew Chow"
+}
+----
+
+您应该获得具有单个值的XML正文的响应，这是您刚刚放置的衬衫订单的订单ID。
+
+*Mule XML Code:*
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <ws:consumer-config name="Web_Service_Consumer" wsdlLocation="http://tshirt-service.cloudhub.io/?wsdl" service="TshirtServicePortTypeService" port="TshirtServicePortTypePort" serviceAddress="http://tshirt-service.cloudhub.io/" doc:name="Web Service Consumer"/>
+
+    <flow name="dataweave_example2">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="ex1" metadata:id="dfb0767b-d3e5-4914-8f39-12a5455b67b3" doc:name="HTTP"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:input-payload doc:sample="json.json"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://mulesoft.org/tshirt-service
+---
+{
+    ns0#OrderTshirt: {
+        size: "M" unless payload.buyer.state == "TX" otherwise "XXL",
+        email: payload.buyer.email,
+        name: payload.buyer.name,
+        address1: payload.buyer.address,
+        address2: null,
+        city: payload.buyer.city,
+        stateOrProvince: payload.buyer.state,
+        postalCode: payload.buyer.postCode,
+        country: payload.buyer.nationality
+    }
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <ws:consumer config-ref="Web_Service_Consumer" operation="OrderTshirt" doc:name="Web Service Consumer"/>
+    </flow>
+----
+
+*DataWeave Code:*
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+%namespace ns0 http://mulesoft.org/tshirt-service
+---
+{
+    ns0#OrderTshirt: {
+        size: "M" unless payload.buyer.state == "TX" otherwise "XXL",
+        email: payload.buyer.email,
+        name: payload.buyer.name,
+        address1: payload.buyer.address,
+        address2: null,
+        city: payload.buyer.city,
+        stateOrProvince: payload.buyer.state,
+        postalCode: payload.buyer.postCode,
+        country: payload.buyer.nationality
+    }
+}
+----
+
+
+== 重新排列您的输入
+
+在此示例中，您将获得包含多个条目的输入，并且您希望根据其中一个字段中找到的值将这些条目重新分组为不同的类别。在这里，您可以将联系人存储在Salesforce帐户上，并根据其角色对其进行重新分组。如果您没有Salesforce帐户来执行此处的所有步骤，请注意有一种解决方法可以将相同的元数据手动加载到Studio中。
+
+
+. 将HTTP连接器拖到新流程中，选择您为前一示例创建的连接器配置。将连接器的路径设置为`ex2`
+. 将Salesforce连接器拖放到HTTP连接器之后的流中。通过单击其属性编辑器中的绿色加号来为其创建全局配置。如果您拥有Salesforce帐户，请填写您的Salesforce用户名，密码和安全令牌（您可以在您首次注册时从Salesforce获得的电子邮件中找到该令牌）。点击*Test Connection*以确保您的凭据已被接受，然后点击*ok*。
+. 回到Salesforce连接器的属性编辑器中，选择操作*Query*。在下面的*Query Text*字段中，编写以下简单查询：
++
+
+[source, sql, linenums]
+----
+SELECT Name, Email, Id, Title  FROM Contact
+----
+
++
+这将检索链接到您的Salesforce帐户的每个联系人，每个联系人都有四个数据字段。请注意，现在 - 在画布中选择Salesfoce连接器时 - 元数据浏览器的*Out*选项卡显示输出有效内容包含联系人列表，每个联系人都有这四个字段。如果没有，您可能需要点击metada资源管理器下的*Refresh metadata*按钮。
++
+image:ex3_metadatadw.png[图片]
+
++
+[TIP]
+====
+如果您没有Salesforce帐户并且不想经历创建它的麻烦，则可以将数据结构直接分配给Transform Message组件：
+
+.. 下载此示例JSON文件 link:_attachments/dw_example2.json[样本JSON]
+.. 打开Transform消息属性编辑器，注意输入部分会有一个关于没有元数据的警告。点击`Define metadata`链接。
+.. 选择`Create new Type`，选择`JSON`
+.. 为您的类型ID命名`Contacts`，在下拉菜单中选择`Example`，然后找到您刚从本地驱动器下载的文件
+现在，您应该看到一个输入结构，与从Salesforce帐户获取元数据时的结果类似。
+====
+
+. 在Salesforce连接器之后向您的流中添加一个Transform Message元素，并打开其属性编辑器。
++
+
+image:ex3_flowdw.png[图片]
+
+. 在编辑器的输入部分，右键单击并选择*Edit Sample Data*，打开一个新选项卡，显示带有占位符的示例输入。由于输入的类型是POJO，因此通过DataWeave变换描述该对象：
+
++
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/java
+---
+[{
+    Name: "????",
+    Email: "????",
+    Id: "????",
+    Title: "????"
+}]
+----
++
+
+此示例为您提供了传入数据的结构以及如何引用每个值的清晰参考。该采样输入还用于在输出部分生成采样输出。充实它成为更有用的数据，例如粘贴它的位置：
++
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/java
+---
+[{
+    Name: "Mr White",
+    Email: "white@mulesoft.com",
+    Id: "1234",
+    Title: "Chief Java Prophet"
+},
+{
+    Name: "Mr Orange",
+    Email: "orange@mulesoft.com",
+    Id: "4567",
+    Title: "Integration Ninja"
+},
+{
+    Name: "Mr Pink",
+    Email: "pink@mulesoft.com",
+    Id: "8923",
+    Title: "Integration Ninja"
+},
+{
+    Name: "Mr Blue",
+    Email: "blue@mulesoft.com",
+    Id: "8923",
+    Title: "Executive Growth Rockstar Embassador"
+}
+]
+----
+
+. 和前面的例子一样，在输入部分中可以看到一棵描述数据结构的树。由于没有关于所需输出的元数据，所以在输出部分中没有指定任何内容。在这个例子中，我们将手动构建DataWeave代码，因为我们需要做的事情需要比UI可提供的更多高级功能。在DataWeave代码中，将输出指令从默认`application/java`更改为`application/json`。
+. 在转换部分中，编写以下DataWeave代码：
++
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+roles: payload groupBy $.Title
+----
+
++
+你正在创建的输出是一个对象。当对象具有单个元素时，无需将其包装在大括号中，因为它有多个元素时是必要的。通过这个，你可以创建一个顶级对象，其中包含一个名为"roles"的单个元素，而该元素又包含一个包含其他所有元素的对象。其内容由"$.Title"字段组成，该字段是在输入数组中的每个联系人上下文中评估的表达式。
+
+. 打开编辑器的`Preview`部分查看生成的输出。它应该显示这个：
++
+
+[source, json, linenums]
+----
+{
+  "roles": {
+    "Chief Java Prophet": [
+      {
+        "Name": "Mr White",
+        "Email": "white@mulesoft.com",
+        "Id": "1234",
+        "Title": "Chief Java Prophet"
+      }
+    ],
+    "Executive Growth Rockstar Ambassador": [
+      {
+        "Name": "Mr Blue",
+        "Email": "blue@mulesoft.com",
+        "Id": "8923",
+        "Title": "Executive Growth Rockstar Ambassador"
+      }
+    ],
+    "Integration Ninja": [
+      {
+        "Name": "Mr Orange",
+        "Email": "orange@mulesoft.com",
+        "Id": "4567",
+        "Title": "Integration Ninja"
+      },
+      {
+        "Name": "Mr Pink",
+        "Email": "pink@mulesoft.com",
+        "Id": "8923",
+        "Title": "Integration Ninja"
+      }
+    ]
+  }
+}
+----
++
+
+"title"的每个不同可用值都将在"roles"对象内具有相应的元素，每个对象都包含一个对象数组，每个对象都与该标题的值匹配。
+. 保存您的Mule项目并将其部署到Studio的虚拟服务器中，通过右键单击该项目并选择`Run As -> Mule Application`来尝试它。
+. 使用任何你想要的浏览器，请求http：// localhost：8081 / ex2。您应该使用包含顶级对象的JSON正文获取响应，并在其中包含将每个不同标题作为元素的对象"roles"，其中每个对象都包含一个对象数组，每个对象包含Salesforce Account中的每个联系人与其标题相匹配。
+
+
+*Mule XML Code:*
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <sfdc:config name="Salesforce__Basic_authentication" username="xxxx" password="xxxx" doc:name="Salesforce: Basic authentication" securityToken="xxxx"/>
+
+
+    <flow name="dataweave_example3">
+       <http:listener config-ref="HTTP_Listener_Configuration" path="ex2" doc:name="HTTP"/>
+        <sfdc:query config-ref="Salesforce__Basic_authentication" query="dsql:SELECT Name, Email, Id, Title  FROM Contact" doc:name="Salesforce"/>
+        <weave:transform-message doc:name="Transform Message">
+            <weave:set-payload><![CDATA[
+%dw 1.0
+%output application/json
+---
+roles: payload groupBy $.Title
+]]>
+            </weave:set-payload>
+        </weave:transform-message>
+    </flow>
+----
+
+*DataWeave Code:*
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%input payload application/java
+%output application/json
+---
+roles: payload groupBy $.Title
+----
+
+
+
+
+== 一对一的JSON转换为XML
+
+假设您希望将任何JSON负载转换为XML，无论输入可能包含哪些属性和嵌套对象或数组，都将保留原始数据结构。
+
+要实现这一点，请按照以下步骤操作：
+
+. 将HTTP连接器拖到新流程中，通过单击其属性编辑器中的绿色加号为其创建新的全局元素。将其主机设置为`localhost`并将其端口保留为默认`8081`，然后单击确定。回到连接器的属性编辑器中，将路径设置为`ex3`。
+. 将*Transform Message* Transformer拖到您的流程中，紧跟在HTTP连接器之后，然后打开其属性编辑器。
+
++
+image:dw_tut1.png[图片]
+
+
+
+
+. 在编辑器的变换部分，更改DataWeave代码，使其看起来像这样：
+
++
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+payload
+----
+
++
+此转换的Header中的指令将输出定义为XML类型。
+此变换的主体只是引用有效负载，这是隐式地作为此变换的输入指令，就像入站Mule消息的所有组件一样。无论在有效载荷中存在什么 - 包括任何深度的任何子元素 - 都会直接转换为XML，而不会改变其任何结构。
+
+. 保存您的Mule项目并将其部署到Studio的虚拟服务器中，通过右键单击该项目并选择`Run As -> Mule Application`来尝试它。
+. 使用Postman（Chrome扩展）之类的工具，使用请求正文中所需的任何JSON内容向http：// localhost：8081 / ex1发送HTTP POST请求。您应该使用与输入具有相同数据和结构的XML主体获得响应。 +
+例如，如果您向本机构发送请求：
+
+[source, json, linenums]
+----
+{"ccc":
+    {
+    "ddd":"ddd",
+    "eee":"eee",
+    "fff":["fgh","ghf","hgf"]
+    }
+}
+----
+
+你应该在响应的主体中得到这个：
+
+[source, xml, linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<ccc>
+  <ddd>ddd</ddd>
+  <eee>eee</eee>
+  <fff>
+    <element>fgh</element>
+    <element>ghf</element>
+    <element>hgf</element>
+  </fff>
+</ccc>
+----
+
+*Mule XML Code:*
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="dataweave_example3">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="ex3" doc:name="HTTP"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[
+%dw 1.0
+%output application/xml
+---
+payload
+]]>
+            </dw:set-payload>
+        </dw:transform-message>
+    </flow>
+----
+
+*DataWeave Code:*
+
+[source, DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+payload
+----
+
+
+
+
+
+
+
+
+
+
+
+
+完整项目的== 代码
+
+
+*Mule XML Code:*
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:ws="http://www.mulesoft.org/schema/mule/ws" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.7.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/dfl http://www.mulesoft.org/schema/mule/ee/dfl/current/dfl.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <ws:consumer-config name="Web_Service_Consumer" wsdlLocation="http://tshirt-service.cloudhub.io/?wsdl" service="TshirtServicePortTypeService" port="TshirtServicePortTypePort" serviceAddress="http://tshirt-service.cloudhub.io/" doc:name="Web Service Consumer"/>
+    <sfdc:config name="Salesforce__Basic_authentication" username="xxxx" password="xxxx" doc:name="Salesforce: Basic authentication" securityToken="xxxx"/>
+
+    <flow name="dataweave_example1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="ex1" metadata:id="dfb0767b-d3e5-4914-8f39-12a5455b67b3" doc:name="HTTP"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload>
+<![CDATA[
+%dw 1.0
+%output application/xml
+%namespace ns0 http://mulesoft.org/tshirt-service
+---
+{
+    ns0#OrderTshirt: {
+        size: "M" unless payload.buyer.state == "TX" otherwise "XXL",
+        email: payload.buyer.email,
+        name: payload.buyer.name,
+        address1: payload.buyer.address,
+        address2: "????",
+        city: payload.buyer.city,
+        stateOrProvince: payload.buyer.state,
+        postalCode: payload.buyer.postCode,
+        country: payload.buyer.nationality
+    }
+}
+            ]]></dw:set-payload>
+        </dw:transform-message>
+        <ws:consumer config-ref="Web_Service_Consumer" operation="OrderTshirt" doc:name="Web Service Consumer"/>
+    </flow>
+    <flow name="dataweave_example2">
+       <http:listener config-ref="HTTP_Listener_Configuration" path="ex2" doc:name="HTTP"/>
+        <sfdc:query config-ref="Salesforce__Basic_authentication" query="dsql:SELECT Name, Email, Id, Title  FROM Contact" doc:name="Salesforce"/>
+        <weave:transform-message doc:name="Transform Message">
+            <weave:set-payload><![CDATA[
+%dw 1.0
+%output application/json
+---
+roles: payload groupBy $.Title
+            ]]></weave:set-payload>
+        </weave:transform-message>
+    </flow>
+    <flow name="dataweave_example3">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="ex3" doc:name="HTTP"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[
+%dw 1.0
+%output application/xml
+---
+payload
+            ]]></dw:set-payload>
+        </dw:transform-message>
+    </flow>
+</mule>
+----
+
+
+== 另请参阅
+
+* 查看我们的 link:/mule-user-guide/v/3.7/dataweave-reference-documentation[DataWeave参考文档]
+* 查看 link:/mule-user-guide/v/3.7/dataweave-examples[DataWeave示例]中的更多高级示例
+* 使用 link:/mule-user-guide/v/3.7/dataweave-migrator[DataWeave Migrator工具]自动迁移旧的DataMapper组件

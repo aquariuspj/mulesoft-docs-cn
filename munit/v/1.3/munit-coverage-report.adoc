@@ -1,0 +1,156 @@
+= 单元覆盖率报告
+
+== 目的
+
+MUnit Coverage功能提供了一组度量Mule应用程序由一组MUnit测试执行的程度。
+这可以让用户获得应用程序的质量指标。
+有关更多信息，请参阅 link:https://en.wikipedia.org/wiki/Code_coverage[关于代码覆盖率的Wikipedia文章]。
+
+值得注意的是，MUnit Coverage基于执行的消息处理器的数量。
+MUnit Coverage提供了以下指标：
+
+*  *Application overall coverage*：以下各项的平均值。
+*  *Resource coverage*：引用`src/main/app`下的每个Mule配置文件。每个都被MUnit Coverage视为资源。
+*  *Flow coverage*：指以下任何`Flows`，`Sub-flows`和`Batch jobs`。
+
+[NOTE]
+覆盖率报告仅适用于EE版运行时
+
+== 计算覆盖率
+
+MUnit Coverage Module度量单位是 link:/mule-fundamentals/v/3.8/begin-with-the-basics#message-processors[消息处理器]。 +
+MUnit通过计算所有由于运行MUnit测试而执行的消息处理器，并将该数量与构成整个应用程序的消息处理器数量进行比较来计算覆盖范围。 +
+尽管报告通过流和配置文件来安排结果信息，但计算是针对消息处理器的数量运行的。
+
+作为一般规则，顶级XML节点内的每个XML节点都是消息处理器。这是流，子流，捕获，批处理中的每个节点。 +
+_顶级元素_不是消息处理器。
+
+鉴于XML结构的本质，这个定义可能会导致混淆，主要涉及到_container elements_（包含子元素的XML）。 +
+为了避免这样的混淆，这里列出了Mule中最常见的消息处理器，它们是如何被MUnit Coverage记录的：
+
+*  *Container Elements Considered Message Processors*
+** 富集
+** 处理器链
+** 选择路由器（但不是_when_或_otherwise_条件）
+** 直到成功
+** 首次成功
+** 分散收集
+** 为每个人
+** 循环
+** 分配器
+*  *Container Elements Not Considered Message Processors*
+** 批量步骤
+** 赶上
+**  Catch参考
+** 选择例外策略
+
+覆盖报表示例== 
+
+以下是JSON格式的覆盖率报告示例。 +
+使用下面的代码标注来了解报告中的每个字段：
+
+[source, json, linenums]
+----
+{
+ "coverage" : 75.0, //<1>
+ "requiredApplicationCoverage" : 40.0, //<2>
+ "requiredResourceCoverage" : 30.0,
+ "requiredFlowCoverage" : 25.0,
+ "flowCount" : 3, //<3>
+ "messageProcessorCount" : 4, //<4>
+ "files" : [ {
+   "coverage" : 100.0, //<5>
+   "flowCount" : 1, //<6>
+   "messageProcessorCount" : 2, //<7>
+   "weight" : 100.0, //<8>
+   "flows" : [ {
+     "coverage" : 100.0, //<9>
+     "messageProcessorCount" : 2, //<10>
+     "name" : "file1Flow1" //<11>
+   } ],
+   "name" : "file1.xml" //<12>
+ }, {
+   "coverage" : 50.0,
+   "flowCount" : 2,
+   "messageProcessorCount" : 2,
+   "flows" : [ {
+     "coverage" : 0.0,
+     "messageProcessorCount" : 1,
+     "name" : "file2Flow1"
+   }, {
+     "coverage" : 100.0,
+     "messageProcessorCount" : 1,
+     "name" : "file2Flow2"
+   } ],
+   "name" : "file2.xml"
+ } ]
+}
+----
+
+<1>整个应用程序的覆盖率
+<2>如果应用程序，资源和流程需要覆盖
+用户没有配置任何值，它默认为-1
+<3>应用程序中的流量
+<4>应用程序中的消息处理器数量
+<5>该文件的覆盖百分比
+<6>该文件中的流量
+<7>该文件中的消息处理器数量
+<8>该文件对整个应用程序覆盖率的贡献
+<9>该流量的覆盖率
+<10>该流中的消息处理器数量
+<11>该流的名称
+<12>该文件的名称
+
+
+=== 计算覆盖率的注意事项
+
+==== 不可绘制节点
+
+如果您使用的是旧版本的Mule Runtime，则某些较旧的消息处理器可能在工作室画布中没有图形表示。 +
+例如，使用'processor-chain'组件（从Mule 3.2开始不推荐使用），在 link:/mule-user-guide/v/3.8/routers#first-successful[第一次成功]路由器中仅显示MUnit考虑计算覆盖范围的三个消息处理器中的两个：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image::munit-coverage-report-494f6.png[]
+....
+[tab,title="XML or Standalone Editor"]
+....
+<flow name="tomFlow">
+   <first-successful>
+       <processor-chain name="chain">
+   	    <logger level="INFO"/>
+       </processor-chain>
+   </first-successful>
+</flow>
+....
+------
+
+比较以上示例，Studio画布中省略了`processor-chain`消息处理器。
+
+==== 捕获异常策略
+
+自此发布以来，`Catch Exception Strategies`正在计入覆盖率计算。 +
+具有未被MUnit测试执行的catch异常策略的流将不会达到100％的覆盖率。
+
+全球渔获豁免策略将在与流量/子流程相同的报告中列出。但是，未引用的全球捕获异常策略将不会被纳入覆盖范围。 +
+如果没有组件引用全球捕获异常策略，覆盖率仍将为100％。
+
+==== 已知问题
+
+到目前为止，我们只发现了几种可能无法正确报道报道的情况。 +
+不幸的是，这些情况不能从MUnit修复。为了解决这些问题，在正确的产品中创建了问题。
+
+为了使它们易于识别，我们列出可能会错误报告覆盖率的情况：
+
+* 第一个成功的组件（所有路径中都没有处理器链）
+* 包含分散聚集的子流
+
+
+Maven中的== 覆盖率
+您可以按照 link:/munit/v/1.3/munit-maven-support#coverage[Munit Maven插件部分]中的说明使用MUnit Maven Pluging运行Mule应用程序的覆盖率报告。
+
+Anypoint Studio中的== 覆盖率
+
+您可以按照 link:/munit/v/1.3/using-munit-in-anypoint-studio#viewing-coverage-reports[Studio中的MUnit部分]中详细介绍的步骤，从Studio运行MUnit测试的覆盖率报告。

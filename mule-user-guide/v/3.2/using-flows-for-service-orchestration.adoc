@@ -1,0 +1,119 @@
+= 使用流进行服务协调
+
+== 介绍
+
+*Flow*是一种简单但非常灵活的机制，它可以使用Mule ESB的复杂消息流功能来协调服务。使用Flow，您可以通过从Mule提供的基本 link:/mule-user-guide/v/3.2/message-sources-and-message-processors[消息来源和消息处理器]中构建复杂的集成解决方案，并自动构建复杂的集成解决方案。由于Flow的灵活性，创建更加符合您需求的解决方案变得更加容易。 Flow在Mule 3中是新的。
+
+== 何时使用流程
+
+[TIP]
+*A flow is the most versatile and powerful integration mechanism available in Mule.*
+
+与使用 link:/mule-user-guide/v/3.2/using-mule-services[服务]相比， link:/mule-user-guide/v/3.2/using-mule-services[服务]定义了一个具有显式入站和出站阶段的组件，允许有限的灵活性，*Flow*不定义任何内容并且是完全自由形式的。这意味着如果您的解决方案需要多个步骤，则不需要使用与vm传输或链接路由器粘合在一起的多个服务。相反，您可以在同一个流程中配置所有内容。
+
+流量在许多情况下都很有价值，其中包括：
+
+* 简单的集成任务
+* 计划的数据处理
+* 连接云和内部部署应用程序
+* 需要组合多个服务的事件处理
+
+在创建流程之前，请务必查看即用型 link:/mule-user-guide/v/3.2/using-mule-configuration-patterns[配置模式]。它们可以为您节省大量常见用例的配置工作量。
+
+在某些情况下，您仍然可以选择使用 link:/mule-user-guide/v/3.2/using-mule-services[服务]。例如，如果您只想公开由服务组件支持的单个服务，并且您的需求比简单服务支持更复杂，那么Mule服务仍然是一个不错的选择。现有的Mule服务也可以轻松集成到流程中。最后，流程还不支持Mule的所有功能。特别是，如果您想执行以下任何操作，仍然需要服务：
+
+* 在端点以外的任何位置配置事务，例如在路由器上（包括本地，多tx和XA）
+* 请求 - 回复
+
+
+== 流的剖析
+
+流程本质上只是 link:/mule-user-guide/v/3.2/message-sources-and-message-processors[消息处理器]的一个链。将每个消息处理器视为一个Lego块，其中Flow是您用它们构建的东西。流也有 link:/mule-user-guide/v/3.2/message-sources-and-message-processors[消息来源]，消息源是由消息处理器链处理的消息的来源。
+
+image:flow.jpeg[流]
+
+== 流程配置
+
+使用<flow>元素以XML配置流。每个流都有一个名称属性，一个消息源（除非它是一个私有流），一个或多个消息处理器和一个可选的异常策略。
+
+*Basic Structure*
+
+[source, xml, linenums]
+----
+<flow name="">
+    - 0..1 MessageSource
+    - 1..n MessageProcessor(s)
+    - 0..1 ExceptionStrategy
+</flow>
+----
+
+流程看起来很简单，但可能非常强大。特别是，当与Mule中的表达式结合使用时，它们可以对消息内容进行非常复杂的处理。有很多利用表达式的元素，包括：
+
+*  link:/mule-user-guide/v/3.2/using-transformers[变形金刚]
+*  link:/mule-user-guide/v/3.2/using-filters[过滤器]
+*  link:/mule-user-guide/v/3.2/routing-message-processors[路由]
+*  link:/mule-user-guide/v/3.2/message-enricher[消息Enricher]
+
+== 示例
+
+*Simple Book Order Processing Flow*
+
+[source, xml, linenums]
+----
+<flow>
+    <file:inbound-endpoint path="/myDirectory">
+        <file:filename-filter name="*.xml"/>
+    </file:inbound-endpoint>
+    <xml:xslt-transformer xsl-file="bookOrderTransformation.xsl"/>
+    <splitter expression="xpath://order"/>
+    <!-- The following message processors will be invoked for each order in the xml file -->
+    <expression-filter expression="xpath://order[@type='book']"/>
+    <component class="org.my.BookOrderProcessor"/>
+    <smtp:outbound-endpoint subject="Order Confirmation" address=""/>
+    <jdbc:outbound-endpoint />
+    <default-exception-strategy>
+        <jms:outbound-endpoint queue="failedOrders"/>
+    </default-exception-strategy>
+</flow>
+----
+
+== 流行为
+
+当消息源接收或生成消息时，将启动流程并按照配置的顺序在链中调用已组态的消息处理器。一些消息处理器将接受子消息处理器元素，在这种情况下这些消息处理器将在返回并继续处理主列表之前被处理。
+
+以上描述了流程为_one-way_时的行为。如果流是_request-response_，因为入站端点被定义为_request-response_交换模式，那么流执行的结果将返回到入站端点，然后又返回到被调用者。如果流中没有_ <response> _块，并且没有配置的消息处理器执行任何响应处理，则所使用的响应只是流中最后一个消息处理器的结果。如果使用_ <response> _块，则在此元素中配置的任何消息处理器将用于处理响应消息。一些消息处理器（例如CXF）将响应消息的处理作为其默认配置的一部分。
+
+*Note*：当流配置中的最后一个元素是_one-way_ _ <outbound-endpoint> _时，不会执行任何结果，因此消息的返回负载将为NullPayload。如果_one-way_ _ <outbound-endpoint> _跟着另一个处理器，它将接收到输出端点收到的相同消息，而不是NullPayload。
+
+image:flowrr.jpeg[flowrr]
+
+== 私有流
+
+私有流是指无法通过 link:/mule-user-guide/v/3.2/configuring-endpoints[骡子端点]从JVM外部访问的流，因为它没有定义 link:/mule-user-guide/v/3.2/message-sources-and-message-processors[消息来源]。
+
+因此只有在从相同Mule实例中运行的其他构造引用它们时才使用私有流。使用XML配置Mule时，使用_ <flow-ref> _元素将一个流包含在另一个流中。
+
+私有流与使用"Processor Chain"的不同之处在于，流具有自己的上下文和＃[Exception Strategy]＃，其中当处理器链被引用时，它在引用流或服务的上下文中执行它。
+
+*Private Flow Example*
+
+[source, xml, linenums]
+----
+<flow name="privateFlow">
+  <append-string-transformer message="b"/>
+</flow>
+
+<flow name="publicFlow">
+  <http:inbound-endpoint address="http://localhost:8080"/>
+  <append-string-transformer message="a"/>
+  <flow-ref name="privateFlow"/>
+  <append-string-transformer message="c"/>
+</flow>
+----
+
+== 进一步阅读
+
+您可以阅读更多关于我们在以下博客文章中添加Flow for Mule 3的原因：
+
+*  link:https://blogs.mulesoft.com/dev/mule-dev/mule-3-architecture-part-1-back-to-basics/[Mule 3架构，第1部分：回归基础]
+*  link:https://blogs.mulesoft.com/dev/mule-dev/mule-3-architecture-part-2-introducing-the-message-processor/[Mule 3架构，第2部分：介绍消息处理器]

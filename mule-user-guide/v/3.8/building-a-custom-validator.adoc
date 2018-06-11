@@ -1,0 +1,167 @@
+= 构建自定义验证器
+:keywords: validate, validations, filter, if, assert, exception, confirm
+
+如果您想执行复杂的验证逻辑，或者重复使用已经包含在单独的JAR文件中的代码，那么 link:/mule-user-guide/v/3.8/validations-module#is-true-and-is-false-fallback-validators[`is-true`和`is-false`回退验证器]可能不是您最方便的解决方案。您可能会想要构建自己的验证器。
+利用Validator link:https://www.mulesoft.com/platform/api[API]，您可以创建自己的验证器，然后有两种机制允许您在流程中执行它们。以下是必要的步骤来做到这一点。
+
+== 实现验证器接口
+
+就像MessageProcessor，Filter，Router等其他组件一样，验证器在Mule的代码中也有一个明确的合同：
+
+[source,java,linenums]
+----
+/**
+ * A component which performs a validation and expresses
+ * its result through a {@link ValidationResult} object.
+ * <p/>
+ * The {@link #validate(MuleEvent)} method receives a
+ * {@link MuleEvent} in order to make it generic and easy to extend.
+ * However, that doesn't necessarily mean that all the validation
+ * is performed with or over the event exclusively. Thread
+ * safeness is not to be assumed over instances of this class
+ * since the validator could be stateful.
+ *
+ * @since 3.7.0
+ */
+public interface Validator
+{
+
+    /**
+     * Performs the validation and generates a
+     * {@link ValidationResult} back.
+     *
+     * @param event the current {@link MuleEvent}
+     * @return a {@link ValidationResult}
+     */
+    ValidationResult validate(MuleEvent event);
+}
+----
+
+以下是`ValidationResult`的外观：
+
+[source,java,linenums]
+----
+/*
+ * Copyright (c) MuleSoft, Inc.  All rights reserved.  http://www.mulesoft.com
+ * The software in this package is published under the terms of the CPAL v1.0
+ * license, a copy of which has been included with this distribution in the
+ * LICENSE.txt file.
+ */
+package org.mule.extension.validation.api;
+
+/**
+ * The result of a validation
+ *
+ * @see Validator
+ * @since 3.7.0
+ */
+public interface ValidationResult
+{
+
+    /**
+     * Returns a message associated with the execution
+     * of the validation. If the validation failed
+     * (which means that {@link #isError()} is {@code true}),
+     * then it will contain the reason why the error was generated.
+     * Otherwise, it might or might not contain some additional
+     * consideration about the validation result
+     *
+     * @return a {@link String} or {@code null}
+     */
+    String getMessage();
+
+    /**
+     * Whether the validation has failed or not
+     *
+     * @return {code true} if the validation failed. {@code false} otherwise
+     */
+    boolean isError();
+}
+----
+
+Validator接口的实现需要：
+
+* 有一个默认的构造函数
+* 是线程安全的
+* 对消息有效负载或其任何变量没有任何副作用
+
+完成之后，您可以通过`custom-validator`消息处理器执行验证程序：
+
+[source,xml]
+----
+<validation:custom-validator class="com.myproject.CustomValidator" config-ref="validator" />
+----
+
+`custom-validator`的每个实例都创建自己的给定类的实例并保存它，因此需要线程安全。实现线程安全的推荐方式是无状态，但这取决于开发人员。
+另一种选择是通过注册表名称引用自定义验证器：
+
+[source,xml,linenums]
+----
+<mule>
+  <spring:beans>
+    <spring:bean id="customValidator" class="com.myproject.CustomValidator" />
+  </spring:beans>
+  <flow name="customValidator">
+    <validation:custom-validator ref="customValidator" />
+  </flow>
+</mule>
+----
+
+注意，再次使用的验证器实例在不同的执行过程中始终是相同的，因此验证器需要是线程安全的。您的Validator实现可以在项目中，或者添加到类路径中的jar中。只要应用程序的类加载器可以实例化就没有关系。
+
+== 自定义异常类和消息
+
+在某些情况下，用户可能需要对验证失败时如何创建例外的低级别控制。为此，使用以下界面：
+
+[source,java,linenums]
+----
+/**
+ * A factory for {@link Exception}s which represents
+ * a validations which failed. Methods in this class
+ * should always be invoked using a {@link ValidationResult}
+ * object which {@@link ValidationResult#isError()} method
+ * returns {@code true}
+ *
+ * @since 3.7.0
+ */
+public interface ExceptionFactory
+{
+
+    /**
+     * Creates an exception of the given {@code exceptionClass}
+     * which represents the given {@code result}.
+     * The actual rules about what conditions is {@code exceptionClass}
+     * expected to meet (e.g: presence of default constructor)
+     * are up to the implementations.
+     *
+     * @param result         a {@link ValidationResult} which contains information about an error
+     * @param exceptionClass the {@link Class} of the exception to be created
+     * @param event          the {@link MuleEvent} on which validation failed
+     * @param <T>            the type of the exception to be created
+     * @return an {@link Exception} if type {@code T}
+     */
+    <T extends Exception> T createException(ValidationResult result, Class<T> exceptionClass, MuleEvent event);
+
+    /**
+     * Creates an exception of the given {@code exceptionClassName}
+     * which represents the given {@code result}.
+     * <p/>
+     * The actual rules about what conditions is the exception {@link Class}
+     * expected to meet (e.g: presence of default constructor)
+     * are up to the implementations.
+     *
+     * @param result             a {@link ValidationResult} which contains information about an error
+     * @param exceptionClassName the name of the exception {@link Class} to be thrown
+     * @param event              the {@link MuleEvent} on which validation failed
+     * @return a {@link Exception} of type {@code exceptionClassName}
+     */
+    Exception createException(ValidationResult result, String exceptionClassName, MuleEvent event);
+}
+----
+
+上面的接口接收被验证拒绝的事件和引发错误的验证器。此方法旨在返回抛出的异常，但不会抛出异常。
+这个接口的实现不应该抛出异常。它们也应该是线程安全的并且具有公共的默认构造函数。
+
+== 另请参阅
+
+* 阅读Mule中的 link:/mule-user-guide/v/3.8/filters[过滤器]

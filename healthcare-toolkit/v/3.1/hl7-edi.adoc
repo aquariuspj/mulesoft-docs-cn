@@ -1,0 +1,964 @@
+=  HL7 EDI连接器
+:keywords: b2b, HL7, schema, edi
+：imagesdir：./_images
+
+HL7 EDI允许您使用列表和地图将HL7 ER7消息转换为与DataWeave兼容的表示。
+
+HL7 EDI包括：
+
+*  HL7 ER7消息读取，消息验证和消息写入
+* 与DataSense和DataWeave集成
+用于v2.1，v2.2，v2.3.1，v2.3，v2.4，v2.5，v2.5.1，v2.6,2.7,2.7.1,2.8的* 个HL7消息包和2.8.1。
+* 定义您自己的模式或自定义基本HL7模式的能力
+
+== 先决条件
+
+本文假设您具有与HL7有关的工作知识。有关兼容性信息，请参阅发行说明。
+
+要在生产环境中使用HL7 EDI连接器，您必须为Anypoint B2B购买MuleSoft许可证。
+
+== 使用HL7 EDI连接器
+
+. 安装此连接器
+. 创建模式来描述您的实现的消息。
+. 根据您的实施惯例为您的贸易伙伴配置HL7 EDI。
+. 在Mule流程中使用HL7 EDI
+
+== 安装此连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索HL7连接器，然后单击安装。
+. 按照提示安装连接器。
+. 重复步骤3和4以安装HL7 MLLP连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+如果您正在编写Mavenized Mule应用程序，请将此XML片段包含在您的`pom.xml`文件中。
+  
+[source,xml,linenums]
+----
+<dependency>
+ <groupId>org.mule.module</groupId>
+ <artifactId>mule-module-hl7</artifactId>
+ <version>3.1.0</version>
+</dependency>
+----
+
+在`<version>`标签内部放置HL7连接器版本号，或者使用最新版本的`RELEASE`或最新版本的`SNAPSHOT`。
+
+== 创建模式
+
+根据您的实施创建模式来描述您的消息。
+
+===  EDI模式语言
+
+HL7 EDI使用名为ESL（用于EDI模式语言）的YAML格式来表示EDI模式。基本ESL根据结构（消息结构，HL7术语），组，段，组合和元素定义ER7消息的结构。 HL7版本v2.1，v2.2，v2.3.1，v2.3，v2.4，v2.5，v2.5.1，v2.6,2.7,2.7.1,2.8和2.8.1的ESL为包括两种不同的形式：
+
+* 标准HL7，使用必需或可选状态，数据类型，字段长度和每个HL7版本列出的重复计数。
+*  Lax HL7中，所有段和值项都是可选的，所有低级别数据类型都被视为简单字符串，并且字段长度和重复次数不被强制执行。
+
+您可以通过直接复制和编辑模式定义或使用控制台工具基于一个或多个示例文档生成简化模式来自定义HL7模式定义以适应您自己的数据。与其他EDI格式一样，也可以使用HL7的重叠模式，但由于HL7定义的复杂性，不推荐使用此选项。
+
+你也可以从头开始定义你自己的模式。
+有关更多详细信息，请参阅外部参照：seealso [EDI模式语言参考]。
+
+
+YAML使用列表和一组键值对。只要所需物品存在，值的顺序并不重要。引号（单引号或双引号）用于可能由数字组成但是被解释为字符串的值（因为否则YAML解析器会将值视为数字）。缩进用于显示列表的嵌套。
+
+为了便于阅读，这里显示的ESL结构定义了属于相同定义一部分的任何列表之前的所有简单键 - 值对。
+
+=== 复制和编辑模式定义
+
+HL7模式定义分布在edi-schemas-hl7-1.3.0.jar中（请参阅本文档的另请参阅部分中的链接）。您可以从此jar复制消息结构模式并对其进行编辑以符合您的特定需求。如果您只需要在段级别进行更改，则只需复制消息结构模式;如果您需要更改段定义，则还必须复制同一版本的basedefs.esl模式，因为该文件包含段，组合和元素定义。
+
+EDI模式语言参考概述了所有EDI连接器使用的ESL模式结构，包括HL7 EDI连接器。您应该参考该模式定义的结构背景。
+
+下面是一个示例HL7消息结构模式，用于标准v2.5.1 ADT_A05消息结构：
+
+[source,yaml, linenums]
+----
+form: HL7
+version: '2.5.1'
+imports: [ '/hl7/v2_5_1/basedefs.esl' ]
+id: 'ADT_A05'
+name: 'ADT_A05'
+data: 
+- { idRef: 'MSH', position: '01', usage: M }
+- { idRef: 'SFT', position: '02', usage: O, count: '>1' }
+- { idRef: 'EVN', position: '03', usage: M }
+- { idRef: 'PID', position: '04', usage: M }
+- { idRef: 'PD1', position: '05', usage: O }
+- { idRef: 'ROL', position: '06', usage: O, count: '>1' }
+- { idRef: 'NK1', position: '07', usage: O, count: '>1' }
+- { idRef: 'PV1', position: '08', usage: M }
+- { idRef: 'PV2', position: '09', usage: O }
+- { idRef: 'ROL', position: '10', usage: O, count: '>1' }
+- { idRef: 'DB1', position: '11', usage: O, count: '>1' }
+- { idRef: 'OBX', position: '12', usage: O, count: '>1' }
+- { idRef: 'AL1', position: '13', usage: O, count: '>1' }
+- { idRef: 'DG1', position: '14', usage: O, count: '>1' }
+- { idRef: 'DRG', position: '15', usage: O }
+- groupId: 'PROCEDURE'
+  count: '>1'
+  usage: O
+  items: 
+  - { idRef: 'PR1', position: '17', usage: M }
+  - { idRef: 'ROL', position: '18', usage: O, count: '>1' }
+- { idRef: 'GT1', position: '20', usage: O, count: '>1' }
+- groupId: 'INSURANCE'
+  count: '>1'
+  usage: O
+  items: 
+  - { idRef: 'IN1', position: '22', usage: M }
+  - { idRef: 'IN2', position: '23', usage: O }
+  - { idRef: 'IN3', position: '24', usage: O, count: '>1' }
+  - { idRef: 'ROL', position: '25', usage: O, count: '>1' }
+- { idRef: 'ACC', position: '27', usage: O }
+- { idRef: 'UB1', position: '28', usage: O }
+- { idRef: 'UB2', position: '29', usage: O }
+----
+
+这显示了组成ADT_A05消息结构的段的列表，包括段组PROCEDURE和INSURANCE。由于以上是标准定义（不是宽松版本），因此它包括强制段（用法用M表示）以及可选段（用法用O表示）。用于HL7的全套使用代码是：
+
+* 用于条件（等同于可选）
+*  M为强制性
+*  O代表可选
+*  U表示未使用（在读取时未接受警告，但在读取时传递的数据中不存在;写入时忽略）
+
+段或组的出现次数可能由计数值给出。默认值为1，
+
+如果您只想从消息结构中删除某些段，或者将某些段的要求从强制更改为可选（或反之亦然），则可以轻松地对模式副本进行更改，并在应用程序中使用修改后的版本。
+
+您还可以添加原始消息结构定义中不存在的段。为此，我们建议您首先从模式中的所有现有段和组定义行中删除位置值，否则您需要重新编号添加段后面的所有内容。如果您删除了明确的位置编号。段和组按顺序分配位置编号，对于大多数用途，HL7 EDI连接器3.1.0应用程序不会看到这些编号。
+
+如果要将标准HL7段添加到消息结构中，只需在适当的位置将其引用到idRef行，HL7将从引用为导入的basedefs.esl文件获取定义。
+
+以下部分示例显示了添加到ADT_A05消息结构中的CON段：
+
+[source,yaml, linenums]
+----
+form: HL7
+version: '2.5.1'
+imports: [ '/hl7/v2_5_1/basedefs.esl' ]
+id: 'ADT_A05'
+name: 'ADT_A05'
+data: 
+- { idRef: 'MSH', usage: M }
+- { idRef: 'SFT', usage: O, count: '>1' }
+- { idRef: 'EVN', usage: M }
+- { idRef: 'PID', usage: M }
+- { idRef: 'PD1', usage: O }
+- { idRef: 'CON', usage: O, count: '>1' }
+- { idRef: 'NTE', usage: O }
+- { idRef: 'ROL', usage: O, count: '>1' }
+- { idRef: 'NK1', usage: O, count: '>1' }
+- { idRef: 'PV1', usage: M }
+- { idRef: 'PV2', usage: O }
+- { idRef: 'CON', usage: O, count: '>1' }
+- { idRef: 'ROL', usage: O, count: '>1' }
+  ...
+----
+
+如果要为消息结构定义非标准段，请将段定义添加到模式中。这比修改段结构更复杂，因为您需要列出段中的所有组件。最简单的起点是找到一个类似的标准HL7段，并从basedefs.esl文件中复制用于该标准段的定义。然后，您可以在消息结构定义之后添加段密钥，然后添加一个或多个段定义。
+
+有关组合消息结构和段定义的模式示例，请参阅以下部分。
+
+=== 使用示例消息简化模式
+
+HL7的标准定义非常复杂，细分市场通常有二十个或更多的组件，而许多组件组合本身又被分解为许多子组件。这可能使HL7难以映射，因为消息的DataSense视图必须包含所有这些子组件。
+
+实际上，HL7的大多数用户只占HL7总标准定义的一小部分。为了充分利用这一点，HL7 EDI连接器提供了一个基于控制台的Java工具，您可以通过消除消息中通常不使用的组件来简化模式定义。
+
+模式简化工具作为edi-schemas-hl7-1.3.0-simplify.jar分发（请参阅本文档的链接部分）。它将消息结构模式以及一个或多个示例消息（作为单独的文件）作为输入，并将输出模式简化为仅显示在一个或多个示例消息中的段和组件。
+
+要使用此工具，请下载jar并打开命令行控制台，然后键入：
+
+[source,bash]
+----
+java -jar edi-schemas-hl7-1.3.0-simplify.jar {input-schema} {output-schema} {sample1} {sample2} ...
+----
+
+哪里：
+
+*  input-schema是用于读取消息的消息结构模式，可以是对提供的模式（例如/hl7/v2_5_1/ADT_A05.esl）的文件或类路径引用。
+*  output-schema是简化模式输出的文件路径
+*  sample1 ... n是示例消息的文件路径
+
+注意：确保示例消息文件使用回车符（CR）行结束符保存，因为这是所需的HL7段分隔符 - 文本编辑器通常使用操作系统的默认行结束符，这可能不正确。
+
+以下是使用此工具生成的简化模式的部分示例：
+
+[source,yaml, linenums]
+----
+form: HL7
+version: '2.5.1'
+structures: 
+- id: 'SIU_S12'
+  name: 'SIU_S12'
+  data: 
+  - { idRef: 'MSH', position: '01', usage: O }
+  - { idRef: 'SCH', position: '02', usage: O }
+  - groupId: 'PATIENT'
+    count: '>1'
+    usage: O
+    items: 
+    - { idRef: 'PID', position: '06', usage: O }
+    - { idRef: 'PV1', position: '08', usage: O }
+  - groupId: 'RESOURCES'
+    count: '>1'
+    usage: O
+    items: 
+    - { idRef: 'RGS', position: '14', usage: O }
+    - groupId: 'SERVICE'
+      count: '>1'
+      usage: O
+      items: 
+      - { idRef: 'AIS', position: '16', usage: O }
+    - groupId: 'GENERAL_RESOURCE'
+      count: '>1'
+      usage: O
+      items: 
+      - { idRef: 'AIG', position: '20', usage: O }
+    - groupId: 'LOCATION_RESOURCE'
+      count: '>1'
+      usage: O
+      items: 
+      - { idRef: 'AIL', position: '24', usage: O }
+    - groupId: 'PERSONNEL_RESOURCE'
+      count: '>1'
+      usage: O
+      items: 
+      - { idRef: 'AIP', position: '28', usage: O }
+segments: 
+- id: 'AIG'
+  name: 'Appointment Information - General Resource'
+  varTag: 'AIG'
+  values: 
+  - { idRef: 'SI', name: 'Set ID - AIG', usage: O }
+  - { idRef: 'varies', name: 'Segment Action Code', usage: U, count: '>1' }
+  - { idRef: 'CE_2', name: 'Resource ID', usage: O }
+  - { idRef: 'varies', name: 'Resource Type', usage: U, count: '>1' }
+  - { idRef: 'varies', name: 'Resource Group', usage: U, count: '>1' }
+  - { idRef: 'varies', name: 'Resource Quantity', usage: U, count: '>1' }
+  - { idRef: 'varies', name: 'Resource Quantity Units', usage: U, count: '>1' }
+  - { idRef: 'TS', name: 'Start Date/Time', usage: O }
+- id: 'AIL'
+  name: 'Appointment Information - Location Resource'
+  varTag: 'AIL'
+  values: 
+  - { idRef: 'SI', name: 'Set ID - AIL', usage: O }
+  - { idRef: 'varies', name: 'Segment Action Code', usage: U, count: '>1' }
+  - { idRef: 'PL', name: 'Location Resource ID', usage: O, count: '>1' }
+  - { idRef: 'CE', name: 'Location Type-AIL', usage: O }
+  - { idRef: 'varies', name: 'Location Group', usage: U, count: '>1' }
+  - { idRef: 'TS', name: 'Start Date/Time', usage: O }
+- id: 'AIP'
+  name: 'Appointment Information - Personnel Resource'
+  varTag: 'AIP'
+  values: 
+  - { idRef: 'SI', name: 'Set ID - AIP', usage: O }
+  - { idRef: 'varies', name: 'Segment Action Code', usage: U, count: '>1' }
+  - { idRef: 'XCN_2', name: 'Personnel Resource ID', usage: O, count: '>1' }
+  - { idRef: 'CE_1', name: 'Resource Type', usage: O }
+  - { idRef: 'varies', name: 'Resource Group', usage: U, count: '>1' }
+  - { idRef: 'TS', name: 'Start Date/Time', usage: O }
+  ...
+composites: 
+- id: 'CE'
+  name: 'Coded Element'
+  values: 
+  - { idRef: 'ST', name: 'Identifier', usage: O }
+  - { idRef: 'ST', name: 'Text', usage: O }
+- id: 'CE_1'
+  name: 'Coded Element'
+  values: 
+  - { idRef: 'ST', name: 'Identifier', usage: O }
+- id: 'CE_2'
+  name: 'Coded Element'
+  values: 
+  - { idRef: 'ST', name: 'Identifier', usage: O }
+  - { idRef: 'ST', name: 'Text', usage: O }
+  - { idRef: 'ID', name: 'Name of Coding System', usage: O }
+  ...
+----
+
+段的未使用的组件不能仅从段定义中删除（除非它们位于段的末尾），因此简化工具仅替代该组件的"varies"数据类型，并将其标记为用法：U为未使用。在这种情况下，"varies"的重复次数与原始组件的重复次数保持不变，但它不会显示在您在Data Weave中看到的数据的DataSense视图中。
+
+当模式简化工具检查消息中存在哪些数据时，它处理上下文中出现的每个复合，所以同一复合的不同用法可能存在不同的值。发生这种情况时，复合材料会被定义不止一次，使用不同的标识符。上例中的CE组合显示了这一点。
+
+简化模式保留原始模式中的段落位置。如果需要，可以从简化模式中删除这些位置值，因为它们不被HL7 EDI连接器使用，除非您在段密钥（连接器配置选项之一）上使用位置前缀。
+
+=== 确定HL7架构位置
+
+要使用连接器，您需要知道项目中模式的位置。如果您使用的是开箱即​​用的HL7架构，而不是自定义任何内容，则标准架构位置将遵循`/hl7/{version}/{message structure}.esl`模式，而松散架构位置遵循`/hl7lax/{version}/{message structure}.esl`模式。例如，如果您使用的是2.5.1版本和ADT_A01消息结构，则标准版本（包括所需的值，数据类型和长度/重复计数）或{{3 }}为宽松的版本。
+
+如果您使用的是一个或多个自定义架构，则应将其置于`src/main/app`中的目录下，并使用`${app.home}`引用该位置。例如，如果您已将ADT_A01架构置于`src/main/app/mypartner/ADT_A01.esl`下，则架构位置为`${app.home}/mypartner/ADT_A01.esl`。
+
+Mule Runtime自动检查`src/main/app`是否包含`${app.home}`值。
+
+=== 事件和消息到消息结构图
+
+如果您使用多个消息结构模式（无论是在单独的模式定义文件中，如提供的模式，还是在单个文件中）配置连接器，则可能需要定义HL7事件和消息类型到消息结构的映射。
+
+HL7在MSH-09的组件值中定义消息类型。根据以下规则，HL7 EDI连接器使用这些组件值来查找用于处理接收消息的结构模式：
+
+* 如果MSH-09-01消息类型值为ACK，则始终使用预定义的ACK模式。
+* 否则，如果存在MSH-09-03消息结构值（例如ADT_A01的值），请使用具有该ID的模式结构。
+* 否则，使用配置的事件和消息到消息结构映射来确定来自指定事件类型（MSH-09-02）和消息类型（MSH-09-01）值的消息结构。
+
+事件和消息到消息结构映射是一个可选的配置参数。它必须是一个YAML文件，其中包含从每个事件类型到映射的映射，以便将每个支持的消息类型映射到实际的消息结构。下面是这个样子的一个例子：
+
+[source,yaml, linenums]
+----
+A01: { ADT: ADT_A01, ACK: ACK }
+A02: { ADT: ADT_A02, ACK: ACK }
+A03: { ADT: ADT_A03, ACK: ACK }
+A04: { ADT: ADT_A01, ACK: ACK }
+A05: { ADT: ADT_A05, ACK: ACK }
+A06: { ADT: ADT_A06, ACK: ACK }
+A07: { ADT: ADT_A06, ACK: ACK }
+A08: { ADT: ADT_A01, ACK: ACK }
+----
+
+HL7的每个版本都定义了一组不同的从事件类型和消息类型到消息结构的映射。在名为event-message.yaml的文件中，默认映射在与标准HL7模式定义相同的jar中提供。您对这些映射定义使用与实际消息结构模式相同类型的路径。
+
+[[configconnector]]
+== 使用Studio Visual Editor配置HL7 EDI
+
+在安装连接器并配置架构自定义（如果有）后，可以开始使用连接器。为每个实施约定创建单独的配置。
+
+. 单击画布底部的全局元素选项卡，然后单击创建。
+. 在选择全局类型向导中，使用过滤器定位并选择HL7 EDI：Configuration，然后单击OK。
+. 根据连接器参考配置参数。
+. 单击确定以保存全局连接器配置。
+. 返回到Studio中的消息流选项卡。
+
+=== 常规选项
+
+在常规选项中，您可以配置适用于读取和写入HL7消息的设置：
+
+*  HL7字符编码，始终用于写入消息并在读取消息时使用，除非MSH-18（字符集）指定了不同的编码，
+* 为数据键禁用数字前缀 - 默认情况下，此选项为*true*，该选项将关闭数据段的数字前缀;关闭此选项的唯一原因是为了与为HL7 EDI连接器3.0.0定义的映射兼容
+* 手动创建或编辑模式列表。
+
+=== 在可视化编辑器中设置您的HL7标识
+
+您可以在HL7 EDI连接器配置上为您和贸易伙伴配置消息标题（MSH）应用程序和设施标识。
+
+在编写HL7消息以提供名称空间ID，通用ID和通用ID类型并在接收消息中验证时使用您设置的值。如果您不想限制传入消息，可以将其留空，并在写操作或实际传出消息上设置传出消息的值。在写入操作上设置的值会覆盖连接器配置，并且直接在消息上设置的值会覆盖连接器配置和写入操作中设置的任何值。
+
+在Studio中，这些值在这些全局元素属性中设置。
+
+* 自我识别参数可识别您的贸易伙伴关系。
++
+自我识别设置：
++
+[source,code,linenums]
+----
+Mule Application Namespace ID (MSH-3-1/MSH-5-1)
+Mule Application Universal ID (MSH-3-2/MSH-5-2)
+Mule Application Universal ID Type (MSH-3-3/MSH-5-3)
+----
++
+* 合作伙伴标识参数可识别您的贸易伙伴。
++
+合作伙伴标识设置
++
+[source,code,linenums]
+----
+Partner Application Namespace ID (MSH-3-1/MSH-5-1}
+Partner Application Universal ID (MSH-3-2/MSH-5-2}
+Partner Application Universal ID Type (MSH-3-3/MSH-5-3)
+----
+
+=== 设置分析器选项
+
+如果需要，您可以设置以下选项：
+
+* 验证HL7消息版本
+* 消息结构映射路径的事件和消息（如果使用多个消息结构，则必须使用该消息结构，除非MSH-09-03消息结构值始终存在于接收的消息中）
+* 所需的处理ID（用于指定接收消息所需的特定处理ID，例如生产的`P`）
+* 通用扩展段名称的模式（允许将扩展段作为字段值映射进行处理）
+* 当值长度超出允许范围时失败
+* 当值中的字符无效时失败
+* 失败时，重复的价值太多
+* 消息中出现未知段时失败
+* 在消息集中的分段出现故障时失败
+* 消息集中包含未使用的段时会失败
+* 当段的重复次数过多时失败
+
+=== 设置分隔符字符
+
+如果您想修改默认值，您可以设置写信息时使用的分隔符。
+
+== 使用Studio XML Editor或Standalone配置HL7 EDI
+
+在安装连接器并配置架构自定义（如果有）后，可以开始使用连接器。为每个实施约定创建单独的配置。
+
+. 确保您已将EDI名称空间包含在配置文件中。
++
+[source, xml, linenums]
+----
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
+  xmlns:tcp="http://www.mulesoft.org/schema/mule/tcp"
+  xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:hl7-edi="http://www.mulesoft.org/schema/mule/hl7-edi"
+  xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:spring="http://www.springframework.org/schema/beans"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.mulesoft.org/schema/mule/tcp
+    http://www.mulesoft.org/schema/mule/tcp/current/mule-tcp.xsd
+    http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesoft.org/schema/mule/core
+    http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/hl7-edi
+    http://www.mulesoft.org/schema/mule/hl7-edi/current/mule-hl7-edi.xsd
+    http://www.mulesoft.org/schema/mule/http
+    http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/ee/dw
+    http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+    http://www.mulesoft.org/schema/mule/ee/tracking
+    http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+----
++
+. 在您的应用程序中配置HL7 EDI，方法是使用以下全局配置代码在流程之外和之上创建全局配置：
++
+[source, xml, linenums]
+----
+  <hl7-edi:config name="HL7_EDI__Configuration" identKeys="true" doc:name="HL7 EDI: Configuration">
+    <hl7-edi:schemas>
+      <hl7-edi:schema>hl7/v2_6/ADT_A01.esl</hl7-edi:schema>
+    </hl7-edi:schemas>
+  </hl7-edi:config>
+----
+
+=== 使用XML设置您的HL7标识
+
+您可以在HL7 EDI连接器配置上为您和贸易伙伴配置消息标题（MSH）应用程序和设施标识。
+
+在编写HL7消息以提供名称空间ID，通用ID和通用ID类型并在接收消息中验证时使用您设置的值。如果您不想限制传入消息，可以将其留空，并在写操作或实际传出消息上设置传出消息的值。在写入操作上设置的值会覆盖连接器配置，并且直接在消息上设置的值会覆盖连接器配置和写入操作中设置的任何值。
+
+* 自我识别参数可识别您的贸易伙伴关系。
++
+自我识别参数：
++
+[source,xml,linenums]
+----
+appNamespaceIdSelf="<value>"
+appUniversalIdSelf="<value>"
+appUniversalIdTypeSelf="<value>"
+----
++
+* 合作伙伴标识参数可识别您的贸易伙伴。
++
+伙伴识别参数：
++
+[source,xml,linenums]
+----
+appNamespaceIdPartner="<value>"
+appUniversalIdPartner="<value>"
+appUniversalIdTypePartner="<value>"
+----
+
+=== 设置分析器选项
+
+如果需要，您可以设置以下选项：
+
+[%header,cols="50a,50a"]
+|===
+| XML值 | Visual Studio选项
+| validateHL7Version = "true"  |验证HL7消息版本
+| eventMessageMap = "/hl7/v2_5_1/event-message.yaml"  |事件和消息到消息结构映射路径（如果使用多个消息结构，则除外MSH-09-03消息结构值始终存在于收到的消息中）
+| processingId = "PRODUCTION"  |所需的处理ID（用于指定接收消息所需的特定处理ID，例如Production `P`）
+| genericExtensionPattern = "Z.."  |通用扩展段名称的Java常规模式（允许将扩展段作为字段值映射进行处理）
+| valueLengthErrorFail = "true"  |当值长度超出允许范围时失败
+| invalidCharacterInValueFail = "true"  |当值中的字符无效时失败
+| wrongValuesRepeatsFail = "true"  |当值重复太多时失败
+| unknownSegmentFail = "true"  |消息中的未知段发生故障
+| segmentOutOfOrderFail = "true"  |消息集中的分段出现故障时失败
+| unusedSegmentPresentFail = "true"  |当消息集中包含未使用的段时失败
+| wrongSegmentsRepeatsFail = "true"  |过多重复段时失败
+|===
+
+=== 设置您的架构位置
+
+您只能在Anypoint Studio XML视图中配置模式位置。
+
+在Anypoint Studio中，通过单击配置XML切换到XML视图，并修改您的HL7 EDI配置，以包含您希望包含的每个文档类型的`+<{{0}}>+`元素的所有模式的列表：
+
+[source, xml, linenums]
+----
+  <hl7-edi:config name="HL7_EDI__Configuration" identKeys="true" doc:name="HL7 EDI: Configuration">
+    <hl7-edi:schemas>
+      <hl7-edi:schema>hl7/v2_6/ADT_A01.esl</hl7-edi:schema>
+    </hl7-edi:schemas>
+  </hl7-edi:config>
+----
+
+为HL7 EDI创建全局元素后，配置消息结构，操作和确认。
+
+
+== 在Mule流程中使用HL7 EDI
+
+您可以在流程中使用HL7 EDI连接器来读取和写入消息，并发送确认。
+
+主题：
+
+* 了解HL7消息结构
+* 读取和验证HL7 ER7消息
+* 写入HL7 EDI消息
+* 发送确认
+
+== 了解HL7消息结构
+
+HL7连接器将HL7文档读入或写入规范的ER7消息结构。此结构表示为Java地图和列表的层次结构，可以使用DataWeave或代码进行操作。每个事务都有自己的架构，在架构中定义。
+
+HL7消息包含以下键：
+
+[%header,cols="40a,60a"]
+|===
+|密钥名称 |说明
+| ACK（只读） |响应于输入数据而生成的ACK消息。 MSA-1确认码值基于解析器配置设置。要发送确认，请参阅下面的发送确认部分。
+|数据（读取或写入） |消息数据的封装器，其中的密钥与链接到实际数据的消息结构ID值匹配。这允许将不同的消息包含在元数据中并在DataWeave映射中进行处理。
+|分隔符（只读） |用于消息的分隔符。字符串中的字符根据位置进行解释，顺序如下：（分隔符），（重复分隔符），（转义字符），（子分隔符）。
+|错误（只读） |与输入消息关联的错误列表。请参阅下面阅读和验证HL7消息部分中的HL7Error结构说明。
+| Id  |消息结构ID。
+| MSH（只读） |链接到接收到的MSH分段数据。
+|名称（只读） |消息结构名称。
+|===
+
+个别消息具有自己的地图，密钥与消息的段相匹配。例如，ACK消息将使用消息结构ID `ACK`，并且发送或接收的ACK消息的数据将作为`Data`映射中的`ACK`值呈现。 ACK消息本身就是一张地图，消息的片段和群组用地图（在单例实例的情况下）或地图列表（用于重复实例）用位置关键字表示。
+
+有两种特殊情况，其中通用处理用于未包含在模式定义中的数据。第一种是针对`varies`类型的HL7值。由于这些值可能由组件和子组件的任何结构组成，并且可能会重复，因此解析器会为每个`varies`类型使用一系列映射表示。每个映射中的键都是在解析值时生成的，并将标准HL7值名称与每个嵌套级别使用的两位数字匹配。
+因此，例如OBX-05 Observation Value字段的简单文本值只会在地图中使用键OBX-05。如果存在两个组件，则它们使用按键OBX-05-01和OBX-05-02。
+
+具有与在解析器选项下配置的模式匹配的标记的扩展段使用与“变化”值相似的结构，但仅限于整个段的单个映射中。扩展段解析和编写代码不支持重复值。
+
+包含扩展段数据的映射将添加到带有键`ExtensionSegs`的列表中的基本消息映射。除了实际的扩展段数据之外，扩展段的映射还包含两个其他键：
+
+[%header,cols="30a,70a"]
+|===
+| Ident  |扩展段标识符（标记）。
+|位置 |消息结构中段的位置，为两位数字符串。这与在模式中定义的紧接在前面定义的段的位置相同。如果在ADT_A01消息结构中的EVN段之后使用ZVN扩展段，则ZVN位于位置03）。
+|===
+
+如果在嵌套组中使用扩展段，则包含这些段的列表将包含在表示该组的映射中。扩展段在解析器创建的列表中按位置排序，写入时还必须按位置排序。
+
+=== 读取和验证HL7 ER7消息
+
+要读取HL7消息，请在调色板中搜索HL7 EDI，然后将HL7 EDI构建块拖入流中。然后，转到属性视图，选择您之前创建的连接器配置并选择读取操作。该操作将任何字节流读入由HL7模式描述的结构。
+
+image:read-operation.jpg[阅读操作]
+
+HL7 EDI在读取消息时验证消息结构。消息验证包括检查MSH的语法和内容以及消息的所有组件段。通常记录和累积错误，并在生成的数据结构中提供的生成的ACK消息中报告错误。所有消息，无论是无错的还是非致命错误，都会作为输出消息Map的一部分传递进行处理。读取输入数据时发生错误会导致抛出异常。
+
+在接收数据映射中输入的错误数据使用HL7Error类，这是一种具有以下属性的只读JavaBean：
+
+[%header,cols="30a,70a"]
+|===
+|属性 |说明
+|段 |导致错误的段的输入内的从零开始的索引。
+|致命 |标记致命错误，意味着相关消息由于错误而被拒绝。
+| errorType  |列举由HL7标准定义的不同类型的错误（ERR-3值）。
+| errorCode  |错误代码，由HL7标准针对指定类型的错误定义。
+| errorText  |错误的文本描述。
+|===
+
+读取操作将错误数据作为带有"Errors"键的可选列表返回。
+
+=== 写入HL7 EDI消息
+
+要编写传出消息，请根据先前定义的结构构造传出的HL7 EDI消息。
+
+例如，此示例创建一个写入文件的传出HL7消息。
+
+[source, xml, linenums]
+----
+  ...
+<hl7-edi:write config-ref="HealthCare" doc:name="Send ACK"/>
+<file:outbound-endpoint responseTimeout="10000" doc:name="File" path="output" outputPattern="ack.edi"/>
+----
+
+=== 发送确认
+
+ACK（确认）消息是HL7消息，它允许您向消息发送方确认您的应用程序已收到消息。 ACK消息与写入任何其他HL7消息相同，只不过您将ACK消息设置为读操作期间生成的消息，作为`Data`键下的输出消息。
+
+例如：
+
+[source, xml, linenums]
+----
+    <hl7-edi:read config-ref="HL7_EDI__Configuration1" doc:name="HL7 EDI"/>\
+    ...
+    <dw:transform-message doc:name="Create Outgoing Message">
+      <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+  Name: "ACK",
+  MSH: payload.ACK.MSH,
+  Id: "ACK",
+  Data: {
+    ACK: payload.ACK
+  }
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <hl7-edi:write config-ref="HL7_EDI__Configuration" messageStructure="InMessage" doc:name="ACK"/>
+    ...
+    <file:outbound-endpoint responseTimeout="10000" doc:name="File" path="output" outputPattern="ack.edi"/>
+----
+
+生成的ACK消息具有MSH数据，用于发回原始消息的发件人，因此您不需要更改数据中的任何内容以进行发送。
+
+如果在配置中包含ACK消息模式，则该模式用于接收ACK消息并生成ACK消息。如果您未指定ACK模式，则默认使用标准hl7 / v2_5_1 / ACK.esl模式。
+
+image:ack-datasense.jpg[默认的ACK消息结构]
+
+==  HL7 DataWeave示例
+
+以下示例显示了使用HL7和DataWeave读取通过HTTP接收的消息并将响应发回作为响应。
+
+image:demoflow.jpg[阅读并发送确认流程]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
+  xmlns:tcp="http://www.mulesoft.org/schema/mule/tcp"
+  xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:hl7-edi="http://www.mulesoft.org/schema/mule/hl7-edi"
+  xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:spring="http://www.springframework.org/schema/beans"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.mulesoft.org/schema/mule/tcp
+    http://www.mulesoft.org/schema/mule/tcp/current/mule-tcp.xsd
+    http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesoft.org/schema/mule/core
+    http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/hl7-edi
+    http://www.mulesoft.org/schema/mule/hl7-edi/current/mule-hl7-edi.xsd
+    http://www.mulesoft.org/schema/mule/http
+    http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/ee/dw
+    http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+    http://www.mulesoft.org/schema/mule/ee/tracking
+    http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+  <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8080" doc:name="HTTP Listener Configuration"/>
+  <hl7-edi:config name="HL7_EDI__Configuration" identKeys="true" doc:name="HL7 EDI: Configuration">
+    <hl7-edi:schemas>
+      <hl7-edi:schema>hl7/v2_6/ADT_A01.esl</hl7-edi:schema>
+    </hl7-edi:schemas>
+  </hl7-edi:config>
+  <flow name="Acknowledgment">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/ack" allowedMethods="POST" doc:name="HTTP"/>
+    <hl7-edi:read config-ref="HL7_EDI__Configuration" doc:name="HL7 EDI"/>
+    <dw:transform-message doc:name="Transform Message">
+      <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+  Name: "ACK",
+  MSH: payload.ACK.MSH,
+  Id: "ACK",
+  Data: {
+    ACK: payload.ACK
+  }
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <hl7-edi:write config-ref="HL7_EDI__Configuration" messageStructure="InMessage" doc:name="HL7 EDI"/>
+    <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+  </flow>
+</mule>
+----
+
+下面的示例显示了如何从DataWeave中的接收消息中提取特定值（使用消息的简化模式，消除了许多未使用的字段）。
+
+image:dataweave-simple.jpg[从接收消息中提取值]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:jersey="http://www.mulesoft.org/schema/mule/jersey"
+  xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata"
+  xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:hl7-edi="http://www.mulesoft.org/schema/mule/hl7-edi"
+  xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:spring="http://www.springframework.org/schema/beans"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesoft.org/schema/mule/core
+    http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/hl7-edi
+    http://www.mulesoft.org/schema/mule/hl7-edi/current/mule-hl7-edi.xsd
+    http://www.mulesoft.org/schema/mule/http
+    http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/ee/dw
+    http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+    http://www.mulesoft.org/schema/mule/jersey
+    http://www.mulesoft.org/schema/mule/jersey/current/mule-jersey.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <hl7-edi:config name="HL7_EDI_Configuration" doc:name="HL7 EDI: Configuration" identKeys="true">
+        <hl7-edi:schemas>
+            <hl7-edi:schema>schemas/SIU_S12-simplified.esl</hl7-edi:schema>
+        </hl7-edi:schemas>
+    </hl7-edi:config>
+    <flow name="hl7-demoFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/json" doc:name="HTTP"/>
+        <hl7-edi:read config-ref="HL7_EDI_Configuration" doc:name="HL7 EDI"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="6f9793a8-8007-4b02-bdbc-802d64ce5d83">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+  id: payload.Data.SIU_S12.PATIENT[0].PID.PID-02-01,
+  firstName: payload.Data.SIU_S12.PATIENT[0].PID.PID-05[0].PID-05-02,
+  lastName: payload.Data.SIU_S12.PATIENT[0].PID.PID-05[0].PID-05-01-01
+}]]></dw:set-payload>
+        </dw:transform-message>
+    </flow>
+</mule>
+----
+
+
+== 从HL7 2.x.x升级到3.0.0
+
+在HL7 v3.0连接器中，后面的部分列表组件已从连接器中删除。
+
+===  HL7消息组件
+
+可以通过DataWeave生成HL7消息，然后调用连接器的写入操作来完成消息的创建。
+
+以下流程输出`MSH|\^~\&|TestSendingSystem|MCM||^12399|`消息。
+
+[source,xml,linenums]
+----
+  <flow name="CreateMessage">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/create" doc:name="HTTP"/>
+    <dw:transform-message doc:name="Transform Message">
+      <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+  Delimiters: "|^~\&",
+  Id: "ADT_A02",
+  Data: {
+    ADT_A02: {
+      "MSH": {
+        MSH-03-01: "TestSendingSystem",
+        MSH-04-01: "SendingApp",
+        MSH-05-01: "SendingFacility",
+        MSH-07-01: now,
+        MSH-09-01: "ADT",
+        MSH-09-02: "A01",
+        MSH-09-03: "ADT_A01"
+      }
+    }
+  }
+}
+]]></dw:set-payload>
+    </dw:transform-message>
+    <hl7-edi:write config-ref="HL7_EDI__Configuration" messageStructure="InMessage" doc:name="HL7 EDI"/>
+  </flow>
+----
+
+===  HL7 ACK
+
+HL7 ACK功能包含在连接器中。 ACK消息在执行读取操作时由连接器自动生成。请参阅本文档的发送确认部分。
+
+===  HL7追加分段
+
+可以使用DataWeave替换Append Segment组件来操作读取操作后获得的HL7 Message结构中的Data对象。
+
+以下示例将`AL1|2|10001|^Penicillin||Produces hives`添加到传入消息。
+
+传入消息：
+
+[source,yaml,linenums]
+----
+MSH|^~\&|ADT1|MCM|LABADT|MCM|19900607|SECURITY|ADT^A01|MSG00001|P|2.3.1|
+EVN|A01|19900607
+PID|1||PATID1234^5^M11^ADT1^MR^MCM~123456789^^^USSSA^SS||JONES^WILLIAM^A^III||19610615|M||C|1200 N ELM STREET^^GREENSBORO^NC^27401-1020|GL|(91-9)379-1212|(919)271-3434||S||PATID12345001^2^M10^ADT1^AN^A|123456789|987654^NC|
+NK1|1|||||||
+PV1|1|I|2000^2012^01||||004777^LEBAUER^SIDNEY^J.|||SUR||||ADM|A0|
+AL1|1||^Cat dander|Respiratory distress
+----
+
+[source,xml,linenums]
+----
+  <flow name="AppendSegment">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/append" allowedMethods="POST" doc:name="HTTP"/>
+    <hl7-edi:read config-ref="HL7_EDI__Configuration" doc:name="HL7 EDI"/>
+    <dw:transform-message doc:name="Transform Message">
+      <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+Delimiters: payload.Delimiters,
+Id: payload.Id,
+Name: payload.Name,
+ACK: payload.ACK,
+MSH: payload.MSH,
+Errors: payload.Errors map ((error , indexOfError) -> {
+errorCode: error.errorCode,
+errorText: error.errorText,
+errorType: error.errorType,
+fatal: error.fatal,
+segment: error.segment
+}),
+Data: {
+ADT_A01: {
+  MSH: payload.Data.ADT_A01.MSH,
+  EVN: payload.Data.ADT_A01.EVN,
+  PID: payload.Data.ADT_A01.PID,
+  NK1: payload.Data.ADT_A01.NK1,
+  PV1: payload.Data.ADT_A01.PV1,
+  AL1: (payload.Data.ADT_A01.AL1 +
+    {
+      AL1-01: 2,
+      AL1-02-01:"10001",
+      AL1-03-02:"Penicillin",
+      AL1-05:["Produces hives"]
+    })
+}
+}
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <hl7-edi:write config-ref="HL7_EDI__Configuration" messageStructure="InMessage" doc:name="Write_HL7"/>
+    <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+  </flow>
+----
+
+===  HL7删除分段
+
+HL7 2.0.x删除段组件允许用户删除指定段ID的段。删除操作可能涉及完整的分段或只是最后一个分段的重复。
+
+以下代码块说明了如何使用DataWeave替换此组件，这些流将通过此传入消息进行操作：
+
+[source,yaml,linenums]
+----
+MSH|^~\&|ADT1|MCM|LABADT|MCM|19900607|SECURITY|ADT^A01|MSG00001|P|2.3.1|
+EVN|A01|19900607
+PID|1||PATID1234^5^M11^ADT1^MR^MCM~123456789^^^USSSA^SS||JONES^WILLIAM^A^III||19610615|M||C|1200 N ELM STREET^^GREENSBORO^NC^27401-1020|GL|(91-9)379-1212|(919)271-3434||S||PATID12345001^2^M10^ADT1^AN^A|123456789|987654^NC|
+NK1|1|||||||
+PV1|1|I|2000^2012^01||||004777^LEBAUER^SIDNEY^J.|||SUR||||ADM|A0|
+AL1|1||^Cat dander|Respiratory distress
+AL1|2||^Penicillin||Produces hives|
+----
+
+[source,xml,linenums]
+----
+  <flow name="RemoveSegment">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/removeSegment" allowedMethods="POST" doc:name="HTTP"/>
+    <hl7-edi:read config-ref="HL7_EDI__Configuration" doc:name="HL7 EDI"/>
+    <dw:transform-message doc:name="Transform Message">
+      <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+%var emptySegment = []
+---
+{
+  Delimiters: payload.Delimiters,
+  Id: payload.Id,
+  Name: payload.Name,
+  ACK: payload.ACK,
+  MSH: payload.MSH,
+  Errors: payload.Errors map ((error , indexOfError) -> {
+    errorCode: error.errorCode,
+    errorText: error.errorText,
+    errorType: error.errorType,
+    fatal: error.fatal,
+    segment: error.segment
+  }),
+  Data: {
+    ADT_A01: {
+      MSH: payload.Data.ADT_A01.MSH,
+      EVN: payload.Data.ADT_A01.EVN,
+      PID: payload.Data.ADT_A01.PID,
+      NK1: payload.Data.ADT_A01.NK1,
+      PV1: payload.Data.ADT_A01.PV1,
+      AL1: emptySegment
+    }
+  }
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <hl7-edi:write config-ref="HL7_EDI__Configuration" messageStructure="InMessage" doc:name="_HL7 EDI"/>
+    <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+  </flow>
+----
+
+====  HL7删除重复
+
+[source,xml,linenums]
+----
+  <flow name="RemoveRepetition">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/removeRepetition" allowedMethods="POST" doc:name="HTTP"/>
+    <hl7-edi:read config-ref="HL7_EDI__Configuration" doc:name="HL7 EDI"/>
+    <dw:transform-message doc:name="Transform Message">
+      <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+%var start = 0
+%var end = (sizeOf payload.Data.ADT_A01.AL1) -2
+%var updatedSegment = payload.Data.ADT_A01.AL1[start[0] .. end[0]]
+---
+{
+  Delimiters: payload.Delimiters,
+  Id: payload.Id,
+  Name: payload.Name,
+  ACK: payload.ACK,
+  MSH: payload.MSH,
+  Errors: payload.Errors map ((error , indexOfError) -> {
+    errorCode: error.errorCode,
+    errorText: error.errorText,
+    errorType: error.errorType,
+    fatal: error.fatal,
+    segment: error.segment
+  }),
+  Data: {
+    ADT_A01: {
+      MSH: payload.Data.ADT_A01.MSH,
+      EVN: payload.Data.ADT_A01.EVN,
+      PID: payload.Data.ADT_A01.PID,
+      NK1: payload.Data.ADT_A01.NK1,
+      PV1: payload.Data.ADT_A01.PV1,
+      AL1: updatedSegment
+    }
+  }
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <hl7-edi:write config-ref="HL7_EDI__Configuration" messageStructure="InMessage" doc:name="Copy_of_HL7 EDI"/>
+    <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+  </flow>
+----
+
+===  HL7例外策略
+
+异常策略替换取决于用户，在新连接器中错误包含在HL7消息结构中。
+
+在HL7 EDI配置的解析器选项中设置的配置定义了何时在生成的ACK中报告消息被拒绝。
+
+===  HL7配置文件验证器筛选器
+
+可以使用连接器替换Validator Filter组件，以读取该消息，然后验证HL7消息结构中的ERRORS列表是否为空。
+
+===  HL7编码转换器
+
+该功能不再受连接器支持。编码转换可以通过DataWeave实现。
+
+[[seealso]]
+== 另请参阅
+
+*  https://s3-us-west-2.amazonaws.com/mulesoft-sites-vendorcontent/edi-schemas-hl7-1.3.0-simplify.jar [EDI-架构 -  hl7-1.3.0 -simplify.jar]
+*  link:/anypoint-b2b/edi-schema-language-reference[EDI模式语言参考]
+*  link:/healthcare-toolkit/v/3.1/mllp-connector[HL7 MLLP连接器指南]
+*  link:_attachments/hl7v3.1_demo.zip[HL7 Demo zip文件]
+*  https://mulesoft.github.io/mule-hl7-connector/ [HL7技术参考资料]

@@ -1,0 +1,423 @@
+= 从POM文件配置MUnit Maven插件
+
+== 其他参数行
+
+由于测试正在新JVM中运行，因此可以指定其他参数行
+到JVM。每个参数应该在单独的`argLine`中指定。
+
+[source,xml,linenums]
+。参数线
+----
+<plugins>
+  <plugin>
+    <groupId>com.mulesoft.munit.tools</groupId>
+    <artifactId>munit-maven-plugin</artifactId>
+    <configuration>
+      ...
+      <argLines>
+          <argLine>-XX:MaxPermSize=512m</argLine>
+          <argLine>-Xmx1024m</argLine>
+      </argLines>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+== 启用覆盖
+
+要启用MUnit Coverage，请将以下配置添加到MUnit插件：
+
+[source,xml,linenums]
+.MUnit Coverage  - 最小配置
+----
+<plugins>
+  <plugin>
+    <groupId>com.mulesoft.munit.tools</groupId>
+    <artifactId>munit-maven-plugin</artifactId>
+    <configuration>
+      ...
+      <coverage>
+        <runCoverage>true</runCoverage>   //<1>
+      </coverage>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+<1>这将启用覆盖功能
+
+== 设置最小覆盖等级
+
+如果未达到特定的覆盖率级别，MUnit Coverage的其中一项功能是使构建失败。
+
+要使构建失败，请将以下行添加到配置中：
+
+[source,xml,linenums]
+单位覆盖率 - 失败构建
+----
+<coverage>
+  <runCoverage>true</runCoverage>
+  <failBuild>true</failBuild>       //<1>
+</coverage>
+----
+<1>启用*Fail Build Feature*
+
+现在，下一个合乎逻辑的步骤是定义覆盖级别。
+
+== 忽略覆盖率报告的流量
+
+[source,xml,linenums]
+单位覆盖率 - 忽略流量
+----
+<coverage>
+  <ignoreFlows>
+	  <ignoreFlow>the-name-of-your-flow</ignoreFlow>       //<1>
+  </ignoreFlows>
+</coverage>
+----
+<1>您要忽略的流程的名称。
+
+这是一个列表，因此您可以忽略尽可能多的流量。
+
+== 动态端口
+
+在持续集成（CI）环境中测试Mule应用程序时，可能会遇到以下情形：
+
+`Your application tries to open a specific port. The port is already in use. The application fails with a port binding exception.`
+
+解决此问题的简单方法是让您的应用程序使用自由端口。
+MUnit Maven Plugin附带了一个内置功能来完成这一功能。
+
+`MUnit Dynamic Ports`指示MUnit Maven Plugin在运行Mule应用程序的测试之前查找未绑定的端口并保留它们。选定的每个端口都放置在配置中指定的名称下的系统属性中。
+此后，应用程序可以通过使用占位符来获取端口号。
+
+提示：插件选择的端口取自以下范围：`[40000,50000)`
+
+[CAUTION]
+--
+动态端口功能仅作为MUnit Maven插件的一部分提供。 +
+从Anypoint Studio内部运行测试时，不能期望此功能可用。
+--
+
+=== 启用动态端口
+
+要启用此功能，您需要将以下代码添加到MUnit Maven插件的`configuration`部分：
+
+[source, xml, linenums]
+。动态端口配置
+----
+<plugins>
+  <plugin>
+    <groupId>com.mulesoft.munit.tools</groupId>
+    <artifactId>munit-maven-plugin</artifactId>
+    <configuration>
+    ...
+    <dynamicPorts>
+      <dynamicPort>a.dynamic.port</dynamicPort>
+    </dynamicPorts>
+    ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+如果您的应用程序中有`${http.port}`占位符，则配置如下所示：
+
+[source, xml, linenums]
+。例
+----
+<dynamicPorts>
+  <dynamicPort>http.port</dynamicPort>
+</dynamicPorts>
+----
+
+==== 准备您的应用程序
+
+占位符必须参数化应用程序试图使用端口的部分。 +
+例如，您可能希望让您的Mule应用程序侦听HTTP通信。要做到这一点，你应该提供以下配置：
+
+[source, xml, linenums]
+.HTTP简单应用程序
+----
+<http:listener-config name="HTTP_Listener_config">
+  <http:listener-connection host="0.0.0.0" port="8081" />
+</http:listener-config>
+
+<flow name="httpFlow">
+  <http:listener path="/" config-ref="HTTP_Listener_config"/>
+</flow>
+----
+
+现在，此应用程序始终监听端口`8081`。要使其动态化，请将其更改为：
+
+[source, xml, linenums]
+.HTTP简单的应用程序与动态端口
+----
+<http:listener-config name="HTTP_Listener_config">
+  <http:listener-connection host="0.0.0.0" port="${http.port}"/> //<1>
+</http:listener-config>
+
+<flow name="httpFlow">
+  <http:listener path="/" config-ref="HTTP_Listener_config"/>
+</flow>
+----
+<1>请注意占位符`${http.port}`。
+
+通过以这种方式编码的应用程序和动态端口的配置，您的应用程序将开始每次运行监听不同的端口。
+
+== 启用surefire报告
+
+MUnit内置了对Surefire的支持。不需要额外的配置，但如果不需要，可以禁用它。
+
+
+// _ TODO：哪里？属性？ pluginConfig？
+[source,xml,linenums]
+禁用surefire报告
+----
+<enableSurefireReports>false</enableSurefireReports>
+----
+
+这些报告可以在`${project.build.directory}/surefire-reports`中找到。
+
+默认情况下，它被设置为`true`。
+
+== 运行特定测试
+
+[source,xml,linenums]
+----
+<plugins>
+  <plugin>
+      <groupId>com.mulesoft.munit.tools</groupId>
+      <artifactId>munit-maven-plugin</artifactId>
+      <configuration>
+      ...
+      <munitTest>example-MunitTest-suite.xml</munitTest>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+== 使用特定标签运行测试
+
+[source,xml,linenums]
+----
+<plugins>
+  <plugin>
+      <groupId>com.mulesoft.munit.tools</groupId>
+      <artifactId>munit-maven-plugin</artifactId>
+      <configuration>
+      ...
+      <munitTags>exampleMunitTag</munitTags>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+您可以通过使用逗号分隔多个标签来指定多个标签。
+
+== 跳过MUnit测试
+
+[source,xml,linenums]
+----
+<plugins>
+  <plugin>
+      <groupId>com.mulesoft.munit.tools</groupId>
+      <artifactId>munit-maven-plugin</artifactId>
+      <configuration>
+      ...
+      <skipMunitTests>True</skipMunitTests>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+
+//配置
+
+一个套件失败后== 跳过测试
+
+如果一个测试套件失败，MUnit允许您跳过其余的测试。 +
+如果未指定，则此值默认为false。
+
+[source,xml,linenums]
+----
+<plugins>
+  <plugin>
+      <groupId>com.mulesoft.munit.tools</groupId>
+      <artifactId>munit-maven-plugin</artifactId>
+      <configuration>
+      ...
+      <skipAfterFailure>true</skipAfterFailure>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+== 指定运行时产品
+
+MUnit允许您指定正在测试的应用程序将运行的运行时版本。
+
+[source,xml,linenums]
+----
+<plugins>
+  <plugin>
+    <groupId>com.mulesoft.munit.tools</groupId>
+    <artifactId>munit-maven-plugin</artifactId>
+    <configuration>
+      ...
+      <runtimeVersion>1.2.3</runtimeVersion>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+== 指定运行时
+
+MUnit允许您指定要运行的应用程序的运行时类型。 +
+社区版的两个可能值为MULE，企业版为MULE_EE。
+
+[source,xml,linenums]
+----
+<plugins>
+  <plugin>
+    <groupId>com.mulesoft.munit.tools</groupId>
+    <artifactId>munit-maven-plugin</artifactId>
+    <configuration>
+      ...
+      <runtimeProduct>MULE</runtimeProduct>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+== 环境变量
+
+要在测试运行期间设置其他环境变量，您可以指定
+他们与各自的关键和价值。
+
+[source,xml,linenums]
+。额外的环境变量
+----
+<plugins>
+  <plugin>
+    <groupId>com.mulesoft.munit.tools</groupId>
+    <artifactId>munit-maven-plugin</artifactId>
+    <configuration>
+      ...
+      <environmentVariables>
+        <MY_ENV>exampleValue</MY_ENV>
+        <MY_OTHER_ENV>val2</MY_OTHER_ENV>
+      </environmentVariables>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+可以使用环境变量来替换占位符，例如`${MY_ENV}`
+（使用上面的例子）。
+
+== 将测试输出重定向到文件
+
+运行多个测试时，构建输出可能会非常复杂，无法读取。你可能想要
+将每个测试套件的输出重定向到一个文件。这种方式仍然在构建中
+输出将是测试结果并检查每个测试套件的标准输出，您可以找到它
+在其各自的文件中。
+
+这些文件将按照此命名约定位于`testOutputDirectory`文件夹中：
+`munit.${suiteName}-output.txt`，其中`suiteName`表示相对于XML文件的名称
+MUnit测试文件夹。
+
+不属于特定套件的测试运行输出不会被打印以保持构建输出清洁，但可以通过在_debug_模式下运行maven来启用它。
+
+[source,xml,linenums]
+.Redirect测试输出到文件
+----
+<plugins>
+  <plugin>
+    <groupId>com.mulesoft.munit.tools</groupId>
+    <artifactId>munit-maven-plugin</artifactId>
+    <configuration>
+      ...
+      <redirectTestOutputToFile>true</redirectTestOutputToFile>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+默认情况下，它被设置为`false`
+
+== 系统属性变量
+
+您可能希望定义MUnit测试成功运行所需的特定系统变量。下面的例子显示了你可以如何发送它们。
+
+[source, xml, linenums]
+。设置系统属性变量
+----
+<plugins>
+  <plugin>
+    <groupId>com.mulesoft.munit.tools</groupId>
+    <artifactId>munit-maven-plugin</artifactId>
+    <configuration>
+      ...
+      <systemPropertyVariables>
+        <my.property.key>my.property.value</my.property.key>
+      </systemPropertyVariables>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+[TIP]
+====
+取决于执行上下文，系统属性值可能会有所不同。引用这些属性时，最好重写它们的值以增强测试的可重复性。
+
+您可以在Maven运行MUnit时使用`-D`参数。 +
+通过`-D`参数传递的变量优先于任何其他属性。
+
+例如：
+
+`-Dmy.property.key=my.property.another.value`
+====
+
+== 测试输出目录
+
+您可能想要选择将创建测试输出文件的位置。
+指定的路径可以是绝对路径，也可以写为maven占位符。
+
+[source,xml,linenums]
+。用绝对路径测试输出目录
+----
+<plugins>
+  <plugin>
+    <groupId>com.mulesoft.munit.tools</groupId>
+    <artifactId>munit-maven-plugin</artifactId>
+    <configuration>
+      ...
+      <testOutputDirectory>/my/absolute/path</testOutputDirectory>
+      ...
+    </configuration>
+  </plugin>
+</plugins>
+----
+
+[source,xml,linenums]
+。使用maven占位符测试输出目录
+----
+<testOutputDirectory>${project.build.directory}/my/output/folder</testOutputDirectory>
+----
+
+默认情况下，这些文件将在`${project.build.directory}/munit-reports/output/`中创建。
+
+== 另请参阅
+
+*  link:/munit/v/2.0/munit-maven-plugin-configuration[Maven插件配置参考]

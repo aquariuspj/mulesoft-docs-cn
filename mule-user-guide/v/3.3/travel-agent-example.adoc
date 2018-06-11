@@ -1,0 +1,546 @@
+= 旅行社示例
+
+*_Enterprise Edition_*
+
+这个示例应用程序演示了Mule ESB集成Web服务的能力。
+
+Travel Agent SOAP Web服务处理航班和酒店预订的请求。最终用户将旅游信息输入到Web浏览器表单中，然后Mule访问数据库和RESTful Web服务以确定航班和酒店房间的可用性。最后，Mule收取信用卡确认所有旅行预订。
+
+特别是，这个Web服务执行四个重要的操作：
+
+* 它保留原始的消息有效载荷
+* 根据消息上的变量Mule设置路由消息进行处理
+* 它使用定制的异常策略处理错误
+* 它容忍故障并启动补偿措施，例如在发生错误时取消收费和预订）
+
+本文档将帮助您了解在Mule ESB应用程序中集成Web服务的一些方法。要更多地了解Mule ESB整合服务和系统的能力，请访问 link:/mule-user-guide/v/3.3/mule-examples[骡子的例子]并查看其他正在运行的应用程序。
+
+== 假设
+
+MuleSoft团队在Mule ESB的图形用户界面（GUI）*Mule Studio*中构建了这个旅行代理示例。本文档描述了Mule Studio环境中的示例细节。在适当的情况下，XML配置在可扩展部分的Studio界面屏幕截图之后。
+
+本文档假定您熟悉Mule ESB和 link:/mule-user-guide/v/3.3/mule-studio-essentials[Mule Studio界面]。为提高您对Mule Studio的熟悉度，请考虑完成一个或多个 link:/mule-user-guide/v/3.3/mule-studio[Mule Studio教程]。
+
+== 设置
+
+与此旅行社示例一样，您可以直接在*Mule Studio*中创建模板应用程序。您可以调整这些基于用例的模板的配置，以在Mule中创建您自己的自定义应用程序。
+
+按照以下步骤创建，然后在Mule ESB中运行Travel Agent示例应用程序。
+
+. 完成 link:/mule-user-guide/v/3.3/mule-examples[示例和练习]中的过程，创建并运行Mule Studio中的Travel Agent模板。
+. 打开您的Web浏览器。
+. 在浏览器的地址栏中输入`http://localhost:8787/populate`，然后按*enter*激活旅行代理应用程序，并在浏览器中引发读取`db populated`的响应。 （请参阅下面的<<DatabaseInitialisation Flow>>部分，了解Mule填充此数据库的原因。）
+. 在您的浏览器的地址栏中输入`http://localhost:8090/travelAgent/`，然后按*enter*以访问Travel Agent Web浏览器表单（请参阅下图）。
++
+image:launch_page.png[launch_page]
+
+== 它是如何工作的
+
+*Travel Agent Web Service*示例应用程序由多个 link:/mule-user-guide/v/3.3/mule-application-architecture[流动]组成，它们协作处理最终用户请求。总之，这个应用程序中的流程公开了一个*SOAP Web service*，它接受​​最终用户请求来预订航班并预订酒店房间。
+
+就本示例而言，旅行社Web服务应用程序为其最终用户建立了三个条件：
+
+. 应用程序在保留_旅行安排之后和_booking_之前不需要咨询最终用户。 （即，最终用户对旅行社网络服务有盲目的信心，以保留并支付停留期间的返程航班和酒店房间。）
+. 应用程序将多个最终用户信用卡的详细信息存储在数据库中;它使用这些信用卡来处理付款。
+. 最终用户希望为应用程序提供的服务支付佣金。
+
+最终用户 - 旅行社 - 通过旅行社网站`http://localhost:8090/travelAgent/`访问该应用程序。代理然后在Web应用程序的GUI的*Form*选项卡中输入旅行信息（请参阅下图）。
+
+image:form.png[形成]
+
+代理点击*Submit*来调用Mule ESB旅行代理应用程序。应用程序接收并处理请求，然后回复确认。浏览器在Web应用程序的*Confirmation*选项卡中显示响应详细信息（请参阅下图）。
+
+image:confirmation.png[确认]
+
+此Web应用程序的GUI还包含一个*SOAP*选项卡，开发人员可以使用该选项卡来检查Web服务请求和响应的内容。
+
+无论用户何时通过GUI中的*Form*选项卡提交信息，Web应用程序都会向Travel Agent Web服务发送 http://en.wikipedia.org/wiki/JSON[JSON]格式的请求。 Mule ESB应用程序（即服务器端应用程序）接收请求，将JSON转换为XML，然后处理该消息。最后，它将来自XML的消息转换回JSON，以返回对GUI的*Confirmation*选项卡的响应。
+
+Web服务必须接受来自不同格式的各种客户的请求。基于GUI的Web服务客户端（如旅行代理）可以使用JSON发送请求;另一个Web服务客户端 - 例如，基于SOAP的用户界面（SOAP-UI）可能以XML格式发送请求。
+
+因此，*SOAP*选项卡仅用于说明请求和响应的XML格式，就好像最终用户通过SOAP-UI与应用程序进行交互一样。因此，如果您单击*SOAP*选项卡上的*Submit*以XML格式发送预填充的示例请求，Mule ESB将返回XML中的SOAP响应。 Travel Agent应用程序同时接受JSON和XML请求（请参阅下图）。
+
+image:soap.png[肥皂]
+
+Mule ESB旅行代理应用程序包含多个 link:/mule-user-guide/v/3.3/mule-application-architecture[流量和子流量]，这些 link:/mule-user-guide/v/3.3/mule-application-architecture[流量和子流量]合作显示*SOAP Web service*。以下部分提供旅行社Web服务在处理最终用户请求时的操作的逐流详细信息。
+
+
+。流和子流的列表
+
+
+<<TravelAgentRequest Flow>> +
+<<RequestProxy Flow>> +
+<<Reservations flow>> +
+<<ReserveFlight Subflow>> +
+<<GetAvailableRooms Subflow>> +
+<<GetBestHotelRoom Subflow>> +
+<<GetCommissionRate Subflow>> +
+<<ConfirmReservations Flow>> +
+<<ThrowException Flow>> +
+<<CommissionService Flow>> +
+<<DatabaseInitialisation Flow>> +
+<<ConfirmFlight Subflow>> +
+<<ConfirmHotelRoom Subflow>> +
+<<AuthorisePayment Subflow>> +
+CancelFlight子流+
+<<CancelFlight and CancelPayment Subflows>>
+
+[TIP]
+====
+*For Mule Studio Users*
+
+在Mule Studio中，双击画布中的 link:/mule-user-guide/v/3.3/studio-building-blocks[建筑模块]以打开其*Properties Panel*，然后检查其配置细节。或者，单击*Configuration XML*选项卡检查应用程序的XML配置文件。
+
+image:config_tab.png[config_tab]
+====
+
+===  TravelAgentRequest流程
+
+该流程接受来自最终用户浏览器上Javascript表单的消息，调用Web服务以预订和确认航班和酒店房间，然后对最终用户做出响应。
+
+image:travAgReq.png[travAgReq]
+
+//查看XML
+
+==== 端点和变形金刚
+
+最终用户的Web浏览器以 http://en.wikipedia.org/wiki/JSON[JSON]格式提交请求; link:/mule-user-guide/v/3.3/ajax-endpoint-reference[* AJAX端点*]接收消息，然后将其传递给流中的下一个**{{2}}**。
+
+TravelAgentRequest流程最终必须通过请求 - 响应**{{0}}.**将消息传递给<<ConfirmReservations Flow>>流程。由于预订流程仅接受XML消息，因此TravelAgentRequest流程必须首先转换消息有效载荷的数据格式从JSON到XML。要执行转换，此流程使用**{{1}}**。
+
+该流程接下来使用**{{0}}**将消息包装在SOAP信封中。然后，它使用HTTP端点将消息推送到保留流程进行处理。
+
+预订流程完成其处理任务，然后将消息以SOAP XML格式传回给TravelAgentRequest流程。 TravelAgentRequest流展开信封，将消息传递到另一个DataMapper以将有效内容从XML转换回JSON，并将其显示给最终用户。
+
+===  RequestProxy流
+
+*RequestProxy*流接受最终用户通过GUI上的SOAP选项卡提交的XML请求。
++
+image:requestProxy.png[requestProxy]
+
+//查看XML
+
+Ajax入站端点接收SOAP请求，然后HTTP端点将消息传递给“预留”流程进行处理。当HTTP端点从预订流程接收到响应时，它将消息传递给`Object to String`转换器，该转换器将Java对象的有效负载转换为字符串。这种转换使最终用户的浏览器能够显示响应。
+
+[NOTE]
+====
+*Why the Proxy?*
+
+如果消息的有效负载已经在SOAP XML中，那么为什么必须存在*RequestProxy*流？为什么预订流程无法直接接收这些消息？
+
+存在*RequestProxy*有两个原因：
+
+. 跨站点脚本安全检查限制Web服务调用者和提供者之间的直接，开放式通信
+. 预订流程中的HTTP入站端点不会在Ajax服务器的端口上“侦听”
+
+因此，该流程以XML格式接收外部呼叫，并在Mule应用程序内部传输它们。
+====
+
+=== 预订流程
+
+此流程编排对其他Web服务的调用，并为最终用户准备响应。
++
+image:resrevations_flow.png[resrevations_flow]
+
+//查看XML
+
+==== 端点和SOAP组件
+
+消息源 - 一个HTTP入站端点 - 接收消息，然后将消息定向到配置为JAX-WS服务的**{{0}}**。 Mule将SOAP封装解组为JAXB注释的Java对象; Mule引用这些对象作为参数。从预订流程中的这一点以及之后，消息有效载荷的数据格式是Java。 （请注意，Mule不会更改消息有效负载的_content_，只会改变其格式。）
+
+==== 流参考和消息聚合器
+
+此流程会在Travel Agent应用程序中调用多个**{{0}}**来预订预订并收取佣金。
+
+使用**{{0}}**，预订流程会调用其第一个子流程来预订航班上的座位。 `Reserve flight`组件将消息发送到ReserveFlight子流程进行处理，然后用处理结果丰富消息有效负载。
+
+在整个流程中，Mule使用*Message Enrichers*来为消息有效载荷添加数据（即添加到有效载荷），而不是更改有效载荷内容。 Mule丰富了消息的有效载荷，以便应用程序中的其他消息处理器可以访问原始有效载荷。
+
+“预订”流程使用第二个流参考组件来调用GetBestHotelRoom子流。这个子流程确定了旅客逗留期间可用的最便宜的旅馆房间。然后Mule再一次通过子流处理的结果丰富消息有效载荷。
+
+==== 过滤器和流量参考
+
+接下来，预订流程通过**{{0}}**传递消息，以确认前面的子流程确定了一个房间。消息过滤器检查消息有效载荷以确定Mule是否应该进一步处理消息。
+
+* 如果消息有效载荷包含标识酒店房间的变量，则过滤器将消息传递给下一个消息处理器。
+* 如果消息有效载荷为`NOT FOUND`，则过滤器使用*Global Script Component*来处理消息。 `exceptionThrower`脚本组件向最终用户发送响应`Sorry, we could not process your request`。
+
+[NOTE]
+====
+*What is a Global Script Component?*
+
+Mule ESB使用*Global Elements*，如Travel Agent示例中的*exceptionThrower*指定传输细节并设置可重用配置。
+
+您可以创建一个全局元素来详细说明您的配置或传输细节，而不是重复编写相同的代码以将相同的配置应用于多个消息处理器。然后，您可以指示Mule应用程序中的任意数量的消息处理器引用该全局元素。
+
+*Learn more...*
+
+在此示例中，`exceptionThrower`脚本的代码在“预定”流程中不存在;相反，代码位于应用程序XML配置文件顶部的全局元素中（以及Mule Studio中的*Global Elements*选项卡 - 请参阅下图）。 `Filter on suitable room found`过滤器使用全局`exceptionThrower`组件来处理它不能接受的消息。 +
+ +
+
+image:global_script_2.png[global_script_2]
+
+====
+
+使用另一个流量参考组件，预订流程调用第三个子流程来确定佣金率。 `Get commission rate`组件将消息发送到GetCommissionRate子流程进行处理，然后用处理结果丰富消息有效载荷。
+
+==== 变形金刚和端点
+
+接下来，**{{0}}**添加航班和酒店费用，然后将总消费成本作为会话变量附加到消息中。
+
+然后，*VM Endpoint*调用<<ConfirmReservations Flow>>流程来确认所有预订并处理信用卡上的费用。
+
+流程中的最后一个元素`Create TravelResponse` **{{0}}**准备回应SOAP组件。 Mule使用表达式来定义响应的内容（见下图）;在这种情况下，表达式定义了两个：
+
+* 确认号码
+* 总旅行成本
++
+image:create_response.png[create_response]
+
+//查看XML
+
+最后，响应从`Create TravelResponse`转换器通过SOAP组件和HTTP端点移动到TravelAgentRequest流。 TravelAgentRequest流将响应发送给最终用户。
+
+=== 预留子流程
+
+主保留流程调用多个*flows*和*subflows*来执行特定任务，或者获取数据以丰富或设置为消息负载。 Mule使用流和子流来分离应用程序中的同步或异步操作。 Mule还支持应用错误处理指令的特定于流的异常策略。
+
+要调用流和子流，“预订”流程使用**Flow Reference Components**。事实上，预订流程调用的其中一个子流程_itself_使用流程参考组件来调用另一个子流程。以下各小节讨论*ReserveFlight*，*GetAvailableRooms*，*GetBestHotelRoom*和*GetCommissionRate*子流程的活动。
+
+====  ReserveFlight子流
+
+此子流程会调用Web服务来预订航班上的座位。
+
+image:reserveFlight.png[reserveFlight]
+
+//查看XML
+
+Mule首先使用表达式变换器从Mule消息有效载荷中提取以下信息：
+
+* 航班出发日期
+* 航班返回日期
+* 起点
+* 目的地
+* 旅行代理标识符
+
+变压器在其为航空公司的Web服务创建的请求中包含上述信息。此流程中的SOAP组件 - 一个JAX-WS客户端 - 通过请求响应HTTP端点将请求发送到Web服务。
+
+航空公司的网络服务完成预订，然后返回响应。预订流程利用Web服务的响应（座位预留）丰富了Mule消息有效载荷。
+
+====  GetAvailableRooms子流
+
+该子流程调用Web服务来获取旅行者可用的旅馆房间列表。
+
+image:get_available.png[get_available]
+
+//查看XML
+
+与ReserveFlight子流程类似，此流程使用三个构建块来准备请求并将其发送到SOAP Web服务 - 这次是酒店的Web服务。
+
+变换器使用表达式从Mule消息有效载荷中提取以下数据：
+
+* 开始日期
+* 晚上的住宿时间（即住宿时间）
+* 旅行代理标识符
+* 城市
+
+变压器在其为酒店的Web服务创建的请求中包含上述信息。 SOAP组件通过请求 - 响应HTTP端点将请求发送到Web服务。
+
+酒店的Web服务完成预订，然后返回响应。 GetBestHotelRoom流程通过Web服务的响应（可用房间列表）丰富了Mule消息负载。
+
+请注意，与预订流程不同，ReserveFlight和GetAvailableRooms子流程充当RESTful Web服务的_clients_;换句话说，他们使用来自其他提供者的Web服务。
+
+====  GetBestHotelRoom子流
+
+此子流程确定可用酒店房间列表中哪个房间的成本最低。
+
+image:getBest_flow.png[getBest_flow]
+
+//查看XML
+
+首先，这个子流使用流参考组件来调用GetAvailableRooms子流;然后，它使用可用酒店房间列表来丰富Mule消息有效载荷。
+
+然后，Mule将信息交给与**{{1}}**迭代处理器合作的**{{0}}**，以确定列表中最便宜的房间。
+
+变量变换器咨询 http://docs.oracle.com/javase/6/docs/api/java/lang/Double.html[`Double`]在消息上设置代表可用酒店房间最低价格的变量;这是“要击败的价格”。然后，Foreach处理集合中的每个项目 - 也就是说，可用房间列表中的每个房间 - 以确定这些房间中的任何一个是否可以“击败最低价格”。
+
+. 首先，foreach使用过滤器将项目的房间类型与消息有效内容（即双人房间，单人房间等）中的房间偏好进行比较;与房间偏好相匹配的项目会通过过滤器传递给下一个消息处理器。Foreach丢弃与房间偏好不匹配的项目。
+接下来，foreach使用过滤器将项目的价格与消息上设置的变量`Initialize minPrice`转换器进行比较;价格低于`minPrice`变量的商品会通过过滤器传递给下一个消息处理器。 Foreach丢弃价格不能“超过最低价格”的物品。
+. 集合中的某个商品通过这两个过滤条件时，它就成为新的“要拍的价格”。 `Update minPrice`变量变量在`minPrice`变量上设置该项的新的价值 - 房间价格; foreach将该项目传递给下一个消息处理器。
+.  Foreach使用第二个变量变量`Update lowestPriceRoom`在消息的有效负载上设置另一个变量。第二个变量记录物品的所有细节（酒店名称，房间价格，房间类型等）。
+.  Foreach对集合中的每个项目反复重复该过程，以确定可用的最便宜，适合的房间。
+
+最后，该子流末尾的转换器使用表达式（见下文）向预订流程提供最佳酒店房间数据。在某些情况下，foreach处理的结果是`null`  - 可能根本没有可用的房间，或者没有可用的房间与最终用户的房间相匹配。在这种情况下，`lowestPriceRoom`转换器向预订流程提供`NOT FOUND`结果。
+
+[source, code, linenums]
+----
+#[if (flowVars['lowestPriceRoom'] != null) { flowVars['lowestPriceRoom'] } else { 'NOT FOUND' }]
+----
+
+以下示例说明了此子流中的活动。
+
+想象一下，GetAvailableRooms子流为GetBestHotelRoom子流提供了一个包含三个项目的集合：
+
+* 单间100美元
+* 双人间200美元
+* 双人间220美元
+
+`Initialize minPrice`变量会咨询`double`，以在相当于 http://docs.oracle.com/javase/6/docs/api/java/lang/Double.html#MAX_VALUE[`double.MAX_VALUE`]的消息上设置变量。然后，foreach通过其范围内的消息处理器迭代地处理每个项目。
+
+* 第一个项目与消息有效内容（双人房间）中的房间偏好不匹配，所以它不会通过第一个过滤器，foreach会丢弃它。
+* 第二项与房间首选项相匹配，并通过第一个过滤器。该项目的房间价格低于`minPrice`变量（`double.MAX_VALUE`），因此它通过过滤器成为新的“要击败的对象”。两个变量变量分别在消息上设置一个新的`minPrice`变量$ 200和一个新的`lowestPriceRoom`变量。
+* 第三项与房间首选项匹配并通过第一个过滤器。该商品的房间价格高于`minPrice`变量（$ 200），因此它不会通过第二个过滤器，并且foreach将其丢弃。
+
+Foreach将其迭代工作的结果 - 集合中的第二个房间项目 - 传递给`lowestPriceRoom`变换器。变压器标识`‘lowestPriceRoom’`，然后将结果交给预订流程。
+
+[NOTE]
+====
+*Enrich or Set as Variable?*
+
+在预订流程中，Mule使用*Message Enrichers*向消息有效载荷添加信息。 Mule _enriches_消息有效载荷，而不是__更改内容，以便应用程序中的其他消息处理器可以访问原始有效内容。
+
+在GetBestHotelRoom子流程中，Mule使用*Variable Transformer*将信息作为属性存储在消息有效内容的会话范围中，而不是丰富其内容。
+
+你应该使用哪个？
+
+如果应用程序中的其他消息处理器必须能够访问原始消息有效负载，请使用更丰富的消息;如果没有，请设置一个变量。
+====
+
+====  GetCommissionRate子流
+
+该子流程决定了服务收取的佣金费率。
+
+image:getCommissionRate.png[getCommissionRate]
+
+//查看XML
+
+该子流程使用两栋建筑来确定为旅行代理服务收取的佣金：
+
+. 请求 - 响应HTTP端点来调用CommissionService Web服务
+.  link:/mule-user-guide/v/3.3/cache-scope[高速缓存]作用域，用于保存Web服务调用的结果以供重用。第一次接收请求时，缓存作用域花费时间发送调用RESTful Web服务，然后存储响应。第二次收到请求时，缓存范围将检查请求以确定当前日期和旅行日期之间的天数：+
+* 如果少于30天，缓存作用域将请求发送到Web服务
+* 如果30天或更长时间，缓存范围将检查其存储的响应，以确定是否有可用于计算新请求的响应; +
+** 如果是，则将其计算的响应发送给`Object to String`变换器
+** 如果不是，则将请求发送到Web服务
+
+缓存将响应 - 从存储的值计算得出，或从Web服务新鲜返回 - 传递给`Object to String`转换器，该转换器将Java对象的负载转换为字符串。此转换为`Calculate Price`会话变量提供可用于执行计算的格式的数据。
+
+=== 确认预订流程
+
+此流程通过信用卡付款确认航班和酒店预订。
+
+image:confirm_res.png[confirm_res]
+
+//查看XML
+
+==== 端点和流量参考
+
+该流通过请求 - 响应*VM Endpoint*接收消息，然后使用流参考组件调用子流来授权信用卡付款。一旦授权付款，Mule将消息传递给一组变量变量。此变换器`Set Rollback = CREDIT_CARD`和`Set Rollback = FLIGHT`变换器（更多流程中）与**{{0}}**配合处理错误。
+
+==== 变形金刚和例外策略
+
+这个流程中的变量变量在消息中分别设置一个变量。变量值帮助选择异常策略确定发生错误时Mule必须取消哪个事务。
+
+选择异常策略在ConfirmReservations流中捕获异常，然后查询消息上的变量以决定将路由到哪里。 （请参阅下面的图片和代码片段。）
+
+* 如果变量包含`CREDIT_CARD`值，则选择异常策略将通过第一个** {{0}} **指示消息，其中：+
+** 调用*CancelPayment*子流来取消信用卡交易
+** 调用*ThrowException*流程
+* 如果变量包含一个`FLIGHT`值，则选择异常策略通过第二个catch异常策略引导消息：+
+** 调用*CancelFlight*子流来取消航班确认
+** 调用*CancelPayment*子流来取消信用卡交易
+** 调用*ThrowException*流程
+
+image:choice_exception.png[choice_exception]
+
+//查看XML
+
+例如，当ConfirmHotelRoom子流未能确认预留的酒店房间（可能房间的可用性在最后一秒发生变化）时，该消息会引发异常，并且选择异常策略会捕获该异常。异常策略咨询变量消息。它确定，因为Mule已经在消息上设置了`FLIGHT`变量，所以它必须将消息引导到第二个catch异常策略来取消这两个事务。
+
+ConfirmReservations流程是应用程序中使用定制异常策略的两个流程之一。其他所有流程和子流程都使用Mule隐式应用的默认异常策略。
+
+[NOTE]
+====
+*There's No Rolling Back*
+
+在执行 http://en.wikipedia.org/wiki/Transaction_processing[交易]的流程中，您可以使用*{{1}}*来处理错误（即 http://en.wikipedia.org/wiki/Rollback_(data_management)[回滚事务]）。
+
+但是，由于基于HTTP的Web服务在 http://en.wikipedia.org/wiki/Transport_protocol[运输水平]上运行，因此无法使用它来执行 http://en.wikipedia.org/wiki/Transaction_processing[交易]。在基于HTTP的Web服务中，例如此旅行代理示例，您必须指示应用程序启动已完成任务的取消。
+====
+
+===  ThrowException流
+
+该流程向最终用户发送错误消息。
+
+//查看XML
+
+在ConfirmReservations流程中捕获异常策略都会调用此*ThrowException*流程。只包含**{{0}}**，此流程遵循一个脚本来引发`RuntimeException`并返回一个消息，其内容为`Unable to confirm reservations`。
+
+=== 佣金服务流程
+
+预订流程将请求发送至此“应用内”RESTful Web服务以获取佣金率。
+
+image:commission_service.png[commission_service]
+
+//查看XML
+
+`/commission` Web服务通过请求响应HTTP端点将请求传递给**{{0}}**。流量控制将请求路由到两个*Set Payload Transformers*中的一个以设置消息的佣金费率。
+
+* 如果当前日期和旅行日期之间的时间少于30天，则选择流量控制会将消息路由到`Set Rate 0.2`消息处理器。该变压器将佣金率设为0.2。
+* ，否则（即当前日期和旅行日期之间有超过30天），选择流量控制将消息路由到`Set Rate 0.1`消息处理器。该变压器将有效负载设置为0.1的佣金率。
+
+设置佣金费率后，`/commission` Web服务将对预订流程的响应返回。
+
+===  DatabaseInitialisation流
+
+作为最终用户，当您首次启动此旅行社应用程序时，您激活了此*DatabaseInitialisation*流程。该流程在本地基于文件的数据库中创建并填充表。 +
+
+image:databaseInitialisation.png[databaseInitialisation]
+
+//查看XML
+
+首先，请求 - 响应HTTP端点接收最终用户请求。接下来，Mule遵循Groovy组件中的脚本在数据库中创建表，然后用信用卡数据填充它（请参阅下面的脚本）。 HTPP端点以读取`db populated`的消息响应最终用户。 AuthorisePayment子流程中的JDBC端点现在可以获取此表中的信用卡数据。
+
+您无需在自定义应用程序中创建此流程来发布Web服务;它存在于这个例子中，所以你可以检查一个功能性的Web服务。
+
+//查看脚本
+
+DatabaseInitialisation流程是应用程序中仅有的两个使用定制的异常策略来处理错误的流程之一。除此之外，所有其他人都使用Mule隐式应用的默认异常策略。如果Groovy组件抛出一个错误 - 比方说，因为你不小心向这个流发送了一个请求两次 -  catch异常策略处理错误。它将消息发送给读取`table is already populated`的最终用户。
+
+=== 确认子流程
+
+根据ConfirmReservations流程的需求调用，以下子流程要么使用外部Web服务来完成事务，要么取消事务。
+
+====  ConfirmFlight子流
+
+该子流向Web服务发送请求以确认航班预订。
+
+image:confirmFlight.png[confirmFlight]
+
+//查看XML
+
+ConfirmFlight子流程使用三个构建块进行准备，然后向航空公司的SOAP Web服务发送请求。
+
+`Create FlightConfirmationRequest`转换器使用表达式从Mule消息有效载荷中提取以下数据：
+
+预订流程`Enrich with flightReservationResponse`丰富人员设置的会话变量中的* 航班预订号码（请参阅下图左侧）
+来自ConfirmReservations流程中由`Enrich with paymentResponse` enricher设置的变量的* 信用卡授权号码（请参阅下图，右侧）+
+image:extract_variables.png[extract_variables]
+
+//查看XML
+
+变压器在其为航空公司的Web服务创建的请求中包含上述信息。此流程中的SOAP组件 - 一个JAX-WS客户端 - 通过请求响应HTTP端点将请求发送到Web服务。
+
+航空公司的Web服务处理请求，然后返回确认响应。 ConfirmReservations流程利用Web服务的响应来丰富Mule消息负载。
+
+====  ConfirmHotelRoom子流
+
+该子流向Web服务发送请求以确认酒店预订。
+
+image:confirmHotelRoom.png[confirmHotelRoom]
+
+//查看XML
+
+该子流程不使用像ConfirmFlight子流程这样的表达式转换器，而是使用 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[Anypoint DataMapper]转换器为酒店的SOAP Web服务准备请求。
+
+`TravelRequest to ConfirmationRequest`转换器将数据从Mule消息负载映射到正在为Web服务创建的请求的负载。请参阅下表以检查其映射的数据。
+
+[%header,cols="34,33,33"]
+|===
+从 |中提取的|数据 |在Web服务请求上设置
+|晚：整数 |会话变量 |中的`Enrich with suitableRoom`浓缩器设置numberOfNights：整数
+| roomID：字符串 |会话变量，由`Enrich with suitableRoom`浓缩器在预订流 |中设置roomID：string
+| beginDate：date  |会话变量由`Enrich with suitableRoom`预订流程 |中的richher设置startDate：date
+|===
+
+注意，Mule从同一个会话变量中提取它需要的所有数据。而不是在表达式转换器中使用三个表达式来从同一个变量中提取三条信息，Mule使用DataMapper从一个*input argument*中提取三条信息。在这种情况下，Anypoint DataMapper是一个更高效的变压器。
+
+在*Mule Studio*中，单击画布中的DataMapper转换器将其选中。然后，点击Mule Studio控制台中的*Data Mapping*选项卡，查看其映射数据的图形表示（见下文）。
+
+image:mapped_data.png[mapped_data]
+
+此流程中的SOAP组件通过请求 - 响应HTTP端点将请求发送到Web服务。酒店的Web服务处理请求，然后返回确认响应。 ConfirmReservations流程利用Web服务的确认响应来丰富Mule消息负载。
+
+====  AuthorisePayment子流
+
+该子流向Web服务发送请求以用信用卡支付旅行费用。
+
+image:authorisePayment.png[authorisePayment]
+
+//查看XML
+
+Mule使用信用卡支付酒店房间和机票预订的总费用。此子流程使用*JDBC Endpoint*从数据库检索信用卡信息。 Mule使用SQL查询（请参阅下面的图片和代码片段）来确定要使用哪个信用卡以及要检索哪些数据。
+
+image:SQL_query.png[SQL_query]
+
+[source, code, linenums]
+----
+<jdbc-ee:query key="findCreditCard" value="select cc_number, expiration_date, security_code from credit_cards where user_id = #[payload.userId]"/>
+----
+
+该richter为Mule消息有效载荷添加了一个`creditCard`变量，其中包含以下数据：
+
+* 信用卡号码
+* 到期日期
+* 信用卡安全密码
+
+`Create PaymentRequest`转换器使用表达式从Mule消息有效载荷中提取以下数据：
+
+* 预订流程中由`Calculate Price`转换器设置的`price`会话变量导致的酒店房间和航班的总费用
+*  AuthorisePayment子流程中由`Enrich with creditCard`浓缩器设置的`creditCard`变量的信用卡号码，到期日期和安全代码
+
+转换器在为CreditCardService Web服务创建的请求中包含上述信息。此流程中的SOAP组件通过请求 - 响应HTTP端点将请求发送到Web服务。
+
+信用卡的Web服务处理付款，然后返回确认响应。 Mule通过Web服务的响应来丰富消息的有效载荷。
+
+====  CancelFlight和CancelPayment子流
+
+这些子流向Web服务发送请求以取消已确认的航班和信用卡付款。
+
+image:cancelFlight.png[cancelFlight]
+
+image:cancelPayment.png[cancelPayment]
+
+//查看XML
+
+两个子流程都使用三个构建块进行准备，然后向航空公司或信用卡的SOAP Web服务发送取消请求。
+
+每个雇用：
+
+. 表达式转换器，用于从Mule消息负载中提取数据并为Web服务准备请求
+.  SOAP组件和请求 - 响应HTTP端点发送，然后接收取消请求
+
+Web服务处理请求，然后返回确认响应。子流程通知他们已完成取消活动的捕获异常策略。
+
+== 向下钻取
+
+以下小节提供了有关客户端用户界面的详细信息。
+
+=== 关于客户端用户界面
+
+此旅行代理示例的客户端通过Web浏览器上的jQuery用户界面客户端使用Web服务。该接口将数据作为JSON请求或原始SOAP信封提交。
+
+要检查客户端界面的代码，请访问Mule中的`src/main/app/docroot`文件夹中的`index.html`文件。
+
+[TIP]
+====
+*How Do I Access the Index File?*
+
+. 在*Package Explorer*中，单击以展开`src`文件夹。
+. 点击展开文件夹以导航至`main`> `app`> `docroot`。
+. 双击`index.html`文件以在Studio的新画布窗格中打开该文件。
+====
+
+== 相关主题
+
+* 有关配置Anypoint DataMapper的更多信息，请参阅 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[DataMapper变压器参考]。
+* 有关使用JDBC端点的更多信息，请参阅 link:/mule-user-guide/v/3.3/database-jdbc-endpoint-reference[数据库（JDBC）端点参考]。
+* 有关将异常策略应用于流程的更多信息，请参阅 link:/mule-user-guide/v/3.3/error-handling[错误处理]。
+* 有关此示例中特定例外策略的更多信息，请参阅 link:/mule-user-guide/v/3.3/choice-exception-strategy[选择例外策略]和 link:/mule-user-guide/v/3.3/catch-exception-strategy[捕捉异常策略]。
+* 有关路由消息的更多信息，请参阅 link:/mule-user-guide/v/3.3/choice-flow-control-reference[选择流量控制参考]。
+* 有关丰富邮件的更多信息，请参阅 link:/mule-user-guide/v/3.3/studio-scopes[工作室范围]。
+* 有关在消息上设置变量的更多信息，请参阅 link:/mule-user-guide/v/3.3/variable-transformer-reference[可变变压器参考]和 link:/mule-user-guide/v/3.3/session-variable-transformer-reference[会话变量变换器参考]。
+* 有关缓存Web服务响应的更多信息，请参阅 link:/mule-user-guide/v/3.3/cache-scope[缓存范围]。
+* 有关迭代处理的更多信息，请参阅 link:/mule-user-guide/v/3.3/foreach[的foreach]。
+* 有关配置SOAP组件的更多信息，请参阅 link:/mule-user-guide/v/3.3/soap-component-reference[SOAP组件参考]。
+* 有关过滤邮件的更多信息，请参阅 link:/mule-user-guide/v/3.3/message-filter[消息过滤器]。

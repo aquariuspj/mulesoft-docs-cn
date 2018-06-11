@@ -1,0 +1,281 @@
+：toc：离开
+：toc-title：聚合模块
+：toclevels：2
+：最后更新标签!:
+：文档信息：
+：source-highlighter：coderay
+：图标：字体
+
+[[aggregators-reference]]
+= 聚合器模块文档参考
+
+聚合器是传递路由器，这意味着由聚合器处理的相同消息将由其后的组件处理。唯一的修改是添加一些提供聚合信息的消息属性。
+
+== 配置
+
+没有配置聚合器，因为该模块仅基于操作。每种不同类型的聚合器都是可以通过其参数进行配置的不同操作。
+
+== 聚合器类型
+
+有基于大小，基于时间和基于组的聚合器。
+
+[[size-based-aggregator]]
+基于大小的聚合器=== 
+
+[source,xml,linenums]
+----
+<aggregators:size-based-aggregator  name="sizeBasedAggregator"
+                                    maxSize="10"
+                                    timeout="60"
+                                    timeoutUnit="MINUTES"
+                                    objectStore="exampleObjectStore">
+    <aggregators:content>
+        #[message]
+    </aggregators:content>
+    <aggregators:incremental-aggregation>
+        ...
+    </aggregators:incremental-aggregation>
+    <aggregatos:aggregation-complete>
+        ...
+    </aggregators:aggregation-complete>
+</aggregators:size-based-aggregator>
+----
+
+它聚合元素直到达到预定义的大小，执行路由和侦听器。
+
+
+==== 参数
+
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 名称 | 字符串 | 聚合器的名称。它可以稍后由聚合器侦听器引用。 |  {nbsp} |  X {nbsp}
+| 内容 | 表达式 | 定义要聚合的内容的表达式。评估结果是存储在聚合中的值。 | ＃[message]  |  {nbsp}
+| 最大大小 | 数字 | 在考虑聚合完成之前要聚合的元素总数。 |   |  X {n}
+| 超时 | 数字 |  等待聚合完成的最长时间。如果在元素总数等于最大值之前达到超时，则认为聚合已完成。不支持`0`的值，以避免不断地超时。 |   -  1（无限制） |  {n}
+| 超时单位 | 时间单位 | 衡量超时的时间单位。 |   SECONDS  |  {n}
+| 对象存储 | 对象存储 |  引用全局对象存储的名称或存储聚合元素的私有对象存储的定义。 |  默认对象存储分区。 |  {nbsp}
+| 聚合完成路由 | 路由 | 组件链将在聚合完成后执行。 |   |  X {n}
+| 增量聚合路由 | 路由 | 组件链将针对聚合的每个新元素执行。有效内容是从第一个（在此聚合中）到现在正在聚合的所有元素的列表。 |   |  {nbsp}
+|======================
+
+
+==== 引发
+
+* 聚合：AGGREGATOR_CONFIG
++
+只要maxSize或超时值具有无效值（例如，`maxSize < 0`）。
+
+
+[[time-based-aggregator]]
+=== 基于时间的聚合器
+
+[source, xml,linenums]
+----
+<aggregators:time-based-aggregator  name="timeBasedAggregator"
+                                    period="60"
+                                    periodUnit="MINUTES"
+                                    maxSize="10"
+                                    objectStore="exampleObjectStore">
+    <aggregators:content>
+        #[message]
+    </aggregators:content>
+    <aggregators:incremental-aggregation>
+        ...
+    </aggregators:incremental-aggregation>
+</aggregators:time-based-aggregator>
+----
+
+
+在时间段完成之前聚合元素，执行路由和侦听器。
+
+
+==== 参数
+
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 名称 | 字符串 | 聚合器的名称。它可以稍后由聚合器侦听器引用。 |  {nbsp} |  X {nbsp}
+| 内容 | 表达式 | 定义要聚合的内容的表达式。评估结果是存储在聚合中的值。 | ＃[message]  |  {nbsp}
+| 周期 |  Number  |  在考虑聚合完成之前需要等待的时间段。 |   |  X {n}
+| 周期单位 | 时间单位 | 测量时间段的时间单位。 |   SECONDS  |  {n}
+|  Max Size  |  Number  | 在考虑聚合完成之前要聚合的元素总数。 |   -  1（无限） |  { NBSP}
+| 对象存储 | 对象存储 |  引用全局对象存储的名称或存储聚合元素的私有对象存储的定义。 |  默认对象存储分区。 |  {nbsp}
+| 为每个聚合的新元素执行增量聚合路由 | 路由 | 组件链。有效内容是从第一个（在此聚合中）到现在正在聚合的所有元素的列表。 |   |  {nbsp}
+|======================
+
+==== 引发
+
+* 聚合：AGGREGATOR_CONFIG
++
+只要周期或`maxSize`具有无效值（例如，`Period = 0`）。
+
+[[group-based-aggregator]]
+=== 基于组的聚合器
+
+[source,xml,linenums]
+----
+<aggregators:group-based-aggregator name="groupBasedAggregator"
+                                    groupId="#[correlationId]"
+                                    groupSize="#[itemSequenceInfo.sequenceSize]"
+                                    evictionTime="180"
+                                    evictionTimeUnit="SECONDS"
+                                    timeout="60"
+                                    timeoutUnit="MINUTES"
+                                    objectStore="exampleObjectStore">
+    <aggregators:content>
+        #[message]
+    </aggregators:content>
+    <aggregators:incremental-aggregation>
+        ...
+    </aggregators:incremental-aggregation>
+    <aggregatos:aggregation-complete>
+        ...
+    </aggregators:aggregation-complete>
+</aggregators:group-based-aggregator>
+----
+
+
+根据组ID标识不同组中的元素。
+
+每当新事件到达聚合器时，元素的ID就会被解析。如果具有该ID的组已经存在于聚合器中，则该值将被添加到该组中。否则，将创建一个具有该ID的新组，并且收到的元素将成为该组聚合中的第一个元素。
+
+一些重要的概念出现在基于群组的聚合器中：
+
+* 群组超时：当一个群组必须被释放，因为该群组的所有必要事件都没有在预期的时间内到达。如果一个组超时但尚未被驱逐，它将拒绝尝试向该组添加任何新元素。
+
+* 群组驱逐：从聚合器中删除组时，无论它是否已完成或超时。如果聚合器接收到具有该组ID的新元素，则该组将再次创建。
+
+最后，因为到达基于组的聚合器的元素在事件具有`sequenceNumber`时与分割序列相关，所以在聚合发布之前按升序对它们进行排序。
+
+==== 参数
+
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 名称 | 字符串 | 聚合器的名称。它稍后可用于由聚合器侦听器 |  |  X引用。
+| 内容 | 表达式 | 定义要聚合的内容的表达式。评估结果是存储在聚合中的值。 | ＃[message]  |  {nbsp}
+| 组标识 | 表达式 | 要为每个收到的新消息评估表达式，以便获取应汇总的组的标识。 | ＃的correlationID]  |  {} NBSP
+| 组大小 | 数字 | 分配给解析了组ID的组的最大大小。所有具有相同组ID的消息必须具有相同的组大小。如果不是，则只有第一个已解析的组大小才会被认为是正确的，并且会为每个不匹配的记录生成一条警告。 | ＃[itemSequenceInfo.sequenceSize]  |  {nbsp}
+| 驱逐时间 | 数字 | 一旦完成或超时，记住组ID的时间（0表示：不记得，-1：永远记住）{{3 }} {180 {4}} {} NBSP
+| 驱逐时间单位 | 时间单位 | 驱逐时间的时间单位。 |  SECONDS  |  {n}
+| 超时 | 数字 |  等待组的聚合完成的最长时间。如果在该组中的元素总数等于该组的大小之前达到超时，则聚合将被视为完成。为了避免连续的群组超时，不支持`0`的值。 |   -  1（无限） |  {n}
+| 超时单位 | 时间单位 | 衡量超时的时间单位。 |   SECONDS  |  {n}
+| 对象存储 | 对象存储 |  引用全局对象存储的名称或存储聚合元素的私有对象存储的定义。 |  默认对象存储分区 |  {nbsp}
+| 聚合完成路由 | 路由 |  组件链将在聚合完成后执行。 |   |  X {n}
+| 增量聚合路由 | 路由 | 组件链将针对聚合的每个新元素执行。有效内容是从第一个（在此聚合中）到现在正在聚合的所有元素的列表。 |   |  {nbsp}
+|======================
+
+==== 引发
+
+* 聚合：GROUP_COMPLETED
++
+当一个新元素必须被添加到已经完成的组中（并且该组尚未被驱逐）。
+* 聚合：GROUP_TIMED_OUT
++
+当一个新元素必须添加到超时的组中（并且该组尚未被驱逐）时。
+* 聚合：NO_GROUP_ID
++
+当解析为组ID的表达式返回null时。
+* 聚合：NO_GROUP_SIZE
++
+当解析为组大小的表达式返回null时。
+* 聚合：AGGREGATOR_CONFIG
++
+当组大小或超时值有无效值时（例如`groupSize < 0`）。
+
+
+== 来源
+
+[[aggregator-listener]]
+=== 聚合器监听器
+
+`<aggregators:aggregator-listener aggregatorName="exampleAggregator" includeTimedOutGroups="false">`
+
+一旦侦听器引用的聚合器完成聚合，侦听器将以所有元素的列表触发。虽然聚合侦听器可以用于任何类型的聚合器，但对于时间驱动的聚合来说非常重要。这样的聚合在事件上下文之外异步触发，因此它们不执行聚合器路由，只能将聚合器侦听器作为源访问流中的组件。
+
+
+==== 参数
+
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 聚合器名称 | 字符串 | 要监听的聚合器的名称。一旦聚合器发布其元素，监听器将被执行。每个侦听器只能引用一个聚合器，并且每个聚合器最多只能由一个侦听器引用。 |   |  X {nbsp}
+| 包含超时组 | 布尔值 | 指示在由于超时而释放组时，是否应触发侦听器。 |  false  |  {nbsp }
+|======================
+
+== 聚合属性
+每次消息通过聚合时，都会添加一些有关聚合信息的属性。
+
+[cols=".^20%,.^20%,.^35%", options="header"]
+|======================
+|  {名称{1}}输入 | 说明
+| 聚合ID  | 字符串 | 聚合元素的组中的ID。如果聚合策略没有按组进行聚合，则该字段将是一个自动生成的值，一直保留到聚合发布（与基于组和基于时间的聚合器相同）。
+| 第一个项目到达时间 | 日期 | 第一个值汇总的时间。
+| 上次商品到达时间 | 日期 | 最后一次聚合的时间。
+| 组完成 | 布尔值 | 聚合完成时为true，否则为False。
+|======================
+
+== 基于时间与事件驱动的聚合
+
+有两种聚合触发器：同步（或事件驱动）和异步（或时间驱动）。从配置中可以看出，根据添加到列表中的新值（因为指定了最大大小时）或者因为某个超时或时间段已完成而可以将聚合视为完成。 _这很重要，因为聚合类型决定了使用该元素列表执行哪个组件链._
+
+与聚合器关联的每个时间计数器在组的第一条消息到达时开始计数。聚合完成后，计数器重置并等待下一个元素到达。
+
+对于单组聚合器（基于时间的和基于大小的聚合器），只有一个时间计数器，但对于基于组的聚合器，每组只有一个计数器。
+
+如果聚合按时间段或超时完成释放，它将永远不会在其定义中执行路由。这会导致一种不需要的场景，其中只执行一部分流程，从配置在聚合器内部的处理器链开始，继续执行后面的组件，但没有从流源向聚合器本身执行任何操作。
+
+这意味着事件必须在聚合器中创建，但这不是可取的。此外，如果考虑在启动事务的Try范围内聚合器的情况，则事务上下文在聚合器内部的消息处理器的上下文中将不可用。
+
+这就是聚合器侦听器存在的原因，以及为什么基于时间的聚合器不接受聚合完成路由。
+
+另一方面，如果由于将新事件添加到聚合元素列表中并达到最大大小而完成聚合，则将执行聚合完成路由和挂接到该聚合器的任何聚合器侦听器。这是可能的，因为为了到达聚合器，消息必须在它之前经过每个消息处理器，并且我们可以确定整个流程是从源头向前执行的。
+
+因此，如果希望同步完成聚合，则可以定义如何在同一聚合器（聚合完成路由）内的处理器链中处理它，或者在具有聚合侦听器的另一个流中处理它（或它们的源）。否则，如果聚合将在时间段完成时触发，则其处理的唯一方式是处理器的链在单独的流中定义，并且聚合器侦听器在源中定义。
+
+
+群集中的== 个聚合器
+
+该模块是开发出来的，可以在集群中使用。但是，为了防止意外的行为，您需要考虑这些配置详细信息：
+
+当定义了时间驱动的聚合并且第一个事件到达时，它将在群集的主节点中进行调度。由于新事件可以到达集群的任何节点，因此您需要一种方式来通知并使主节点安排该聚合。
+为此，主节点中的另一个任务会定期确定是否有必要安排新的聚合。
+如果检查新聚合调度的间隔比聚合的实际超时长很多，这可能会导致问题，因为聚合可能在调度之前结束，或者计算时间可能存在错误。
+
+为避免此问题，您可以配置主节点检查要调度的新聚合的频率。
+您可以使用以下任一方式定义此值：
+
+* 全局配置属性（以毫秒为单位）`aggregatorsSchedulingPeriod`
+* 系统属性`-M-Dmule.aggregatorsSchedulingPeriod`
+
+
+== 对象存储配置
+
+对于任何聚合器，可以通过引用全局OS或创建私有对象存储来配置对象存储。
+
+。全球
+[source,xml,linenums]
+----
+<aggregators:size-based-aggregator name="globalOSAggregator"
+                                   maxSize="10"
+                                   objectStore="aGlobalObjectStore">
+
+----
+
+。私人的
+[source,xml,linenums]
+----
+<aggregators:size-based-aggregator  name="privateOSAggregator" maxSize="10">
+    ...
+    <aggregators:object-store>
+        <os:private-object-store alias="privateObjectStore" persistent="false"/>
+    </aggregators:object-store>
+</aggregators:group-based-aggregator>
+----
+
+
+[[see_also]]
+== 另请参阅
+
+*  link:aggregator-examples[聚合器使用示例]

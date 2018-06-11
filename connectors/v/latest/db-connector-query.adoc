@@ -1,0 +1,119 @@
+= 查询数据库
+:keywords: db, connector, SQL, Database, query, select, SQL injetion
+：TOC：
+：TOC标题：
+
+使用数据库连接器配置数据库操作时，可以通过多种方法将变量值添加到在数据库中执行的SQL语句中。
+
+== 使用输入参数保护数据库查询
+选择操作用于从RDBMS检索信息。此操作的主要概念是您将提供一个SQL查询并使用DataWeave来提供参数：
+
+[source,xml,linenums]
+----
+<flow name="selectParameterizedQuery">
+  <db:select config-ref="dbConfig">
+    <db:sql>SELECT * FROM PLANET WHERE name = :name</db:sql>
+    <db:input-parameters>
+      #[{'name' : payload}]
+    </db:input-parameters>
+  </db:select>
+</flow>
+----
+
+正如你在上面的例子中看到的那样，输入参数是作为键值对提供的，我们现在可以通过嵌入一个DataWeave脚本来创建它们。这些键与分号字符（:)一起用于按名称引用参数值。这是在查询中使用参数的推荐方法。
+
+另一种方法是直接编写` <db:sql>SELECT * FROM PLANET WHERE name = #[payload] </db:sql>`，但这是一个非常危险的做法，不建议。
+
+以这种方式使用输入参数在SELECT语句中配置WHERE子句的优点是：
+
+* 查询不受SQL注入攻击的影响
+* 连接器可以执行不可能的优化，否则会提高应用程序的整体性能
+
+[TIP]
+DataSense可用于操作的输入和输出。通过分析查询，连接器将通过分析SQL语句的投影部分自动计算查询输出的结构。同时，通过将`WHERE`子句中的条件与表结构进行比较，它还将生成输入DataSense，以帮助您构建将生成输入参数的DataWeave脚本。
+
+== 动态查询
+
+有时，您不仅需要参数化WHERE子句，还要参数化查询本身的某些部分。为此的示例用例是根据条件需要在线对历史表进行查询的查询，或者项目列需要变化的复杂查询。
+
+
+
+
+在此示例中，您可以通过构建表依赖于变量`$(vars.table)`的字符串来查看完整表达式是如何用于生成查询的。需要注意的一个重要事项是，尽管一些查询文本是动态的`"SELECT * FROM $(vars.table)`，但WHERE子句仍然使用使用输入参数定义WHERE条件的最佳实践，在这种情况下`WHERE name = :name`：
+
+[source,xml,linenums]
+----
+<set-variable variableName="table" value="PLANET"/>
+<db:select config-ref="dbConfig">
+    <db:sql>#["SELECT * FROM $(vars.table) WHERE name = :name"]</db:sql>
+    <db:input-parameters>
+        #[{'name' : payload}]
+    </db:input-parameters>
+</db:select>
+----
+
+[NOTE]
+在Mule 3中，select的概念被拆分为参数化和动态查询，并且不能同时使用两者。您必须选择具有动态查询还是具有使用参数的优势（SQL注入保护，PreparedStatement优化等）。此外，做一个或另一个的语法是不同的，所以你必须学习两种不同的方法来做同样的事情。但是对于Mule 4中的新数据库连接器，现在可以通过查询中的表达式同时使用这两种方法。
+
+
+为什么我需要上述例子的动态查询？我能否像另一个输入参数那样对待表格？那么答案是否定的。输入参数只能应用于WHERE子句中的参数。要修改查询的任何其他部分，您需要使用DW的插值运算符。
+
+== 流式传输大型结果
+数据库表往往很大。一个查询可能会返回成千上万的记录，特别是在处理集成用例时。流媒体是一个很好的解决方案。流式传输是什么意思？假设您有一个返回10K行的查询，试图一次获取所有这些行将导致以下结果：
+
+* 性能下降，因为这对网络有很大的影响
+* 存储内存不足的风险，因为所有这些信息都需要加载到RAM中。
+
+流式传输意味着连接器不会一次获取10K行;相反，它将获取一个较小的块，一旦该块被消耗，它将获取剩余的块。这样，您可以减轻网络和内存的压力。
+
+=== 在Mule 4中进行流式传输vs在Mule中进行流式传输3
+在Mule 3.x中，这是你必须特别启用的东西，因为它默认是禁用的。在Mule 4中，这是透明的并且始终可用，您不必再担心它，只需相信该功能就在那里。
+
+Mule 3的另一个改进是我们现在可以使用Mule 4中新的可重复流式机制。这意味着流现在可以重复使用，并且可以让DataWeave和其他组件多次处理同一个流，即使并行处理也是如此。有关可重复流的更多信息，请阅读 link:/mule4-user-guide/v/4.1/streaming-about[流媒体在骡4.0]文章。
+
+=== 限制结果
+
+仅仅因为Mule Runtime让连接器可以精确地处理流式传输，并不意味着将大量数据从数据库移动到Mule是个好主意。即使使用流式传输，典型的SQL查询也可以返回许多行，每行都包含大量信息。这会产生：
+
+* 大型网络开销
+* 数据库服务器上的大量资源占用
+*  Mule Runtime中的大内存和需求
+
+选择操作提供参数来帮助实现这一点：`fetchSize`和`maxRows`：
+
+[source,xml,linenums]
+----
+<db:select fetchSize="200" maxRows="1000" config-ref="dbConfig"> 
+  <db:sql>select * from some_table</db:sql>
+</db:select>
+----
+
+在这个例子中，我们告诉连接器不会因SQL SELECT查询而获取多于1000个总行数，而是试图只将数据库中的结果一次流到数据库连接器200。所以在这个例子中，它需要5次独立的网络往返检索1000个匹配的行。
+
+该组合限制了将被检索的信息总量（maxRows值），并且还确保数据通过网络以较小的块（fetchSize值）从数据库返回。
+
+[NOTE]
+fetchSize是JDBC驱动程序的提示，不一定需要强制执行。这些行为因JDBC驱动程序提供者而异。通常，JDBC驱动程序的默认fetchSize是10。
+
+== 设置查询超时
+
+== 查询超时参考
+ 
+有时数据库查询需要很长时间才能执行。以下因素常常导致查询执行延迟：
+
+* 一个效率低下的查询，例如具有不正确索引的迭代遍历多行
+* 繁忙的RDBMS或网络
+* 锁争用
+
+通常，建议在查询上设置超时时间。要管理超时，请配置`queryTimeout`和`queryTimeoutUnit`。以下示例显示如何为Select操作设置超时，但所有操作都支持设置超时：
+ 
+[source,xml,linenums]
+----
+<db:select queryTimeout="0" queryTimeoutUnit="SECONDS" config-ref="dbConfig">
+   <db:sql>select * from some_table</db:sql>
+</db:select>
+----
+
+== 另请参阅
+
+*  link:/mule4-user-guide/v/4.1/streaming-about[流媒体在骡4.0]

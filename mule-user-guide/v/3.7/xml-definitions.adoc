@@ -1,0 +1,368 @@
+=  XML定义
+:keywords: anypoint studio, esb, sap, connectors jco, bapi
+
+所有SAP对象（BAPI和IDoc）都可以表示为XML文档以便于使用。 IDoc本质上已经是XML文档，其模式可以通过SAP事务**WE60**获得。
+
+对于BAPI（功能），SAP连接器提供两种不同的专有格式（版本1和2），版本2是与 link:/anypoint-studio/v/5/datamapper-user-guide-and-reference[Anypoint DataMapper]一起使用的最佳选择。
+
+[NOTE]
+XML版本2可从SAP连接器版本**2.1.0**获得。
+
+==  JCo函数
+
+一个JCo函数（BAPI）可以用下面的XML文档结构来表示：
+
+*  *Import*：包含执行BAPI / Function时的输入值（参数）。
+*  *Export*：包含执行BAPI /函数后的输出值。
+*  *Changing*：包含执行BAPI /函数时可以发送和/或接收的更改值。
+*  *Tables*：包含哪些值可用于输入和输出。
+*  *Exceptions*：检索BAPI元数据时，包含BAPI可能抛出的所有异常。将响应发回给入站端点的SAP时，如果应返回ABAP异常，则应将其发送到此端口的*exception*元素子节点中。
+
+==  XML结构
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<jco name="BAPI_NAME" version="1.0">
+    <import>
+        <!-- Fields / Structures / Tables -->
+    </import>
+    <export>
+        <!-- Fields / Structures / Tables -->
+    </export>
+    <changing>
+        <!-- Fields / Structures / Tables -->
+    </changing>
+    <tables>
+        <!-- Tables -->
+    </tables>
+    <exceptions>
+        <exception/>
+    </exceptions>
+</jco>
+----
+
+主要记录（导入，导出和更改）均支持*fields*，*structures*和/或*tables*：
+
+*  *Structure*：包含字段，表格和/或内部结构
+*  *Table*：包含行列表
+*  *Table Row*：包含字段，结构和/或内部表格
+*  *Field*：包含实际值的元素
+
+字段是保存值的唯一属性，它允许自版本*1.4.1*和*2.1.0*生成一个特殊属性名称*trim*，其中包含一个布尔值，指示是否应修整字段的值删除前导和尾随空格字符）或不。默认行为是修剪该值（trim = "true"）。
+
+[source, xml, linenums]
+----
+<jco name="BAPI_NAME" version="1.0">
+    <import>
+        <field name="ATTR-1">   VAL-1 </value> <!-- Trims ==> "VAL-1" -->
+        <field name="ATTR-2" trim="false">  VAL-2  </value> <!-- No trim ==> "  VAL-2  " -->
+        <field name="ATTR-3" trim="true"> VAL-3</value> <!-- Trims  ==> "VAL-3" -->
+    </import>
+    ...
+</jco>
+----
+
+[NOTE]
+trim属性在所有XML版本中都有效。前面的示例使用XML版本1。
+
+所有XML版本中的异常都以相同的方式表示。在任何元数据检索方法的结果中，它表示功能模块（BAPI）可以抛出的异常列表。
+
+[source, xml, linenums]
+----
+<jco>
+    ...
+    <exceptions>
+        <exception key="EXCEPTION_1" messageClass="" messageNumber="" messageType="">Message 1</exception>
+        <exception key="EXCEPTION_2" messageClass="" messageNumber="" messageType="">Message 2</exception>
+        <exception key="EXCEPTION_3" messageClass="" messageNumber="" messageType="">Message 3</exception>
+        <exception key="EXCEPTION_4" messageClass="" messageNumber="" messageType="">Message 4</exception>
+    </exceptions>
+</jco>
+----
+
+当入站端点需要将ABAP异常返回给SAP时，还会使用异常元素。在这种情况下，只有一个例外应该存在。如果返回多个异常，则会抛出第一个异常，其余的将被忽略。
+
+有两个用于ABAP异常的构造函数，并且XML根据要调用的对象而不同：
+
+*  _新的AbapException（String key，String message）_
++
+[source, xml, linenums]
+----
+<jco>
+    ...
+    <exceptions>
+        <exception key="EXCEPTION_1">Message 1</exception>
+    </exceptions>
+</jco>
+----
+
+*  _新的AbapException（String key，String messageClass，char messageType，String messageNumber，String [] messageParameters）_
++
+[source, xml, linenums]
+----
+<jco>
+    ...
+    <exceptions>
+        <exception key="EXCEPTION_2" messageClass="THE_MESSAGE_CLASS" messageNumber="1000" messageType="E">
+            <param>Param 1</param>
+            <param>Param 2</param>
+            <!-- Max 4 params -->
+        </exception>
+    </exceptions>
+</jco>
+----
+
+[TIP]
+====
+您可以使用类型为*function-metadata*的SAP出站端点来检索给定功能模块（BAPI）的XML模板：
+[source, xml, linenums]
+----
+<mule ...>
+   <flow name="retrieveMetadata">
+        <!-- INBOUND ENDPOINT -->
+        <sap:outbound-endpoint type="function-metadata" functionName="#[payload.bapiName]" xmlVersion="1"/>
+        <sap:object-to-xml/>
+   </flow>
+</mule>
+----
+用_functionName_持有一个Mule Expression返回函数模块的名称。
+
+====
+
+===  XML版本1
+
+这是JCo函数XML表示的默认版本（它是版本**2.1.0**之前的SAP连接器的唯一可能值）。
+
+每个元素（字段，结构，表格）由包含*name*和*value*的XML标记表示。
+
+*Example of JCo Function represented in XML version 1*
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<jco name="BAPI_PO_CREATE1" version="1.0">
+  <import>
+    <structure name="POHEADER">
+      <field name="COMP_CODE">2100</field>
+      <field name="DOC_TYPE">NB</field>
+      <field name="VENDOR">0000002101</field>
+      <field name="PURCH_ORG">2100</field>
+      <field name="PUR_GROUP">002</field>
+    </structure>
+    <structure name="POHEADERX">
+      <field name="DOC_TYPE">X</field>
+      <field name="VENDOR">X</field>
+      <field name="PURCH_ORG">X</field>
+      <field name="PUR_GROUP">X</field>
+      <field name="COMP_CODE">X</field>
+    </structure>
+  </import>
+  <tables>
+    <table name="POITEM">
+      <row id="0">
+        <field name="NET_PRICE">20</field>
+        <field name="PLANT">2100</field>
+        <field name="MATERIAL">SBSTO01</field>
+        <field name="PO_ITEM">00010</field>
+        <field name="QUANTITY">10.000</field>
+      </row>
+    </table>
+    <table name="POITEMX">
+      <row id="0">
+        <field name="PO_ITEMX">X</field>
+        <field name="MATERIAL">X</field>
+        <field name="QUANTITY">X</field>
+        <field name="PLANT">X</field>
+        <field name="PO_ITEM">00010</field>
+        <field name="NET_PRICE">X</field>
+      </row>
+    </table>
+    <table name="POSCHEDULE">
+      <row id="0">
+        <field name="QUANTITY">10.000</field>
+        <field name="DELIVERY_DATE">27.06.2011</field>
+        <field name="SCHED_LINE">0001</field>
+        <field name="PO_ITEM">00010</field>
+      </row>
+    </table>
+    <table name="POSCHEDULEX">
+      <row id="0">
+        <field name="PO_ITEM">00010</field>
+        <field name="QUANTITY">X</field>
+        <field name="DELIVERY_DATE">X</field>
+        <field name="SCHED_LINEX">X</field>
+        <field name="PO_ITEMX">X</field>
+        <field name="SCHED_LINE">0001</field>
+      </row>
+    </table>
+  </tables>
+</jco>
+----
+
+*JCo Function Response (RETURN structure / table)*
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<jco name="Z_MULE_EXAMPLE">
+  <import>
+    ...
+  </import>
+  <export>
+    <structure name="RETURN">
+      <field name="TYPE"></field>
+      <field name="ID"></field>
+      <field name="NUMBER"></field>
+      <field name="MESSAGE"></field>
+      <field name="LOG_NO"></field>
+      <field name="LOG_MSG_NO"></field>
+      <field name="MESSAGE_V1"></field>
+      <field name="MESSAGE_V2"></field>
+      <field name="MESSAGE_V3"></field>
+      <field name="MESSAGE_V4""></field>
+      <field name="PARAMETER"></field>
+      <field name="ROW"></field>
+      <field name="FIELD"></field>
+      <field name="SYSTEM"></field>
+    </structure>
+  </export>
+</jco>
+----
+
+*Return Types*
+
+*  *A*：中止
+*  *S*：成功
+*  *E*：错误
+*  *W*：警告
+*  *I*：信息
+
+[WARNING]
+====
+如果`evaluateFunctionResponse`设置为*true*，那么当SAP返回类型为*A*，*E*或存在异常时，SAP出站端点将引发异常。
+====
+
+===  XML版本2（自版本2.1.0起）
+
+添加了此XML版本，为 link:/anypoint-studio/v/5/datamapper-user-guide-and-reference[Anypoint DataMapper]工具提供了更好的选择。它具有与XML版本1相同的通用结构，但XML元素的名称是字段，结构或表的实际名称，并且类型是作为属性提供的。
+
+*Example of JCo Function represented in XML version 2*
+
+这与前面的例子相同，但是用XML版本2表示。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<jco type="BAPI_PO_CREATE1" version="1.0">
+  <import>
+    <POHEADER type="structure">
+      <COMP_CODE type="field">2100</COMP_CODE>
+      <DOC_TYPE type="field">NB</DOC_TYPE>
+      <VENDOR type="field">0000002101</VENDOR>
+      <PURCH_ORG type="field">2100</PURCH_ORG>
+      <PUR_GROUP type="field">002</PUR_GROUP>
+    </POHEADER>
+    <POHEADERX type="structure">
+      <DOC_TYPE type="field">X</DOC_TYPE>
+      <VENDOR type="field">X</VENDOR>
+      <PURCH_ORG type="field">X</PURCH>
+      <PUR_GROUP type="field">X</PUR_GROUP>
+      <COMP_CODE type="field">X</COMP_CODE>
+    </POHEADERX>
+  </import>
+  <tables>
+    <POITEM type="table">
+      <row id="0">
+        <NET_PRICE type="field">20</NET_PRICE>
+        <PLANT type="field">2100</PLANT>
+        <MATERIAL type="field">SBSTO01</MATERIAL>
+        <PO_ITEM type="field">00010</PO_ITEM>
+        <QUANTITY type="field">10.000</QUANTITY>
+      </row>
+    </POITEM>
+    <POITEMX type="table">
+      <row id="0">
+        <PO_ITEMX type="field">X</PO_ITEMX>
+        <MATERIAL type="field">X</MATERIAL>
+        <QUANTITY type="field">X</QUANTITY>
+        <PLANT type="field">X</PLANT>
+        <PO_ITEM type="field">00010</PO_ITEM>
+        <NET_PRICE type="field">X</NET_PRICE>
+      </row>
+    </POITEMX>
+    <POSCHEDULE type="table">
+      <row id="0">
+        <QUANTITY type="field">10.000</QUANTITY>
+        <DELIVERY_DATE type="field">27.06.2011</DELIVERY_DATE>
+        <SCHED_LINE type="field">0001</SCHED_LINE>
+        <PO_ITEM type="field">00010</PO_ITEM>
+      </row>
+    </POSCHEDULE>
+    <POSCHEDULEX type="table">
+      <row id="0">
+        <PO_ITEM type="field">00010</PO_ITEM>
+        <QUANTITY type="field">X</QUANTITY>
+        <DELIVERY_DATE type="field">X</DELIVERY_DATE>
+        <SCHED_LINEX type="field">X</SCHED_LINEX>
+        <PO_ITEMX type="field">X</PO_ITEMX>
+        <SCHED_LINE type="field">0001</SCHED_LINE>
+      </row>
+    </POSCHEDULEX>
+  </tables>
+</jco>
+----
+
+==  IDoc文档/文档列表
+
+IDoc是由SAP定义的XML文档。您可以使用SAP用户界面从SAP服务器下载他们的定义。
+
+[source, xml, linenums]
+----
+<?xml version="1.0"?>
+<ORDERS05>
+    <IDOC BEGIN="1">
+        <EDI_DC40 SEGMENT="1">
+            <TABNAM>EDI_DC40</TABNAM>
+            <MANDT>100</MANDT>
+            <DOCNUM>0000000000237015</DOCNUM>
+            <DOCREL>700</DOCREL>
+            <STATUS>30</STATUS>
+            <DIRECT>1</DIRECT>
+            <OUTMOD>2</OUTMOD>
+            <IDOCTYP>ORDERS05</IDOCTYP>
+            <MESTYP>ORDERS</MESTYP>
+            <STDMES>ORDERS</STDMES>
+            <SNDPOR>SAPB60</SNDPOR>
+            <SNDPRT>LS</SNDPRT>
+            <SNDPRN>B60CLNT100</SNDPRN>
+            <RCVPOR>MULE_REV</RCVPOR>
+            <RCVPRT>LS</RCVPRT>
+            <RCVPRN>MULESYS</RCVPRN>
+            <CREDAT>20110714</CREDAT>
+            <CRETIM>001936</CRETIM>
+            <SERIAL>20101221112747</SERIAL>
+        </EDI_DC40>
+        <E1EDK01 SEGMENT="1">
+            <ACTION>004</ACTION>
+            <CURCY>USD</CURCY>
+            <WKURS>1.06383</WKURS>
+            <ZTERM>0001</ZTERM>
+            <BELNR>0000000531</BELNR>
+            <VSART>01</VSART>
+            <VSART_BEZ>standard</VSART_BEZ>
+            <RECIPNT_NO>C02199</RECIPNT_NO>
+            <KZAZU>X</KZAZU>
+            <WKURS_M>0.94000</WKURS_M>
+        </E1EDK01>
+
+        ...
+
+        <E1EDS01 SEGMENT="1">
+            <SUMID>002</SUMID>
+            <SUMME>1470.485</SUMME>
+            <SUNIT>USD</SUNIT>
+        </E1EDS01>
+    </IDOC>
+</ORDERS05>
+----

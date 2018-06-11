@@ -1,0 +1,94 @@
+= 请求 - 应答范围
+:keywords: request reply, asynchronous,
+
+*Request-Reply*范围使您能够在Mule流中嵌入"pocket"异步处理。此功能使您能够接收来自异步流程的响应，而无需对响应的目标进行硬编码。例如，您可以使用request-reply将*one-way* VM或JMS流转换为*request-response*流，而无需更改其配置。换句话说，请求 - 回复将同步进程的一部分转换为异步进程。
+
+*Note*：从Mule Runtime版本3开始，Request-Reply范围已经可用。在3.5版本的Anypoint Studio中为此添加了一个图标。
+
+== 假设
+
+本文档假定您了解 link:/mule-user-guide/v/3.7/flows-and-subflows[同步和异步流程]之间的区别。此外，您一般也熟悉 link:/mule-user-guide/v/3.7/scopes[领域]。
+
+== 基本解剖学
+
+请求 - 回复由两部分组成：
+
+*  *request*部分包装提交异步请求到另一个流或外部资源的连接器或出站连接器
+*  *response*部分包装接收来自其他流或外部资源的异步响应的连接器或入站连接器
+
+image:request+reply+scope+1.png[图片]
+
+请求 - 回复消除了明确地相互引用出站和入站连接器的需要。当Mule通过Request-Reply范围中的VM出站连接器异步发送请求时，它会将消息的出站属性`MULE_REPLYTO`隐式设置为其相应入站连接器的URL。换句话说，在上面的例子中，您不需要在回复部分的虚拟机中包含引用来引用提交请求的请求部分中的虚拟机。
+
+[NOTE]
+设置为*transactional*的VM或JMS连接器无法在请求回复范围内使用。 VM和JMS连接器都允许您执行多种不同类型的事务，但这些事务与请求 - 应答范围的工作方式都不兼容。这是因为请求 - 响应发出的请求在事务提交之前不会被发送 - 但是在整个流程被执行之前，事务并不会被提交（包括执行请求 - 响应范围）。这导致两种进程相互阻塞的情况：流程未完全执行，因为它仍在等待请求回复作用域上的响应，但由于请求尚未发送，所以此响应将永远不会到达（如前所述，只有在提交事务后才会发送此消息）。
+
+== 配置请求 - 应答
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+
+. Add a *Request-Reply* scope to your flow, then configure the attributes according to the table below.
+
+image:req_rep_config.png[image]
+
+[%header,cols="4*a"]
+|===
+|Field |Value |Req'd |Description
+|*Display Name* |string |x |Defines unique value for the element in the application.
+|*Prefix of the Object Store* |string |  |Defines the object store name prefix in which Mule should store request-reply messages.
+|*Timeout (ms)* |integer |  |Defines the time the asynchronous process remains alive before timing out. (i.e. defines how long the inbound-connector waits for a response)
+|===
+
+. Add a or connector (the outbound-connector) to the *Request* portion of the scope, then add a connector (the inbound-connector) to the *Response* portion of the scope. Configure each connector to submit requests and receive responses, respectively. The scope ensures that the activity that occurs within it proceeds asynchronously, relative to the rest of the flow.
+
+image:request_response_2.png[image]
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+. Add a *request-reply* element to your flow, then configure the attributes according to the table below.
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+ 
+    <flow name="request-replyFlow1" doc:name="request-replyFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <request-reply doc:name="Request-Reply">
+            <vm:outbound-endpoint exchange-pattern="one-way" path="request" doc:name="VM"/>
+            <vm:inbound-endpoint exchange-pattern="one-way" path="reply" doc:name="VM"/>
+        </request-reply>
+    </flow>
+</mule>
+----
+
+[%header,cols="10a,10a,10a,10a,59a"]
+|===
+|Element |Attribute |Value |Req'd |Description
+|*`request-reply`* |`doc:name` |string |x |Defines unique value for the element in the application.
+|*`request-reply`* |`storePrefix` |string |  |Defines the object store name prefix in which Mule should store request-reply messages.
+|*`request-reply`* |`timeout` |integer |  |Defines the number of milliseconds the asynchronous process remains alive before timing out. (i.e. defines how long the inbound-connector waits for a response). By default, the timeout=-1 and it will wait indefinitely.
+|===
+. As a child element of the request-reply element, add an *outbound connector* or connector to define how Mule submits a request to an external source.
+. As a child element of the request-reply element, add an *inbound connector* or connector to define how Mule receives a response to an external source. The scope ensures that the activity that occurs within it proceeds asynchronously, relative to the rest of the flow.
+
+....
+------
+
+== 另请参阅
+
+* 详细了解 link:/mule-user-guide/v/3.7/flows-and-subflows[同步和异步流程]。

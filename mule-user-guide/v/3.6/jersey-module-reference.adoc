@@ -1,0 +1,362 @@
+= 泽西模块参考
+:keywords: mule, esb, studio, jersey, rest, restful, api
+
+https://jersey.github.io/ [Jersey]是一个通过https://jax-rs-spec.java.net/[JAX-RS]（JSR-311）实现构建的框架。 JAX-RS是一个规范，它提供了一系列注释和类，从而可以构建RESTful服务。 Mule Jersey运输可以在Mule中部署这些带注释的类。
+
+我们推荐的REST API方法是使用 http://raml.org[肾错构瘤]并通过 link:/api-manager[API管理器]公开API。在某些情况下，泽西岛可能仍然是最低阻力时的路径，因为您要公开的API是用Java构建的，并且没有描述如何与之交互的RAML文件。
+
+除了注释功能外，Jersey还包含许多有用的功能：
+
+* 与XML数据绑定框架（如JAXB）集成的能力
+* 轻松生成/使用JSON的能力
+* 与JSP表示层集成的能力
+* 与 http://incubator.apache.org/abdera[阿布德拉]集成以获得Atom支持。
+
+[WARNING]
+Mule 3.6使用Jersey v2.11，而老版本的Mule使用Jersey 1.6。如果要更新使用Jersey 1.x构建的现有API，则可能需要执行一些代码更改，因为最新的JAX-RS和Jersey版本不能与1.x版本向后兼容。
+
+[WARNING]
+目前隐式视图不受支持。
+
+== 类路径设置
+
+最新的泽西岛模块使用泽西岛v2.11
+
+== 编写服务
+
+编写JAX-RS服务是一个广泛的话题，本指南不会涉及。但是，https://jersey.github.io/ [Jersey]网站有一组出色的样本， http://jcp.org/aboutJava/communityprocess/final/jsr311/index.html[JAX-RS规范]也很有帮助。
+
+然而，我们将会看看一个简单的Hello World服务。这个例子需要安装Apache Xalan JAR。
+
+创建JAX-RS服务的第一步是创建一个表示您的HTTP资源的类。在我们的例子中，我们将创建一个"HelloWorldResource"类。这个类上的方法将被调用以响应特定URL上的GET / POST / DELETE / PUT调用。
+
+@Path注释允许您将类/资源绑定到特定的URL。在下面的示例中，我们将HelloWorldResource类绑定到"/helloworld"网址。
+
+[source, java, linenums]
+----
+package org.mule.transport.jersey;
+
+import javax.ws.rs.POST;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+import javax.ws.rs.PathParam;
+
+@Path("/helloworld")
+public class HelloWorldResource {
+
+    @POST
+    @Produces("text/plain")
+    @Path("/{name}")
+    public String sayHelloWithUri(@PathParam("name") String name) {
+        return "Hello " + name;
+    }
+}
+----
+
+看看"sayHelloWithUri"方法，我们看到了几个注释：
+
+*  @ POST指定仅在URL的@POST请求上调用此方法。
+*  @ Produces指定此方法正在生成MIME类型为"text/plain"的资源。
+*  @ Path将此方法绑定到URL "/helloworld/\{name}"。 \ {name}是一个URI模板。这部分URL中的任何内容都将映射到名为"name"的URI参数（请参见下文）
+*  @ PathParam将该方法的第一个参数绑定到名为"name"的路径中的URI参数。
+
+== 部署Web服务
+
+编写好服务后，您可以创建一个包含一组泽西岛资源的`jersey:resources`组件。 URL。下面是这样一个非常简单的配置：
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="${port}" doc:name="HTTP Listener Configuration"/>
+
+  <flow name="HelloWorld">
+     <http:listener config-ref="HTTP_Listener_Configuration" path="/*" doc:name="HTTP"/>
+     <jersey:resources>
+         <component class="org.mule.module.jersey.HelloWorldResource"/>
+     </jersey:resources>
+  </flow>
+----
+
+== 使用RESTful Web服务
+
+一旦您在Mule中运行此配置，您可以点击网址`http://localhost:8080/jersey/helloworld/Dan`，并在浏览器中看到此响应：'Hello Dan'。
+
+== 异常映射器
+
+可以在`resources`元素内注册异常映射器。异常映射允许将可能在组件类中抛出的泛型异常映射到HTTP响应代码，您可以根据需要添加尽可能多的异常。
+
+以下配置将执行`HelloWorldResource`期间可能抛出的`HelloWorldException`映射到HTTP错误503（服务不可用）：
+
+[source, xml, linenums]
+----
+<jersey:resources>
+    <component class="org.mule.module.jersey.HelloWorldResource"/>
+    <jersey:exception-mapper class="org.mule.module.jersey.exception.HelloWorldExceptionMapper" />
+</jersey:resources>
+----
+
+*HelloWorldExceptionMapper.java*
+
+[source, java, linenums]
+----
+public class HelloWorldExceptionMapper implements ExceptionMapper<HelloWorldException>
+{
+    public Response toResponse(HelloWorldException exception)
+    {
+        int status = Response.Status.SERVICE_UNAVAILABLE.getStatusCode();
+        return Response.status(status).entity(exception.getMessage()).type("text/plain").build();
+    }
+}
+----
+
+== 上下文解析器
+
+上下文解析器被注入到资源类中，并向它们提供上下文信息，在某些情况下，当您需要默认情况下不可用的特定元数据时，上下文信息会很有用。请参阅 http://repo2.maven.org/maven2/com/sun/jersey/jersey-documentation/1.12/jersey-documentation-1.12-user-guide.pdf[泽西岛1.12文件]。
+
+将JAXB用于XML / JSON序列化时，JAXB会提供一些注释以防需要更改输出格式。这种注释的简单示例是@XmlElement，您可以在该注释本身上提供该字段的名称作为属性：@XmlElement（name = "PersonName"）。
+
+然而，一些配置不可能实现使用注释。例如，默认情况下，当使用JAXB进行JSON序列化时，数字（int，long ...）被双引号包围，使它们看起来像字符串。这可能对一些项目有好处，但其他项目可能希望删除这些双引号。这可以通过在Jersey资源上配置ContextResolver来完成。我们举个简单的例子吧。如果我们有一个名为Person的类，该类内部包含age属性，并且我们希望此Person对象作为JSON对象返回为年龄不带引号的JSON对象，请首先创建自定义上下文解析器。
+
+*CustomContextResolver.java*
+
+[source, java, linenums]
+----
+@Provider
+public class CustomContextResolver implements ContextResolver<JAXBContext>
+{
+    private JAXBContext context;
+    private Class[] types = {Person.class};
+
+    public JAXBContextResolver() throws Exception
+    {
+        this.context = new JSONJAXBContext(
+            JSONConfiguration.natural().build(), types);
+    }
+
+    public JAXBContext getContext(Class<?> objectType)
+    {
+        for (Class type : types)
+        {
+            if (type == objectType)
+            {
+                return context;
+            }
+        }
+        return null;
+    }
+}
+----
+
+在上面的CustomContextResolver中，我们指定Person类的类，我们返回一个使用JSONConfiguration类使用自然符号配置的JAXBContext。一旦我们有了我们自定义的Jersey ContextResolver，我们需要在Mule中配置它。
+
+[source, xml, linenums]
+----
+<jersey:resources>
+    <component class="org.mule.module.jersey.HelloWorldResource"/>
+    <jersey:context-resolver class="org.mule.module.jersey.context.CustomContextResolver" />
+</jersey:resources>
+----
+
+没有自定义上下文解析器，输出将如下所示：
+
+[source]
+----
+{"name":"Alan","age":"26"}
+----
+
+使用自定义上下文解析器，输出将更改为以下内容：
+
+[source]
+----
+{"name":"Alan","age":26}
+----
+
+ContextResolvers也可用于配置其他XML / JSON库，如Jackson。以下是一个自定义上下文解析器，用于配置Jackson将引号中的数字返回。
+
+*"CustomJacksonContextResolver"*
+
+[source, java, linenums]
+----
+@Provider
+public class CustomJacksonContextResolver implements ContextResolver<ObjectMapper>
+{
+    public ObjectMapper getContext(Class<?> type)
+    {
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        objectMapper.configure(Feature.WRITE_NUMBERS_AS_STRINGS, true);
+        objectMapper.configure(Feature.QUOTE_NON_NUMERIC_NUMBERS, true);
+
+        return objectMapper;
+    }
+}
+----
+
+有关上下文解析器的更多信息，请查看Jersey http://repo2.maven.org/maven2/com/sun/jersey/jersey-documentation/1.12/jersey-documentation-1.12-user-guide.pdf[用户指南]。
+
+== 发送Jersey响应给其他流程
+
+您可以使用接口绑定从Jersey资源调用完全独立的Mule流：
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="${port}" doc:name="HTTP Listener Configuration"/>
+
+
+<flow name="test">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/*" doc:name="HTTP"/>
+
+    <jersey:resources>
+        <component class="org.mule.module.jersey.HelloWorldComponent">
+            <binding interface="org.mule.module.jersey.HelloWorldInterface">
+                <flow-ref name="TransformationFlow" />
+            </binding>
+        </component>
+    </jersey:resources>
+</flow>
+
+<flow name="TransformationFlow">
+    <set-payload value="Hello World!" />
+</flow>
+----
+
+[source, java, linenums]
+----
+@Path("/")
+public class HelloWorldComponent {
+
+    private HelloWorldInterface helloWorldBinding;
+
+    @GET
+    @Path("/sayHello")
+    @Produces("text/plain")
+    public String sayHelloFromBinding() {
+        return helloWorldBinding.sayHello("s");
+    }
+
+    public void setHelloWorldBinding(HelloWorldInterface helloWorldBinding) {
+        this.helloWorldBinding = helloWorldBinding;
+    }
+
+    public HelloWorldInterface getHelloWorldBinding() {
+        return this.helloWorldBinding;
+    }
+
+    public static interface HelloWorldInterfac {
+
+        public String sayHello(String s);
+    }
+
+}
+----
+
+== 添加自定义属性
+
+您可以执行传递您自己的一组服务器属性的资源。例如，以下配置指定了它自己的一组语言映射：
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="${port}" doc:name="HTTP Listener Configuration"/>
+
+<flow name="helloWorld">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/*" doc:name="HTTP"/>
+    <jersey:resources>
+        <component class="org.mule.module.jersey.HelloWorldResource"/>
+        <jersey:property key="jersey.config.server.languageMappings" value="english : en, french : fr" />
+    </jersey:resources>
+</flow>
+----
+
+== 扩展自动发现
+
+Jersey拥有非常可扩展的Java API，它允许开发人员修改其内部工作的几乎每个方面。由于泽西提供了如此多的延伸点，这些延伸点通过自动发现功能暴露在Mule中。根据泽西自己的API，您使用_ @ Provider_注释标注的每个类都可以用作扩展点。显示包含此批注并存在于mule命名空间中的java包列表，每个发现的类将自动注册到资源的上下文中。
+
+以下是如何向假想的Person类注册您自己的JAXB正文作者和读者的示例：
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="${port}" doc:name="HTTP Listener Configuration"/>
+
+<flow name="helloWorldResource">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/*" doc:name="HTTP"/>
+    <jersey:resources>
+        <component class="org.mule.module.jersey.HelloWorldResource"/>
+        <jersey:package packageName="com.my.project.jersey.readers" />
+        <jersey:package packageName="com.my.project.jersey.writers" />
+    </jersey:resources>
+</flow>
+----
+
+在这里，软件包`com.my.project.jersey.readers`和`com.my.project.jersey.writers`正在被扫描，例如，会发现以下提供程序：
+
+[source, java, linenums]
+----
+package com.my.project.jersey.writers;
+
+@Produces("application/xml")
+public class MyBeanMessageBodyWriter implements MessageBodyWriter<MyBean> {
+
+    @Override
+    public boolean isWriteable(Class<?> type, Type genericType,
+                               Annotation[] annotations, MediaType mediaType) {
+        return type == Person.class;
+    }
+
+    @Override
+    public long getSize(MyBean myBean, Class<?> type, Type genericType,
+                        Annotation[] annotations, MediaType mediaType) {
+        // deprecated by JAX-RS 2.0 and ignored by Jersey runtime
+        return 0;
+    }
+
+    @Override
+    public void writeTo(Person person,
+                        Class<?> type,
+                        Type genericType,
+                        Annotation[] annotations,
+                        MediaType mediaType,
+                        MultivaluedMap<String, Object> httpHeaders,
+                        OutputStream entityStream)
+                        throws IOException, WebApplicationException {
+
+        try {
+            JAXBContext jaxbContext = JAXBContext.newInstance(Person.class);
+            jaxbContext.createMarshaller().marshal(person, entityStream);
+        } catch (JAXBException jaxbException) {
+            throw new ProcessingException(
+                "Error serializing a Person to the output stream", jaxbException);
+        }
+    }
+}
+----
+
+[source, java, linenums]
+----
+package com.my.project.jersey.readers;
+public static class MyBeanMessageBodyReade implements MessageBodyReader<MyBean> {
+
+@Override
+public boolean isReadable(Class<?> type, Type genericType,
+    Annotation[] annotations, MediaType mediaType) {
+    return type == Person.class;
+}
+
+@Override
+public MyBean readFrom(Class<MyBean> type,
+    Type genericType,
+    Annotation[] annotations, MediaType mediaType,
+    MultivaluedMap<String, String> httpHeaders,
+    InputStream entityStream)
+        throws IOException, WebApplicationException {
+
+    try {
+        JAXBContext jaxbContext = JAXBContext.newInstance(MyBean.class);
+        return (Person) jaxbContext.createUnmarshaller()
+            .unmarshal(entityStream);
+        return myBean;
+    } catch (JAXBException jaxbException) {
+        throw new ProcessingException("Error deserializing a Person.",
+            jaxbException);
+    }
+}
+}
+----

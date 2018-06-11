@@ -1,0 +1,162 @@
+= 从Acegi升级到Spring Security
+:keywords: anypoint studio, studio, mule, spring security, spring beans
+
+Mule Runtime 3.8支持Spring Security 4.0.4。升级您的Mule应用程序以使用Spring Security代替Acegi包含以下步骤：
+
+. 将必要的命名空间添加到您的Mule配置中
+. 更新Acegi包名称
+. 更新您的Mule配置以使用`AuthenticationManager`
+. 使用新的Spring Security元素进行简化
+
+== 添加命名空间
+
+你的Mule配置文件应该声明以下命名空间。
+
+[source,xml, linenums]
+----
+<mule xmlns="http://www.mulesource.org/schema/mule/core"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:mule-ss="http://www.mulesource.org/schema/mule/spring-security"
+    xmlns:ss="http://www.springframework.org/schema/security"
+    xsi:schemaLocation="
+    http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesource.org/schema/mule/core http://www.mulesource.org/schema/mule/core/current/mule.xsd
+    http://www.mulesource.org/schema/mule/spring-security
+        http://www.mulesource.org/schema/mule/spring-security/current/mule-spring-security.xsd
+    http://www.springframework.org/schema/security
+        http://www.springframework.org/schema/security/spring-security-current.xsd">
+...
+</mule>
+----
+
+`mule-ss`命名空间用于Mule Spring Security扩展。 `ss`命名空间适用于非Mule特定的Spring Security架构元素，并且允许您使用Spring Security 2.0中不太详细的XML。
+
+== 更新Acegi包名称
+
+除了已更改的软件包名称外，Spring Security API与Acegi基本保持兼容。例如，假设您配置了一个像这样的`DaoAuthenticationProvider`：
+
+[source,xml, linenums]
+----
+<bean class="org.acegisecurity.providers.dao.DaoAuthenticationProvider">
+    <property name="userDetailsService" ref="userService"/>
+</bean>
+----
+
+要使用Spring Security，只需将`acegisecurity`包更改为`springframework.security`：
+
+[source,xml, linenums]
+----
+<bean class="org.springframework.security.authentication.dao.DaoAuthenticationProvider">
+    <property name="userDetailsService" ref="userService"/>
+</bean>
+----
+
+对所有的Acegi bean定义重复这一步。要查找正确的Spring框架包名称，请查看 link:http://docs.spring.io/spring-security/site/docs/4.0.4.RELEASE/apidocs/[Spring 4.0.4 API文档]中的API文档。
+
+== 使用AuthenticationManager
+
+Mule与Acegi和Spring Security集成的唯一主要区别在于后者使用`AuthenticationManager`提供认证功能，而前者绑定在Acegi `AuthenticationProvider`级别。使用Acegi提供程序，身份验证流程遵循以下进程：
+
+[source, xml]
+----
+AcegiProviderAdapter (Mule) -> AuthenticationProvider (Acegi)
+----
+
+随着新的Spring Security适配器的推出，
+
+[source, xml]
+----
+SpringProviderAdapter (Mule) -> AuthenticationManager (Spring Security) -> AuthenticationProvider (Spring Security)
+----
+
+这允许身份验证管理器尝试多个身份验证提供程序来验证您的消息。
+
+这种方法的配置需要更多的XML。例如，考虑这个原始配置：
+
+[source,xml, linenums]
+----
+<mule ...>
+    <acegi:security-manager>
+        <acegi:delegate-security-provider name="memory-dao" delegate-ref="daoAuthenticationProvider"/>
+    </acegi:security-manager>
+     
+    <spring:bean id="inMemoryDaoImpl" class="org.acegisecurity.userdetails.memory.InMemoryDaoImpl">
+        <spring:property name="userMap">
+            <spring:value>
+                ross=ross,ROLE_ADMIN
+                anon=anon,ROLE_ANONYMOUS
+            </spring:value>
+        </spring:property>
+    </spring:bean>
+ 
+    <spring:bean id="daoAuthenticationProvider" class="org.acegisecurity.providers.dao.DaoAuthenticationProvider">
+        <spring:property name="userDetailsService" ref="inMemoryDaoImpl"/>
+    </spring:bean>
+     
+</mule>
+----
+
+要升级此配置，请添加`AuthenticationManager`。这将导致以下结果：
+
+[source,xml, linenums]
+----
+<mule ...>
+    <mule-ss:security-manager>
+        <mule-ss:delegate-security-provider name="memory-dao" delegate-ref="authenticationManager"/>
+    </mule-ss:security-manager>
+     
+    <spring:bean id="inMemoryDaoImpl" class="org.springframework.security.core.userdetails.memory.InMemoryDaoImpl">
+        <spring:property name="userMap">
+            <spring:value>
+                ross=ross,ROLE_ADMIN
+                anon=anon,ROLE_ANONYMOUS
+            </spring:value>
+        </spring:property>
+    </spring:bean>
+ 
+    <spring:bean id="daoAuthenticationProvider" class="org.springframework.security.authentication.dao.DaoAuthenticationProvider">
+        <spring:property name="userDetailsService" ref="inMemoryDaoImpl"/>
+    </spring:bean>
+ 
+    <spring:bean id="authenticationManager" class="org.springframework.security.authentication.ProviderManager">
+        <spring:constructor-arg>
+            <spring:list>
+                 <spring:ref bean="daoAuthenticationProvider"/>
+            </spring:list>
+        </spring:constructor-arg>
+    </spring:bean>
+</mule>
+----
+
+== 简化配置
+
+Spring Security包含新的XML语法，可以简化配置，特别是在简单情况下。例如，前面的示例具有内存中的用户数据库，DAO身份验证提供程序和身份验证管理器。这可以简化为：
+
+[source,xml, linenums]
+----
+<mule ...>
+    <mule-ss:security-manager>
+        <mule-ss:delegate-security-provider name="memory-dao" delegate-ref="authenticationManager" />
+    </mule-ss:security-manager>
+ 
+    <spring:beans>
+      <ss:authentication-manager alias="authenticationManager">
+        <ss:authentication-provider>
+          <ss:user-service id="userService">
+            <ss:user name="ross" password="ross" authorities="ROLE_ADMIN" />
+            <ss:user name="anon" password="anon" authorities="ROLE_ANON" /> 
+          </ss:user-service>
+        </ss:authentication-provider>
+      </ss:authentication-manager>
+    </spring:beans>
+</mule>
+----
+
+`<authentication-manager>`元素定义了我们的`AuthenticationManager` bean的名称。然后，我们使用`<authentication-provider>`和`<user-service>`元素创建一个`AuthenticationProvider`。此`<user-service>`与我们上述的{{}}相同。
+
+有关如何配置Acegi的更多信息，请参阅以下Spring文档：
+
+*  link:http://static.springsource.org/spring-security/site/[Spring安全文档]
+*  link:http://static.springframework.org/spring-security/site/apidocs/index.html[Spring Security Javadoc]
+*  link:http://docs.spring.io/spring-security/site/docs/4.0.4.RELEASE/reference/html/appendix-namespace.html[Spring Security XML Schema参考]
+*  link:http://docs.spring.io/spring-security/site/migrate/current/3-to-4/html5/migrate-3-to-4-xml.html[春季3至4迁移指南]

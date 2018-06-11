@@ -1,0 +1,117 @@
+= 关于类加载隔离
+
+== 问题
+
+Mule运行时引擎是使用Java和许多其他第三方库开发的。创建的新集成捆绑为Mule应用程序。那些Mule应用程序也可能包含其他Java库，但特别是它们将包含提供大部分集成功能的Mule扩展，例如HTTP连接器。这些扩展还可以包含JAR库。
+
+Java在这种情况下的一个主要问题是，尽可能多的JAR放在一起，每个工件（运行时，应用程序和扩展）都是独立开发和发布的，它们可能包含相同jar文件的冲突版本。例如，应用程序可能决定使用公共集合2.1。稍后，将向需要公共集合的应用程序添加一个新扩展3.1。由于公共集合2.1和公共集合3.1具有相互冲突的资源，因此应用程序无法按预期工作。
+
+由于JVM的默认类加载机制，所有这些问题都存在。
+
+==  Mule 3解决方案
+
+Mule 3为这个问题提供了部分解决方案。它基本上定义了一个类加载器的分层结构。应用程序能够看到它的扩展和绑定在其中的库和运行时库，但不能访问其他应用程序库。这解决了不同应用程序之间资源冲突的问题，但不同扩展，扩展和应用程序库或应用程序库和运行时库之间的库冲突仍然存在。
+
+==  Mule 4解决方案
+
+在Mule 4中，类加载机制已经发生了根本性的变化，以支持前面描述的所有问题。
+
+===  API定义
+
+Mule Runtime和不同的工件（应用程序，域，策略，扩展）需要有明确的API定义。这个API定义定义了每个工件的契约，并且还限制了工件内容暴露给其他工件。
+
+*By defining a clear API for each artifact we can limit the scope of usage of classes and libraries so we can create specific classloaders that do not share everything and avoid clashing.*
+
+====  Mule 4 API
+
+Mule 3将其库中捆绑的所有类展示给最终用户。从一个运行时升级到另一个运行时会导致问题，因为运行时更改可能会影响来自用户的自定义Java类。
+
+Mule 4包含一个非常明确的API。运行时由几个模块组成，每个模块用于不同的目的。所有这些模块API共同定义了Mule 4 API。但是这些模块中的很多都是用于特定目的的，比如扩展运行时行为，而不适用于应用程序或域开发。这就是创建Mule API模块的原因，用户可以从应用程序或域甚至扩展中引用它。 API可以在这里找到（TODO添加链接到模块，并解释一点点）。
+
+==== 工件API
+
+无论何时创建工件（应用程序，域，策略，扩展），都需要声明该模块的公共API。
+
+===== 如何定义公共API
+
+转到 link:how-to-export-resources[这一页]，了解如何从工件中导出资源。
+
+===== 注意事项
+
+* 未导出的资源和类将不会从其他工件看到。
+* 从您的工件中公开所需的最小套件和资源。
+* 除非确实需要，否则不要导出第三方库。
+* 永远不要暴露常见的第三方库，如番石榴，公共收藏等。这样做会导致与其他工件发生冲突。
+* 理想情况下，仅从您的工件（或JDK）中公开类。
+
+====  Semver
+
+对于所有提供的API，Mule 4都遵循https://semver.org/[Semantic Versioning 2.0.0]。
+
+重要提示：您需要考虑为您正在使用的API定义的API限制。这种限制是为了在可以在不同版本之间完成的API更改具有更大的灵活性而创建的。
+
+====  API限制
+
+所有的公共API都可能有限制。这些限制限制了您如何使用API​​。有关更多详细信息，请参见https://github.com/mulesoft/api-annotations[API注释模块]。
+
+
+=== 类加载隔离机制
+
+一旦API明确定义，我们可以阻止访问工件的内部类，并且只允许从外部访问公共API。为了保护API，我们构建了一个自定义类加载机制。
+
+让我们假设我们有以下扩展文件结构：
+
+----
+com/example/extension/api/MyClass.class
+com/example/extension/internal/Util.class
+transformations/customer-to-user.dwl
+license.txt
+META-INF/mule-artifact/mule-artifact.json
+----
+
+此扩展的以下`mule-artifact.json`描述符文件：
+
+[source, json, linenums]
+----
+{
+    "name": "my-test-extension",
+    "minMuleVersion": "4.0.0",
+    "classLoaderModelLoaderDescriptor": {
+        "id": "mule",
+        "attributes": {        
+            "exportedResources": [
+                "transformations/customer-to-user.dwl"
+            ],
+            "exportedPackages": [
+                "com/example/extension/api"
+            ]        
+        }
+    }   
+}
+----
+
+然后为此扩展适用下面的图表：
+
+image:simple_classloading_diagram.png[简单的类加载图]
+
+神器类加载器::
+    这是一个常规的Java类加载器，指向扩展中包含的JAR文件。该扩展的所有文件和类将由该类加载器加载。
+
+工件过滤类加载器::
+    这是一个通过Artifact Class Loader创建的包装器，它将对外部工件（应用程序或其他插件）的扩展代码强制执行访问限制。它使用`mule-artifact.json`描述符的内容来知道什么是公开的。
+
+扩展代码::
+    这是Mule扩展代码的生命。它将使用Artifact Class Loader，它没有任何限制，只能定位插件本身的资源。
+
+应用代码::
+    这是Mule应用程序的代码。为了避免应用程序访问受限代码或资源，它使用扩展的工件过滤类加载器。
+
+注意：这是对整个机制的简化，但是清楚了解`mule-artifact.json`导出资源在应用程序中的应用。
+
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.9/classloader-control-in-mule[骡3班加载]
+*  link:/mule-sdk/v/1.1/isolation[Mule SDK  - 关于类加载隔离]
+
+// *链接：关于打包程序如何自动导出资源的TODO文档

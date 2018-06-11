@@ -1,0 +1,57 @@
+//64c0e117cd97eef64948cb95bb3948364c0e117cd97eef64948cb95bb3948364c0e117cd97eef64948cb95bb3948364c0e117cd97eef64948cb95bb3948364c0e117cd97eef64948cb95bb3948364c0e117cd97eef64948cb95bb39483 Command to execute in CI:
+// ./gradlew -g .gradle --no-search-upward -Pprofile=prod -PbuildTag=$BUILD_TAG -PmaxHeapSize=4g clean publish
+// ./gradle/consolidate-publish-repo.sh -q
+ext {
+  assetsRepoBranchName = 'prod-tag'
+  assetsRepoCommit = 'ae0736b050c383d1a5360d76a7e51eb86db521c2'
+  publishCommitMessage = project.hasProperty('buildTag') ? project.property('buildTag') : 'publish changes'
+  publishRepoBranchName = 'master'
+  publishRepoUri = 'git@github.com:mulesoft/mulesoft-docs-build-output.git'
+  siteDir = '_publish'
+  siteUri = 'https://docs.mulesoft.com'
+}
+
+task clonePublishRepo {
+  outputs.dir(siteDir).upToDateWhen { false }
+  doLast {
+    if (file("$siteDir/.git").directory) {
+      git "fetch -q origin $publishRepoBranchName", siteDir
+      git "reset -q --hard origin/$publishRepoBranchName", siteDir
+    }
+    else {
+      // NOTE not using --depth 1 because we need full history to consolidate (for now)
+      git "clone -q $publishRepoUri $siteDir", file(siteDir).parent
+    }
+  }
+}
+
+task prepareSiteDir {
+  inputs.dir siteDir
+  doLast {
+    ant.delete(includeemptydirs: true) {
+      fileset(dir: siteDir, defaultexcludes: false) {
+        exclude(name: '.git/**')
+      }
+    }
+  }
+}
+
+task publishSiteDir {
+  onlyIf { !git('status --porcelain', siteDir, true).empty }
+  doLast {
+    git 'add .', siteDir
+    git "commit -q -m \"$publishCommitMessage\"", siteDir
+    if (!dryRun) git "push -q origin $publishRepoBranchName", siteDir
+  }
+}
+
+task publish(group: 'Build', description: 'Builds site and commits changes to publisher repository.')
+
+afterEvaluate {
+  clean.delete.retainAll(clean.delete - siteDir) // don't delete _publish directory
+  //copyAssets.outputs.upToDateWhen { false }
+  prepareSiteDir.dependsOn clonePublishRepo
+  publish.dependsOn prepareSiteDir, build, publishSiteDir
+  build.mustRunAfter prepareSiteDir
+  publishSiteDir.mustRunAfter build
+}

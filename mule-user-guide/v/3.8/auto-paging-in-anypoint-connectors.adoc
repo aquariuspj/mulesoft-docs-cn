@@ -1,0 +1,214 @@
+= 任意点连接器中的自动寻呼
+:keywords: paging, auto paging, connectors, anypoint, studio, collections
+
+当流中的任意点连接器产生的输出非常大时，处理负载可能会在应用程序中导致显着的性能延迟。为防止发生这种情况，请将连接器的输出分成几个"pages"以进行更高效的处理。在Mule中，此Anypoint Connector行为被称为"auto-paging"，因为连接器会自动*_paginates_*输出以防止内存问题。但是，如果内存使用不是问题，则可以放弃任何自动分页配置，并简单地将整个有效内容视为单个单元。
+
+== 先决条件
+
+本文档假定您熟悉 link:/anypoint-studio/v/6/[Anypoint Studio Essentials]， link:/mule-user-guide/v/3.8/anypoint-connectors[Anypoint连接器]和 link:/mule-user-guide/v/3.8/global-elements[全球元素]。查看 link:/anypoint-studio/v/6/basic-studio-tutorial[Anypoint Studio入门]一章，了解更多关于使用Mule图形用户界面进行开发的内容。
+
+== 配置自动寻呼
+
+下表列出了支持自动分页功能的 link:/mule-user-guide/v/3.8/anypoint-connectors[Anypoint连接器]。此外，您可以使用任何支持自动分页功能的定制连接器进行自动分页。
+
+具有自动寻呼功能的=== 连接器
+
+* 盒
+Google日历。* 
+*  Google云端硬盘
+Google通讯录* 
+*  Google预测
+*  Google电子表格
+*  Google任务
+* 的Marketo
+*  Microsoft Dynamics CRM（按需）
+*  Microsoft Dynamics CRM（内部部署）
+* 的NetSuite
+* 的QuickBooks
+*  Salesforce _（与Studio捆绑）_
+
+
+== 使用Studio Visual Editor进行配置
+
+. 要使连接器中的*Paging*部分可见，您必须先选择一个输出集合的*Operation*，例如`Get calendar list`。否则，Studio不会在属性编辑器中显示“分页”部分。
+
+. 在*Fetch Size*字段中输入一个整数，以指示"page"中对象的批量大小。例如，将获取大小设置为`50`以分批返回50个对象中的信息。
++
+image:googlecalendarpagingex.png[googlecalendarpagingex]
++
+[%header%autowidth.spread]
+|===
+|属性 |默认值 |描述
+| *Fetch Size*  | 100  |指定Mule在每个页面中返回的对象数量。
+|===
+
+== 使用XML编辑器进行配置
+
+. 在流中的连接器中，添加一个`fetchSize`属性。
+
+. 将该属性的值设置为一个整数，以指示"page"中对象的批量大小。例如，将`fetchSize`设置为`50`以分批返回50个对象中的信息。
++
+[source,xml, linenums]
+----
+<flow name="for-screenshotsFlow">
+    <google-calendars:get-calendar-list config-ref="Google_Calendars" doc:name="Google Calendars Paging Example" fetchSize="50"/>
+</flow>
+----
++
+[%header%autowidth.spread]
+|===
+|属性 |默认值 |描述
+| `fetchSize`  | 100  |指定Mule在每个页面中返回的对象数量。
+|===
+
+== 处理自动分页输出
+
+当您使用使用分页的连接器时，Mule会创建一个迭代器对象，将负载分解为可管理的页面。无论页面大小如何，迭代器一次只推出一个对象，然后根据需要提取下一页。要处理分页输出，您必须在您的流程中使用可处理集合的元素，例如 link:/mule-user-guide/v/3.8/foreach[Foreach范围]，集合拆分器和 link:/mule-user-guide/v/3.8/dataweave[转换消息组件]等。因为Mule将页面集处理一页一次，它可以防止内存使用超出其限制。
+
+使用Studio可视化编辑器的== 示例
+
+. 将*HTTP*端点拖放到画布上。
+. 将其*Path*设置为`authenticate`。
+. 为HTTP端点创建一个*Connector Configuration*元素。将其*Host*设置为`localhost`，将其*Port*设置为*8081*
+. 向该流添加一个*Google Calendars*连接器，然后将其*Operation*设置为`Authorize.`
+. 创建一个*Google Calendars* *Global Element,*，然后配置其*Consumer Key*和*Consumer secret*。
+. 在新的*HTTP*端点中创建新的流。
+. 将其*Path*设置为`get_events`。
+. 将新的*Google Calendars*连接器添加到新流程。
+. 将其*Operation*设置为`Get Events`，将其*Fetch Size*设置为`50`。
+. 在Google Contacts连接器后面添加*Foreach* *scope*，并在Foreach范围内添加*Logger*。
++
+image:autopaging-with-google-calendars.png[自动推送谷歌流量]
+
+当邮件到达Google Calendar连接器时，记录器会为每个对象输出单独的邮件。如果有超过50个对象，则Mule对输出进行分页。
+
+== 使用XML的示例
+
+. 创建一个*google-contacts* *Global Element,*，然后定义其*Consumer Key*和*Consumer secret*。
++
+[source,xml, linenums]
+----
+<google-contacts:config-with-oauth name="Google_Contacts" consumerKey="" consumerSecret="" doc:name="Google Contacts" applicationName="Mule-GoogleContactsConnector">
+    <google-contacts:oauth-callback-config domain="localhost" path="auth" remotePort="8081"/>
+</google-contacts:config-with-oauth>
+----
++
+. 创建一个*HTTP*连接器，并将其*Path*的值设置为`authenticate`。
++
+[source,xml]
+----
+<http:listener config-ref="HTTP_Listener_Configuration" path="authenticate" doc:name="HTTP"/>
+----
++
+. 在流程外部，创建一个与连接器引用的名称相匹配的配置元素。将主机设置为*localhost*，将端口设置为*8081*。
++
+[source,xml]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+----
++
+. 将*operation*的*Google Calendars connector*设置为`authorize`。
++
+[source,xml]
+----
+<google-contacts:authorize config-ref="Google_Contacts" doc:name="Google Contacts"/> 
+----
++
+. 使用新的*HTTP*端点创建新流程。将其*Path*的值设置为`get_events`，并引用与另一个连接器相同的配置元素。
++
+[source,xml]
+----
+<http:listener config-ref="HTTP_Listener_Configuration" path="get_events" doc:name="HTTP Connector"/>
+----
++
+. 在新流程中添加新的*Google Contacts connector*，将其*operation*设置为`get-events`，*fetchSize*将`50`。
++
+[source,xml]
+----
+<google-calendars:get-events config-ref="Google_Calendars1" doc:name="Google Calendars Paging Example" fetchSize="50" calendarId="myCal"/>
+----
++
+. 在Google Calendars连接器之后，向该流添加*Foreach*，然后将*Logger*作为子元素添加到Foreach元素中。
++
+[source,xml, linenums]
+----
+<foreach doc:name="For Each">
+    <logger message="#[message.payload.getEmailAddresses()]" level="INFO" doc:name="Logger"/>
+</foreach>
+----
+
+== 最终流程示例
+
+[source,xml,linenums]
+----
+<flow name="authorizeAndAuthenticate">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="authenticate" doc:name="HTTP"/>
+    <google-calendars:authorize config-ref="Google_Calendars" doc:name="Google Calendars"/>
+</flow>
+<flow name="GoogleCalAutoPage">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="get_events" doc:name="HTTP"/>
+    <google-calendars:get-events config-ref="Google_Calendars" doc:name="Google Calendars Paging Example" fetchSize="50" calendarId="myCal"/>
+    <foreach doc:name="For Each">
+        <logger level="INFO" doc:name="Logger"/>
+    </foreach>
+</flow>
+----
+
+当邮件到达Google Contacts连接器时，Logger会为每个对象输出单独的消息。如果有超过50个对象，则Mule对输出进行分页。请参阅下面的完整示例。
+
+
+== 附加的MEL表达式
+
+在流中使用分页输出时，可以使用MEL表达式来调用两个函数。
+
+[%header%autowidth.spread]
+|===
+|功能 |语法 |说明
+| *size*  | `#[payload.size()]`  |返回可用对象的总量。
+| *close*  | `#[payload.close()]`  |中止迭代。 +
+此功能可释放自动分页正在使用的资源。
+|===
+
+== 另一个分页示例
+
+您可以在任何支持MEL的表达式中调用`size()`和`close()`函数。下面的简单示例说明了如何在记录器中调用`size()`，以便记录连接器输出的对象总量。
+
+以下示例使用*Google Contacts*连接器。
+
+image:google-contacts-example-flow.png[谷歌联系人流]
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:google-contacts="http://www.mulesoft.org/schema/mule/google-contacts" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/google-contacts http://www.mulesoft.org/schema/mule/google-contacts/1.7.4/mule-google-contacts.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+ 
+    <google-contacts:config-with-oauth name="Google_Contacts" consumerKey="" consumerSecret="" doc:name="Google Contacts" applicationName="Mule-GoogleContactsConnector">
+        <google-contacts:oauth-callback-config domain="localhost" path="auth" remotePort="8081"/>
+    </google-contacts:config-with-oauth>
+    <http:listener-config name="listener-config" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="authorizationAndAuthenticationFlow">
+        <http:listener config-ref="listener-config" path="authenticate" doc:name="HTTP Connector"/>
+        <google-contacts:authorize config-ref="Google_Contacts" doc:name="Google Contacts"/>
+    </flow>
+    <flow name="googleContactsTest" >
+        <http:listener config-ref="listener-config" path="get_events" doc:name="HTTP Connector"/>
+        <google-contacts:get-contacts config-ref="Google_Contacts" doc:name="Google Contacts" fetchSize="50"/>
+        <logger message="#[payload.size()]" level="INFO" doc:name="Log_Size"/>
+        <foreach doc:name="For Each">
+             <logger message="#[payload.getEmailAddresses()]" level="INFO" doc:name="Log_Size"/>
+        </foreach>
+    </flow>
+</mule>
+----
+
+== 另请参阅
+
+* 详细了解 link:/mule-user-guide/v/3.8/scopes[领域]。
+
+* 详细了解 link:/mule-user-guide/v/3.8/foreach[的foreach]范围。
+
+* 需要处理真正大的有效载荷？了解 link:/mule-user-guide/v/3.8/mule-high-availability-ha-clusters[Mule高可用性HA集群]。

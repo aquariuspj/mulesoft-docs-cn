@@ -1,0 +1,154 @@
+=  Foreach范围
+
+== 概述
+
+这个范围简化了消息集合的拆分和聚合。
+
+通常，处理包含元素集合的消息的流程必须使用一个流控制将集合拆分为迭代处理的单个元素，然后使用另一个流控制将元素重新聚合为新集合，以便它们可以传递流出。几个Mule ESB的 link:/mule-user-guide/v/3.3/studio-flow-controls[流量控制]支持这种分割和重新聚合，但即使在为特定任务进行仔细选择时，也无法与*Foreach Scope*的便利性相匹配。
+
+分离器和聚合器对的使用也存在几个潜在的限制：
+
+* 在某些情况下，将消息集合拆分成块可能会导致某些重要的XML元素（例如页眉或页脚中的元数据）从重新聚合的XML中删除。
+* 例如，当您将某些集合类型（例如Java）分割成多个部分进行处理时，集合可能会重新聚合为不同的集合类型 -  *MuleMessageCollection*。 （因此，您可能需要添加额外的流程步骤以将处理后的消息集合转换回其原始集合类型。）
+* 在分割，处理或聚合消息集合时，必须在多个分离器和聚合器类型中进行选择。有时，很难确定哪种分配器/聚合器组合最适合您的消息处理需求。
+
+Foreach提供了几个优于split-aggregator对的优点：
+
+*  Foreach将集合分解为元素，然后迭代地处理它们，而不丢失任何消息payload_。
+*  Foreach在分割消息集合并处理各个元素之后，不会将这些单独元素重新聚合成MuleMessageCollection;相反，它会返回对原始消息的引用。 （这导致"Java in, Java out"而不是"Java in, MuleMessageCollection out"）。
+*  Foreach范围广泛;它可以迭代地处理来自任何类型集合的元素，包括地图，列表，数组和MuleMessageCollections。
+*  Foreach作用域可以拆分并处理不属于消息有效载荷一部分的元素集合。例如，Foreach可以处理消息头中的消息属性集合（元数据）。
+
+== 配置Foreach
+
+. 将Studio调色板中的Foreach范围图标拖放到消息流画布上。
++
+image:drag_foreach.png[drag_foreach]
+
+. 双击图标以打开“范围属性”面板。
+. 在*General*标签上，为范围输入*Display Name*，并根据您的上下文要求配置四个属性中的任何一个。 +
++
+image:foreach_properties.png[foreach_properties]
++
+[%header,cols="10,10,75"]
+|===
+|属性 |默认值 |描述
+|集合 |   |（可选）输入一个表达式，该表达式告诉Foreach在哪里查找它必须分割和处理的数据。例如，输入一个表达式，该表达式指示Foreach从标题部分拆分和处理集合 - 而不是有效内容。除非此字段另有规定，否则Foreach假定邮件有效负载是集合。
+|计数器变量名称 |计数器 |（可选）在此字段中输入名称以标记Foreach用来记录它处理的元素数量的变量。如果您的收藏集已将`counter`标签用于其他变量，请为*Counter Variable Name*输入不同的标签，例如`index`。
+|批处理大小 | 1  |（可选）输入一个整数以指示Foreach处理的每个批处理中的元素数。这些批次可能会促进更快的处理。例如，如果一个集合有200个元素，并且您将批量大小设置为50，则Foreach将迭代处理4批次的50个元素。
+|根消息变量名称 | rootMessage  |（可选）在此字段中输入名称以标记Foreach用来引用完整未分离消息集合的变量。如果您的收藏集已将标签`rootMessage`用于其他变量，请为*Root Message Variable Name*输入不同的标签。
+|===
+
+. 如果需要，点击*Documentation*标签添加关于范围的备注，然后点击*OK*保存更改。
+. 将构建块从调色板拖放到Foreach范围中以构建一个子流，该子流将处理消息集合中的每个元素。 Foreach范围可以包含任意数量的消息处理器以及对子流程的引用。
++
+[WARNING]
+====
+您不能拖入Foreach范围的唯一类型的消息处理器是*inbound endpoint*。
+
+如果您将双向端点拖入Foreach范围，则Mule会自动将其转换为仅出站端点。
+====
+
+==  Foreach错误处理
+
+为您的流定义的异常策略将处理在Foreach范围及其子流内引发的所有异常。 （如果您尚未明确定义流的异常策略，则Mule将隐式应用 link:/mule-user-guide/v/3.3/error-handling[默认的例外策略]句柄异常。）如果集合中的消息抛出异常，Foreach将停止处理该集合并调用异常策略。
+
+例如，只要有两个条件成立，Foreach就会抛出`IllegalArgumentException`：
+
+* 它收到一个不是集合的消息有效载荷
+* 您尚未在邮件有效内容之外标识邮件收集（通过在Foreach *General*标签的属性部分的*Collection*字段中输入表达式来定义）
+
+== 示例
+
+以下示例说明了使用Foreach将信息添加到集合中每条消息的流程。
+
+HTTP端点接收来自客户端的请求，然后查询JDBC数据库，其中表格指示各种汽车的型号名称和型号年份。 Foreach将集合（表格）拆分为元素（行）列表，每个元素包含有关各个元素（地图）`model:'ford sierra'`，model_year = 1982}}的信息。 Foreach通过其子流中的消息处理器发送每个元素。
+
+该流程为每个元素的地图添加一个新条目;如果模型年份小于2001年，Mule会添加`type='20th century car'`，然后将该元素发送到*JMS*端点;否则，Mule添加`type='21st century car'`并将元素发送到*File*端点。 Foreach在流程结束时返回一个集合并将其发送给变换器。
+
+此特定示例将使用利用*Set Payload*和*HTTP Response Builder*构造块的自定义*Catch Exception Strategy*替换主流的默认异常策略。
+
+image:foreach-example.png[的foreach示例]
+
+*Full Example Code*
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:jdbc="http://www.mulesoft.org/schema/mule/jdbc"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:core="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/jdbc http://www.mulesoft.org/schema/mule/jdbc/current/mule-jdbc.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+ 
+    <jdbc:derby-data-source name="Derby_Data_Source" url="jdbc:derby:${app.home}/muleEmbeddedDB;create=true" transactionIsolation="UNSPECIFIED" doc:name="Derby Data Source"/>
+    <jdbc:connector name="JDBCConnector" dataSource-ref="Derby_Data_Source" validateConnections="true" queryTimeout="-1" pollingFrequency="0" doc:name="JDBCConnector">
+        <jdbc:query key="allcars" value="SELECT * FROM cars"/>
+    </jdbc:connector>
+    <jms:activemq-connector name="JMSConnector" doc:name="Active MQ"/>
+    <flow name="process" doc:name="process">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="9091" path="process" doc:name="HTTP Endpoint"/>
+        <jdbc:outbound-endpoint exchange-pattern="request-response" queryKey="allcars" responseTimeout="10000" mimeType="text/plain" queryTimeout="-1" connector-ref="JDBCConnector" doc:name="Database (JDBC)"/>
+        <foreach doc:name="Foreach">
+            <choice doc:name="Choice">
+                <when expression="payload['MODEL_YEAR'] &#38;lt; 2001">
+                    <processor-chain>
+                        <expression-component doc:name="Set payload type">payload['TYPE']='20th century car'</expression-component>
+                        <jms:outbound-endpoint queue="in" doc:name="JMS"/>
+                    </processor-chain>
+                </when>
+                <otherwise>
+                    <processor-chain>
+                        <expression-component doc:name="Set payload type">payload['TYPE']='21st century car'</expression-component>
+                        <file:outbound-endpoint path="/tmp" responseTimeout="10000" doc:name="File"/>
+                    </processor-chain>
+                </otherwise>
+            </choice>
+        </foreach>
+        <set-payload value="#[payload.size()] cars where processed: #[payload]" doc:name="Set response"/>
+        <http:response-builder contentType="text/html" doc:name="HTTP Response Builder">
+            <parse-template location="foreach_info.html" doc:name="Parse Template"/>
+        </http:response-builder>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload value="You need to populate the Database first" doc:name="DB is not populated"/>
+            <http:response-builder status="500" contentType="text/html" doc:name="HTTP Response Builder">
+                <parse-template location="foreach_error.html" doc:name="Parse Template"/>
+            </http:response-builder>
+        </catch-exception-strategy>
+    </flow>
+    <flow name="populate" doc:name="populate">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="9091" path="populate" doc:name="HTTP Endpoint"/>
+        <scripting:component doc:name="Script to populate DB">
+            <scripting:script engine="Groovy">
+                <scripting:text><![CDATA[jdbcConnector = muleContext.getRegistry().lookupConnector("JDBCConnector");
+qr = jdbcConnector.getQueryRunner();
+conn = jdbcConnector.getConnection();
+qr.update(conn, "CREATE TABLE cars (model varchar(256), model_year integer)");
+qr.update(conn, "INSERT INTO cars values('Ford Sierra', 1982)");
+qr.update(conn, "INSERT INTO cars values('Opel Astra', 2001)");]]></scripting:text>
+            </scripting:script>
+        </scripting:component>
+        <set-payload value="Successfully populated the database" doc:name="Set Payload"/>
+        <http:response-builder contentType="text/html" doc:name="HTTP Response Builder">
+            <parse-template location="foreach_info.html" doc:name="Parse Template"/>
+        </http:response-builder>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload value="DB already populated" doc:name="Database Already populated"/>
+            <http:response-builder status="500" contentType="text/html" doc:name="HTTP Response Builder">
+                <parse-template location="foreach_error.html" doc:name="Parse Template"/>
+            </http:response-builder>
+        </catch-exception-strategy>
+    </flow>
+</mule>
+----

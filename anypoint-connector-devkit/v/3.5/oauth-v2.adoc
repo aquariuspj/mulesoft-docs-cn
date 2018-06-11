@@ -1,0 +1,236 @@
+=  OAuth V2
+
+本页面详细讨论了DevKit对OAuth V2身份验证的支持以及如何实现使用OAuth V2对您的API进行身份验证的连接器。
+
+image:5-package.png[5包]
+
+== 假设
+
+本文假设您熟悉 link:/anypoint-studio/v/5/basic-studio-tutorial[Anypoint Connector Essentials]，并且准备好在您的连接器上实施身份验证。它假定您熟悉各种 link:/anypoint-connector-devkit/v/3.5/authentication-methods[认证方法]，并且您正在使用OAuth V1对您的API进行身份验证。
+
+如果您不熟悉OAuth V1身份验证，它是什么或如何工作，我们建议访问 http://oauth.net/2/[OAuth 2.0文档]。
+
+=== 所需的API信息
+
+从服务提供商的API文档中，获取下表中列出的变量的精确值。这些变量引用授权过程中使用的URL;有关此过程的这些步骤的详细信息，请参阅 http://tools.ietf.org/html/rfc6749[OAuth 2规范]。
+
+[%header%autowidth.spread]
+|===
+| {变量{1}}说明
+| `accessTokenUrl`  |从中获取访问令牌的URL
+| `authorizationUrl`  |从中获取资源访问权限的URL
+|===
+
+===  @的OAuth2注解
+
+要在连接器上实现OAuth V2身份验证，您需要在@Connector类中使用`@OAuth2`注释。
+
+[WARNING]
+在构建过程中，使用@ OAuth2注释的连接器会获得另外两个自动生成的@Processor方法，称为`authorize`和`unauthorize`。这些消息处理器负责发起和结束OAuth会话。
+
+下表介绍了`@OAuth2`批注的所有参数。
+
+[%header,cols="4*"]
+|===
+一个|
+*Parameter*
+
+ 为|
+*Description*
+
+ 为|
+*Required?*
+
+ 为|
+*Default Value*
+
+| `accessTokenUrl`  |服务提供商为获取访问令牌而定义的网址。 |✓ | 
+| `authorizationUrl`  |由服务提供商定义，资源所有者被重定向到的URL，以授权给消费者。通过在`config`元素中设置不同的值来配置处理器时，您可以覆盖此值。在创建流程时，您可以通过在`authorize`元素中输入所需值来覆盖此值。 |✓ | 
+| `authorizationParameters` a |
+以逗号分隔的注释列表，格式如下：
+
+`@OAuthAuthorizationParameter(name = "xxx", type = xxx, description = "xxx")`
+
+该类型不能是集合或复杂类型。
+
+  |   | 
+| `verifierRegex`  | Java正则表达式在资源所有者授权使用者后，从服务提供者响应中提取验证者。 |   | {{1 }}
+| `accessTokenRegex`  |用于从服务提供商响应中提取访问令牌的Java正则表达式。 |   | `"access_token":"([^&]+?)"`
+| `expirationRegex`  |一个Java正则表达式，用于从服务提供者响应中提取访问令牌的过期时间（以秒为单位）。如果在服务提供商响应中未找到此正则表达式（因为正则表达式错误或访问令牌永不过期），则将访问令牌视为永不过期。 |   | `"expires_in":([^&]+?),`
+| `refreshTokenRegex`  | Java正则表达式，用于在授权流程中从回调中提取刷新令牌。 |   | `"\"refresh_token\":\"([^&]+?)\""`
+| `callbackPath`  |如果服务提供商只接受已知的重定向网址。将此参数分配给域中的路径（由`fullDomain`环境变量表示），该路径将作为重定向URL在服务提供商处注册。如果留空（表示服务提供商接受任何URL作为重定向URL），Mule将使用随机路径。 |   | `<random path>`
+|===
+
+== 在@Connector类中添加@ OAuth2注释
+
+[source, java, linenums]
+----
+@Connector(name = "oauth2connector")
+@OAuth2(authorizationUrl = "http://someUrl", accessTokenUrl = "http://someOtherUrl")
+public class MyConnector
+{
+    /**
+    * YOUR CODE GOES HERE
+    */
+}
+----
+
+===  @连接器类属性
+
+您的@Connector类需要与OAuth相关的@Configurable实例属性，以允许用户在使用连接器时指定使用者密钥和密码：
+
+*  @ OAuthConsumerKey保存OAuth使用者密钥
+*  @ OAuthConsumerSecret保存OAuth使用者密码
+
+确保这些实例变量具有公共getter和setter（未显示）。
+
+[source, java, linenums]
+----
+@Configurable @OAuthConsumerKey private String consumerKey;
+@Configurable @OAuthConsumerSecret private String consumerSecret;
+----
+
+===  @处理器方法注释
+
+在访问受保护资源（使用`@Processor`注释）的方法中，添加一个String参数并使用`@OAuthAccessToken`对其进行注释。
+
+[source, java, linenums]
+----
+@Processor
+public Object accessProtectedResource(@OAuthAccessToken String accessToken, ...)
+{
+    /**
+    * YOUR CODE GOES HERE
+    */
+}
+----
+
+调用时，包含带有{{}}注释参数的方法将启动以下活动：
+
+. 首次访​​问受保护资源时，用户将被重定向到服务提供商的授权URL，以授予或拒绝消费者访问受保护资源。
+. 在随后的访问请求期间，Mule将请求中*access token*（包含在`@OAuthAccessToken`注释的参数中）包含在服务提供者的请求中。有关更多详细信息，请参阅 http://oauth.net/2[Oauth 2.0规范]。
+
+=== 访问令牌到期
+
+如果您已指定适当的正则表达式（使用`@OAuth2`注释的`expirationRegex`参数），并且API的访问令牌到期，则Anypoint DevKit会自动检测到期，并在这种情况下会触发OAuth2再次授权流程。
+
+=== 客户端类更改：传递访问令牌
+
+Anypoint DevKit中的OAuth V2支持在@Connector类级别提供对OAuth2的支持。但是，客户端类可能必须包含逻辑，以便在调用Web服务时实际将访问令牌与请求一起传递。因为OAuth2不是一个形式化和严格的标准，访问令牌如何与请求一起传递的细节取决于API的实现。
+
+API提供商将提供示例代码，说明如何将令牌传递给其服务。在实现您的客户端类时，请使用API​​提供者的示例代码作为参考。
+
+例如，Foursquare支持OAuth 2.0身份验证，并且期望客户端将访问令牌作为查询参数传递。执行`usersGetList`操作的https://github.com/mulesoft/connector-documentation-oauth2-example[OAuth 2.0示例Foursquare连接器]说明了如何执行此操作。
+
+* 在https://github.com/mulesoft/connector-documentation-oauth2-example/blob/master/src/main/java/org/mule/examples/oauth2connectorexample/Oauth2ExampleConnector.java[@Connector类OAuth2ExampleConnector]，连接器将`accessToken`作为参数传递给客户端类操作`client.usersGetList()`：
++
+[source, java, linenums]
+----
+@OAuthProtected
+@Processor
+public UsersListResponse usersGetList(
+    @Optional @Default("self") String userId, 
+    @Optional @Default("") String group, 
+    @Optional @Default("") String location)
+  throws Oauth2ConnectorExampleTokenExpiredException,
+         Oauth2ConnectorExampleException {
+        return client.usersGetList(accessToken, userId, group, location);
+    }
+...
+----
+
+* 在https://github.com/mulesoft/connector-documentation-oauth2-example/blob/master/src/main/java/org/mule/examples/oauth2connectorexample/client/FourSquareClient.java [客户端class `FourSquareClient`]，则在发出GET请求之前，方法`usersGetList()`将`accessToken`查询参数添加到Jersey WebResource `wr`：
++
+[source, code, linenums]
+----
+
+public UsersListResponse usersGetList(String accessToken, String userId, String group, String location)
+            throws Oauth2ConnectorExampleTokenExpiredException, Oauth2ConnectorExampleException {
+ 
+        logger.info("Calling usersGetList - AccessToken: " + accessToken);
+ 
+        URI uri = UriBuilder.fromPath(apiUrl).path("/{apiVersion}/users/{USER_ID}/lists").build(apiVersion, userId);
+        WebResource wr = jerseyClient.resource(uri);
+ 
+ 
+        // Warning!... queryParam does not modify the current WebResource. Instead it returns a new instance.
+        // So, if you do not assign the result WebResource to the one that makes the call, the param will never be added
+        wr = wr.queryParam("oauth_token", accessToken);
+ 
+....
+         
+    try {
+            logger.info(wr.toString());        
+            String res = wr.type(MediaType.APPLICATION_JSON_TYPE).get(String.class);
+            logger.info("Response: " + res);
+            result = jacksonMapper.readValue(res, UsersListResponse.class);
+        }
+----
+
+其他服务需要在客户端进行类似的更改，但细节不同，例如将令牌作为标头发送。此外，此示例还演示了如何将OAuth 2与使用Jersey Client的RESTful Web服务结合使用;对于基于SOAP的Web服务，客户端类更改将再次类似，但具体情况会有所不同。
+
+== 使用您的OAuth2 Authenticated Connector
+
+=== 授权连接器
+
+在消费者可以执行任何需要授权的操作之前，资源所有者必须授予对连接器的访问权限以访问受保护的资源。当它收到授权请求时，Mule将资源所有者的浏览器重定向到服务提供商授权页面。任何后续访问受保护资源的尝试都会填充使用`@OAuthAccessToken`注释的参数。 Mule在请求中包含访问令牌给服务提供者。见下面的例子。
+
+[source, xml, linenums]
+----
+<linkedin:config apiKey="${api.key}" apiSecret="${api.secret}"/>
+...
+    <flow name="authorize">
+        <http:inbound-endpoint host="localhost" port="8080" path="/authorize"/>
+        <linkedin:authorize/>
+    </flow>
+----
+
+=== 配置您的连接器
+
+通过为服务提供商提供的应用程序传递*consumer key*和*consumer secret*来配置连接器。下面的代码示例说明了这种配置的一个例子。
+
+<oauth2module:config apiKey="$\{api.key}" apiSecret="$\{api.secret}"/> ... <flow name="sampleFlow"> <oauth2module:access-protected-resource /> </flow>
+
+配置访问受保护资源的简单流程。如果连接器未被OAuth授权，则使用者操作会抛出`NotAuthorizedException`。
+
+=== 自定义回拨
+
+当用户授予访问受保护资源的权限时，服务提供商发出*HTTP callback*。
+
+该回调传递一个授权代码，Mule稍后使用它来获取访问令牌。为了处理回调，Mule动态地创建一个HTTP入站端点，然后将该端点的URL传递给服务提供者。因此，你不需要完成任何特定的配置来进行HTTP回调。
+
+默认情况下，Mule使用主机和端口（由`fullDomain`环境变量和`http.port`确定）来构建一个URL以发送给服务提供商。在需要使用主机和端口的非默认值的情况下，请根据下面的代码示例添加配置。
+
+[source, xml, linenums]
+----
+<oauth2module:config apiKey="${api.key}" apiSecret="${api.secret}">
+<oauth2module:oauth-callback-config domain="SOME_DOMAIN" remotePort="SOME_PORT" />
+</oauth2module:config>
+----
+
+有关Mule如何处理回调的细节，请参阅HTTP回调。
+
+=== 添加安全套接字层（SSL）
+
+当Mule自动启动HTTP入站端点来处理OAuth回调时，它默认使用HTTP连接器。在服务提供商要求*HTTPS*的地方，您可以配置Mule以传递您自己的HTTPS连接器（请参阅下面的示例）。
+
+[source, code, linenums]
+----
+...
+ 
+<https:connector name="httpsConnector">
+<https:tls-key-store path="keystore.jks" keyPassword="mule2012" storePassword="mule2012"/>
+</https:connector>
+...
+<oauth2module:config apiKey="${api.key}" apiSecret="${api.secret}">
+<oauth2module:oauth-callback-config domain="localhost" localPort="${http.port}" remotePort="${http.port}" async="true" connector-ref="httpsConnector"/>
+</oauth2module:config> ...
+----
+
+[TIP]
+有关配置*HTTPS connector*的详细信息，请参阅 link:/mule-user-guide/v/3.5/http-transport-reference[HTTPS传输参考]。
+
+== 另请参阅
+
+*  *NEXT:*继续使用您的连接器 link:/anypoint-connector-devkit/v/3.5/defining-connector-attributes[定义属性，操作和数据模型]。
+* 请参阅 link:/anypoint-connector-devkit/v/3.5/creating-a-connector-for-a-restful-api-using-restcall-annotations[使用@RESTCall注解为RESTful API创建连接器]示例，在完整的示例中查看OAuth V2身份验证注释。

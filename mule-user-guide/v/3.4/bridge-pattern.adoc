@@ -1,0 +1,147 @@
+= 桥梁模式
+:keywords: connectors, anypoint, studio, esb, bridge pattern, integration,
+
+将系统连接在一起是集成最重要的任务之一。 Mule ESB为实现这种连接提供了必要的基础。其中一个构建模块允许在消息源和目标之间建立桥梁。
+
+image:mcp_bridge.png[mcp_bridge]
+
+== 核心功能
+
+消息桥作为入站端点和出站端点之间的直接通道。它是一个中立的组件，因为它不会在流过它的消息上应用任何业务逻辑。这就是说，我们将在稍后看到，桥接器可以执行协议适应和数据转换。
+
+默认情况下，Bridge配置元素在其端点之间建立请求 - 响应管道：来自出站端点的任何响应都将路由回入站端点。以下说明了这样一个同步网桥：
+
+[%header%autowidth.spread]
+|===
+^ | *Synchronous - aka Request-Response - Bridge*
+
+一个| [source，xml，linenums]
+----
+<pattern:bridge name="request-response-bridge"
+        inboundAddress="vm://synchronous-bridge.in"
+        outboundAddress="vm://maths-service.in" />
+----
+|===
+
+在这种情况下，使用同步桥是有意义的，因为出站端点的目标是请求 - 响应数学计算服务，其响应由桥的调用者预期。在其他情况下，不需要回应任何回应：桥梁成为单向通道。考虑下面的例子，消息以一种难以忘怀的方式发送到日志系统：
+
+[%header%autowidth.spread]
+|===
+^ | *One-Way Bridge*
+
+一个| [source，xml，linenums]
+----
+<pattern:bridge name="one-way-bridge"
+        exchange-pattern="one-way"
+        inboundAddress="vm://asynchronous-bridge.in"
+        outboundAddress="vm://log-service.in" />
+----
+|===
+
+Bridge元素与其他基于模式的配置元素一样支持引用全局端点：
+
+[%header%autowidth.spread]
+|===
+^ | *Endpoint References*
+
+一个| [source，xml，linenums]
+----
+<pattern:bridge name="endpoint-ref-bridge"
+        inboundEndpoint-ref="endpoint-ref-bridge-channel"
+        outboundEndpoint-ref="maths-service-channel" />
+----
+|===
+
+它还支持子元素，以实现端点的高级配置和异常策略的定义（以防在Bridge处理消息时发生令人讨厌的情况）：
+
+[%header%autowidth.spread]
+|===
+^ | *Child Elements*
+
+一个| [source，xml，linenums]
+----
+<pattern:bridge name="child-endpoint-bridge">
+  <vm:inbound-endpoint path="child-endpoint-bridge.in"
+                       exchange-pattern="request-response" />
+  <vm:outbound-endpoint path="maths-service.in"
+                        exchange-pattern="request-response" />
+  <custom-exception-strategy class="com.acme.AcmeExceptionStrategy" />
+</bridge>
+----
+|===
+
+最后，还支持继承，可以跨几个桥共享属性：
+
+[%header%autowidth.spread]
+|===
+^ | *Inheritance*
+
+一个| [source，xml，linenums]
+----
+<pattern:bridge name="abstract-parent-bridge"
+        abstract="true"
+        outboundAddress="vm://maths-service.in" />
+ 
+<pattern:bridge name="concrete-child-bridge"
+        parent="abstract-parent-bridge"
+        inboundAddress="vm://concrete-child-bridge.in" />
+----
+|===
+
+== 适应与变革
+
+到目前为止，我们的示例显示了同类传输的桥梁：入站和出站端点都使用相同的传输（VM）。因为它依赖于Mule的协议适应和消息抽象，所以桥可以很好地处理使用异构协议的场景。考虑下面的例子：
+
+[%header%autowidth.spread]
+|===
+^ | *Heterogeneous Transports Bridge*
+
+一个| [source，xml，linenums]
+----
+<pattern:bridge name="dlqDumper"
+        exchange-pattern="one-way"
+        inboundAddress="jms://myDlq"
+        outboundAddress="file://./test?outputPattern=#[header:INBOUND:JMSMessageID].dl" />
+----
+|===
+
+正如你所看到的，我们已经配置了一个网桥来处理我们在一个死信队列（DLQ）上收到的消息。该桥使用发送到指定JMS队列的所有死信息，并将它们写入文件系统。当然，这是一个单向桥梁：我们不想将任何东西发回DLQ！
+
+除了处理异构协议之外，桥还可以处理数据格式的差异。事实上，如上所述，桥梁可以执行转换，这在集成不同系统时通常是需要的。以下显示了一个示例，其中数据转换为标准形式并从标准形式转换为数据：
+
+[%header%autowidth.spread]
+|===
+^ | *Transforming Bridge*
+
+一个| [source，xml，linenums]
+----
+<pattern:bridge name="transforming-bridge"
+        inboundAddress="vm://transforming-bridge.in"
+        transformer-refs="to-canonical-form"
+        responseTransformer-refs="from-canonical-form"
+        outboundAddress="vm://target-service.in" />
+----
+|===
+
+== 交易支持
+
+有时，重要的消息会通过桥接传递：在这种情况下，消息必须可靠地从入站端点消耗并传递到出站端点。如果此交货失败，则应推回该消息，以便稍后再次尝试交货。
+
+实现这一目标的方法是宣布Bridge正在交易。在这种情况下，它将使用入站消息并在事务中分派出站消息。看看下面的例子来了解它是如何工作的：
+
+[%header%autowidth.spread]
+|===
+^ | *Transacted Bridge*
+
+一个| [source，xml，linenums]
+----
+<pattern:bridge name="queue-to-topic"
+        transacted="true"
+        inboundAddress="jms://myQueue"
+        outboundAddress="jms://topic:myTopic" />
+----
+|===
+
+在这个例子中，我们将JMS队列连接到一个主题。我们已经使用了交易属性，因为我们希望确保所有入站邮件都将被成功使用并重新发布。
+
+显然，为此，桥梁所使用的运输工具应该支持交易。如果入站和出站端点使用异构协议，桥接器将查找XA事务管理器（必须已经是 link:/mule-user-guide/v/3.6/transactions-configuration-reference[配置]）。

@@ -1,0 +1,762 @@
+=  Zuora连接器
+:keywords: zuora connector, dataweave, datasense, subscription
+
+_选择_
+
+发行说明： link:/release-notes/zuora-connector-release-notes[Zuora连接器发行说明] +
+技术参考： http://mulesoft.github.io/mule-zuora-connector/[Zuora技术参考] +
+Anypoint Exchange：https://www.anypoint.mulesoft.com/exchange/?search=zuora[Zuora连接器] +
+附件：
+
+*  link:_attachments/zuora-aqua-api-operations-demo.zip[zuora-aqua-api-operations-demo.zip]
+*  link:_attachments/zuora-subscribe-operations-demo.zip[zuora-subscribe-operations-demo.zip]
+
+用于Zuora的Anypoint连接器可让您连接到Zuora平台。该连接器提供了方便的方法来利用Zuora的功能，使您可以访问整个Zuora
+功能套件。
+
+该连接器执行针对Zuora的SOAP API和REST API的API调用。所有必需的请求标头和错误处理都是从您抽象出来的，并内置到连接器中。
+
+== 先决条件
+
+本文档假定您熟悉Zuora，Mule，Anypoint连接器和Anypoint Studio Essentials。本页面需要一些关于Mule概念，Mule流程中的元素和全局元素的基本知识。
+
+[[requirements]]
+=== 硬件和软件要求
+
+有关硬件和软件要求，请参阅 link:/mule-user-guide/v/3.8/hardware-and-software-requirements[硬件和软件要求]页面。
+
+要使用Zuora连接器，您需要：
+
+*  Anypoint Studio  - 如果您不使用Anypoint Studio进行开发，请按照<<Configuring Maven Dependencies,Configuring Maven Dependencies>>中的说明执行您的项目。
+*  Zuora帐户 - 联系Zuora团队了解更多关于Zuora以及您如何获取帐户的信息： link:http://info.zuora.com/talk-to-our-sales-team.html[Zuora销售]。
+*  Zuora WSDL  - 要使用SOAP API，必须向连接器提供Zuora WSDL。登录到https://www.zuora.com/apps/newlogin.do[Zuora Production]或https://apisandbox.zuora.com/apps/newlogin.do[Zuora Sandbox]，导航至设置，然后点击Z-结算设置>下载Zuora WSDL。
+
+
+=== 兼容性
+
+[%header%autowidth.spread]
+|===
+|应用/服务|版本
+| Mule Runtime | Mule企业版3.5.2及更新版本
+| {Zuora的{1}} V75
+|===
+
+*Notes:*
+
+* 从v3.0.0开始，Zuora连接器以https://www.mulesoft.com/legal/versioning-back-support-policy#anypoint-connectors[_Select_]连接器的形式在市场上获得许可。以前的版本免费提供给社区。
+
+*  Zuora停止支持TLS1.0。如果默认情况下应用程序尝试使用TLS1.0，则在运行时添加`-Dhttp.protocols=TLSv1.1,TLSv1.2` VM参数以确保TLS1.1或TLS1.2用于与Zuora的通信。
+
+*  WSDL版本 -  Zuora连接器可以使用早于版本75的WSDL版本，但只有版本75已经过详细测试。
+
+*  Zuora的EU数据中心不支持Zuora的SOAP API。请参阅https://knowledgecenter.zuora.com/DC_Developers/G_SOAP_API/E_SOAP_API_Calls[Zuora知识中心]。
+
+
+== 安装此连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索此连接器并单击安装。
+. 按照提示安装连接器。
+
+=== 从较旧版本更新
+
+当发布连接器的更新版本时，Anypoint Studio会在Studio的右下角显示“更新可用”弹出窗口。点击弹出窗口并安装新版本。
+
+== 创建一个新项目
+
+. 在Anypoint Studio中，单击文件>新建> Mule项目。
+. 为您的新项目输入一个名称，并将其余选项保留为默认值。
+. 如果您打算使用Git，请选择为Studio项目创建默认忽略的项目的默认.gitignore文件，然后单击下一步。
+. 点击完成创建项目。
+
+== 配置Zuora全局元素
+
+您可以配置全局Zuora元素以与Zuora连接器配合使用。
+
+全局参数是：
+
+image:zuora-global-element-props.png[Zuora的-配置]
+
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+|用户名 |输入用户名登录Zuora。
+|密码 |输入相应的密码。
+|端点 |输入负责处理SOAP请求的端点的地址。默认值：
+`+https://apisandbox.zuora.com/apps/services/a/75.0+`
+|剩余端点 |输入负责处理REST请求的端点的基础。默认值：
+`+https://apisandbox.zuora.com/apps/api/+`。
+| WsSDL位置 |输入Zuora WSDL的路径。你可以给出文件的绝对路径，或者
+您可以提供父目录为src / main / resources的文件的相对路径。
+|===
+
+
+在执行流程时，Zuora Connector使用会话ID向Zuora进行身份验证。会话ID的生命
+取决于Zuora环境的配置。执行流程时，如果没有重新连接策略
+是为连接器设置的，当会话ID失效时，API调用失败。
+为确保通话成功，必须创建重新连接策略来刷新会话ID。
+
+[[using-the-connector]]
+== 使用连接器
+
+Zuora连接器有三个消息处理器。 *Invoke SOAP Service*处理器能够调用Zuora WSDL中指定的操作，并可以确定操作期望的对象类型。
+
+=== 调用SOAP服务
+
+调用SOAP服务 - 使用此处理器调用Zuora SOAP操作。
+
+处理器使用多级DataSense来提供输入Zuora WSDL中的操作列表，以及可用于所选操作的对象类型列表。 *Service*下拉菜单包含WSDL文件中可用的服务。
+
+image:zuora-invoke-soap1.png[调用皂-第一步]
+
+第二级为用户提供来自WSDL的所有可用操作
+
+image:zuora-invoke-soap2.png[调用皂-第一步]
+
+第三级显示所选操作的所有可用对象类型。如果操作不使用具有特定类型的对象，
+或者它不使用输入，实体字段具有未定义的值。
+image:zuora-invoke-soap3.png[调用皂-第一步]。
+
+==  SOAP操作
+
+对于Zuora API版本75，可用的SOAP操作是：
+
+*  https://knowledgecenter.zuora.com/DC_Developers/SOAP_API/E_SOAP_API_Calls/amend_call [修改]：更改订阅。
+
+*  https://knowledgecenter.zuora.com/DC_Developers/SOAP_API/E_SOAP_API_Calls/create_call [创建]：创建一个或多个特定类型的对象。
+
+*  https://knowledgecenter.zuora.com/DC_Developers/SOAP_API/E_SOAP_API_Calls/delete_call [删除]：删除一个或多个相同类型的对象。
+
+*  https://knowledgecenter.zuora.com/DC_Developers/SOAP_API/E_SOAP_API_Calls/execute_call [执行]：将发票分成多个发票。
+
+*  https://knowledgecenter.zuora.com/DC_Developers/SOAP_API/E_SOAP_API_Calls/generate_call [生成]：为特定客户生成按需发票。
+
+* 获取用户信息：检索有关用户的信息。
+
+*  https://knowledgecenter.zuora.com/DC_Developers/SOAP_API/E_SOAP_API_Calls/login_call [登录]：输入用户名和密码并将其登录到Zuora服务器。
+
+*  https://knowledgecenter.zuora.com/DC_Developers/SOAP_API/E_SOAP_API_Calls/query_call [查询]：通过指定要查询的对象，从该对象中检索的字段以及任何要确定的过滤器来发送查询表达式是否应该查询给定的对象。
+
+*  https://knowledgecenter.zuora.com/DC_Developers/SOAP_API/E_SOAP_API_Calls/queryMore_call [查询更多]：允许从先前的查询（）调用请求更多结果。
+
+*  https://knowledgecenter.zuora.com/DC_Developers/SOAP_API/E_SOAP_API_Calls/subscribe_call [订阅]：执行许多操作。使用subscribe（）调用捆绑创建至少一个新订阅所需的信息。
+
+*  https://knowledgecenter.zuora.com/DC_Developers/SOAP_API/E_SOAP_API_Calls/update_call [更新]：更新同一类型的一个或多个对象中的信息。
+
+*Note:*观察使用连接器从Zuora SOAP API调用操作的语法。 *Operation*和*Entity*在`soapMetadataKey`属性中传递，由两个竖线"||"分隔。
+
+[source,xml,linenums]
+----
+<zuora:invoke-soap-service config-ref="Zuora__Basic_Authentication"
+ soapMetadataKey="ZuoraService-Soap-http://api.zuora.com/||create||Account-zObject"
+ doc:name="Create Account"/>
+----
+
+* 查询 - 此处理器允许用户使用*DataSense Query Language*查询记录以构建查询并为查询输出提供DataSense。
+
+image:zuora-query-builder.png[查询建设者]
+
+使用查询生成器，您可以轻松构建查询并为其添加过滤器。如果DataSense查询语言没有
+能够构建所需的查询，用户可以选择使用本机查询语言，但此模式不支持DataSense。这个处理器
+使用分页查询来返回数据库中与给定查询匹配的所有记录。
+
+
+==  REST处理器
+
+REST处理器有两个字段实体ID和实体名称，允许您使用Zuora多实体API，请参阅https://knowledgecenter.zuora.com/BB_Introducing_Z_Business/Multi-entity[Multi- entity API]。
+
+*  https://knowledgecenter.zuora.com/DC_Developers/REST_API/B_REST_API_reference/Usage/1_POST_usage [邮政使用情况]  - 此操作会导入从作为输入提供的csv文件中获取的一个或多个帐户的使用情况数据。如果成功提交导入，该操作将返回包含用于检查的URL的POJO
+进口的状态。 URL可以作为输入提供给*Check Import Status*处理器
+检索导入的状态。有关更多信息，请参阅请参阅[Zuora Post使用]。
+
+* 检查导入状态 - 此操作接收导入URL并返回导入的当前状态。如果导入失败，则响应可能包含一些有关原因的信息
+的失败。
+
+* 获取导出文件内容 - 此操作返回包含Zuora查询数据的导出文件的内容。
+
+* 获取导出文件流 - 此操作返回一个表示包含来自Zuora的查询数据的导出文件的流。
+
+*  Zuora Aqua处理器 - 这是一组处理器和源代码，使用户能够与Zuora AQUA Api进行交互。请参阅https://knowledgecenter.zuora.com/DC_Developers/Aggregate_Query_API[Zuora Aqua Api文档]。
+
+以下处理器/源可用：
+
+**  Aqua Post Query  - 此处理器以有状态或无状态模式提交ZOQL和导出ZOQL查询的汇总列表。请参阅 link:https://knowledgecenter.zuora.com/DC_Developers/Aggregate_Query_API/B_Submit_Query[Zuora的Post Query文档]。
++
+项目和合作伙伴必须完成才能使此请求成为有状态。有状态请求具有比无状态请求更多的功能。有关更多信息，请参阅https://knowledgecenter.zuora.com/DC_Developers/Aggregate_Query_API/BA_Stateless_and_Stateful_Modes[Zuora无状态与有状态模式]。
++
+如果Aqua Post Query请求成功，则处理器将返回一个作业，该请求包含请求中每个查询的批处理。使用其他处理器，用户可以检查作业的状态并检索批处理结果。如果请求失败，则不会创建作业，并且结果将包含有关失败原因的一些信息。
++
+保存作业到对象存储标志（如果设置为true）会使由PostQuery操作创建的作业的所有ID保存在名称由对象存储名称字段给出的持久对象存储中，以供Aqua使用获取批量结果源。
+如果该标志设置为true并且没有给出对象存储，则使用默认对象存储zuoraPostQueryObjectStore。
++
+**  Aqua获取作业结果 - 接收表示jobId的字符串并返回表示该作业状态的对象。
++
+**  Aqua删除作业 - 仅在作业未完成时才删除当前作业，并返回有关已取消作业的信息。
+**  Aqua获取上次完成的作业 - 返回由*partnerId*和*projectId*表示的有状态请求的上次完成作业的详细信息。
+** 合并结果的Aqua操作 - 最后2个处理器/资源与aquaPostQuery配合使用，可持续检查给定作业的状态。作业完成后，作业会返回并可提取批次的内容。
++
+来源*Aqua get batch results*定期检查对象存储以查找要检查的作业。当它确定作业已完成时，它将以POJO的形式返回作业。
++
+由于源默认情况下不具有DataSense，因此可以使用Aqua Get Job Metadata处理器将源返回的POJO转换为作业，以便用户可以在其上使用DataSense。 Aqua Post Query使用由源使用的对象存储来填充作业
+处理器如果保存作业到对象存储标志设置为true。
++
+***  Aqua获取批处理结果 - 此源可以选择接收持久对象库的名称，以定期检查存储在该对象库中的作业的状态。如果未提供名称，则使用默认对象库zuoraPostQueryObjectStore。投票时间可以
+通过更改轮询周期字段进行修改。作业完成后，源将其作为POJO返回。
++
+image:zuora-aqua-source.png[水产源]
++
+***  Aqua获取作业元数据 - 接收POJO，表示由Aqua获取批处理结果源返回的结果并将其转换为Job对象。通过这种方式，用户可以检索Job对象的元数据，并将作业结构映射到流程后面的其他元素。
++
+这种操作如何协同工作的一个例子是：
++
+image:zuora-aqua-source-example.png[水产源 - 例如]
++
+在第一个流程中，Post Query创建一个新的作业并将作业存储在一个对象存储中。
++
+来自第二流的源定期检查对象存储中存在的作业。当它结束工作完成时，
+它将作业结果作为pojo返回。下一个处理器（Aqua Get Job Metadata）将POJO转换为Job对象，为用户提供数据感知。
+然后，用户可以通过从作业执行每个批处理并使用Get Export File Stream处理器下载文件来下载查询结果。
+
+一般来说，Zuora连接器可以用作出站连接器。下面描述了这种情况。
+
+== 出站场景
+
+用作流程中的出站连接器将数据推送到Zuora。要以此容量使用连接器，只需将连接器放置在入站端点之后的任意位置（请参阅下图）即可。
+
+基本示例=== 
+
+image:zuora-connector-outbound.png[zuora_outbound]
+
+. 文件连接器 - 将文件（如CSV）中的数据接收到流中。
+. 转换消息 - 转换数据结构和格式以产生Zuora连接器所期望的输出。
+.  Zuora连接器（出站） - 与Zuora连接，并执行将数据推送到Zuora的操作。
+
+== 连接器命名空间和架构
+
+在Studio中设计应用程序时，将连接器从调色板拖放到Anypoint Studio画布上的操作应自动使用连接器*namespace*和*schema location*填充XML代码。
+
+*Namespace:* `+http://www.mulesoft.org/schema/mule/zuora+`
+
+*Schema Location:* `+http://www.mulesoft.org/schema/mule/connector/current/mule-zuora.xsd+`
+
+如果您在Studio的XML编辑器或其他文本编辑器中手动编码Mule应用程序，请在`mule`标记内的Configuration XML头中定义名称空间和模式位置。
+
+[source, xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:connector="http://www.mulesoft.org/schema/mule/zuora"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core
+               http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/zuora
+               http://www.mulesoft.org/schema/mule/connector/current/mule-zuora.xsd">
+
+      <!-- put your global configuration elements and flows here -->
+
+</mule>
+----
+
+
+== 在Mavenized Mule应用程序中使用连接器
+
+下载并安装连接器后，请使用以下步骤使Zuora连接器可用于Mule应用程序内部以供使用，并使用连接器打包应用程序。
+如果您使用Anypoint Studio，它会自动为您执行此操作。
+
+. 将存储库信息添加到项目的pom.xml文件中：
++
+[source, xml, linenums]
+----
+<repositories>
+   <repository>
+        <id>mule-ee-releases</id>
+        <name>MuleEE Releases Repository</name>
+        <url>https://repository-master.mulesoft.org/nexus/content/repositories/releases-ee/</url>
+    <repository>
+        <id>mule-ee-snapshots</id>
+        <name>MuleEE Snapshots Repository</name>
+        <url>https://repository-master.mulesoft.org/nexus/content/repositories/ci-snapshots/</url>
+    </repository>
+</repositories>
+----
++
+. 将模块作为依赖项添加到您的项目中以获取最新版本：
++
+[source, xml, linenums]
+----
+<dependency>
+    <groupId>org.mule.modules</groupId>
+    <artifactId>mule-module-zuora</artifactId>
+    <version>RELEASE</version>
+</dependency>
+----
++
+或者为最新版本：
++
+[source, xml, linenums]
+----
+<dependency>
+    <groupId>org.mule.modules</groupId>
+    <artifactId>mule-module-zuora</artifactId>
+    <version>SNAPSHOT</version>
+</dependency>
+----
++
+. 如果您打算在Mule应用程序中使用此模块，则需要将其包含在打包过程中。这样，包含流和Java代码的最终zip文件也包含此模块及其依赖项。为此模块的Mule Maven插件的配置添加一个特殊的内容，如下所示：
++
+[source, xml, linenums]
+----
+<plugin>
+    <groupId>org.mule.tools</groupId>
+    <artifactId>maven-mule-plugin</artifactId>
+    <extensions>true</extensions>
+    <configuration>
+        <excludeMuleDependencies>false</excludeMuleDependencies>
+        <inclusions>
+            <inclusion>
+                <groupId>org.mule.modules</groupId>
+                <artifactId>mule-module-zuora</artifactId>
+            </inclusion>
+        </inclusions>
+    </configuration>
+</plugin>
+----
+
+
+== 演示：汇总查询API
+
+本演示展示了使用Zuora Connector的Aggregate Query API。
+
+link:_attachments/zuora-aqua-api-operations-demo.zip[下载演示zip文件]。
+
+要构建和运行此演示项目，您需要：
+
+具有至少Mule 3.5运行时的*  Anypoint Studio。
+*  Mule Zuora Connector v3.1.0或更高版本。
+
+=== 测试流程
+
+. 通过"File"菜单中的"Anypoint Exchange"或"Import..."将演示项目导入到您的工作区中。
+. 在/src/main/app/mule-app.properties中指定您的Zuora凭据
++
+**  config.username  -  Zuora系统中的用户名
+**  config.password  -  Zuora系统中的密码
+**  config.endpoint  - 由Zuora Soap操作调用的端点
+**  config.restEndpoint  - 由Zuora Rest操作调用的端点
+**  config.wsdlLocation  -  Zuora WSDL的位置
++
+. 在Studio中运行项目。
+. 在浏览器中输入`+localhost:8081+`以访问演示的选择菜单。
+. （可选）您可以配置读取超时和连接超时。
+连接超时是与服务器进行初始连接的超时时间。
+读取超时是等待从服务器读取数据的超时时间。
+
+
+=== 运行此演示
+
+.  `aqua-api-post-query-demo`：在选择菜单中选择发布多个查询。
++
+该流程同时执行导出ZOQL和ZOQL。您必须指定作业名称，项目ID和伙伴ID字段是可选的，如果指定的话。
++
+Aqua以有状态模式执行，在一系列请求中建立连续会话。如果未提供，Aqua将以无状态模式执行。
++
+请参阅https://knowledgecenter.zuora.com/DC_Developers/Aggregate_Query_API/BA_Stateless_and_Stateful_Modes[Stateless/Stateful Modes]。
++
+对于此操作，您还可以配置实体ID和实体名称以支持多实体。详细了解https://knowledgecenter.zuora.com/BB_Introducing_Z_Business/Multi-entity[multi-entity]。
++
+.  `aqua-api-get-job-results-demo`：在选择菜单中选择获取作业结果演示。
++
+该流程返回作业的表示形式，具有作业状态和批次列表。每个批处理包含有关单个查询的信息
+提交。
++
+如果查询的字段状态已完成，它还包含一个名为fileId的附加字段。通过获取导出文件流操作，连接器可以从指定的fileId中检索查询结果。
+此操作也具有多实体支持。
++
+.  `aqua-api-get-last-completed-job-demo`：选择获取上次完成的作业。
++
+该流程返回上次完成作业的表示。此操作仅适用于处于有状态模式的作业，因此GetLastJobRequest需要partnerId和projectId才能返回响应。此操作也具有多实体支持。
++
+.  `aqua-post-query-results-to-object-store`：选择将查询结果发布到对象存储。
++
+该流程使用Aqua Post Query操作，并需要PostQueryResponse进行输入。对于此操作，我们选中了保存作业到对象存储，并在对象存储引用配置输入中将其命名为PostQueryResultsStore。如果未指定名称，则使用默认对象库。
++
+.  `aqua-polling-demo`：此流程在幕后工作。
++
+这会处理在PostQueryResultsStore对象库中使用Aqua Post Query操作保存的作业。
++
+..  Aqua获取批处理结果操作转到在对象库中找到的每个作业。对象存储可以由用户在操作配置中命名。如果未指定名称，则处理默认对象库。该操作定期检查作业是否完成。轮询周期可由用户使用字段轮询周期进行配置。
+.. 找到完成的作业后，源将其作为对象返回。
+..  Aqua Get Job元数据操作接收Object作为输入并输出Job的表示，所以可以使用Datasense。
+..  For Each组件从作业转到每个批处理，批处理的fileId将被导出以供Get Export File Stream操作使用。
+..  Get Export File Stream操作访问给定fileId的结果并将它们作为流返回。
+.. “复制到文件”组件采用每个流并将其保存在`src/test/resources`中名为fileId的文件中。
+
+=== 示例用例
+
+以下示例显示如何创建帐户和联系人，然后将该帐户更新为活动状态并使用创建的联系人进行结算：
+
+. 在Anypoint Studio中，单击文件>新建> Mule Project，命名该项目，然后单击确定。
+. 在搜索字段中，键入"http"并将HTTP连接器拖到画布上。使用三个HTTP连接器创建三个单独的流程。点击HTTP连接器，
+单击连接器配置右侧的绿色加号，然后在下一个屏幕中单击确定以接受默认设置。命名端点`/create-account`，`/create-contact`和`/update-account`。
+. 在搜索栏中输入"zuora"并将Zuora连接器拖到画布上。像以前一样配置。
+. 单击调用SOAP服务操作。选择创建操作和账户对象。 DataSense带来帐户的结构以及创建操作的输出结构。
+. 对于第二个流单击Invoke SOAP服务操作。选择创建操作和联系人对象。 DataSense引入了联系人的结构以及创建操作的输出结构。
+. 对于第三个流，单击Invoke SOAP服务操作。选择更新操作和帐户对象。
+DataSense带来了账户的结构并引入了更新操作的输出结构。
+添加变换消息组件，位于连接器的前面和后面。
++
+*Note:*如果在DataWeave中显示"Payload - Unknown"，那么该方法要么没有输入，要么不返回任何内容。如果DataWeave检测到该方法的任何输入，则显示为："Payload - Unknown"。
++
+. 三个转换的映射应如下所示：
++
+** 转换为创建帐户 image:zuora-transform1.png[Zuora的变压器创建账户]
++
+** 转换以创建联系人 image:zuora-transform2.png[Zuora的变压器创建接触]
++
+** 用于更新帐户 image:zuora-transform3.png[Zuora的变压器更新账户]的变换器
++
+. 流程显示为：
++
+image:zuora-create-account-flow.png[Zuora的创建账户]
++
+image:zuora-create-contact-flow.png[Zuora的创建接触]
++
+image:zuora-update-account-flow.png[Zuora的更新账户]
++
+. 在创建流程之后，右键单击 image:zuora-package-explorer.png[Zuora的封装-探险]中的项目名称，然后单击Run As> Mule Application。
+. 创建并发布JSON文件，该文件在属于每个流的端点的变换中显示结构。
+作为一个例子，下面是一些有效的JSON文件。
++
+创建账户输入。
++
+image:zuora-account-json.png[Zuora的账户，JSON]
++
+创建联系人输入 - 对于AccountId，可以使用上一个流程创建的账户中的ID。
++
+image:zuora-contact-json.png[Zuora的接触-JSON]
++
+更新账户输入（对于ID，可以使用由第一个流创建的账户中的ID
+两个字段，可以使用由第二个流创建的联系人的ID。
++
+image:zuora-update-account-json.png[Zuora的更新账户，JSON]
+
+
+=== 示例用例 -  XML
+
+将其粘贴到Anypoint Studio中以与本指南中讨论的示例用例应用程序进行交互。
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+xmlns:zuora="http://www.mulesoft.org/schema/mule/zuora"
+xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
+xmlns="http://www.mulesoft.org/schema/mule/core"
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+xmlns:spring="http://www.springframework.org/schema/beans"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xsi:schemaLocation="http://www.springframework.org/schema/beans
+http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core
+http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http
+http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking
+http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/zuora
+http://www.mulesoft.org/schema/mule/zuora/current/mule-zuora.xsd
+http://www.mulesoft.org/schema/mule/ee/dw
+http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0"
+    port="8081" doc:name="HTTP Listener Configuration"/>
+    <zuora:config name="Zuora__Basic_Authentication" username="${config.username}"
+    password="${config.password}" doc:name="Zuora: Basic Authentication"
+    wsdlLocation="${config.wsdlLocation}" endpoint="${config.endpoint}"
+    restEndpoint="${config.restEndpoint}">
+        <reconnect-forever/>
+    </zuora:config>
+    <flow name="zuora-subscribe-operations-createAccount-demoFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/create-account" doc:name="HTTP"/>
+        <logger message="'Input:'#[payload]" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:input-payload doc:sample="json.json"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://api.zuora.com/
+%namespace ns1 http://object.api.zuora.com/
+---
+{
+	ns0#create: {
+		ns0#zObjects: {
+			ns1#AllowInvoiceEdit: false,
+			ns1#AutoPay: false,
+			ns1#Batch: "Batch1",
+			ns1#BillCycleDay: "1",
+			ns1#Currency: "USD",
+			ns1#Name: payload.Name,
+			ns1#PaymentTerm: "Due Upon Receipt",
+			ns1#Status: "Draft"
+		}
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <zuora:invoke-soap-service config-ref="Zuora__Basic_Authentication" soapMetadataKey="ZuoraService-Soap-http://api.zuora.com/||create||Account-zObject" doc:name="Create Account"/>
+
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload]]></dw:set-payload>
+        </dw:transform-message>
+        <logger message="'Output:'#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="zuora-subscribe-operations-createContact-demoFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/create-contact" doc:name="HTTP"/>
+        <logger message="'Input:'#[payload]" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:input-payload doc:sample="json_1.json"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://api.zuora.com/
+%namespace ns1 http://object.api.zuora.com/
+---
+{
+	ns0#create: {
+		ns0#zObjects: {
+			ns1#AccountId: payload.AccountId,
+			ns1#Address1: payload.Address1,
+			ns1#City: payload.City,
+			ns1#Country: "Romania",
+			ns1#FirstName: payload.FirstName,
+			ns1#LastName: payload.LastName,
+			ns1#State: payload.State
+		}
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <zuora:invoke-soap-service config-ref="Zuora__Basic_Authentication" soapMetadataKey="ZuoraService-Soap-http://api.zuora.com/||create||Contact-zObject" doc:name="Create Contact"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload]]></dw:set-payload>
+        </dw:transform-message>
+        <logger message="'Output:'#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="zuora-subscribe-operations-updateAccount-demoFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/update-account" doc:name="HTTP"/>
+        <logger message="'Input:'#[payload]" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:input-payload doc:sample="json_7.json"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://api.zuora.com/
+%namespace ns1 http://object.api.zuora.com/
+---
+{
+	ns0#update: {
+		ns0#zObjects: {
+			ns1#Id: payload.Id,
+			ns1#BillToId: payload.contactId,
+			ns1#SoldToId: payload.contactId,
+			ns1#Status: "Active"
+		}
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <zuora:invoke-soap-service config-ref="Zuora__Basic_Authentication" soapMetadataKey="ZuoraService-Soap-http://api.zuora.com/||update||Account-zObject" doc:name="UpdateAccount"/>
+
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload]]></dw:set-payload>
+        </dw:transform-message>
+        <logger message="'Output:'#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+  </mule>
+----
+
+== 演示：订阅操作
+
+适用于Zuora的Anypoint Studio演示订阅操作。
+
+link:_attachments/zuora-subscribe-operations-demo.zip[下载演示zip文件]。
+
+=== 如何运行演示
+
+. 在Studio中导入项目文件夹。
+. 在/src/main/app/mule-app.properties中指定您的Zuora凭据。
+. 在Studio中运行项目。
+. 在浏览器中输入localhost：8081以访问演示的选择菜单。
+
+=== 关于演示
+
+名为mule-app.properties的配置文件包含可配置的属性：
+
+*  config.username  -  Zuora系统中的用户名
+*  config.password  -  Zuora系统中的密码
+*  config.endpoint  - 由Zuora Soap操作调用的端点
+*  config.restEndpoint  - 由Zuora Rest操作调用的端点
+*  config.wsdlLocation  -  Zuora WSDL的位置
+
+该项目包含18个简单流程，显示如何成功创建订阅并修改该订阅的不同组件。必须指出的是，
+订阅操作可以将此演示中的所有操作合并为一个单元，但为了使过程更清晰，创建订阅所需的操作
+被分割。
+
+这个演示分为以下几部分：
+
+*  <<Create Subscription>>
+*  <<Renew and Cancel Subscription>>
+*  <<Modify Terms and Conditions>>
+*  <<Modify Subscription Products>>
+
+=== 创建订阅
+
+.  zuora-subscribe-operations-createAccount-demoFlow：在选择菜单中选择创建账户。
++
+该流程创建一个帐户。对于输入，只能提供名称。该演示使用了一些硬编码的值，如批处理中的一些字段
+该帐户已创建，或帐户使用的货币。该帐户在草稿状态下创建。
++
+.  zuora-subscribe-operations-createContact-demoFlow：在选择菜单中选择创建联系人。
++
+该流程创建联系人。对于输入，需要添加姓名或国家等个人信息。联系人需要一个现有的帐户ID。
+演示将自动完成此字段，其中包含在流程1中创建帐户所产生的ID。
++
+.  zuora-subscribe-operations-createPayment-demoFlow：在选择菜单中选择创建支付。
++
+此流程会为订阅创建付款方式。对于输入，需要信用卡信息。该演示使用Visa作为信用卡类型。
+演示会自动完成帐户ID，其ID由流程1中创建的帐户产生。
++
+.  zuora-subscribe-operations-createProduct-demoFlow：在选择菜单中选择创建产品。
++
+该流程会创建一个名称，开始日期和结束日期的产品。日期的格式必须是YYYY-MM-DD。
++
+.  zuora-subscribe-operations-createProductRate-demoFlow：在选择菜单中选择Create Product Rate。
++
+此流程创建产品费率，这是属于产品的选项。像产品一样，它有一个名称，开始日期和结束日期。
+日期的格式必须是YYYY-MM-DD。演示会自动完成产品ID，其ID由产品在流程4中创建而来。
++
+.  zuora-subscribe-operations-createProductRateCharge-demoFlow：在选择菜单中选择创建产品费率收费。
++
+此流程会为产品费率创建付款策略。
+演示会自动完成产品费率计划ID，其ID为源于在流程5中创建产品费率计划所产生的ID。分析时可以看到
+在Studio中流动，使用的货币是美元，价格为12个单位。
++
+.  zuora-subscribe-operations-updateAccount-demoFlow：在选择菜单中选择更新帐户。
++
+此流程将帐户更新为活动状态。为了使帐户处于活动状态，它需要分配给它的联系信息
+用于计费。演示会自动完成帐户ID，其ID由流程1中创建的帐户产生。它也会自动完成
+BillTo和SoldTo字段的ID由于在流程2中创建联系人而产生。
++
+.  zuora-subscribe-operations-subscribe-demoFlow：在选择菜单中选择Subscribe。
++
+该流程创建新的订阅。订阅需要帐户ID，付款ID，联系人ID和产品费率计划ID。这些是自动完成的
+使用之前流程的结果。订阅还需要使用YYYY-MM-DD格式的ContractAcceptanceDate和ContractEffectiveDate。该
+ContractAcceptanceDate表示客户接受合同的日期，ContractEffectiveDate表示合同到期的日期
+影响。
+
+=== 续订和取消订阅
+
+.  zuora-renew-subscription-demoFlow：在选择菜单中选择续订。
++
+该流程更新现有订阅。如果在同一会话中使用“创建订购”部分创建了订阅，则“订购ID”字段将按照该订阅的ID自动完成。 ServiceActivationDate表示订阅开始的日期和ContractEffectiveDate
+代表管理订阅的合同生效日期。
++
+.  zuora-cancel-subscription-demoFlow：在选择菜单中选择取消订阅。
++
+该流程取消现有订阅。如果订阅是使用同一会话中的创建订阅部分创建的，则订阅ID字段
+自动完成该订阅的ID。 ContractEffectiveDate表示合同到期的日期和EffectiveDate日期字段
+代表订阅到期的日期。到期后，EffectiveDate的值将被ContractEffectiveDate的值覆盖。
+
+=== 修改条款和条件
+
+本部分允许您延长或缩短订阅的初始期限或续约期限：
+
+zuora-change-term-of-service-demoFlow：在选择菜单中选择更改条款和条件。
+
+此流程修改了订阅的术语相关详细信息。如果订阅是使用同一会话中的创建订阅部分创建的，则订阅ID字段
+自动完成该订阅的ID。术语开始日期字段指示该术语何时开始影响订阅。
+例如，RenewalTermPeriodType的值可以是Day或Week。 RenewalTerm字段决定了几天，几周等（取决于
+RenewalTermPeriodType的值）该术语采取行动。 ContractEffectiveDate规定新合同的更改何时生效。
+
+=== 修改订阅产品
+
+本部分包含用于添加，更新或从订阅中删除产品的流程：
+
+.  zuora-amend-createNewProduct-demoFlow：在选择菜单中选择创建新产品。
++
+该流程会创建一个具有名称，开始日期和结束日期的产品。日期的格式必须是YYYY-MM-DD。此产品已添加到现有订阅中。
++
+.  zuora-amend-createNewProductRate-demoFlow：在选择菜单中选择创建新产品费率。
++
+此流程创建产品费率，这是属于产品的选项。像产品一样，它有一个名称，开始日期和结束日期。
+日期的格式必须是YYYY-MM-DD。该演示会自动完成产品ID，其ID由流程1中产品的创建产生。
++
+.  zuora-amend-createNewProductRateCharge-demoFlow：在选择菜单中选择创建新产品费率费用。
++
+此流程会为产品费率创建付款策略。
+演示会自动完成产品费率计划ID，其ID由产生费率计划在流程2中创建而来。由于可以在分析
+在工作室流动，使用的货币是美元，价格为12个单位。
++
+.  zuora-amend-addProducts-demoFlow：在选择菜单中选择为产品订购添加产品。
++
+该流程将新产品添加到现有订阅。演示使用生成的ID自动完成产品费率计划ID
+从流程2创建产品费率计划开始。
+如果订阅是使用创建订阅创建的
+部分在同一个会话中，然后是订阅ID字段
+自动完成该订阅的ID。服务激活日期表示新产品添加到订阅的日期。
+客户接受日期字段表示客户接受合同的日期。合同生效日期字段表示日期
+合同开始。
++
+.  zuora-amend-queryRateId-productsFlow在选择菜单中选择Query Rate ID。
++
+该流程查询已添加到订阅的产品费率的费率ID。将具有产品费率的产品添加到订阅时，a
+相应的Rate对象被创建。要更改链接到订阅的产品实例，需要相应费率的ID。
+如果产品费率是使用流程2在此会话中创建的，则查询会自动填充。如果不是，则查询必须具有以下格式："Select ID from RatePlan where ProductRatePlanId= ''"，
+并包含用于订阅的ProductRatePlanId。
++
+.  zuora-amend-updateProducts-demoFlow：选择修订订阅更新产品。
++
+该流程将订购产品的收费数量详细信息更新为7.如果使用同一会话中的创建订购部分创建订购，则订购ID字段
+由该订阅的ID自动完成。对于ProductRatePlanId，它需要Rate对象的ID字段。该ID可以使用流程5来检索。
+它还需要给定产品的收费计划的ID。如果所有先前的部分流程均已成功运行，则所有这些字段都会自动完成。
+服务激活日期表示新产品添加到订阅的日期。
+客户接受日期字段表示客户接受合同的日期。合同生效日期字段表示合同开始的日期。
++
+.  zuora-amend-deleteProducts-demoFlow：选择修改删除产品以进行订阅。
++
+该流程从订阅中删除产品。如果订阅是使用同一会话中的创建订阅部分创建的，则订阅ID字段
+由该订阅的ID自动完成。对于ProductRatePlanId，它需要Rate对象的ID字段。该ID可以使用流程5来检索。
+如果所有先前的部分流程均已成功运行，则所有这些字段都会自动完成。
+服务激活日期表示新产品添加到订阅的日期。
+客户接受日期字段表示客户接受合同的日期。合同生效日期字段表示合同开始的日期。
+
+
+== 连接器性能
+
+要手动定义连接器的连接配置文件，请访问连接器的适用全局元素中的连接配置文件选项卡。
+
+有关池的背景信息，请参阅 link:/mule-user-guide/v/3.8/tuning-performance[调整性能]。
+
+=== 最佳实践
+
+. 建议将重新连接策略设置为*Reconnect Forever*，以确保可以成功刷新会话ID。
+. 为了充分利用Zuora连接器的DataSense功能，设计时最佳实践表明您应该按照以下特定顺序构建应用程序：
+
+.. 配置连接器。
+.. 测试连接。
+.. 启动DataSense元数据提取。
+.. 构建您的其他流程。
+.. 添加和配置DataWeave。
++
+这种设计时策略的目标是设置集成难题的各个部分，然后将它们与DataWeave粘合在一起。而不是从入站端点顺序设计流，这种类型的对齐，然后粘合在一起的策略可以确保您在任何可能的情况下利用DataSense预先填充Transform消息中关于输入或输出数据结构和格式的信息零件。以下部分的图表规定了在使用Zuora连接器的流程的上下文中遵循此最佳实践的流程。
+
+有关更多信息，请参阅 link:/anypoint-studio/v/6/datasense[DataSense最佳实践]。
+
+== 另请参阅
+
+* 访问 link:/release-notes/zuora-connector-release-notes[Zuora连接器发行说明]。

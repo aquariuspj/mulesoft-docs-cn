@@ -1,0 +1,287 @@
+=  HTTP响应生成器
+:keywords: http, response, builder, deprecated
+
+[WARNING]
+====
+在Mule 3.6及更高版本中，传统的基于端点的HTTP连接器已被替换为基于操作的HTTP连接器。 HTTP响应生成器也被弃用。
+
+在Anypoint Studio版本6中，HTTP响应生成器仅支持使用XML进行开发，而不支持Visual Studio编辑器。
+
+当 link:/mule-user-guide/v/3.8/http-listener-connector[HTTP连接器可用作侦听器]时，您可以单独为连接器本身配置状态码和状态原因，以获取成功和失败情况。要从HTTP模板生成响应，请使用*{{1}}*元素。
+
+有关3.6及更高版本基于操作的HTTP连接器的信息，请参阅 link:/mule-user-guide/v/3.8/http-connector[HTTP连接器]。有关不推荐使用的HTTP连接器的信息，请参阅 link:/mule-user-guide/v/3.8/http-connector-deprecated[HTTP连接器 - 已弃用]。
+====
+
+HTTP响应构建器是一个HTTP组件，可让您轻松配置HTTP响应。它使用HTTP响应替换消息负载的内容，允许您为应用程序提供自定义响应。通常，响应构建器在向用户返回响应之前的最后一步中使用，尽管仍然可以执行更多步骤来更改后面的有效负载。
+
+响应构建器特别有用的场景是构建RESTful API时，您可能希望生成不同的响应或自定义错误消息来回复特定的资源请求。
+
+*<<Example 1>>* +
+*<<Example 2>>*
+
+== 基本解剖学
+
+HTTP Response Builder的实现将有效内容转换为类`org.mule.transport.http.HTTPResponse`。
+
+HTTP响应有两个元素，它们是在运行时构建的：
+
+* 一个正文
+* 集管
+
+== 车身
+
+现有的Mule消息有效载荷成为HTTP响应的主体。
+
+== 集管
+
+最常见的HTTP标头设置为`<http:response-builder>`元素的属性。
+
+[%header,cols="30a,70a"]
+|===
+|  {属性{1}}说明
+| *status*  |响应的HTTP状态码。默认值：200。
+| *contentType*  |如果未指定内容类型，则使用消息的内容类型。如果消息没有内容类型，则默认内容类型为`text/plain`。例如：`text/html; charset=utf-8`。
+|===
+
+[source,xml]
+----
+<http:response-builder doc:name="HTTP Response Builder" contentType="text/xhtml" status="201"/>
+----
+
+其他常见的HTTP响应标头在`<http:response-builder>`中的自己的子元素中定义：
+
+[%header,cols="30a,70a"]
+|===
+| 子元素 |描述
+| *cache-control*  |通知所有从服务器到客户端的缓存机制是否缓存该对象。允许指定沿请求/响应链的所有缓存机制必须遵守的指令。
+| *expires*  |提供响应被视为过期的日期/时间。指定cookie何时到期。接受的格式是*Wdy, DD Mon YYYY HH:MM:SS GMT*。
+| *location*  |用于重定向或创建资源时。
+|===
+
+[source,xml]
+----
+<http:location value="http://localhost:8080/resources/client/5"/>
+----
+
+缓存控制元素具有以下可配置属性：
+
+[%header,cols="30a,70a"]
+|===
+|  {属性{1}}说明
+| *directive*  |可以设置为公开或私人。
+{} | *maxAge*  |当缓存响应中存在max-age缓存控制指令时，如果当前年龄大于给定的年龄值，则响应失效。如果响应同时包含Expires标头和max-age指令，则即使Expires标头具有更多限制，max-age指令将覆盖Expires标头。
+{} | *mustRevalidate*  |如果为true，则该缓存不得在该条目变为失效后才使用该条目来响应后续请求，而不必先用源服务器对其进行重新验证。
+| *noCache*  |如果设置为true，则缓存不得使用该响应来满足后续请求，而不会与源服务器成功重新验证。
+| *noStore*  |如果设置为true，可防止无意释放或保留敏感信息。
+|===
+
+任何其他头文件都可以通过添加类型为`http:header`的附加子元素进行配置。
+
+[source,xml]
+----
+<http:header name="link" value="&lt;/feed&gt;"/>
+----
+
+如果需要，可以通过为Cache-Control添加一个`http:header`来扩展Cache-Control头。
+
+您也可以通过添加子元素`<http:set-cookie>`将cookie包括到标题中。该元素具有以下可配置属性：
+
+[%header,cols="30a,70a"]
+|===
+|  {属性{1}}说明
+| *name*  | *(Required.)* Cookie的名称。
+| *value*  | *(Required.)* Cookie的值。
+| *domain*  | Cookie的域范围。
+| *path*  | Cookie的路径范围。
+| *expiryDate*  | Cookie过期的确切日期/时间。它必须以**Wdy, DD Mon YYYY HH:MM:SS GMT**的形式指定。如果定义了*maxAge*，则不允许此属性。
+| *maxAge*  |以秒为单位指示Cookie的最大使用期限。如果定义了*expiryDate*，则不允许此属性。
+| *secure*  |一个布尔值，用于指定cookie通信应限于加密传输。默认为false。
+| *version*  |设置此Cookie符合的cookie规范的版本。
+|===
+
+[source,xml]
+----
+<http:set-cookie name="userId" value="5" path="/" version="1.0" maxAge="10000"/>
+----
+
+[WARNING]
+HTTP响应元素支持表达式中的所有可配置值。
+
+[WARNING]
+====
+消息中已存在的任何出站属性也会与响应头一起向外传播。为避免这种情况，建议使用*remove-property*转换器在上一步中删除不需要的出站属性。
+
+请注意，由HTTP响应构建器设置的标头会覆盖同名的出站属性。
+====
+
+== 示例1
+
+在第三方监视工具使用的流中会出现一个常见用例，这些工具需要带有200状态代码的空响应或一些自定义响应。在这第一个例子中，HTTP Response Builder只是返回一个200状态码。
+
+. 在新流程中，添加一个`http:inbound-endpoint`元素。
++
+[source,xml, linenums]
+----
+<http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="ex1" doc:name="HTTP"/>
+----
++
+[%header,cols="30a,70a"]
+|===
+| {属性{1}}值
+|交换图案 |的请求 - 响应
+| {主机{1}}本地主机
+| {端口{1}} 8081
+| {路径{1}} EX1
+| DOC：名称 | HTTP
+|===
++
+该服务现在可通过网址`http://localhost:8081/ex1.`进行访问
++
+. 在HTTP入站元素下面，添加一个`http:response-builder`元素。
++
+[source,xml]
+----
+<http:response-builder status="200" contentType="text/html" doc:name="HTTP Response Builder"/>
+----
++
+[%header,cols="30a,70a"]
+|===
+| {属性{1}}值
+| {状态{1}} 200
+| {的contentType {1}} text / html的
+| doc：name  | HTTP响应生成器
+|===
++
+. 保存，然后运行您的项目。
+. 向HTTP端点发送一个POST HTTP请求到` http://localhost:8081/ex1`。
++
+[WARNING]
+做到这一点的最简单方法是通过浏览器扩展（例如Postman（Google Chrome）或 link:http://curl.haxx.se/[卷曲]命令行实用程序）发送POST。
++
+[source]
+----
+curl -X POST http://localhost:8081/ex1
+----
+这会返回一些标题，Cookie和状态码*200*。
+
+=== 示例1完整代码
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+<flow name="just-response-code" doc:name="just-response-code">
+    <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="ex1" doc:name="HTTP"/>
+    <http:response-builder status="200" contentType="text/html" doc:name="HTTP Response Builder"/>
+</flow>
+</mule>
+----
+
+== 示例2
+
+在第二个示例中，在到达HTTP响应构建器之前，有效内容会填充一些HTML。 HTTP响应生成器更改消息对象类型并添加一系列标题，但不会更改传递给它的HTML内容。
+
+. 在新流程中添加一个`http:inbound-endpoint`元素
++
+[source,xml, linenums]
+----
+<http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="ex2" doc:name="HTTP"/>
+----
++
+[%header,cols="30a,70a"]
+|===
+| {属性{1}}值
+|交换图案 |的请求 - 响应
+| {主机{1}}本地主机
+| {端口{1}} 8081
+| {路径{1}} EX2
+| DOC：名称 | HTTP
+|===
++
+该服务现在可通过网址`http://localhost:8081/ex2`访问。
++
+. 在HTTP入站元素下添加一个`set-payload`元素：
++
+[source,xml]
+----
+<set-payload doc:name="Set Payload" value="&lt;HTML&gt;&lt;BODY&gt;hello world&lt;/BODY&gt;&lt;/HTML&gt;"/>
+----
++
+[%header,cols="30a,70a"]
+|===
+| {属性{1}}值
+一个|值
+|＆lt; HTML＆gt;＆lt; BODY＆gt; hello world＆lt; / body＆gt;＆lt; / HTML＆gt;
+|===
++
+该值成为Mule消息的有效载荷。
++
+. 在设置的有效内容元素下方，添加一个`http:response-builder`元素
++
+[source,xml, linenums]
+----
+<http:response-builder status="200" contentType="text/html" doc:name="HTTP Response Builder"/>
+----
++
+[%header,cols="30a,70a"]
+|===
+| {属性{1}}值
+| {状态{1}} 200
+| {的contentType {1}} text / html的
+| doc：name  | HTTP响应生成器
+|===
++
+. 保存，然后运行您的项目。
+. 向HTTP端点发送一个POST HTTP请求到` http://localhost:8081/ex2`。
++
+[TIP]
+做到这一点的最简单方法是通过浏览器扩展（例如Postman（Google Chrome）或 link:http://curl.haxx.se/[卷曲]命令行实用程序）发送POST。
++
+[source]
+----
+curl -X POST http://localhost:8081/ex2
+----
++
+这会返回一些标题，cookie和状态码*200*以及以下有效负载：
++
+[source,xml, linenums]
+----
+<HTML>
+    <BODY>hello world</BODY>
+</HTML>
+----
+
+=== 示例2完整代码
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+<flow name="receives-string" doc:name="receives-string">
+    <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8082" path="ex2" doc:name="HTTP"/>
+    <set-payload doc:name="Set Payload" value="&lt;HTML&gt;&lt;BODY&gt;iamalive&lt;/BODY&gt;&lt;/HTML&gt;"/>
+    <http:response-builder doc:name="HTTP Response Builder"/>
+</flow>
+</mule>
+----
+
+== 另请参阅
+
+* 了解有关 link:/mule-user-guide/v/3.8/http-connector[HTTP连接器]的信息
+* 了解如何使用 link:/api-manager[API管理器]创建和管理API
+
+
+
+

@@ -1,0 +1,189 @@
+=  MEL备忘单
+
+== 服务器，Mule，应用程序和消息变量
+
+概述全局上下文以及它们可以访问的变量。
+
+[%header%autowidth.spread]
+|===
+| {服务器{1}}骡 |应用 |消息
+| {fileSeparator {1}}丛集编号 | {编码{3}} ID
+| {主机{1}}家 | {名称{3}} rootId
+| {IP {1}}的NodeId  | {独立{3}}的correlationID
+| {区域设置{1}}版本 | {WORKDIR {3}} correlationSequence
+| {javaVersion {1}} | {注册表{3}} correlationGroupSize
+| {javaVendor {1}} |  |的replyTo
+| {OSNAME {1}} |  |的dataType
+| {osArch {1}} |  |有效载荷
+| {OSVERSION {1}} |  | inboundProperties
+| {systemProperties {1}} |  | inboundAttachments
+| {的timeZone {1}} |  | outboundProperties
+| {TMPDIR {1}} |  | outboundAttachments
+| {userName的{1}} |  |例外
+| {USERHOME {1}} |  |
+| {USERDIR {1}} |  |
+|===
+
+在系统的临时目录中创建一个名为`target`的目录，并将其设置为当前有效负载：
+
+[source, xml, linenums]
+----
+<expression-component>
+    targetDir = new java.io.File(server.tmpDir, 'target');
+    targetDir.mkdir();
+    payload = targetDir
+</expression-component>
+----
+
+根据入站消息属性，在运行时设置HTTP端点的用户名和密码：
+
+[source, xml, linenums]
+----
+<https:outbound-endpoint address="https://#[message.inboundProperties.username]:     #[message.inboundProperties.password]@api.acme.com/v1/users" />
+----
+
+== 流和会话变量
+
+流变量在flowVars上下文中可用，或直接作为顶级变量（除非autoResolveVariables为false或其名称违反了MVEL命名约定）。会话变量在sessionVars上下文中可用。
+
+要创建一个名为sessionId的会话变量，其值是当前消息ID "@"和Mule实例节点ID的串联，请使用set-session-variable或MEL代码，两者均显示如下：
+
+[source, xml, linenums]
+----
+<set-session-variable variableName="sessionId" value="#[message.id+'@'+mule.nodeId]" />
+<expression-component>sessionVars.sessionId = message.id+'@'+mule.nodeId;</expression-component>
+----
+
+以下显示了如何根据通过getTargetService（）访问器从bean有效载荷中获取值创建的名称，从注册表中动态检索bean：
+
+[source, xml, linenums]
+----
+<set-variable variableName="beanName" value="#[message.payload.targetService+'Processor']" />
+<set-variable variableName="bean" value="#[app.registry[beanName]]" />
+----
+
+== 有效负载和附件
+
+将当前有效负载复制到名为`originalPayload`的流变量中，然后将其恢复：
+
+[source, xml, linenums]
+----
+<set-variable variableName="originalPayload" value="#[message.payload]" />
+<set-payload value="#[originalPayload]" />
+----
+
+要使用Mule的自动转换功能以特定格式检索邮件有效内容，请使用`payloadAs`：
+
+[source, xml, linenums]
+----
+<logger message="#[message.payloadAs(java.lang.String)]" />
+----
+
+要提取所有*.txt and * .xml附件，请使用过滤投影：
+
+[source, xml, linenums]
+----
+<expression-transformer expression="#[($.value in  message.inboundAttachments.entrySet() if $.key ~= '(.*\\.txt|.*\\.xml)')]" />
+----
+
+要求空载有效载荷：
+
+[source, code, linenums]
+----
+#[payload is NullPayload]
+----
+
+== 正则表达式支持
+
+正则表达式帮助函数根据匹配检索`null`，一个值或一组值。采用melExpression参数的表单将正则表达式应用于其评估结果而不是`message.payload`。
+
+[source, code, linenums]
+----
+regex(regularExpression [, melExpression [, matchFlags]])
+----
+
+例如，要选择以`To:`，`From:`或`Cc:`开头的所有有效内容行，请使用：
+
+[source, code, linenums]
+----
+regex('^(To|From|Cc):')
+----
+
+==  XPath支持
+
+XPath帮助函数返回DOM4J节点。默认情况下，除非指定了xmlElement，否则将在message.payload上评估XPath表达式：
+
+[source, code, linenums]
+----
+xpath(xPathExpression [, xmlElement])
+----
+
+获取元素或属性的文本内容：
+
+[source, code, linenums]
+----
+#[xpath('//title').text]
+#[xpath('//title/@id').value]
+----
+
+==  JSON处理
+
+MEL没有直接支持JSON。 `json-to-object-transformer`可以将JSON负载转换为简单数据结构的层次结构，这些结构可以使用MEL轻松解析。例如，下面使用一个过滤投影构建等价的$ .. [？ （@ .title =='Moby Dick'）]。价格JSON路径表达式：
+
+[source, xml, linenums]
+----
+<json:json-to-object-transformer returnClass="java.lang.Object" />
+<expression-transformer
+    expression='#[($.price in message.payload if $.title =='Moby Dick')[0]]" />
+----
+
+== 附加信息
+
+_Java互操作性，例如创建一个随机UUID并将其用作XSL-T参数：
+
+[source, xml, linenums]
+----
+<mulexml:context-property key="transactionId"
+                          value="#[java.util.UUID.randomUUID().toString()]" />
+----
+
+_Safe bean属性导航，_例如仅当`name`对象不为空时才检索`fullName`：
+
+[source, xml, linenums]
+----
+<set-variable variableName="fullName" value="#[message.payload.?name.fullName]" />
+----
+
+_Local变量赋值，就像在这个拆分表达式中一样，它将行中的多行有效载荷拆分并丢弃第一行：
+
+[source, code, linenums]
+----
+splitter expression='#[rows=StringUtils.split(message.payload,'\n\r');
+                       ArrayUtil.subarray(rows,1,rows.size())]" />
+----
+
+_ "Elvis"运算符_返回值列表的第一个非空值：
+
+[source, code, linenums]
+----
+#[message.payload.userName or message.payload.userId]
+----
+
+== 全局配置
+
+在全局配置元素中定义全局导入，别名和全局函数。可以从文件系统，URL或类路径资源加载全局函数（请参见下面的extraFunctions.mvel）。流变量自动绑定可以通过autoResolveVariables属性关闭。
+
+[source, xml, linenums]
+----
+<configuration>
+  <expression-language autoResolveVariables="false">
+    <import class="org.mule.util.StringUtils" />
+    <import name="rsu" class="org.apache.commons.lang.RandomStringUtils" />
+    <alias name="appName" expression="app.name" />
+    <global-functions file="extraFunctions.mvel">
+      def reversePayload() { StringUtils.reverse(payload) }
+      def randomString(size) { rsu.randomAlphanumeric(size) }
+    </global-functions>
+  </expression-language>
+</configuration>
+----

@@ -1,0 +1,80 @@
+= 部署到Amazon EC2
+:keywords: tcat, deploy, amazon, ec2, plugin
+
+EC2插件允许您创建现有Tomcat实例的Amazon机器实例（AMI），并通过Tcat服务器控制台将它们部署到EC2。本页介绍如何安装插件，创建AMI并进行部署。如果要使用Tomcat的现有完全配置的云实现，而不是创建和部署自己的实例，请参阅将Cloudcat与Amazon EC2一起使用。
+
+== 安装插件
+
+要安装EC2插件，只需从Tcat Server下载页面下载并将其复制到您的`TCAT_HOME/webapps/console/WEB-INF/plugins`目录。该目录必须拥有，并且与TOMCAT_USER具有相同的权限。当您运行管理控制台时，将出现Amazon EC2选项卡。
+
+如果您使用Mule iBeans，则必须删除`mule-ibeans/lib/modules/deployed/ibeans-module-spring-1.0-beta-9-full.jar`以使iBeans和EC2插件能够在Tcat Server的同一实例中工作。
+
+== 创建Amazon EC2帐户
+
+在开始之前，您必须创建一个Amazon EC2帐户。请注意您的访问密钥ID和密钥。如果您有现有帐户，可以登录EC2网站，点击*Your Account*，然后选择*Security Credentials*，找到它们。
+
+如果您还没有密钥，您还需要创建一个密钥对。为此，请登录EC2控制台，点击左侧的*Key-Pairs*，点击*Create Key Pair*按钮，然后输入密钥对名称。
+
+== 打开端口
+
+默认情况下，Amazon创建防火墙，防止外部世界与您的EC2实例之间发生任何通信。要改变这一点，你必须下载EC2工具，以便你可以打开端口。然后您发出以下命令：
+
+[source, code, linenums]
+----
+$ ec2-authorize -p 8080 default
+$ ec2-authorize -p 51433 default
+----
+
+这会默认打开端口8080和51433。
+
+== 亚马逊机器映像
+
+亚马逊机器映像（AMI）是为每个EC2实例调配的映像。继续操作之前，您应该先熟悉EC2文档中的AMI概念。
+
+你想创建你自己的AMI，并在上面有一个Tcat服务器实例。出于测试目的，我们提供了来自Alestic的Tcat Server和Ubuntu 9.04的映像。启动时，此映像将启动Tcat Server，并使其可在端口8080上使用。请注意，我们仅在*unsupported basis*上提供此映像以供测试，并且此映像的映像标识和详细信息可能在将来发生更改。测试图像ID是：ami-f7d8389e
+
+== 使用插件
+
+Tcat Server管理控制台中的Amazon EC2选项卡允许您管理EC2帐户和实例。第一步是创建帐户，然后创建实例。
+
+要创建帐户：
+
+. 在Amazon EC2标签上，点击*New Account*。
+. 输入帐户的名称，亚马逊访问密钥ID，密钥和您创建的密钥对的名称。
+. 点击*OK*。
+
+image:new-ec2-instance.png[图片]
+
+要创建一个实例：
+
+. 在Amazon EC2标签上，点击*New Instance*。
+. 选择您创建的亚马逊账户。
+. 输入您要创建的EC2实例的数量。
+. 输入服务器的名称（实例）。如果要创建多个实例，可以使用\ {host}变量将主机名称插入实例名称，例如`MyHost-{host`}。
+. 输入您创建的AMI的ID，或使用测试AMI ID（请参阅上面的<<Amazon Machine Images>>）。
+. 指定实例类型（大小）。这会影响您的亚马逊账户收取的费用。
+. 输入要用于这些服务器的密钥对的名称。
+. 如果您想要将这些实例自动注册到Tcat服务器管理控制台，以便您可以管理这些Tcat服务器实例，请选中自动注册服务器复选框。
+. 输入您希望Tcat服务器代理WAR驻留的URL路径。默认情况下，将其设置为`/agent`。
+. 输入用于Tcat Server代理的端口。
+. 选择要将这些新服务器添加到的任何服务器组。
+. 点击*Add*。
+
+插件发布新的实例请求后，亚马逊需要一段时间才能提供映像。实例列表显示"pending"，直到图像被创建，此时它会显示"running"。如果您选择自动注册，则可以在“服务器”选项卡上获得新的Tcat Server实例。
+
+== 创建一个Tcat服务器AMI
+
+如果您正在将Tcat服务器部署到生产环境中，通常您会创建自己的带有Tcat Server的AMI。
+
+== 配置Tcat Server以在您的AMI上自动启动
+
+为确保您可以自动注册新的Tcat服务器实例，您应该将AMI上的Tcat服务器实例配置为在服务器启动时自动启动。在Linux上，你可以通过init脚本来完成。
+
+. 将Tcat服务器（或Tomcat和Tcat服务器代理WAR）安装到您的`/usr/local/tcat`目录中。
+. 将 link:_attachments/tomcat.txt[这个init脚本]下载到`/etc/init.d/tomcat`。
+. 执行`chmod +x /etc/init.d/tomcat`。
+. 执行`chmod +x /usr/local/tcat/conf/tomcat-env.sh`。
+. 执行`update-rc.d tomcat defaults`命令。这将配置Ubuntu在启动时运行init脚本。
+. 如果您在其他位置安装Tcat服务器，请编辑`/etc/init.d/tomcat`脚本`APP_ENV`变量以反映Tcat服务器的安装位置。
+
+

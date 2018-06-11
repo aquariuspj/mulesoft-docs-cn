@@ -1,0 +1,489 @@
+=  Atom模块参考
+:keywords: anypoint, atom, atom module, atompub, app
+
+Atom这个名字适用于一对相关的标准。 Atom Syndication Format是一种用于Web Feed的XML语言，而Atom Publishing Protocol（AtomPub或APP）则是用于创建和更新Web资源的基于HTTP的简单协议。骡子包含对两者的支持。
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source]
+----
+http://www.mulesoft.org/schema/mule/atom
+----
+
+XML架构位置：
+
+[source]
+----
+http://www.mulesoft.org/schema/mule/atom http://www.mulesoft.org/schema/mule/atom/current/mule-atom.xsd
+----
+
+== 特点
+
+Mule Atom模块包含 link:http://abdera.apache.org[Apache Abdera]的实现，从而可以在Mule配置中轻松地与Atom提要和Atom发布协议服务器集成。
+
+模块电流支持以下功能：
+
+* 使用Atom提要
+
+* 发布Atom条目
+
+* 服务器端支持AtomPub作为Mule应用程序
+
+===  ETag的
+
+Atom HTTP连接器默认尊重ETags和304 Not Modified响应代码，因此您不必担心会消耗不必要的更新。
+
+== 示例配置
+
+=== 使用Feed和其他原子资源
+
+最常见的模式之一是与Atom集成轮询Feed更新。用骡子这可以很容易地完成。写下你的班级以接收Atom条目：
+
+[%header%autowidth.spread]
+|===
+^ | *EntryReceiver.java*
+
+一个| [source，java，linenums]
+----
+package org.mule.module.atom.example;
+ 
+import org.apache.abdera.model.Feed;
+ 
+public class EntryReceiver {
+    public void processEntry(Entry entry) throws Exception {
+        //process the entry
+    }
+}
+----
+|===
+
+使用Atom提要拆分器将传入提要拆分为单独的消息，并为提要中的每个条目调用组件方法：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_request_Configuration" host="localhost"
+port="9002"/>
+<flow name="eventConsumer">
+    <poll frequency="10000">
+        <http:request config-ref="HTTP_request_Configuration" path="events" method="GET" doc:name="HTTP Connector"/>       
+    </poll>
+    <atom:feed-splitter/>
+    <atom:entry-last-updated-filter/>
+    <component class="org.mule.module.atom.event.EntryReceiver"/>
+</flow>
+----
+
+`atom:entry-last-updated-filter`是可选的。它只能用于过滤来自Feed的较早条目。请注意`atom:entry-last-updated-filter`应该位于`<atom:feed-splitter/>`之后，因为您需要将Feed分割为条目，以便过滤器可以处理它们。另请注意，我们不在过滤器上设置`lastUpdate`日期。这意味着所有可用条目的默认行为将在处理任何上次读取的新条目之前读取。
+
+=== 自己访问Feed
+
+如果您需要访问Feed本身，请使用Object-to-Feed转换器对其进行解析：
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_request_Configuration" host="localhost"
+port="9002"/>
+<flow name="eventConsumer">
+    <poll frequency="10000">
+        <http:request config-ref="HTTP_request_Configuration" path="events" method="GET" doc:name="HTTP Connector"/>
+    </poll>
+    <atom:object-to-feed-transformer/>
+    <component class="org.mule.module.atom.event.FeedReceiver"/>
+</flow>
+----
+
+现在，无论您添加或更新多少个条目，您的组件只会为每个Feed更改调用一次。组件上的方法应该期望`org.apache.abdera.model.Feed`对象。
+
+[%header%autowidth.spread]
+|===
+^ | *FeedReceiver.java*
+
+一个| [source，java，linenums]
+----
+package org.mule.module.atom.example;
+ 
+import org.apache.abdera.model.Feed;
+ 
+public void processFeed(Feed feed) throws Exception {
+    //do stuff
+}
+----
+|===
+
+如果您希望在使用馈送分离器时访问馈送对象，则可以通过名为'feed.object'的当前消息上的标题来使用它。
+
+=== 访问其他协议的源
+
+您可以接收订阅源并使用其他Mule连接器（如JMS，File或XMPP）来处理它们。为此，需要通过连接器提供Atom提要。例如，原子文档通过JMS发送或从文件中轮询。 Atom模式定义了一个`<atom:feed-splitter/>`消息处理器，它可以拆分从端点接收到的消息，如下所示：
+
+[%header%autowidth.spread]
+|===
+^ | *Consuming an Atom feed over JMS*
+
+一个| [source，xml，linenums]
+----
+<flow name="feedSplitterConsumer">
+    <jms:inbound-endpoint queue="feed.in">
+        <atom:feed-splitter/>
+    </jms:inbound-endpoint>
+    <component class="org.mule.module.atom.event.EntryReceiver"/>
+</flow>
+----
+|===
+
+[%header%autowidth.spread]
+|===
+^ | *Consuming an Atom feed from a file*
+
+一个| [source，xml，linenums]
+----
+<flow name="feedSplitterConsumer">
+    <file:inbound-endpoint  path="${mule.working.dir}" pollingFrequency="1000" >
+        <file:filename-wildcard-filter pattern="*.atom"/>
+        <atom:feed-splitter/>
+    </file:inbound-endpoint>
+    <component class="org.mule.module.atom.event.EntryReceiver"/>
+</flow>
+----
+|===
+
+== 实现AtomPub服务器
+
+Abdera的服务器端组件以提供者的概念为中心。提供程序管理服务的工作区和集合。
+
+您可以使用`<atom:component/>` XML元素在Mule中创建AtomPub服务，并引用Abdera服务上下文。
+
+=== 创建Abdera服务上下文
+
+以下示例显示如何创建构建JCR存储库以存储原子条目的Abdera上下文。这些条目可以作为一个提要。
+
+[%header%autowidth.spread]
+|===
+^ | *abdera-config.xml*
+
+一个| [source，xml，linenums]
+----
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:a="http://abdera.apache.org"
+       xsi:schemaLocation="
+           http://abdera.apache.org http://abdera.apache.org/schemas/abdera-spring.xsd
+           http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd">
+ 
+    <a:provider id="provider">
+        <a:workspace title="JCR Workspace">
+            <ref bean="jcrAdapter"/>
+        </a:workspace>
+    </a:provider>
+ 
+    <bean id="jcrRepository" class="org.apache.jackrabbit.core.TransientRepository" destroy-method="shutdown"/>
+ 
+    <bean id="jcrAdapter"
+          class="org.apache.abdera.protocol.server.adapters.jcr.JcrCollectionAdapter" init-method="initialize">
+        <property name="author" value="Mule"/>
+        <property name="title" value="Event Queue"/>
+        <property name="collectionNodePath" value="entries"/>
+        <property name="repository" ref="jcrRepository"/>
+        <property name="credentials">
+            <bean class="javax.jcr.SimpleCredentials">
+                <constructor-arg>
+                    <value>username</value>
+                </constructor-arg>
+                <constructor-arg>
+                    <value>password</value>
+                </constructor-arg>
+            </bean>
+        </property>
+        <property name="href" value="events"/>
+    </bean>
+</beans>
+----
+|===
+
+*Note*：在代码示例中，`spring-beans-current.xsd`是一个占位符。要找到正确的版本，请参阅链接：http：//www.springframework.org/schema/beans/ [Spring Beans版本。
+
+`<a:provider>`创建一个Abdera DefaultProvider，并允许您为其添加工作区和集合。这个`provider`引用被Mule中的`<atom:component/>`用来存储发送给组件的所有事件。
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="9002"/>
+<flow name="atomPubEventStore">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP Connector"/>
+    <atom:component provider-ref="provider"/>
+</flow>
+----
+
+== 发布到Atom组件
+
+您可能还想将Atom条目或媒体条目发布到`<atom:component/>`或外部AtomPub集合。这是一个简单的出站端点，它通过`entry-builder-transformer`创建Abdera条目并将其发布到AtomPub集合：
+
+[source, xml, linenums]
+----
+<outbound-endpoint address="http://localhost:9002/events" mimeType="application/atom+xml;type=entry" connector-ref="HttpConnector">
+    <atom:entry-builder-transformer>
+        <atom:entry-property name="author" evaluator="string" expression="Ross Mason"/>
+        <atom:entry-property name="content" evaluator="payload" expression=""/>
+        <atom:entry-property name="title" evaluator="header" expression="title"/>
+        <atom:entry-property name="updated" evaluator="function" expression="now"/>
+        <atom:entry-property name="id" evaluator="function" expression="uuid"/>
+    </atom:entry-builder-transformer>
+</outbound-endpoint>
+----
+
+您也可以手动创建条目以获得更大的灵活性，并将其作为您的Mule消息有效载荷发送。以下是如何创建Abdera条目的简单示例：
+
+[%header%autowidth.spread]
+|===
+^ | *Create an Abdera Entry*
+
+一个| [source，java，linenums]
+----
+package org.mule.providers.abdera.example;
+ 
+import java.util.Date;
+ 
+import org.apache.abdera.Abdera;
+import org.apache.abdera.factory.Factory;
+import org.apache.abdera.model.Entry;
+import org.mule.transformer.AbstractTransformer;
+ 
+public class EntryTransformer extend AbstractTransformer {
+    public Object doTransform(Object src, String encoding) {
+        Factory factory = Abdera.getInstance().getFactory();
+         
+        Entry entry = factory.newEntry();
+        entry.setTitle("Some Event");
+        entry.setContent("Foo bar");
+        entry.setUpdated(new Date());
+        entry.setId(factory.newUuidUri());
+        entry.addAuthor("Dan Diephouse");
+ 
+        return entry;
+    }
+}
+----
+|===
+
+您也可以很简单地发布媒体条目。在这种情况下，无论您的邮件有效负载是什么，并将其作为媒体条目发布到集合中。您可以通过配置或通过在Mule消息上设置属性来提供自己的Slug。
+
+[%header%autowidth.spread]
+|===
+^ | *Post Message Payload as Media Entry*
+
+一个| [source，xml，linenums]
+----
+<flow name="blobEventPublisher">
+    <inbound-endpoint ref="quartz.in"/>
+    <component class="org.mule.module.atom.event.BlobEventPublisher"/>
+ 
+    <outbound-endpoint address="http://localhost:9002/events"
+          exchange-pattern="request-response" mimeType="text/plain">
+       <message-properties-transformer scope="outbound">
+           <add-message-property key="Slug" value="Blob Event"/>
+       </message-properties-transformer>
+   </outbound-endpoint>
+</flow>
+----
+|===
+
+== 路由过滤
+
+Atom模块还包含一个`<atom:route-filter/>`。这允许按请求路径和HTTP动词过滤Atom请求。 route属性定义了一个基于Ruby on Rails风格路线的URI模板类型。例如：
+
+[source]
+----
+"feed" or ":feed/:entry"
+----
+
+有关参考资料，请参阅 http://guides.rubyonrails.org/routing.html[Ruby On Rails路由]。
+
+例如，此过滤器可用于Mule中的基于内容的路由：
+
+[%header%autowidth.spread]
+|===
+^ | *Route Filtering*
+
+一个| [source，xml，linenums]
+----
+<flow name="customerService">
+  <inbound-endpoint address="http://localhost:9002" exchange-pattern="request-response"/>
+  <choice>
+    <when>
+      <atom:route-filter route="/bar/:foo"/>
+      <outbound-endpoint address="vm://queue1" exchange-pattern="request-response"/>
+    </when>
+    <when>
+      <atom:route-filter route="/baz" verbs="GET,POST"/>
+      <outbound-endpoint address="vm://queue2" exchange-pattern="request-response"/>
+    </when>
+    </choice>
+</flow>
+----
+|===
+
+== 配置参考
+
+=== 元器件
+
+表示Abdera组件。
+
+。<component...>的属性
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+| provider-ref  |定义为Spring bean的Atom提供程序的ID。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|===
+
+无<component...>的子元素
+
+
+=== 进料分离器
+
+将馈送条目拆分为单个条目对象。每个条目都是Mule中的一条单独消息。
+
+无<feed-splitter...>的子元素
+
+
+== 过滤器
+
+=== 条目上次更新过滤器
+
+根据最后更新日期过滤ATOM条目对象。这对于从Feed中过滤较旧的条目很有用。此过滤器仅适用于Atom Entry对象而非Feed对象。
+
+。<entry-last-updated-filter...>的属性
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+| lastUpdate  |从中过滤事件的日期。在此日期之前上次更新的任何条目均不被接受。日期格式是：yyyy-MM-dd hh：mm：ss，例如2008-12-25 13:00:00。如果只有日期很重要，您可以省略时间部分。您可以将该值设置为'now'以设置服务器启动的日期和时间。如果您想要接收所有可用条目，则不要设置此属性，然后再进行任何新条目。这是默认行为，适用于许多场景。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| acceptWithoutUpdateDate  |是否应该接受条目，如果它没有设置最后更新日期。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：`true`
+|===
+
+无<entry-last-updated-filter...>的子元素
+
+
+=== 提供上次更新的过滤器
+
+根据上次更新日期过滤整个ATOM Feed。这对处理自特定日期以来尚未更新的Feed是有用的。
+
+此筛选器仅适用于Atom Feed对象。 +
+通常，最好使用splitFeed = false在入站ATOM端点上设置lastUpdated属性，而不是使用此过滤器，但是，此过滤器可用于流程中的其他位置。
+
+。<feed-last-updated-filter...>的属性
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+| lastUpdate  |从中过滤事件的日期。在此日期之前上次更新的任何条目均不被接受。日期格式为日期格式为：yyyy-MM-dd hh：mm：ss，例如2016-12-25 13:00:00。如果只有日期很重要，您可以省略时间部分。您可以将该值设置为'now'以设置服务器启动的日期和时间。如果您想要接收所有可用条目，则不要设置此属性，然后再进行任何新条目。这是默认行为，适用于许多场景。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| acceptWithoutUpdateDate  |如果Feed没有设置上次更新日期，是否应该接受Feed。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：`true`
+|===
+
+无<feed-last-updated-filter...>的子元素
+
+
+=== 路由过滤器
+
+允许按请求路径和HTTP动词过滤ATOM请求。
+
+。<route-filter...>的属性
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+|路由 |为ATOM请求创建的URI请求路径。这匹配请求URL的路径。 route属性定义了一个基于Ruby on Rails风格路线的URI模板类型。例如："feed"或":feed/:entry"。作为参考，请参阅Ruby On Rails路由
+
+http://guides.rubyonrails.org/routing.html
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+|动词 |将由该过滤器接受的HTTP动词的逗号分隔列表。默认情况下，所有动词都被接受。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|===
+
+无<route-filter...>的子元素
+
+
+== 变压器
+
+=== 条目生成器变换器
+
+使用表达式来配​​置Atom Entry的转换器。用户可以指定一个或多个用于配置bean属性的表达式。
+
+没有<entry-builder-transformer...>的属性
+
+
+。<entry-builder-transformer...>的子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|入门属性 | 0..1  |
+|===
+
+=== 对象到Feed变换器
+
+将消息的有效负载转换为`org.apache.abdera.model.Feed`实例。
+
+无<object-to-feed-transformer...>的子元素
+
+
+== 架构
+
+link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_atom/namespace-overview.html[Atom命名空间概述]
+
+==  Javadoc API参考
+
+这个模块的Javadoc可以在这里找到：
+
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/module/atom/package-summary.html[程序包摘要]
+
+== 的Maven
+
+Atom模块可以包含以下依赖项：
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-module-atom</artifactId>
+  <version>3.8.0</version>
+</dependency>
+----
+
+投票原子供稿时的== 礼仪要点
+
+* 使用HTTP缓存。发送ETag和LastModified标题。识别304未修改的响应。这样你可以节省很多带宽。此外，某些脚本会识别LastModified标题并仅返回部分内容，例如仅返回两个或三个最新项目，而不是全部30个。
+* 不要从支持RPC Ping的服务（或其他PUSH服务，如PubSubHubBub）中轮询RSS。如果您收到来自服务的PUSH通知，则不必在标准时间间隔内轮询数据 - 每天进行一次，以检查机制是否仍然有效（ping可以禁用，重新配置，损坏等） ）。这样，您只能在接收通知时获取RSS，而不是每隔一小时左右。
+* 检查TTL（在RSS中）或缓存控制标题（Expires in Atom），并且直到资源到期时才提取。
+* 尝试适应每个RSS提要中新项目的频率。如果在过去的一周内，特定Feed中只有两次更新，请不要每天更换一次。 AFAIR谷歌阅读器做到这一点。
+* 在您的网站流量较低时，在夜间或其他时间降低价格。
+
+== 另请参阅
+
+*  link:https://cwiki.apache.org/confluence/display/ABDERA/Your+first+AtomPub+Server[您的第一个AtomPub服务器]
+*  link:https://cwiki.apache.org/confluence/display/ABDERA/Spring+Integration[Abdera Spring集成]
+*  link:https://cwiki.apache.org/confluence/display/ABDERA/Index[Abdera用户指南]

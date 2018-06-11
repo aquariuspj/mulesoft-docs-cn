@@ -1,0 +1,301 @@
+[[_output_metadata]]
+= 输出元数据
+// TODO：1.1。只有，没有1.0版本？
+
+输出元数据是组件结果的类型分辨率。每个组件都可以为有效负载和属性提供静态或动态元数据，
+相互隔离。
+
+== 声明一个OutputTypeResolver和AttributesTypeResolver
+
+`OutputTypeResolver`和`AttributesTypeResolver`实现均基于`MetadataContext`提供的信息处理解决`MetadataType`的请求，最重要的是，使用`MetadataKey`来标识最终用户需要`MetadataType`（谁在创建一个Mule应用程序）。
+
+`OutputTypeResolver<T>`和`AttributesTypeResolver<T>`接口使用通用的`T`进行参数化，该`T`必须与`MetadataKeyId`参数的类型匹配。这里的示例对通用类型使用`String`类型，因为它是最常见的`MetadataKeyId`类型。 （其他文档将重新讨论这个通用类型，并详细说明类型何时应该更改为`String`以外的内容。）
+
+[source,java,linenums]
+----
+public class OutputEntityResolver
+  implements OutputTypeResolver<String>, AttributesTypeResolver<String>  {
+
+  @Override
+  public String getCategoryName() {
+    return "Records";
+  }
+
+  @Override
+  public String getResolverName() {
+    return "OutputEntityResolver";
+  }
+
+  @Override
+  public MetadataType getOutputType(MetadataContext context, String key)
+      throws MetadataResolvingException, ConnectionException {
+    switch (key) {
+      case "Author_id":
+        return context.getTypeLoader().load(AuthorResult.class);
+      case "BookList_id":
+        return context.getTypeLoader().load(BookListResult.class);
+      case "Book_id":
+        return context.getTypeLoader().load(BookResult.class);
+      default:
+        throw new MetadataResolvingException("Unknown key:" + key, INVALID_METADATA_KEY);
+    }
+  }
+
+  @Override
+  public MetadataType getAttributesType(MetadataContext context, String key)
+      throws MetadataResolvingException, ConnectionException {
+
+    if ("Book_id".equals(key)){
+      return context.getTypeLoader().load(BookAttributes.class);
+    }
+
+    // Only Books have Attributes information
+    return context.getTypeBuilder().nullType().build();
+  }
+
+}
+----
+
+上面的示例仅使用`MetadataContext`来获取用于描述基于Java类的MetadataType的`typeLoader`，但它也可以使用提供的Configuration和Connection元素。
+
+== 使用OutputTypeResolver
+
+在您拥有`TypeKeysResolver`和`OutputTypeResolver`之后，您可以将输出DataSense支持添加到我们的操作和来源。使用具有给定`TypeKeysResolver`的`OutputTypeResolver`的主要限制是两者必须属于相同的`category`，这保证`TypeKeysResolver`提供的{{5}可以通过`OutputTypeResolver`解析为`MetadataType`：
+
+=== 为结果负载添加DataSense
+
+[source,java,linenums]
+----
+public class FetchOperations {
+
+  @OutputResolver(output = OutputEntityResolver.class)
+  public Map<String,Object> get(@Connection MyConnection connection,
+                                @MetadataKeyId(EntityKeysResolver.class) String entityKind){
+
+    return connection.getClient().fetch(entityKind);
+  }
+
+}
+----
+
+在上面，输出的MetadataType是基于正在提取的`entityKind`动态解析的，所以如果`entityKind`使用`EntityKeysResolver`提供的`Author_id`键配置，那么将`OutputEntityResolver`与该`MetadataKey`一起调用，并且`get`操作的输出将被解析为一个`AuthorResult` ObjectType。
+
+源可以使用相同的输出类型解析来描述被分派到流的对象的MetadataType，其声明类似：
+
+[source,java,linenums]
+----
+@MetadataScope(keysResolver = EntityKeysResolver.class,
+               outputResolver = OutputEntityResolver.class)
+public class ListenerSource extends Source<Map<String, Object>, Void>  {
+
+  @MetadataKeyId
+  @Parameter
+  public String type;
+
+  @Connection
+  private ConnectionProvider<MetadataConnection> connection;
+
+  @Override
+  public void onStart(SourceCallback<Map<String, Object>, Void> sourceCallback) throws MuleException {
+    //...
+  }
+
+  @Override
+  public void onStop() {
+    //...
+  }
+
+}
+----
+
+源和操作都具有相同的生命周期来解析输出类型。第一步是配置`MetadataKeyId`，然后用该键调用`OutputTypeResolver`以解析生成的实体MetadataType。
+
+=== 为结果属性添加DataSense
+
+动态元数据解析考虑到组件的完整输出是`Result<Payload, Attributes>`，而不仅仅是有效负载。
+
+当操作或源输出具有动态属性结构时，可以通过声明`AttributesTypeResolver`（已在`OutputTypeResolver.java`示例中实现）来解析其MetadataType，然后在操作或源代码声明中添加对其的引用。
+
+在下一个示例中，可以将`Book`实体划分为Book的内容和属性，每个都有其自己的结构。这种划分是为了让最终用户更好地理解和使用操作结果。他们可以考虑数据（这是有效载荷中的书的内容）以及表征有效载荷的特征的元数据（书的属性）：
+
+[source,java,linenums]
+----
+public class FetchOperationsWithAttributes {
+
+  @OutputResolver(output = OutputEntityResolver.class,
+                  attributes = OutputEntityResolver.class)
+  public Result<Object, Object> get(@Connection MyConnection connection,
+                                                @MetadataKeyId(EntityKeysResolver.class) String entityKind){
+
+    if ("Book_id".equals(entityKind)){
+      Book book = (Book)connection.getClient().fetch(entityKind);
+      return Result.<Object, Object>builder()
+                   .output(book.content())
+                   .attributes(book.attributes())
+                   .build();
+    }
+
+    return return Result.<Object, Object>builder()
+                 .output(connection.getClient().fetch(entityKind))
+                 .build();
+  }
+
+}
+----
+
+消息来源有一个类似于有效载荷的声明，但它增加了
+一个`attributesResolver`参考：
+
+[source,java,linenums]
+----
+@MetadataScope(keysResolver = EntityKeysResolver.class,
+               outputResolver = OutputEntityResolver.class,
+               attributesResolver = OutputEntityResolver.class)
+public class ListenerSource extends Source<Map<String, Object>, Object>  {
+
+  @MetadataKeyId
+  @Parameter
+  public String type;
+
+  //...
+
+}
+----
+
+== 用用户定义的MetadataKey输出元数据
+
+用户定义的MetadataKeys也适用于组件的输出。
+在查询的情况下，您没有预定义的一组可能的MetadataKeys。相反，您有一个具有表征输出类型或结构的值的参数。
+
+例如，数据库连接器具有`select`操作。它的输出取决于查询的实体：
+
+[source,java,linenums]
+----
+
+  @OutputResolver(output = SelectMetadataResolver.class)
+  public List<Map<String, Object>> select(@MetadataKeyId String sql, @Config DbConnector connector){
+    // ...
+  }
+
+----
+
+将`SelectMetadataResolver`声明为：
+
+[source,java,linenums]
+----
+public class SelectMetadataResolver extends BaseDbMetadataResolver implements OutputTypeResolver<String> {
+
+  @Override
+  public String getCategoryName() {
+    return "DbCategory";
+  }
+
+  @Override
+  public String getResolverName() {
+    return "SelectResolver";
+  }
+
+  @Override
+  public MetadataType getOutputType(MetadataContext context, String query)
+      throws MetadataResolvingException, ConnectionException {
+
+    if (isEmpty(query)) {
+      throw new MetadataResolvingException("No Metadata available for an empty query", FailureCode.INVALID_METADATA_KEY);
+    }
+
+    ResultSetMetaData statementMetaData = getStatementMetadata(context, parseQuery(query));
+    if (statementMetaData == null) {
+      throw new MetadataResolvingException(format("Driver did not return metadata for the provided SQL: [%s]", query),
+                                           FailureCode.INVALID_METADATA_KEY);
+    }
+
+    ObjectTypeBuilder record = context.getTypeBuilder().objectType();
+
+    Map<String, MetadataType> recordModels = resolveRecordModels(statementMetaData);
+    recordModels.entrySet()
+                .forEach(e -> record.addField().key(e.getKey()).value(e.getValue()));
+
+    return record.build();
+  }
+}
+
+----
+
+== 列出元数据自动包装
+
+在`select`示例中，您可以看到该操作返回`List<Map<String, Object>`。这很有意义，因为选择查询的结果是多条记录条目，但`SelectMetadataResolver`不在`getOutputType`方法中描述ArrayType。相反，返回的MetadataType表示一个`record`结构。
+
+这是为什么？
+
+正如您可能已经知道的那样，该操作正在返回一个ArrayType（List，PagingProvider等），因此您只需要描述该数组的`generic`类型。输出和属性TypeResolver总是解析collection_的元素的MetadataType，而不是_collection_类型本身。这样可以更好地重用MetadataType解析器并减少所需的代码量。
+
+考虑到已解析的属性也将是操作的`List`输出的集合_elements_的属性_not_属性。
+
+== 解决没有MetadataKey的动态输出元数据
+
+// TODO：需要澄清
+与输入一样，操作的输出可以在没有特定的`MetadataKey`的情况下解析，作为受配置或连接影响的动态类型
+的组件。再次声明无密钥解析器，您只需跳过`MetadataKeyId`参数并忽略TypeResolvers中的MetadataKey：
+
+[source,java,linenums]
+----
+public class UserTypeResolver implements OutputTypeResolver, AttributesTypeResolver  {
+
+  @Override
+  public String getCategoryName() {
+    return "User";
+  }
+
+  @Override
+  public MetadataType getOutputType(MetadataContext context, Object key)
+      throws MetadataResolvingException, ConnectionException {
+
+    // The `key` parameter will be `null` if the fetch is performed
+    // as a `KeyLess` Metadata resolution. We'll just ignore it.
+    String schema = getUserSchema(context);
+    return new JsonTypeLoader(schema).load("http://demo.user")
+            .orElseThrow(() -> new MetadataResolvingException("No Metadata is available for the User",
+                                                              FailureCode.NO_DYNAMIC_TYPE_AVAILABLE));
+  }
+
+  @Override
+  public MetadataType getAttributesType(MetadataContext context, Object key)
+      throws MetadataResolvingException, ConnectionException {
+
+    // The `key` parameter will be `null` if the fetch is performed
+    // as a `KeyLess` Metadata resolution. We'll just ignore it.
+    String schema = getUserSchema(context);
+    return new JsonTypeLoader(schema).load("http://demo.attributes")
+            .orElseThrow(() -> new MetadataResolvingException("No Metadata is available for the User Attributes",
+                                                              FailureCode.NO_DYNAMIC_TYPE_AVAILABLE));
+  }
+
+  private String getUserSchema(MetadataContext context) throws MetadataResolvingException, ConnectionException {
+    return context.<DemoConnection>getConnection()
+      .orElseThrow(() -> new MetadataResolvingException("A connection is required to resolve Metadata but none was provided",
+                                                        FailureCode.INVALID_CONFIGURATION))
+      .describeUser();
+  }
+}
+----
+
+[source,java,linenums]
+----
+public class UserOperations {
+
+  @OutputResolver(output = UserTypeResolver.class, attributes=UserTypeResolver.class)
+  public Result<Map<String,Object>, Object> getUser(@Connection DemoConnection connection){
+    User user = connection.getUser();
+
+    return Result.<Map<String,Object>, Object>.builder()
+                 .output(user.personalInfo())
+                 .attributes(user.accountInfo())
+                 .build().
+
+  }
+
+}
+----
+
+
+// TODO多级

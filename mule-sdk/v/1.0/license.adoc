@@ -1,0 +1,135 @@
+= 模块许可
+
+使用SDK编写的模块有三种可能的许可类型，每种都可以对应用程序的执行方式设置不同的要求。
+
+== 社区模块
+
+所有模块，使用社区模块的应用程序的默认设置可以在所有Mule运行时中执行，而无需其他要求。
+
+== 企业模块
+
+只有Mule EE运行时可用于执行使用企业模块的应用程序，这意味着模块的用户需要MuleSoft Enterprise许可证。宣布一个模块为EE-only是非常简单的。您只需添加`@RequiresEnterpriseLicense`注释：
+
+[source,java,linenum]
+----
+
+@Extension(name = "enterprise")
+@RequiresEnterpriseLicense
+public class EnterpriseConnector {
+
+}
+----
+
+默认情况下，`RequiresEnterpriseLicense`强制用户拥有完整的MuleSoft Enterprise许可证，但您也可以声明该模块允许运行时使用评估许可证。这可以使用`RequiresEnterpriseLicense`批注中的`allowEvaluationLicense`标志进行配置：
+
+[source,java,linenum]
+----
+
+@Extension(name = "enterprise")
+@RequiresEnterpriseLicense(allowEvaluationLicense = true)
+public class EnterpriseConnector {
+
+}
+----
+
+== 自定义模块许可证
+
+MuleSoft认证连接器可以向MuleSoft申请一个_certified license generation key_，允许他们创建自己的定制许可证。这可确保使用认证连接器的人员联系开发该模块的合作伙伴以获取其自定义许可证。
+
+建立MuleSoft认证连接器的合作伙伴可以让潜在客户有机会使用其连接器构建Mule应用程序，并在设计时进行测试。当试图通过连接器部署Mule应用时，系统会提示客户输入合作伙伴的自定义许可证。
+
+=== 为您的连接器获取许可证生成密钥
+
+在将开发的连接器提交给MuleSoft进行认证之前，未来的认证连接器合作伙伴必须完成以下步骤：
+
+. 包含MuleSoft在生成合作伙伴密钥和密钥存储之前使用的以下信息：
++
+* 公司名称（也称为"Provider Name"）
+* 联系电子邮件
+* 联系人信息
+* 连接器名称
++
+. 从MuleSoft请求密钥和密钥库：
+.. 公共`.key`是您存储在连接器中的文件。
+..  `.jks`主密钥库是您作为生成许可证的合作伙伴。
+
+== 调整连接器代码并存储公钥
+
+获得密钥和密钥库后：
+
+. 合作伙伴通过应用`@RequiresEntitlement`注释并为所有请求的属性输入值来调整连接器项目代码。
++
+*  `name`必须是连接器的名称。
+*  `provider`属性必须是`.key`后缀之前的部分。例如，如果MuleSoft生成供应商密钥`prov-name.key`，则合作伙伴将`prov-name`作为供应商。
++
+[source,java,linenum]
+----
+@Extension(name="connector-name", provider="prov-name")
+@RequiresEntitlement(name="connector-name")
+public class LicensedConnector {
+  ...
+}
+----
++
+* 将MuleSoft提供的`.key`文件放在连接器的项目目录中的`src/main/resources`或`src/main/resources/license`下。
+
+=== 示例合作伙伴连接器
+
+您可以下载示例连接器并将其导入Studio，以查看连接器代码中如何配置许可证管理注释。客户`.key`许可证文件应位于`src/main/resources`中。
+
+== 生成许可证文件
+
+MuleSoft合作伙伴使用`.jks`文件和许可证生成插件生成发送给连接器客户的许可证。
+
+在命令行中`vendor.keystore`应该替换为`.jks`文件的路径，请在`.jks`文件所在的同一目录中执行该命令：
+
+// TODO以org.mule.extension：mule-extension-license的形式重新部署许可证插件
+[source, code]
+----
+mvn org.mule.tools.devkit:mule-devkit-license:license  -Dvendor.keystore=betaprovider-license-demo.jks
+----
+
+[INFO]
+或者，您可以通过将`-Ddays.to.expire=<days-until-this-license-expires>`附加到上述命令来指定许可证的到期日期。要将客户的名称添加到许可证中，请附加`-Dclient=<client-name>`。
+
+如果许可证已成功创建，则输出如下所示：
+
+----
+[INFO] Scanning for projects...
+[INFO]
+[INFO] ------------------------------------------------------------------------
+[INFO] Building Maven Stub Project (No POM) 1
+[INFO] ------------------------------------------------------------------------
+[INFO]
+[INFO] --- mule-devkit-license:license (default-cli) @ standalone-pom ---
+* Enter the name of the client whom will receive this license: Bob
+* Enter the name of the provider of the Entitlement as it appears in the @RequiresEntitlement annotation: betaprovider
+* Enter the name of the Entitlement as it appears in the @RequiresEntitlement annotation: lic-demo
+* Enter the name of the Connector as it appears in the @Connector "name" attribute: license-demo
+* Enter keystore password:
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: 18.151s
+[INFO] Finished at: Thu Dec 10 09:34:41 ART 2015
+[INFO] Final Memory: 6M/287M
+[INFO]
+----
+
+== 使用授权连接器开发Mule应用程序
+
+为了让客户验证其连接器许可证是否有效，他们需要通过Mule应用程序或Mule服务器使许可证（`.lic`文件）可用。
+
+Mule应用程序中的=== 许可证文件
+
+一旦客户购买了连接器的许可证，合作伙伴或供应商提供给客户的`.lic`文件就可以放置在以下目录之一中：
+
+* 在应用中的`src/main/resources`下（在Studio中开发）。
+* 在`app/classes`下，如果应用程序已被解包并部署在服务器上。
+
+Mule服务器中的=== 许可证文件
+
+您可以将其放置在Mule服务器的`conf/`文件夹中，而不是将该许可证存储在应用程序中。
+
+[NOTE]
+如果多个应用程序需要相同的许可证，则建议将许可证存储在Mule服务器中。

@@ -1,0 +1,561 @@
+= 服务编排和选择路由示例
+
+*_Enterprise, CloudHub_*
+
+此应用程序演示了Web服务调用和消息队列提交的编排，以便履行订单履行的HTTP请求。根据其有效负载的内容路由消息，应用程序可以有效协调不同供应商的订单履行并启动订单审计。
+
+====  Foreach处理
+
+image:iteration2.png[迭代2]迭代处理器Foreach将集合分解为元素，然后迭代处理它们而不会丢失任何消息负载。 Foreach在分割消息集合并处理各个元素后，会返回对原始消息的引用，从而导致"Java in, Java out"处理。
+
+==== 基于内容的路由
+
+image:content_routing.png[content_routing] Mule能够根据其内容智能地通过不同的处理路径路由消息。使用Choice路由器，Mule使用表达式来评估消息的属性或其有效负载的一部分，然后将其路由到特定路径（即一系列消息处理器）。在调用此活动时，基于内容的路由在运行时动态地将路由条件应用于消息。
+
+==== 服务协调
+
+image:orchestrate.png[编排]该术语适用于协调对几个不同Web服务的调用以处理单个Web服务请求的活动。顾名思义，一个应用程序（如本例）就可以编排对服务的调用顺序。就像管弦乐队的指挥家一样，一个单独的骡流动信号表明何时向服务提交呼叫，确保所有移动的部分一起工作以产生单一响应。
+
+==== 缓存
+
+image:cache_icon.png[cache_icon]在处理期间缓存消息内容通过存储和重复使用经常调用的数据来节省时间和处理负载。缓存作用域处理消息，传递输出并保存输出（即缓存响应）。当下一次流遇到相同类型的请求时，Mule可能会提供一个缓存响应，而不是再次调用一个潜在的耗时过程。
+
+== 假设
+
+本文档假定您熟悉Mule ESB和 link:/anypoint-studio/v/5/basic-studio-tutorial[Anypoint™Studio界面]。要提高您对Studio的熟悉度，请考虑完成一个或多个 link:/anypoint-studio/v/5/basic-studio-tutorial[Anypoint Studio教程]。此外，本例假设您熟悉XML编码，并且您对 link:/mule-user-guide/v/3.5/mule-application-architecture[骡流]，SOAP作为Web服务范例以及WSDL优先Web服务开发的实践有基本的了解。
+
+本文档描述了实施例的细节Anypoint Studio中，骡ESB的图形用户界面（GUI）的范围内，并且包括用于两个视觉和XML编辑器配置细节。
+
+== 示例用例
+
+这个示例应用程序模拟电子商店的Web应用程序。客户可以通过Web界面下订单。后端应用程序对这些订单进行分类，然后根据其分类进行处理。
+
+应用程序获取每个订单的价格，为订单结果（成功或失败）设置状态，然后审核订单并将结果合并到汇总回复中发回给客户。如果订单失败且购买价格高于$ 5000，则应用程序将启动回滚异常策略。
+
+== 设置并运行示例
+
+与其他 link:/mule-user-guide/v/3.5/mule-examples[示例模板]一样，您可以直接在*Anypoint Studio*中创建功能完整的应用程序。您可以调整这些基于用例的示例的配置，以在Mule中创建您自己的自定义应用程序。
+
+按照以下过程在Anypoint Studio中运行和测试此示例应用程序的功能。
+
+.  link:/mule-user-guide/v/3.5/mule-examples[创建，然后运行] Anypoint Studio中的示例应用程序。
+. 打开Web浏览器，然后导航到以下URL：+
++
+http：// localhost：8091 / populate / +
++
+这会导致应用程序初始化本地数据库以存储您放置的订单。您的浏览器会显示一条消息：`db populated`。
+. 在您的Web浏览器中，导航到以下URL：http：// localhost：8090 / orders。请注意，有时AJAX服务器在启动时可能会延迟几秒钟。在浏览之前，请在控制台中检查以下输出：
++
+
+[source, code, linenums]
+----
+INFO  2014-03-12 22:33:01,285 [main] org.mule.lifecycle.AbstractLifecycleManager: Starting connector: ajaxServer
+INFO  2014-03-12 22:33:01,285 [main] org.mortbay.jetty: jetty-6.1.26
+INFO  2014-03-12 22:33:01,331 [main] org.mortbay.jetty: JSONCommented is deprecated
+INFO  2014-03-12 22:33:01,348 [main] org.mortbay.jetty: Started SelectChannelConnector@0.0.0.0:8090
+----
+
+. 浏览器显示以下页面。 +
+
++
+image:init.page.png[init.page] +
++
+
+. 在字段中输入订单数据，然后点击*Add*。
+. 界面将您的订单添加到右侧的表格结构中（参见下文）。点击*Submit*将您的订单发送至Mule应用程序。
+
++
+image:order_Processing_table2.png[order_Processing_table2] +
++
+
+.  Mule处理订单并返回您的浏览器在*Confirmation*选项卡中显示的响应（请参见下文）。 +
+
++
+image:order_Processing_confirmation.png[order_Processing_confirmation]
+
+== 它是如何工作的
+
+Service Orchestration和Choice Routing应用程序公开了一个基于SOAP的Web服务，它接受订单请求并处理订单中的每个项目。如果请求的项目由三星制造，那么应用程序将该特定项目请求路由到由三星主持的基于外部SOAP的Web服务。应用程序将所有其他项目请求发送到在<<inhouseOrder Flow>>流程中定义的内部订单处理器。
+
+无论处理请求的人是谁，应用程序都会将请求的结果（成功或失败）与价格结合起来存储起来，该价格从内部RESTful Web服务中检索。为了减少对此服务的调用并提高订单处理效率，应用程序会将订单的结果缓存一段时间。
+
+最后，应用程序审核订单，并将项目请求的结果合并为摘要回复，并发送回客户端。如果订单失败且购买价格高于$ 5000，则应用程序将启动回滚异常策略。
+
+如果对三星Web服务的调用失败，应用程序不会重试调用服务，但会将订单的购买收据状态设置为`REJECTED`。
+
+应用程序将该网页的文件存储在`src/main/app/docroot/`中。此目录中的`index.html`文件包含使用 http://en.wikipedia.org/wiki/Remote_procedure_call[RPC]（通过`mule.rpc`）调用*orderService*流程的Submit按钮（`$(#submitButton)`）的点击处理程序。
+
+===  orderService流
+
+应用程序的主流程，订单服务流程通过SOAP Web服务接受订单，根据消息的内容将订单发送到适当的订单队列，并发送请求以启动对订单的审计。此流程还负责向呼叫者返回响应以确认订单已处理。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:orderService.png[orderService]
+....
+[tab,title="Studio XML Editor"]
+....
+[source, xml, linenums]
+----
+<flow doc:name="orderService" name="orderService">
+        <http:inbound-endpoint connector-ref="HttpConnector" doc:description="Process HTTP reqests or responses." doc:name="/orders" exchange-pattern="request-response" host="localhost" path="orders" port="1080"/>
+        <cxf:jaxws-service doc:description="Make a web service available via CXF" doc:name="Order WebService" serviceClass="com.mulesoft.se.orders.IProcessOrder"/>
+        <set-session-variable doc:name="totalValue=0" value="0" variableName="totalValue"/>
+        <foreach collection="#[payload.orderItems]" doc:name="For each Order Item">
+            <enricher doc:name="Enrich with purchase receipt" target="#[rootMessage.payload.orderItems[counter - 1].purchaseReceipt]">
+                <choice doc:name="Choice">
+                    <when expression="#[payload.manufacturer == 'Samsung']">
+                        <vm:outbound-endpoint doc:name="Dispatch to samsungOrder" exchange-pattern="request-response" path="samsungOrder"/>
+                    </when>
+                    <otherwise>
+                        <jms:outbound-endpoint connector-ref="Active_MQ" doc:name="Dispatch to inhouseOrder" exchange-pattern="request-response" queue="inhouseOrder"/>
+                    </otherwise>
+                </choice>
+            </enricher>
+        </foreach>
+        <vm:outbound-endpoint doc:name="Dispatch to audit" exchange-pattern="one-way" mimeType="text/plain" path="audit" responseTimeout="10000"/>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <flow-ref doc:name="Invoke defaultErrorHandler" name="defaultErrorHandler"/>
+        </catch-exception-strategy>
+    </flow>
+----
+....
+------
+
+订单服务流中的第一个构建块 link:/mule-user-guide/v/3.5/http-connector[HTTP入站连接器]接收用户在应用程序所服务的网页中输入的订单。 link:/mule-user-guide/v/3.5/cxf-component-reference[CXF组件]将传入的XML转换为Web服务接口中引用的 http://en.wikipedia.org/wiki/JAXB[JAXB注释类]。流中的 link:/mule-user-guide/v/3.5/choice-flow-control-reference[选择路由器]解析消息负载;如果有效负载将制造商定义为`Samsung`，则选择策略将消息路由到调用samsungOrder流的 link:/mule-user-guide/v/3.5/vm-transport-reference[VM出站连接器]。否则，选择策略会将消息路由到调用inhouseOrder流的 link:/mule-user-guide/v/3.5/jms-transport-reference[JMS出站连接器]。
+
+当samsungOrder流或inhouseOrder流回复时，orderService流将通过回复流提供的购买收据丰富项目。然后，orderService流将使用另一个VM Outbound连接器异步地将丰富的消息分派到auditService流。
+
+笔记：
+
+* 此流程使用 link:/mule-user-guide/v/3.5/session-variable-transformer-reference[会话变量变换器]以项目的价格初始化`totalValue`变量，以便auditService流程使用此值进行审计。
+* 每次迭代用inhouseOrder或samsungOrder的结果替换有效负载变量。所以，为了访问原来的有效载荷，它进入循环之前，我们使用特殊的foreach变量`rootMessage`：
+
+[source, code, linenums]
+----
+#[rootMessage.payload.orderItems[counter - 1].purchaseReceipt]
+----
+
+=== 三星订单流程
+
+samsungOrder流将三星订单商品请求的处理委托给三星的基于SOAP的外部Web服务。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:samsungOrder.png[samsungOrder]
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<flow doc:name="samsungOrder" name="samsungOrder">
+        <vm:inbound-endpoint doc:name="samsungOrder" exchange-pattern="request-response" path="samsungOrder"/>
+        <data-mapper:transform config-ref="OrderItemToOrderRequest" doc:name="OrderItem to OrderRequest"/>
+        <flow-ref doc:name="Invoke Samsung WebService" name="samsungWebServiceClient"/>
+        <message-filter doc:name="Filter on 200 OK" throwOnUnaccepted="true">
+            <message-property-filter caseSensitive="true" pattern="http.status=200" scope="inbound"/>
+        </message-filter>
+        <set-session-variable doc:name="totalValue += price" value="#[totalValue + payload.price]" variableName="totalValue"/>
+        <data-mapper:transform config-ref="OrderResponseToPurchaseReceipt" doc:name="OrderResponse to PurchaseReceipt"/>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <scripting:transformer doc:name="Create REJECTED PurchaseReceipt">
+                <scripting:script engine="groovy">
+                    <scripting:text><![CDATA[def receipt = new com.mulesoft.se.orders.PurchaseReceipt();
+receipt.setStatus(com.mulesoft.se.orders.Status.REJECTED); receipt.setTotalPrice(0);
+return receipt;]]></scripting:text>
+                </scripting:script>
+            </scripting:transformer>
+        </catch-exception-strategy>
+    </flow>
+----
+....
+------
+
+第一个building block是一个 link:/mule-user-guide/v/3.5/vm-transport-reference[VM入站连接器]，它为流提供来自orderService流的信息。第二个构建块 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[Anypoint DataMapper Transformer]将消息转换为适合samsungService流的消息。成功调用Samsung Web服务后， link:/mule-user-guide/v/3.5/session-variable-transformer-reference[会话变量变换器]会以三星返回的价格增加会话变量`totalValue`。然后，新的DataMapper构建块再次将响应转换为orderService流处理。如果发生错误，该流程将创建标记为`REJECTED`的购买收据。流程中的处理完成后，流程将信息发送回orderService流程。
+
+笔记：
+
+* 应用程序将此处理分隔为单独的流而不是子流，以限制异常处理的范围。 （在子流上不可能有 link:/mule-user-guide/v/3.5/error-handling[例外策略]。）
+* 如果HTTP响应代码不是200（成功），则应用程序使用 link:/mule-user-guide/v/3.5/message-filter[消息过滤器]来引发异常。没有它，应用程序会认为任何HTTP响应都是成功的，包括诸如SOAP错误之类的错误。
+
+===  inhouseOrder流程
+
+inhouseOrder流程处理所有非三星物品的请求。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:inhouseOrder.png[inhouseOrder]
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<flow doc:name="inhouseOrder" name="inhouseOrder">
+        <jms:inbound-endpoint connector-ref="Active_MQ" doc:name="inhouseOrder" queue="inhouseOrder">
+            <xa-transaction action="ALWAYS_BEGIN"/>
+        </jms:inbound-endpoint>
+        <set-variable doc:name="Initialise Price" value="0" variableName="price"/>
+        <enricher doc:name="Enrich with price" target="#[price]">
+            <ee:cache cachingStrategy-ref="Caching_Strategy" doc:name="Cache the Price">
+                <{{0}}" port="9999"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+            </ee:cache>
+        </enricher>
+        <db:insert config-ref="Generic_Database_Configuration" doc:name="Save Order Item" transactionalAction="ALWAYS_JOIN">
+            <db:parameterized-query><![CDATA[insert into orders (product_id, name, manufacturer, quantity, price) values (#[payload.productId], #[payload.name], #[payload.manufacturer], #[payload.quantity], #[price])]]></db:parameterized-query>
+        </db:insert>
+        <set-variable doc:name="totalPrice = price * payload.quantity" value="#[price * payload.quantity]" variableName="totalPrice"/>
+        <set-session-variable doc:name="totalValue += totalPrice" value="#[totalValue + totalPrice]" variableName="totalValue"/>
+        <scripting:transformer doc:name="Groovy">
+            <scripting:script engine="Groovy">
+                <scripting:text><![CDATA[receipt = new com.mulesoft.se.orders.PurchaseReceipt(); receipt.setStatus(com.mulesoft.se.orders.Status.ACCEPTED); receipt.setTotalPrice(Float.valueOf(message.getInvocationProperty('totalPrice')));
+return receipt;]]></scripting:text>
+            </scripting:script>
+        </scripting:transformer>
+        <rollback-exception-strategy doc:name="Rollback Exception Strategy" maxRedeliveryAttempts="3">
+            <logger doc:name="Logger" level="INFO" message="#[payload]"/>
+            <on-redelivery-attempts-exceeded doc:name="Redelivery exhausted">
+                <flow-ref doc:name="Invoke defaultErrorHandler" name="defaultErrorHandler"/>
+            </on-redelivery-attempts-exceeded>
+        </rollback-exception-strategy>
+    </flow>
+----
+....
+------
+
+此流程的消息来源是 link:/mule-user-guide/v/3.5/jms-transport-reference[JMS入站连接器]。流程会立即初始化流量变量`price`，然后为其分配由内部priceService流程返回的值。 inhouseOrder流然后使用 link:/mule-user-guide/v/3.5/database-connector[数据库连接器]将此值保存到公司数据库。会话变量`totalValue`保存此项目的总价格。流程中的最后一个构建块 link:/mule-user-guide/v/3.5/groovy-component-reference[Groovy组件]会创建一个包含相关信息的购买收据。
+
+笔记：
+
+* 这个流程是事务性的。如果在流程生命期间发生任何错误，它不能将数据保存在数据库中。
+*  JMS连接器被配置为"ALWAYS-BEGIN"事务，并且DB操作被设置为"ALWAYS-JOIN"。
+* 回滚异常策略允许我们在发生错误时将消息重新插入JMS队列中。
+*  `Redelivery exhausted`配置允许我们确定在重试次数达到 link:/mule-user-guide/v/3.5/rollback-exception-strategy[例外策略]的`maxRedeliveryAttempts`属性中指定的最大值时要执行的操作。
+*  Mule将价格服务流返回的价格缓存到内存 link:/mule-user-guide/v/3.5/mule-object-stores[对象存储]中。商店的关键是要求的产品的ID。第一次出现给定产品ID时，`Enrich with price` link:/mule-user-guide/v/3.5/message-enricher[消息Enricher]调用priceService以获取产品的价格。之后，该流程使用产品的缓存值。
+* 可以在缓存使用的对象存储上配置超时。
+
+===  priceService流量
+
+内部RESTful priceService流程返回非三星产品的价格。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:priceService.png[priceService]
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<flow doc:name="priceService" name="priceService">
+        <http:inbound-endpoint connector-ref="HttpConnector" doc:name="/prices" exchange-pattern="request-response" host="localhost" path="api" port="9999"/>
+        <jersey:resources doc:name="Price Service">
+            <component class="com.mulesoft.se.orders.ProductPrice"/>
+        </jersey:resources>
+    </flow>
+----
+....
+------
+
+HTTP入站连接器将请求传递给Jersey后端REST消息处理器。
+
+需要注意的是 http://en.wikipedia.org/wiki/Java_API_for_RESTful_Web_Services[JAX-RS]注释的Java实现是实现您的Web服务的一种方式。整个流程可以用作Web服务的实现，无论它是RESTful还是基于SOAP。
+
+=== 三星服务流程
+
+samsungService流程嘲笑所谓的外部三星Web服务。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:samsungService.png[samsungService]
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<flow name="samsungService" doc:name="samsungService">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="9090" path="samsung/orders" doc:name="/samsung/orders" doc:description="Process HTTP reqests or responses." connector-ref="HttpConnector"/>
+        <cxf:jaxws-service serviceClass="com.mulesoft.se.samsung.SamsungService" doc:name="Order WebService" doc:description="Make a web service available via CXF"/>
+        <component class="com.mulesoft.se.samsung.SamsungServiceImpl" doc:name="Samsung Service Impl"/>
+</flow>
+----
+....
+------
+
+此流程来自HTTP入站连接器，随后是配置为JAX-WS服务的CXF组件。服务实施位于`Samsung Service Impl`， link:/mule-user-guide/v/3.5/java-transformer-reference[Java组件]。
+
+===  auditService流
+
+auditService流程由orderService流程异步调用，用于审核项目请求，这些请求通过inhouseOrder流程和samsungOrder流程的响应进行了充实。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:auditService.png[auditService]
+....
+[tab,title="Studio XML Editor"]
+....
+[source, xml, linenums]
+----
+<flow doc:name="auditService" name="auditService">
+        <vm:inbound-endpoint doc:name="audit" exchange-pattern="one-way" mimeType="text/plain" path="audit" responseTimeout="10000">
+            <xa-transaction action="ALWAYS_BEGIN"/>
+        </vm:inbound-endpoint>
+        <db:insert config-ref="Generic_Database_Configuration" doc:name="Save OrderSummary">
+            <db:parameterized-query><![CDATA[insert into order_audits values(default, #[payload.orderId], #[totalValue])]]></db:parameterized-query>
+        </db:insert>
+        <choice-exception-strategy doc:name="Choice Exception Strategy">
+            <rollback-exception-strategy doc:name="Rollback Exception Strategy" when="#[sessionVars.totalValue] > 5000"/>
+            <catch-exception-strategy doc:name="Catch Exception Strategy">
+                <flow-ref doc:name="Invoke defaultErrorHandler" name="defaultErrorHandler"/>
+            </catch-exception-strategy>
+        </choice-exception-strategy>
+    </flow>
+----
+....
+------
+
+由于VM入站连接器和数据库连接器之间的不一致，auditService流的事务配置又是XA。
+
+笔记：
+
+* 流的源是VM入站连接器，与inhouseOrder流中的JMS连接器相反。原因是auditService流调用不需要是同步的，调用inhouseOrder的情况就是这样。所有事务流必须由入站连接器上的_one-way_交换模式启动，可以使用调用服务上的`request-response`交换模式进行定义。
+* 为了确保可靠的消息传递（即，在处理由于错误而停止的情况下消息不会丢失），我们将我们的回滚异常策略与同级异常策略一起打包。这些都包含在一个选择异常策略中，该策略定义了要使用哪个策略（无论是回滚还是捕捉异常）。如果使用Catch Exception Strategy，则消息将丢失。在这种情况下，defaultErrorHandler子流将错误发送给操作。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:defaultErrorHandler.png[defaultErrorHandler]
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<sub-flow name="defaultErrorHandler" doc:name="defaultErrorHandler">
+  <logger message="Error occurred: #[payload]" level="INFO"
+     doc:name="Log Error" />
+  <smtp:outbound-endpoint host="localhost"
+     responseTimeout="10000" doc:name="Send Email to Operations" />
+</sub-flow> 
+----
+....
+------
+
+===  databaseInitialisation流
+
+databaseInitialisation流初始化本地数据库以存储您放置的任何订单。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:databaseInitialisation.png[databaseInitialisation]
+....
+[tab,title="Studio XML Editor Standalone"]
+....
+[source, xml, linenums]
+----
+<flow doc:name="databaseInitialisation" name="databaseInitialisation">
+        <http:inbound-endpoint connector-ref="HttpConnector" doc:name="HTTP" exchange-pattern="request-response" host="localhost" path="populate" port="8091"/>
+        <db:execute-ddl config-ref="Generic_Database_Configuration" doc:name="Create orders Table">
+            <db:dynamic-query><![CDATA[CREATE TABLE orders (i int generated always as identity, product_id varchar(256), name varchar(256), manufacturer varchar(256), quantity integer, price integer)]]></db:dynamic-query>
+</db:execute-ddl>
+        <db:execute-ddl config-ref="Generic_Database_Configuration" doc:name="Create order_audits Table">
+            <db:dynamic-query><![CDATA[CREATE TABLE order_audits (i int generated always as identity, order_id varchar(256), total_value integer)]]></db:dynamic-query>
+        </db:execute-ddl>
+        <set-payload value="db populated" doc:name="Set Payload"/>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload doc:name="'table already populated'" value="table already populated"/>
+        </catch-exception-strategy>
+    </flow>
+----
+....
+------
+
+databaseInitialisation流初始化本地数据库以存储您放置的任何订单。如<<Set Up and Run the Example>>中所述，您可以通过将Web浏览器指向http：// localhost：8091 / populate /来调用此流程。第一次运行应用程序时调用此流程;在随后的运行中没有必要这样做。
+
+== 完整代码
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:FullExample.png[FullExample]
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule version="EE-3.5.0" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:core="http://www.mulesoft.org/schema/mule/core" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:jbossts="http://www.mulesoft.org/schema/mule/jbossts" xmlns:jersey="http://www.mulesoft.org/schema/mule/jersey" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd http://www.mulesoft.org/schema/mule/jersey http://www.mulesoft.org/schema/mule/jersey/current/mule-jersey.xsd http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/jbossts http://www.mulesoft.org/schema/mule/jbossts/current/mule-jbossts.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <http:connector doc:name="HTTP\HTTPS" name="HttpConnector"/>
+    <jms:activemq-xa-connector brokerURL="vm://localhost" doc:name="Active MQ" name="Active_MQ" validateConnections="true"/>
+    <cxf:configuration doc:description="Global CXF Configuration" doc:name="CXF Configuration" initializeStaticBusInstance="false"/>
+    <data-mapper:config doc:name="DataMapper" name="OrderItemToOrderRequest" transformationGraphPath="orderitemtoorderrequest_1.grf"/>
+    <data-mapper:config doc:name="DataMapper" name="OrderResponseToPurchaseReceipt" transformationGraphPath="orderresponsetopurchasereceipt.grf"/>
+    <spring:beans>
+        <spring:bean class="org.enhydra.jdbc.standard.StandardXADataSource" destroy-method="shutdown" id="Derby_Data_Source">
+            <spring:property name="driverName" value="org.apache.derby.jdbc.EmbeddedDriver"/>
+            <spring:property name="url" value="jdbc:derby:muleEmbeddedDB;create=true"/>
+        </spring:bean>
+    </spring:beans>
+    <jbossts:transaction-manager doc:name="Transaction Manager">
+        <property key="com.arjuna.ats.arjuna.coordinator.defaultTimeout" value="600"/>
+        <property key="com.arjuna.ats.arjuna.coordinator.txReaperTimeout" value="1000000"/>
+    </jbossts:transaction-manager>
+    <ee:object-store-caching-strategy doc:name="Caching Strategy" keyGenerationExpression="#[payload.productId]" name="Caching_Strategy">
+        <in-memory-store/>
+    </ee:object-store-caching-strategy>
+    <mulexml:namespace-manager includeConfigNamespaces="true">
+        <mulexml:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+        <mulexml:namespace prefix="ord" uri="http://orders.se.mulesoft.com/"/>
+    </mulexml:namespace-manager>
+    <db:generic-config dataSource-ref="Derby_Data_Source" doc:name="Generic Database Configuration" name="Generic_Database_Configuration"/>
+    <flow doc:name="orderService" name="orderService">
+        <http:inbound-endpoint connector-ref="HttpConnector" doc:description="Process HTTP reqests or responses." doc:name="/orders" exchange-pattern="request-response" host="localhost" path="orders" port="1080"/>
+        <cxf:jaxws-service doc:description="Make a web service available via CXF" doc:name="Order WebService" serviceClass="com.mulesoft.se.orders.IProcessOrder"/>
+        <set-session-variable doc:name="totalValue=0" value="0" variableName="totalValue"/>
+        <foreach collection="#[payload.orderItems]" doc:name="For each Order Item">
+            <enricher doc:name="Enrich with purchase receipt" target="#[rootMessage.payload.orderItems[counter - 1].purchaseReceipt]">
+                <choice doc:name="Choice">
+                    <when expression="#[payload.manufacturer == 'Samsung']">
+                        <vm:outbound-endpoint doc:name="Dispatch to samsungOrder" exchange-pattern="request-response" path="samsungOrder"/>
+                    </when>
+                    <otherwise>
+                        <jms:outbound-endpoint connector-ref="Active_MQ" doc:name="Dispatch to inhouseOrder" exchange-pattern="request-response" queue="inhouseOrder"/>
+                    </otherwise>
+                </choice>
+            </enricher>
+        </foreach>
+        <vm:outbound-endpoint doc:name="Dispatch to audit" exchange-pattern="one-way" mimeType="text/plain" path="audit" responseTimeout="10000"/>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <flow-ref doc:name="Invoke defaultErrorHandler" name="defaultErrorHandler"/>
+        </catch-exception-strategy>
+    </flow>
+    <flow doc:name="samsungOrder" name="samsungOrder">
+        <vm:inbound-endpoint doc:name="samsungOrder" exchange-pattern="request-response" path="samsungOrder"/>
+        <data-mapper:transform config-ref="OrderItemToOrderRequest" doc:name="OrderItem to OrderRequest"/>
+        <flow-ref doc:name="Invoke Samsung WebService" name="samsungWebServiceClient"/>
+        <message-filter doc:name="Filter on 200 OK" throwOnUnaccepted="true">
+            <message-property-filter caseSensitive="true" pattern="http.status=200" scope="inbound"/>
+        </message-filter>
+        <set-session-variable doc:name="totalValue += price" value="#[totalValue + payload.price]" variableName="totalValue"/>
+        <data-mapper:transform config-ref="OrderResponseToPurchaseReceipt" doc:name="OrderResponse to PurchaseReceipt"/>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <scripting:transformer doc:name="Create REJECTED PurchaseReceipt">
+                <scripting:script engine="groovy">
+                    <scripting:text><![CDATA[def receipt = new com.mulesoft.se.orders.PurchaseReceipt();
+receipt.setStatus(com.mulesoft.se.orders.Status.REJECTED); receipt.setTotalPrice(0);
+return receipt;]]></scripting:text>
+                </scripting:script>
+            </scripting:transformer>
+        </catch-exception-strategy>
+    </flow>
+    <sub-flow doc:name="samsungWebServiceClient" name="samsungWebServiceClient">
+        <cxf:jaxws-client clientClass="com.mulesoft.se.samsung.SamsungServiceService" doc:name="Samsung Webservice Client" operation="purchase" port="SamsungServicePort"/>
+        <http:outbound-endpoint doc:name="/samsung/orders" exchange-pattern="request-response" host="localhost" path="samsung/orders" port="9090"/>
+    </sub-flow>
+    <flow doc:name="inhouseOrder" name="inhouseOrder">
+        <jms:inbound-endpoint connector-ref="Active_MQ" doc:name="inhouseOrder" queue="inhouseOrder">
+            <xa-transaction action="ALWAYS_BEGIN"/>
+        </jms:inbound-endpoint>
+        <set-variable doc:name="Initialise Price" value="0" variableName="price"/>
+        <enricher doc:name="Enrich with price" target="#[price]">
+            <ee:cache cachingStrategy-ref="Caching_Strategy" doc:name="Cache the Price">
+                <{{0}}" port="9999"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+            </ee:cache>
+        </enricher>
+        <db:insert config-ref="Generic_Database_Configuration" doc:name="Save Order Item" transactionalAction="ALWAYS_JOIN">
+            <db:parameterized-query><![CDATA[insert into orders (product_id, name, manufacturer, quantity, price) values (#[payload.productId], #[payload.name], #[payload.manufacturer], #[payload.quantity], #[price])]]></db:parameterized-query>
+        </db:insert>
+        <set-variable doc:name="totalPrice = price * payload.quantity" value="#[price * payload.quantity]" variableName="totalPrice"/>
+        <set-session-variable doc:name="totalValue += totalPrice" value="#[totalValue + totalPrice]" variableName="totalValue"/>
+        <scripting:transformer doc:name="Groovy">
+            <scripting:script engine="Groovy">
+                <scripting:text><![CDATA[receipt = new com.mulesoft.se.orders.PurchaseReceipt(); receipt.setStatus(com.mulesoft.se.orders.Status.ACCEPTED); receipt.setTotalPrice(Float.valueOf(message.getInvocationProperty('totalPrice')));
+return receipt;]]></scripting:text>
+            </scripting:script>
+        </scripting:transformer>
+        <rollback-exception-strategy doc:name="Rollback Exception Strategy" maxRedeliveryAttempts="3">
+            <logger doc:name="Logger" level="INFO" message="#[payload]"/>
+            <on-redelivery-attempts-exceeded doc:name="Redelivery exhausted">
+                <flow-ref doc:name="Invoke defaultErrorHandler" name="defaultErrorHandler"/>
+            </on-redelivery-attempts-exceeded>
+        </rollback-exception-strategy>
+    </flow>
+    <flow doc:name="auditService" name="auditService">
+        <vm:inbound-endpoint doc:name="audit" exchange-pattern="one-way" mimeType="text/plain" path="audit" responseTimeout="10000">
+            <xa-transaction action="ALWAYS_BEGIN"/>
+        </vm:inbound-endpoint>
+        <db:insert config-ref="Generic_Database_Configuration" doc:name="Save OrderSummary">
+            <db:parameterized-query><![CDATA[insert into order_audits values(default, #[payload.orderId], #[totalValue])]]></db:parameterized-query>
+        </db:insert>
+        <choice-exception-strategy doc:name="Choice Exception Strategy">
+            <rollback-exception-strategy doc:name="Rollback Exception Strategy" when="#[sessionVars.totalValue] > 5000"/>
+            <catch-exception-strategy doc:name="Catch Exception Strategy">
+                <flow-ref doc:name="Invoke defaultErrorHandler" name="defaultErrorHandler"/>
+            </catch-exception-strategy>
+        </choice-exception-strategy>
+    </flow>
+    <flow doc:name="priceService" name="priceService">
+        <http:inbound-endpoint connector-ref="HttpConnector" doc:name="/prices" exchange-pattern="request-response" host="localhost" path="api" port="9999"/>
+        <jersey:resources doc:name="Price Service">
+            <component class="com.mulesoft.se.orders.ProductPrice"/>
+        </jersey:resources>
+    </flow>
+    <flow doc:name="samsungService" name="samsungService">
+        <http:inbound-endpoint connector-ref="HttpConnector" doc:description="Process HTTP reqests or responses." doc:name="/samsung/orders" exchange-pattern="request-response" host="localhost" path="samsung/orders" port="9090"/>
+        <cxf:jaxws-service doc:description="Make a web service available via CXF" doc:name="Order WebService" serviceClass="com.mulesoft.se.samsung.SamsungService"/>
+        <component class="com.mulesoft.se.samsung.SamsungServiceImpl" doc:name="Samsung Service Impl"/>
+    </flow>
+    <sub-flow doc:name="defaultErrorHandler" name="defaultErrorHandler">
+        <logger doc:name="Log Error" level="INFO" message="Error occurred: #[payload]"/>
+        <smtp:outbound-endpoint doc:name="Send Email to Operations" host="localhost" responseTimeout="10000"/>
+    </sub-flow>
+    <flow doc:name="databaseInitialisation" name="databaseInitialisation">
+        <http:inbound-endpoint connector-ref="HttpConnector" doc:name="HTTP" exchange-pattern="request-response" host="localhost" path="populate" port="8091"/>
+        <db:execute-ddl config-ref="Generic_Database_Configuration" doc:name="Create orders Table">
+            <db:dynamic-query><![CDATA[CREATE TABLE orders (i int generated always as identity, product_id varchar(256), name varchar(256), manufacturer varchar(256), quantity integer, price integer)]]></db:dynamic-query>
+</db:execute-ddl>
+        <db:execute-ddl config-ref="Generic_Database_Configuration" doc:name="Create order_audits Table">
+            <db:dynamic-query><![CDATA[CREATE TABLE order_audits (i int generated always as identity, order_id varchar(256), total_value integer)]]></db:dynamic-query>
+        </db:execute-ddl>
+        <set-payload doc:name="Set Payload" value="db populated"/>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload doc:name="'table already populated'" value="table already populated"/>
+        </catch-exception-strategy>
+    </flow>
+</mule>
+----
+....
+------
+
+== 文档
+
+Anypoint Studio包含一项功能，可让您轻松导出为项目录制的所有文档。无论何时您想要轻松与Studio环境外的其他人共享您的项目，都可以导出项目文档以打印，发送电子邮件或在线共享。 Studio自动生成的文档包括：
+
+* 应用程序中流的可视化图
+* 与应用程序中的每个流对应的XML配置
+* 您在流程中任何构建块的“备注”选项卡中输入的文本
+
+
+== 另请参阅
+
+* 详细了解CXF组件。
+* 详细了解 link:/mule-user-guide/v/3.5/choice-flow-control-reference[选择路由器]。
+* 详细了解 link:/mule-user-guide/v/3.5/vm-transport-reference[VM]和 link:/mule-user-guide/v/3.5/jms-transport-reference[JMS]连接器。
+* 详细了解 link:/mule-user-guide/v/3.5/database-connector[数据库连接器]。
+* 详细了解 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[Anypoint DataMapper]。
+* 详细了解 link:/mule-user-guide/v/3.5/cache-scope[高速缓存]和 link:/mule-user-guide/v/3.5/foreach[的foreach]个范围。

@@ -1,0 +1,167 @@
+=  RSS模块参考
+
+Mule RSS支持可以轻松地与RSS订阅源集成。
+
+== 使用Feed
+
+[CAUTION]
+不赞成使用RSS端点。在Mule 3.2.0中删除了RSS端点。使用混合HTTP和RSS端点部分中描述的方法。
+
+最常见的模式之一是与RSS进行集成，即轮询Feed更新。用骡子这可以很容易地完成。您必须先编写收到RSS聚合条目的课程：
+
+*EntryReceiver.java*
+
+[source, java, linenums]
+----
+package org.mule.module.rss;
+
+import com.sun.syndication.feed.synd.SyndEntry;
+
+public class EntryReceiver
+{
+    public void readEntry(@Payload SyndEntry entry) throws Exception
+    {
+        //do stuff
+    }
+}
+----
+
+默认情况下，RSS提要被分割为条目，因此对于每个条目，组件方法都会与提要中的下一个条目一起调用。流程配置将如下所示：
+
+[source, xml, linenums]
+----
+<flow name="eventConsumer">
+    <rss:inbound-endpoint address="http://localhost:9002/events"/>
+    <component class="org.mule.module.rss.EntryReceiver"/>
+</flow>
+----
+
+==  ETag的
+
+Atom HTTP端点默认尊重ETags和304 Not Modified响应代码，因此您不必担心会消耗不必要的更新。
+
+=== 自己访问Feed
+
+如果你想访问feed本身，它可以通过名为'feed.object'的当前消息的头部来获得。您可以使用注释将其注入到入口点方法中 - 
+
+*EntryReceiver.java*
+
+[source, java]
+----
+public void processEntry(@Payload Entry entry, @Expr("#[header:invocation:feed.object]") Feed feed) throws Exception
+----
+
+[TIP]
+@Expr注释仅在 http://www.mulesoft.org/download-mule-esb-community-edition[骡社区版]中可用。
+
+如果您想要处理XML模型，或者使用`java.io.InputStream`或`java.lang.String`来获取原始表示，您的组件应该期待`com.sun.syndication.feed.synd.SyndFeed`对象，或者只需`org.w3c.dom.Document`。
+
+*FeedReceiver.java*
+
+[source, java, linenums]
+----
+public void processFeed(@Payload SyndFeed feed) throws Exception
+{
+    //do stuff
+}
+----
+
+== 混合HTTP和RSS端点
+
+`rss:endpoint`元素是创建轮询http端点并分割馈送的快捷方式。如果您在配置中使用另一个非轮询HTTP端点，则还需要配置HTTP轮询端点，并在原子端点上引用它。
+
+[source, xml, linenums]
+----
+<http:connector name="HttpConnector"/>
+
+<http:polling-connector name="PollingHttpConnector" pollingFrequency="1000" discardEmptyContent="false"/>
+
+<flow name="eventConsumer">
+    <http:inbound-endpoint address="http://localhost:9002/events" connector-ref="PollingHttpConnector"/>
+    <component class="org.mule.module.rss.EntryReceiver"/>
+</flow>
+----
+
+== 访问其他协议的源
+
+您可以使用其他Mule连接器（例如JMS，File或XMPP）来处理馈送并处理它们。为此，需要通过连接器为ATOM提要提供服务，例如通过JMS发送RSS文档或从文件进行轮询时。 RSS模式定义了一个`<rss:feed-splitter/>`，可以分割从端点接收到的消息。
+
+=== 通过JMS
+
+[source, xml, linenums]
+----
+<flow name="feedSplitterConsumer">
+    <jms:inbound-endpoint queue="feed.in">
+        <rss:feed-splitter/>
+    </jms:inbound-endpoint>
+
+    <component class="org.mule.module.atom.event.EntryReceiver"/>
+</flow>
+----
+
+=== 通过文件
+
+[source, xml, linenums]
+----
+<flow name="feedSplitterConsumer">
+    <file:inbound-endpoint  path="${mule.working.dir}" pollingFrequency="1000" >
+        <file:filename-wildcard-filter pattern="*.rss"/>
+        <rss:feed-splitter/>
+    </file:inbound-endpoint>
+
+    <component class="org.mule.module.atom.event.EntryReceiver"/>
+</flow>
+----
+
+=== 处理没有RSS端点的提要
+
+作为参考，以下示例显示了不使用`rss:endpoint`来读取ATOM订阅源的显式配置。
+
+[source, xml, linenums]
+----
+<http:polling-connector name="PollingHttpConnector" pollingFrequency="1000" discardEmptyContent="false"/>
+
+<flow name="feedConsumer">
+    <http:inbound-endpoint address="http://rossmason.blogspot.com/feeds/posts/default" connector-ref="PollingHttpConnector">
+        <rss:feed-splitter/>
+        <rss:entry-last-updated-filter/>
+    </http:inbound-endpoint>
+
+    <component class="org.mule.module.rss.EntryReceiver"/>
+</flow>
+----
+
+*Note*：`rss:entry-last-updated-filter`应该位于`<rss:feed-splitter/>`之后，因为您需要分割供稿，以便过滤器可以处理它们。另请注意，我们不在过滤器上设置`lastUpdate`日期，这意味着缺省行为会读取所有可用条目，然后仅处理自上次读取后的新条目。
+
+== 架构参考
+
+* 架构：http://www.mulesoft.org/schema/mule/atom/3.2/mule-rss.xsd
+* 结构：http://www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-rss_xsd/schema-overview.html
+
+=== 元素
+
+== 进料分离器
+
+将馈送条目拆分为单个条目对象。每个条目都将在Mule中单独发布。
+
+无<feed-splitter...>的子元素
+
+
+== 条目上次更新过滤器
+
+将根据最后更新日期过滤RSS条目对象。这对于从Feed中过滤较旧的条目很有用。此过滤器仅适用于RSS SyndEntry对象而非SyndFeed对象。
+
+<entry-last-updated-filter...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| lastUpdate  |字符串 |否 |   |从中过滤事件的日期。在此日期之前上次更新的任何条目将不被接受。日期格式是：yyyy-MM-dd hh：mm：ss，例如2008-12-25 13:00:00。如果只有日期很重要，您可以省略时间部分。您可以将该值设置为'now'以设置服务器启动的日期和时间。如果您想要接收所有可用条目，则不要设置此属性，然后再进行任何新条目。这是默认行为，适用于许多场景。
+| acceptWithoutUpdateDate  |布尔值 |否 | true  |是否应该接受条目，如果它没有设置最后更新日期。
+|===
+
+
+== 对象来馈送变压器
+
+将消息的有效负载转换为`com.sun.syndication.feed.synd.SyndFeed`实例。
+

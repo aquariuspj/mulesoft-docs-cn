@@ -1,0 +1,171 @@
+=  WebLogic JMS集成
+
+如果您使用10.3之前的WebLogic版本，请将`weblogic.jar`文件复制到`$MULE_HOME/lib/user`。对于WebLogic版本10.3及更高版本，您必须从WebLogic安装中生成一个`wlfullclient.jar`文件，如下所示：
+
+. 转到WebLogic安装的`server/lib`目录。
+. 运行此命令以生成客户端JAR：
++
+[source, code, linenums]
+----
+java -jar wljarbuilder.jar
+----
+
+. 将生成的`wlfullclient.jar`文件复制到`$MULE_HOME/lib/user`目录。
+
+[TIP]
+====
+*JNDI destinations syntax* +
+
+如果Mule未能在WebLogic的JNDI中查找主题或队列，但JNDI树将其列为可用，请尝试用点替换JNDI子上下文分隔符，以便`tracker/topic/PriceUpdates`变为`tracker.topic.PriceUpdates`。
+====
+
+WebLogic 8.x及更早版本的== 配置
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+    xsi:schemaLocation="
+      http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+      http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.0/mule-jms.xsd">
+ 
+    <jms:connector name="jmsConnector"
+                   jndiProviderUrl="t3://localhost:7001"
+                   connectionFactoryJndiName="javax.jms.QueueConnectionFactory"
+                   jndiDestinations="true"
+                   forceJndiDestinations="true"
+                   jndiInitialFactory="weblogic.jndi.WLInitialContextFactory"
+                   specification="1.0.2b"/>
+----
+
+WebLogic 9.x的== 配置
+
+对于WebLogic 9.x，配置几乎相同。唯一的区别是：
+
+* 支持的JMS规范级别为1.1（但1.0.2b仍然可以）
+* 统一的JMS连接工厂可以用作上述的结果。以下示例演示如何使用开箱即用的默认工厂。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+    xsi:schemaLocation="
+      http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+      http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.0/mule-jms.xsd">
+ 
+    <jms:connector name="jmsConnector"
+                   jndiProviderUrl="t3://localhost:7001"
+                   connectionFactoryJndiName="weblogic.jms.ConnectionFactory"
+                   jndiDestinations="true"
+                   forceJndiDestinations="true"
+                   jndiInitialFactory="weblogic.jndi.WLInitialContextFactory"
+                   specification="1.1"/>
+----
+
+////
+参见DOCS-1773
+== 配置安全性
+
+以下示例显示如何使用Spring在WebLogic 9.x上配置安全性：
+
+[source, xml, linenums]
+----
+<spring:bean name="jmsProperties" class="java.util.HashMap">
+  <spring:constructor-arg>
+    <spring:map>
+      <spring:entry key="java.naming.security.principal" value="secureUser"/>
+      <spring:entry key="java.naming.security.credentials" value="password"/>
+      <spring:entry key="java.naming.security.authentication" value="simple"/>
+    </spring:map>
+  </spring:constructor-arg>
+</spring:bean>
+ 
+<jms:connector ...
+    jndiProviderProperties-ref="jmsProperties"
+/>
+----
+
+如果您使用的是Mule ESB 2.2.3或更高版本的企业版，并且您希望覆盖端点级别的授权，则执行以下操作：
+
+* 指定使用`com.mulesoft.mule.transport.jms.weblogic.EeWeblogicJmsConnector`类的自定义JMS连接器
+* 创建一个删除安全属性的转换器
+* 在要覆盖授权的端点上调用该变换器，然后指定新属性。
+
+例如：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="CE-3.3.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd ">
+    <jms:connector name="JMS" validateConnections="true" doc:name="JMS"/>
+    <jms:jmsmessage-to-object-transformer name="JmsMessage_to_Object" doc:name="JmsMessage to Object"/>
+    <jms:weblogic-connector name="Web_logic_JMS" validateConnections="true" doc:name="Web logic JMS"/>
+    <flow name="test2Flow1" doc:name="test2Flow1">
+        <jms:inbound-endpoint queue="jms.SecuredQueue1" connector-ref="Web_logic_JMS" transformer-refs="JmsMessage_to_Object" doc:name="JMS">
+            <jms:transaction action="BEGIN_OR_JOIN"/>
+        </jms:inbound-endpoint>
+        <message-properties-transformer doc:name="Message Properties">
+            <delete-message-property key="java.naming.security.principal"/>
+            <delete-message-property key="java.naming.security.credentials"/>
+            <delete-message-property key="java.naming.security.authentication"/>
+        </message-properties-transformer>
+    </flow>
+</mule>
+----
+
+例如：
+
+[source, xml, linenums]
+----
+<!--
+ JNDI security props have to be deleted so they aren't propagated to remote destinations in the message
+-->
+<message-properties-transformer name="stripJndiProps">
+  <delete-message-property key="java.naming.security.principal"/>
+  <delete-message-property key="java.naming.security.credentials"/>
+  <delete-message-property key="java.naming.security.authentication"/>
+</message-properties-transformer>
+ 
+<jms:object-to-jmsmessage-transformer name="obj2jms"/>
+<jms:jmsmessage-to-object-transformer name="jms2obj"/>
+ 
+<jms:custom-connector name="weblogicConnector"
+     class="com.mulesoft.mule.transport.jms.weblogic.EeWeblogicJmsConnector"
+     jndiInitialFactory="weblogic.jndi.WLInitialContextFactory"
+     connectionFactoryJndiName="weblogic.jms.ConnectionFactory"
+     jndiDestinations="true"
+     forceJndiDestinations="true"
+     specification="1.1"
+     numberOfConsumers="8"
+     jndiProviderProperties-ref="jmsSecure1Properties"
+     disableTemporaryReplyToDestinations="true">
+</jms:custom-connector>
+ 
+<model name="SecureJMSTesting">
+  <service name="SecureJMS">
+    <inbound>
+      <jms:inbound-endpoint queue="jms.SecuredQueue1"
+            transformer-refs="jms2obj stripJndiProps">
+        <properties>
+          <spring:entry key="java.naming.security.principal" value="user1"/>
+          <spring:entry key="java.naming.security.credentials" value="password1"/>
+          <spring:entry key="java.naming.security.authentication" value="simple"/>
+        </properties>
+ 
+        <jms:transaction action="BEGIN_OR_JOIN"/>
+      </jms:inbound-endpoint>
+</inbound>
+----
+////

@@ -1,0 +1,85 @@
+= 消费AMQP消息
+:keywords: amqp, connector, consume, message
+：TOC：
+：TOC标题：
+
+AMQP连接器中的Consume操作提供了在流的任何给定时间使用来自任何给定的AMQP队列的消息的能力。
+
+== 消费一条消息
+从队列中使用消息的语法是：
+
+[source, xml, linenums]
+----
+<amqp:consume config-ref="AMQP_config" queueName="#[vars.queue]"/>
+----
+
+上面的操作使用queueName标识的队列中的第一条可用消息，然后将其转换为`AmqpMessage`，从而生成以下结构：
+
+* 邮件的内容为有效内容。
+* 消息的消息属性中的元数据
+
+一旦收到，默认情况下，该消息将立即得到确认。如果您想在某些处理后控制消息的确认，则应将`ackMode`设置为`MANUAL`
+有关消息确认的更多信息，请参阅 link:amqp-ack[如何处理确认]。
+
+== 等待消息
+
+默认情况下，最长等待时间配置为10秒，如果该时间段内没有消息可用，则会产生`AMQP:TIMEOUT`错误。
+为了更好地配置适合您的用例的超时，请自定义`maximumWait`和`maximumWaitUnit`参数。
+
+为了无限期地等待消息到达，必须将`maximumWait`值设置为`-1`。在这种情况下，不会引发`TIMEOUT`错误。
+
+==  MIME类型和编码
+
+AMQP连接器尽最大努力根据消息的`contentType`属性自动确定消息的MIME类型（`contentType`）。但是，有些情况下最好的猜测还不够，而且您需要第一手了解Message的内容。
+
+在这种情况下，您可以使用`contentType`参数将该内容类型强制为特定值。
+
+相同的过程适用于编码。默认情况下，如果没有提供其他信息，连接器将假定运行时的默认编码与Message中的编码相匹配。您可以使用`encoding`参数进行设置。
+
+== 在消费操作中声明一个队列
+
+默认情况下，如果定义的队列不存在`AMQP:QUEUE_NOT_FOUND`错误，则`consume`操作将失败。
+
+对于必须声明队列的情况，应该引用或定义内联的定义，以便声明队列。
+
+[source, xml, linenums]
+----
+<amqp:consume config-ref="Amqp_Config" queueName="testQueue">
+	<amqp:fallback-queue-definition removalStrategy="SHUTDOWN" exchangeToBind="exchangeToBindToQueue" />
+</amqp:consume>
+----
+
+请注意，在队列的定义中，可以使用参数`exchangeToBind`创建绑定。
+
+队列也可以定义为高级元素：
+
+[source, xml, linenums]
+----
+<amqp:queue-definition name="targetQueueDefinition" exchangeToBind="testExchange" />
+
+<amqp:consume  config-ref="AMQP_Config" queueName="testQueue" fallbackQueueDefinition="targetQueueDefinition">
+----
+
+== 如何避免更改AMQP地形
+
+您可以设置`createFallbackQueue`全局配置以防止由于回退队列的定义而导致对AMQP拓扑结构的更改，请参阅 link:amqp-topography[如何避免更改AMQP地形]。
+
+== 传入消息元数据
+
+如前所述，收到的每封邮件将由两部分组成：
+
+* 有效内容，包含消息的内容
+* 这些属性包含有关消息的元数据
+
+这个元数据有四个部分映射AMQP消息中可用的所有信息：
+
+* 信封
+*  AckId
+* 集管
+* 属性
+
+检查 link:amqp-documentation[AMQP参考]以了解关于属性结构的详细信息。
+
+== 另请参阅
+
+*  link:amqp-listener[收听新消息]

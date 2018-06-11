@@ -1,0 +1,685 @@
+=  Foreach处理和选择路由示例
+
+这个Mule ESB示例应用程序演示了Web服务集成中基于内容的路由的强大功能。
+
+根据“企业集成模式：设计，构建和部署消息解决方案”（Hohpe，Woolf，2004）第9章中包含的*Loan Broker Example*，该应用程序可最大限度地减少借款人获得贷款最佳利率的工作。这个例子可以帮助你做出明智的决定，使用下面列出的Mule应用程序中的四个元素。
+
+==== 基于内容的路由
+
+image:content_routing.png[content_routing] Mule能够根据其内容智能地通过不同的处理路径路由消息。使用Choice路由器，Mule使用表达式来评估消息的属性或其有效负载的一部分，然后将其路由到特定路径（即一系列消息处理器）。在调用此活动时，基于内容的路由在运行时动态地将路由条件应用于消息。
+
+====  Foreach处理
+
+image:iteration2.png[迭代2]迭代处理器Foreach将集合分解为元素，然后迭代处理它们而不会丢失任何消息负载。 Foreach在分割消息集合并处理各个元素后，会返回对原始消息的引用，从而导致"Java in, Java out"处理。
+
+==== 信息丰富
+
+image:enriched4.png[enriched4] Mule使用消息聚合器来丰富带有数据的消息有效载荷（即，添加到有效载荷），而不是改变有效载荷内容。 Mule丰富了消息的有效载荷，以便应用程序中的其他消息处理器可以访问原始有效载荷。
+
+== 假设
+
+本文档假定您熟悉Mule ESB和 link:/anypoint-studio/v/5/basic-studio-tutorial[Anypoint™Studio界面]。要提高您对Studio的熟悉度，请考虑完成一个或多个 link:/anypoint-studio/v/5/basic-studio-tutorial[Anypoint Studio教程]。
+
+本文档在Mule ESB的图形用户界面（GUI）**Anypoint Studio**的上下文中描述该示例的细节，并在单独的选项卡中包含XML配置详细信息。
+
+== 示例用例
+
+此示例应用程序公开了一个处理最终用户对银行利率报价请求的Web服务。最终用户从Web浏览器提交包含以下内容的请求：
+
+* 借款人的名字
+贷款额* 
+还款期限为贷款的* 
+* 借款人的社会安全号码（SSN）
+
+应用程序访问其他Web服务来处理请求，然后响应最终用户。答复确定了最低报价的银行名称和利率。
+
+Web服务使用五个元素来最大化其处理效率：
+
+*  *Choice Flow Controls*根据内容路由邮件
+*  *Transformers*来转换消息有效载荷的数据格式
+*  *Message Enrichers*添加到消息负载而不是更改
+*  *Foreach*迭代地同步处理消息有效载荷
+*  **Dynamic connectors**根据消息的有效载荷向不同的银行发送请求
+
+== 设置并运行示例
+
+与其他 link:/mule-user-guide/v/3.5/mule-examples[示例模板]一样，您可以直接在*Anypoint Studio*中创建模板应用程序，在这种情况下，也可以在*Mule Standalone*中创建此示例的**loanbroker-simple**。您可以调整这些基于用例的示例的配置，以在Mule中创建您自己的自定义应用程序。
+
+按照以下过程创建，然后在Mule ESB中运行贷款代理应用程序。
+
+.  link:/mule-user-guide/v/3.5/mule-examples[*创建，然后运行*] Anypoint Studio或Standalone Mule中的示例应用程序。
+. 打开您的Web浏览器。
+. 在您的浏览器的地址栏中输入`http://localhost:11081/?name=Muley&amount=20000&term=48&ssn=1234`，然后按*enter*以引发应用程序的响应（如下所示）。 +
+
++
+image:submitted_m.png[submitted_m]
++
+
+. 在浏览器的地址栏中，用`5000`替换`amount`，然后按*enter*以从应用程序中引发新的响应（如下所示）。 +
+
++
+image:submitted2_m.png[submitted2_m] +
+
+== 它是如何工作的
+
+
+此示例应用程序由多个 link:/mule-user-guide/v/3.5/mule-application-architecture[流量和子流量]组成。这些流程集成了Web服务来处理最终用户对银行利率报价的请求。
+
+以下部分提供了应用程序在处理最终用户请求时的操作流程图。
+
+=== 贷款经纪人同步流程
+
+作为应用程序中的主要流程，此流程可协调流程之间的数据收集以产生最终用户响应。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:mainLoanBrokerFlow.png[mainLoanBrokerFlow]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<flow doc:description=" The main loanbroker flow that: i) Receives a customer request ii) Performs a lookup of the customer credit profile using a component binding iii) Determines the bank that should be used to request quotes iv) Sends the request to the selected banks and aggregates responses v) Selects the lowest quote from the list of quotes vi) Returns the response to the client   " doc:name="loan-broker-sync" name="loan-broker-sync">
+        <description>
+            The main loanbroker flow that:
+            i) Receives a customer request
+            ii) Performs a lookup of the customer credit profile using a component
+            binding
+            iii) Determines the bank that should be used to request quotes
+            iv) Sends the request to the selected banks and aggregates responses
+            v) Selects the lowest quote from the list of quotes
+            vi) Returns the response to the client
+        </description>
+        <http:inbound-endpoint address="http://0.0.0.0:11081" doc:name="HTTP" exchange-pattern="request-response"/>
+        <http:body-to-parameter-map-transformer doc:name="Body to Parameter Map"/>
+        <choice doc:name="Choice">
+            <when expression="!(payload.name == null || payload.ssn == null || payload.amount == null || payload.term==null)">
+                <expression-component doc:name="create customer request"><![CDATA[import org.mule.example.loanbroker.message.CustomerQuoteRequest;
+import org.mule.example.loanbroker.model.Customer;
+payload = new CustomerQuoteRequest(new Customer(payload.name,
+Integer.parseInt(payload.ssn)),
+Integer.parseInt(payload.amount),
+Integer.parseInt(payload.term));]]></expression-component>
+                <enricher doc:name="Enrich with creditProfile" source="#[payload]" target="#[flowVars.creditProfile]">
+                    <flow-ref doc:name="lookupCustomerCreditProfile" name="lookupCustomerCreditProfile"/>
+                </enricher>
+                <enricher doc:name="Enrich with banks" source="#[payload]" target="#[flowVars.banks]">
+                    <flow-ref doc:name="lookupBanks" name="lookupBanks"/>
+                </enricher>
+                <set-variable doc:name="create empty quotes" value="#[new java.util.LinkedList()]" variableName="quotes"/>
+                <foreach collection="#[flowVars.banks]" doc:name="Foreach">
+                    <enricher doc:name="Message Enricher" target="#[quotes.add($)]">
+                        <flow-ref doc:name="lookupLoanQuote" name="lookupLoanQuote"/>
+                    </enricher>
+                </foreach>
+                <flow-ref doc:name="findLowestLoanQuote" name="findLowestLoanQuote"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+            </when>
+            <otherwise>
+                <expression-component doc:name="set error message"><![CDATA[payload="Error: incomplete request"]]></expression-component>
+            </otherwise>
+        </choice>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload doc:name="Set error message" value="Error processing loan request"/>
+        </catch-exception-strategy>
+    </flow>
+----
+....
+------
+
+此流程中的请求 - 响应**{{0}} **会收到最终用户请求。由于它具有请求 - 响应交换模式，因此此HTTP连接器负责接收和返回消息。
+
+接下来，*Body to Parameter Map Transformer*将消息有效载荷的数据格式从 http://en.wikipedia.org/wiki/HTTP_body_data[HTTP正文数据]转换为Java http://en.wikipedia.org/wiki/Associative_array[地图]。 Loan Broker应用程序仅处理Java消息有效内容。
+
+然后，Mule使用基于内容的路由器来引导消息进行进一步处理。根据其有效负载内容，**{{0}} **将每条消息路由到两个处理路径之一（请参阅下面的图像和代码）。
+
+* 如果消息有效载荷包含完整请求（即借款人的姓名和SSN以及贷款金额和期限），则选择流程控制将消息传递给`create customer request ` {{2} }。
+* 如果消息有效负载是不完整的请求，则选择流控制将消息传递给`set error message`表达式组件。该组件将消息的有效负载设置为`Error: incomplete request`。穆勒不再进一步处理信息。相反，它会通过错误消息响应最终用户。 +
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:choiceproperties.png[choiceproperties]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+            <when expression="!(payload.name == null || payload.ssn == null || payload.amount == null || payload.term==null)">
+                <expression-component doc:name="create customer request"><![CDATA[import org.mule.example.loanbroker.message.CustomerQuoteRequest;
+import org.mule.example.loanbroker.model.Customer;
+payload = new CustomerQuoteRequest(new Customer(payload.name,
+Integer.parseInt(payload.ssn)),
+Integer.parseInt(payload.amount),
+Integer.parseInt(payload.term));]]></expression-component>
+                <enricher doc:name="Enrich with creditProfile" source="#[payload]" target="#[flowVars.creditProfile]">
+                    <flow-ref doc:name="lookupCustomerCreditProfile" name="lookupCustomerCreditProfile"/>
+                </enricher>
+                <enricher doc:name="Enrich with banks" source="#[payload]" target="#[flowVars.banks]">
+                    <flow-ref doc:name="lookupBanks" name="lookupBanks"/>
+                </enricher>
+                <set-variable doc:name="create empty quotes" value="#[new java.util.LinkedList()]" variableName="quotes"/>
+                <foreach collection="#[flowVars.banks]" doc:name="Foreach">
+                    <enricher doc:name="Message Enricher" target="#[quotes.add($)]">
+                        <flow-ref doc:name="lookupLoanQuote" name="lookupLoanQuote"/>
+                    </enricher>
+                </foreach>
+                <flow-ref doc:name="findLowestLoanQuote" name="findLowestLoanQuote"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+            </when>
+            <otherwise>
+                <expression-component doc:name="set error message"><![CDATA[payload="Error: incomplete request"]]></expression-component>
+            </otherwise>
+        </choice>
+----
+....
+------
+
+`create customer request`组件使用表达式从消息负载中提取数据。它使用这些数据创建一个具有三个值的新Java对象：
+
+.  `Customer`，它标识借款人的名称和SSN
+. 一个`Integer`，标识贷款金额
+. 第二个`Integer`，标识贷款还款期限
+
+[source, xml, linenums]
+----
+<expression-component doc:name="create customer request"><![CDATA[import org.mule.example.loanbroker.message.CustomerQuoteRequest;
+import org.mule.example.loanbroker.model.Customer;
+payload = new CustomerQuoteRequest(new Customer(payload.name,
+Integer.parseInt(payload.ssn)),
+Integer.parseInt(payload.amount),
+Integer.parseInt(payload.term));]]></expression-component>
+----
+
+如果在其有效负载中有一个新的`CustomerQuoteRequest`对象，则消息会遇到其第一个**{{0}}**。在整个流程中，Mule _enriches_带有数据的消息而不是改变有效载荷内容。通过丰富消息，Mule保留有效内容，以便应用程序中的其他元素可以访问原始数据。
+
+`Enrich with creditProfile`浓缩器仅包含一个**{{0}}**。这种类型的组件调用应用程序中的其他流或子流来获取数据，然后将数据添加到消息中。在这种情况下，`lookupCustomerCreditProfile`组件要求lookupCustomerCreditProfile子流访问外部Web服务以获取借款人的信用评分。穆勒用信用评分丰富了信息，然后将信息传递给流中的下一个丰富者。
+
+与其前身一样，`Enrich with Banks`浓缩器使用流参考组件来调用子流并获取数据。在这种情况下，Mule使用LookupBanks子流的结果将一个 http://en.wikipedia.org/wiki/List_(abstract_data_type)[名单]个银行添加到邮件有效负载中，而不是添加信用评分。
+
+然后，Mule使用**{{0}}**创建一个空的列表变量。 Mule将用它从银行提取的引号填充这个空的`quotes`列表变量。如果要填充空列表，则接下来的消息会遇到**{{1}} **范围。这个迭代处理器逐个获取数据来填充列表中的每个项目。
+
+为了获取这些数据，流参考组件首先调用lookupLoanQuote子流从银行获取报价。然后，消息富集器将该引用添加到列表变量中。 Foreach继续援引，然后进行充实，直到它从银行名单上的每家银行获得了一份报价。然后，Foreach将该消息传递给流中的下一个**{{0}}**。
+
+通过一个例子来说明foreach的行为，想象一下包含以下内容的消息负载：
+
+* 一个空的`quotes`列表变量
+* 一个`banks`变量列出了Mule必须要求报价的两家银行：MultiNational Bank and IndustrialGrowth Bank
+
+Foreach处理消息负载如下：
+
+.  Foreach咨询`banks`列表变量，以了解它应该向MultiNational发送其第一个请求。
+.  Foreach调用lookupLoanQuote子流。
+.  lookupLoanQuote子流程会调用`getLoanQuote` Web服务以获取MultiNational的利率报价。
+.  lookupLoanQuote子流向贷款代理同步流提供Web服务响应。
+. 消息richher将来自MultiNational的利率报价插入到`quotes`列表变量中。
+.  Foreach咨询`banks`列表变量，以了解它应该向IndustrialGrowth发送第二个请求。
+.  Foreach调用lookupLoanQuote子流。
+.  lookupLoanQuote子流程将调用`getLoanQuote` Web服务以获取IndustrialGrowth的利率报价。
+.  lookupLoanQuote子流向贷款代理同步流提供Web服务响应。
+. 消息richher将IndustrialGrowth的利率报价插入到`quotes`列表变量中。
+.  Foreach会咨询`banks`列表变量，以便在列表中找不到更多项目。它将消息传递给下一个消息处理器，该消息现在与包含两个利率报价的列表一起传递。请参阅下表以获取消息内容的前后比较。
+
+
+[%header,cols="2*"]
+|===
+{+}}消息内容在+之前
+迭代处理 | +后的消息内容
+迭代处理
+| `banks`列表变量：+
+•www.multinational.com/loans/quotes
+•www.industrialgrowth.com/loans/quotes |`banks`列表变量：+
+•www.multinational.com/loans/quotes +
+•www.industrialgrowth.com/loans/quotes
+| `quote`列表变量： | `quote`列表变量：+
+•6.99 +
+•6.84
+|===
+
+此流程中倒数第二个消息处理器在应用程序中引用另一个子流程。 `findLowestLoanQuote`子流程确定列表中哪个报价最低，然后将结果记录在消息有效负载中。
+
+最后，*Object to String Transformer*将消息有效载荷的数据格式从Java转换为字符串。 HTTP连接器将响应发送给最终用户。
+
+请注意，贷款代理同步流程还包含**{{0}}**。此流程不是使用Mule的 link:/mule-user-guide/v/3.5/error-handling[默认的例外策略]，而是使用定制的异常策略来处理错误。如果流中发生错误，则异常策略*Set Payload Transformer*会在有效负载上设置错误消息。应用程序将此错误消息作为对最终用户的响应发送给`Error processing loan request`。
+
+===  lookupCustomerCreditProfile子流
+
+根据贷款经纪人同步流程的需求进行调用，此子流程获取并记录借款人的信用评分。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:lookupCustomerCreditProfile.png[lookupCustomerCreditProfile]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<sub-flow doc:description="    Returns the customer credit profile obtained form the Credit Agency   " doc:name="lookupCustomerCreditProfile" name="lookupCustomerCreditProfile">
+        <description>
+            Returns the customer credit profile obtained form the Credit Agency
+        </description>
+        <set-payload doc:name="customer" value="#[payload.customer]"/>
+        <processor-chain doc:name="Processor Chain">
+            <cxf:jaxws-client doc:name="getCreditProfile" operation="getCreditProfile" serviceClass="org.mule.example.loanbroker.creditagency.CreditAgencyService"/>
+            <http:outbound-endpoint address="http://localhost:18080/mule/TheCreditAgencyService" doc:name="HTTP"/>
+        </processor-chain>
+        <logger doc:name="creditProfile" level="INFO" message="Credit profile: #[payload]"/>
+    </sub-flow>
+----
+....
+------
+
+为了获得信用评分，`customer`转换器将有效载荷设置为`Customer`，如`create customer request`表达式转换器所定义。 （回想一下`Customer`变量包含借用者的名称和SSN。）Mule向`getCreditProfile` SOAP Web服务发送一个请求。 HTTP连接器将Web服务的响应插入到子流中。
+
+Mule利用 http://cxf.apache.org/[Apache的CXF框架]来构建Web服务。包装**{{1}}**和HTTP出站连接器的处理器链是CXF要求。它确保Mule在记录处理结果之前完成所有处理活动。
+
+最后，在此流程中，**{{0}}**将消息有效载荷上的Web服务响应的有效内容记录为`Credit Profile`。
+
+===  lookupBanks子流
+
+该应用程序可以防止所有银行泄露所有贷款报价请求。例如，一家迎合首映客户的银行会因为信用不良的借款人收到一笔小额贷款的报价而被拒绝。为了防止对银行Web服务的这种令人不快的调用，贷款代理应用程序使用*LookupBanks*子流。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:lookupBanks.png[lookupBanks]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<sub-flow doc:description="    Returns the list of banks to contact and returns it as a flow variable    'banks'   " doc:name="lookupBanks" name="lookupBanks">
+        <description>
+            Returns the list of banks to contact and returns it as a flow variable
+            'banks'
+        </description>
+        <choice doc:name="Choice">
+            <when expression="payload.getLoanAmount() >= 20000">
+                <expression-component doc:name="Bank1, Bank2"><![CDATA[payload=[new  java.net.URI('http://localhost:10080/mule/TheBank1'), new java.net.URI('http://localhost:20080/mule/TheBank2')]]]></expression-component>
+            </when>
+            <when expression="payload.getLoanAmount() >= 10000 || payload.getLoanAmount() &lt;= 19999">
+                <expression-component doc:name="Bank3, Bank4"><![CDATA[payload=[new java.net.URI('http://localhost:30080/mule/TheBank3'), new java.net.URI('http://localhost:40080/mule/TheBank4')]]]></expression-component>
+            </when>
+            <otherwise>
+                <expression-component doc:name="Bank5"><![CDATA[payload=[new java.net.URI('http://localhost:50080/mule/TheBank5')]]]></expression-component>
+            </otherwise>
+        </choice>
+        <logger doc:name="banks" level="INFO" message="Banks to contact: #[payload]"/>
+    </sub-flow>
+----
+....
+------
+
+Mule首先使用选择流量控制来检查有效负载中的`amount`，然后根据贷款的大小路由消息。
+
+* 如果贷款超过20,000美元，流量控制会将消息路由到第一个表达式组件，标记为`Bank 1, Bank 2`。
+* 如果贷款超过$ 10,000，流量控制会将消息路由到第二个表达式组件，标记为`Bank 3, Bank 4`。
+* 如果不是这样（即贷款为$ 10,000或更少），流量控制会将消息路由到标记为`Bank 5`的第三个表达式组件。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:choice2props.png[choice2props]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+            <when expression="payload.getLoanAmount() >= 20000">
+                <expression-component doc:name="Bank1, Bank2"><![CDATA[payload=[new  java.net.URI('http://localhost:10080/mule/TheBank1'), new java.net.URI('http://localhost:20080/mule/TheBank2')]]]></expression-component>
+            </when>
+            <when expression="payload.getLoanAmount() >= 10000 || payload.getLoanAmount() &lt;= 19999">
+                <expression-component doc:name="Bank3, Bank4"><![CDATA[payload=[new java.net.URI('http://localhost:30080/mule/TheBank3'), new java.net.URI('http://localhost:40080/mule/TheBank4')]]]></expression-component>
+            </when>
+            <otherwise>
+                <expression-component doc:name="Bank5"><![CDATA[payload=[new java.net.URI('http://localhost:50080/mule/TheBank5')]]]></expression-component>
+            </otherwise>
+        </choice>
+----
+....
+------
+
+请注意，选择流控件将消息引导至评估为true的第一个表达式。例如，它仅向`Bank 1, Bank 2`组件提供一笔$ 30,000的贷款报价请求。
+
+此子流中的每个表达式组件都包含愿意提供利率报价的银行的URI。例如，传递到`Bank 3, Bank 4`组件的消息作为有效负载添加了银行3和4的URI。`banks`记录器组件记录要向其发送请求的适当银行列表。
+
+===  lookupLoanQuote子流
+
+这会向银行的Web服务发送报价请求。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:lookupLoanQuote.png[lookupLoanQuote]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<sub-flow doc:description="    Returns a loanQuote from a given bank's URI   " doc:name="lookupLoanQuote" name="lookupLoanQuote">
+        <description>
+            Returns a loanQuote from a given bank's URI
+        </description>
+        <set-variable doc:name="bankUri" value="#[payload]" variableName="bankUri"/>
+        <expression-component doc:name="create LoanBrokerLoanRequest"><![CDATA[import org.mule.example.loanbroker.message.LoanBrokerQuoteRequest;
+LoanBrokerQuoteRequest bqr = new LoanBrokerQuoteRequest();
+bqr.setCreditProfile(flowVars.creditProfile);
+payload = bqr;]]></expression-component>
+        <processor-chain doc:name="Processor Chain">
+            <cxf:jaxws-client doc:name="getLoanQuote" operation="getLoanQuote" serviceClass="org.mule.example.loanbroker.bank.BankService"/>
+            <{{0}}:#[flowVars.bankUri.getPort()]#[flowVars.bankUri.getPath()]" doc:name="HTTP"/>
+        </processor-chain>
+        <logger doc:name="quote" level="INFO" message="LoanQuote from #[flowVars.bankUri]: #[payload]"/>
+    </sub-flow>
+----
+....
+------
+
+首先，变量转换器将Mule消息负载（银行的URI）存储为名为`bankUri`的变量。 （回想一下，这个子流从Loan-broker-sync流中的foreach中一次接收一个请求，每个请求的有效载荷是一个银行的URI。）
+
+`create LoanBrokerLoanRequest`组件使用表达式从消息负载中提取借用者的信用配置文件（由`creditProfile`记录器在LookupCustomerCreditProfile流中记录）。它使用数据创建发送到`getLoanQuote` Web服务的请求。 Mule使用配置为JAXWS客户端的CXF组件将请求发送给银行的Web服务。 HTTP出站连接器根据消息有效载荷中的银行URI动态确定发送请求的位置。它从银行的Web服务接收响应并将响应负载推送到`quote`记录器进行记录。
+
+===  findLowestLoanRequest子流
+
+这个简单的子流程使用表达式组件来确定引号列表中的哪个项目提供最低的利率。记录器记录结果。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:findLowest.png[findLowest]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<sub-flow doc:description="    Returns the loan quote with the lowest interest rate   " doc:name="findLowestLoanQuote" name="findLowestLoanQuote">
+        <description>
+            Returns the loan quote with the lowest interest rate
+        </description>
+        <expression-component doc:name="Expression"><![CDATA[import org.mule.example.loanbroker.model.LoanQuote;
+LoanQuote lowestQuote = null;
+for (Object current : (List) flowVars.quotes)
+{
+    LoanQuote loanQuote = (LoanQuote) current;
+    if (lowestQuote == null)
+    {
+    lowestQuote = loanQuote;
+    }
+    else if (loanQuote.getInterestRate() < lowestQuote.getInterestRate())
+    {
+        lowestQuote = loanQuote;
+    }
+}
+payload = lowestQuote;]]></expression-component>
+        <logger doc:name="lowestQuote" level="INFO" message="Lowest loan quote: #[payload]"/>
+    </sub-flow>
+----
+....
+------
+
+组件中的表达式将列表中项目的`getInterestRate`相互比较，以确定哪个项目最低（请参见下图）。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:expressionLoan.png[expressionLoan]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<expression-component doc:name="Expression"><![CDATA[import org.mule.example.loanbroker.model.LoanQuote;
+LoanQuote lowestQuote = null;
+for (Object current : (List) flowVars.quotes)
+{
+    LoanQuote loanQuote = (LoanQuote) current;
+    if (lowestQuote == null)
+    {
+    lowestQuote = loanQuote;
+    }
+    else if (loanQuote.getInterestRate() < lowestQuote.getInterestRate())
+    {
+        lowestQuote = loanQuote;
+    }
+}
+payload = lowestQuote;]]></expression-component>
+----
+....
+------
+
+=== 模拟流程
+
+应用程序中剩余的六个流程是“模拟流程”。它们充当外部Web服务，五个合法流程和子流程将呼叫请求数据。
+
+每个流程包含：
+
+* 请求 - 响应HTTP连接器和CXF组件来接收请求
+产生随机数据以模仿Web服务处理的*  a **{{0}}**
+
+您不需要将这些流程包含在您的定制应用程序中;它们仅仅是为了支持一个功能性的例子
+
+== 完整代码
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:foreachProcessingexample.png[foreachProcessingexample]
+....
+[tab,title="[XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule version="EE-3.5.0" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation=" http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd  http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd  http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd  http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd ">
+    <description>
+        This Synchronous variant of loan broker example is modeled on the
+        Enterprise integration Patterns book sample.
+        See: http://www.eaipatterns.com/ComposedMessagingExample.html
+    </description>
+    <flow doc:description=" The main loanbroker flow that: i) Receives a customer request ii) Performs a lookup of the customer credit profile using a component binding iii) Determines the bank that should be used to request quotes iv) Sends the request to the selected banks and aggregates responses v) Selects the lowest quote from the list of quotes vi) Returns the response to the client   " doc:name="loan-broker-sync" name="loan-broker-sync">
+        <description>
+            The main loanbroker flow that:
+            i) Receives a customer request
+            ii) Performs a lookup of the customer credit profile using a component
+            binding
+            iii) Determines the bank that should be used to request quotes
+            iv) Sends the request to the selected banks and aggregates responses
+            v) Selects the lowest quote from the list of quotes
+            vi) Returns the response to the client
+        </description>
+        <http:inbound-endpoint address="http://0.0.0.0:11081" doc:name="HTTP" exchange-pattern="request-response"/>
+        <http:body-to-parameter-map-transformer doc:name="Body to Parameter Map"/>
+        <choice doc:name="Choice">
+            <when expression="!(payload.name == null || payload.ssn == null || payload.amount == null || payload.term==null)">
+                <expression-component doc:name="create customer request"><![CDATA[import org.mule.example.loanbroker.message.CustomerQuoteRequest;
+import org.mule.example.loanbroker.model.Customer;
+payload = new CustomerQuoteRequest(new Customer(payload.name,
+Integer.parseInt(payload.ssn)),
+Integer.parseInt(payload.amount),
+Integer.parseInt(payload.term));]]></expression-component>
+                <enricher doc:name="Enrich with creditProfile" source="#[payload]" target="#[flowVars.creditProfile]">
+                    <flow-ref doc:name="lookupCustomerCreditProfile" name="lookupCustomerCreditProfile"/>
+                </enricher>
+                <enricher doc:name="Enrich with banks" source="#[payload]" target="#[flowVars.banks]">
+                    <flow-ref doc:name="lookupBanks" name="lookupBanks"/>
+                </enricher>
+                <set-variable doc:name="create empty quotes" value="#[new java.util.LinkedList()]" variableName="quotes"/>
+                <foreach collection="#[flowVars.banks]" doc:name="Foreach">
+                    <enricher doc:name="Message Enricher" target="#[quotes.add($)]">
+                        <flow-ref doc:name="lookupLoanQuote" name="lookupLoanQuote"/>
+                    </enricher>
+                </foreach>
+                <flow-ref doc:name="findLowestLoanQuote" name="findLowestLoanQuote"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+            </when>
+            <otherwise>
+                <expression-component doc:name="set error message"><![CDATA[payload="Error: incomplete request"]]></expression-component>
+            </otherwise>
+        </choice>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload doc:name="Set error message" value="Error processing loan request"/>
+        </catch-exception-strategy>
+    </flow>
+    <sub-flow doc:description="    Returns the customer credit profile obtained form the Credit Agency   " doc:name="lookupCustomerCreditProfile" name="lookupCustomerCreditProfile">
+        <description>
+            Returns the customer credit profile obtained form the Credit Agency
+        </description>
+        <set-payload doc:name="customer" value="#[payload.customer]"/>
+        <processor-chain doc:name="Processor Chain">
+            <cxf:jaxws-client doc:name="getCreditProfile" operation="getCreditProfile" serviceClass="org.mule.example.loanbroker.creditagency.CreditAgencyService"/>
+            <http:outbound-endpoint address="http://localhost:18080/mule/TheCreditAgencyService" doc:name="HTTP"/>
+        </processor-chain>
+        <logger doc:name="creditProfile" level="INFO" message="Credit profile: #[payload]"/>
+    </sub-flow>
+    <sub-flow doc:description="    Returns the list of banks to contact and returns it as a flow variable    'banks'   " doc:name="lookupBanks" name="lookupBanks">
+        <description>
+            Returns the list of banks to contact and returns it as a flow variable
+            'banks'
+        </description>
+        <choice doc:name="Choice">
+            <when expression="payload.getLoanAmount() >= 20000">
+                <expression-component doc:name="Bank1, Bank2"><![CDATA[payload=[new  java.net.URI('http://localhost:10080/mule/TheBank1'), new java.net.URI('http://localhost:20080/mule/TheBank2')]]]></expression-component>
+            </when>
+            <when expression="payload.getLoanAmount() >= 10000 || payload.getLoanAmount() &lt;= 19999">
+                <expression-component doc:name="Bank3, Bank4"><![CDATA[payload=[new java.net.URI('http://localhost:30080/mule/TheBank3'), new java.net.URI('http://localhost:40080/mule/TheBank4')]]]></expression-component>
+            </when>
+            <otherwise>
+                <expression-component doc:name="Bank5"><![CDATA[payload=[new java.net.URI('http://localhost:50080/mule/TheBank5')]]]></expression-component>
+            </otherwise>
+        </choice>
+        <logger doc:name="banks" level="INFO" message="Banks to contact: #[payload]"/>
+    </sub-flow>
+    <sub-flow doc:description="    Returns a loanQuote from a given bank's URI   " doc:name="lookupLoanQuote" name="lookupLoanQuote">
+        <description>
+            Returns a loanQuote from a given bank's URI
+        </description>
+        <set-variable doc:name="bankUri" value="#[payload]" variableName="bankUri"/>
+        <expression-component doc:name="create LoanBrokerLoanRequest"><![CDATA[import org.mule.example.loanbroker.message.LoanBrokerQuoteRequest;
+LoanBrokerQuoteRequest bqr = new LoanBrokerQuoteRequest();
+bqr.setCreditProfile(flowVars.creditProfile);
+payload = bqr;]]></expression-component>
+        <processor-chain doc:name="Processor Chain">
+            <cxf:jaxws-client doc:name="getLoanQuote" operation="getLoanQuote" serviceClass="org.mule.example.loanbroker.bank.BankService"/>
+            <{{0}}:#[flowVars.bankUri.getPort()]#[flowVars.bankUri.getPath()]" doc:name="HTTP"/>
+        </processor-chain>
+        <logger doc:name="quote" level="INFO" message="LoanQuote from #[flowVars.bankUri]: #[payload]"/>
+    </sub-flow>
+    <sub-flow doc:description="    Returns the loan quote with the lowest interest rate   " doc:name="findLowestLoanQuote" name="findLowestLoanQuote">
+        <description>
+            Returns the loan quote with the lowest interest rate
+        </description>
+        <expression-component doc:name="Expression"><![CDATA[import org.mule.example.loanbroker.model.LoanQuote;
+LoanQuote lowestQuote = null;
+for (Object current : (List) flowVars.quotes)
+{
+    LoanQuote loanQuote = (LoanQuote) current;
+    if (lowestQuote == null)
+    {
+    lowestQuote = loanQuote;
+    }
+    else if (loanQuote.getInterestRate() < lowestQuote.getInterestRate())
+    {
+        lowestQuote = loanQuote;
+    }
+}
+payload = lowestQuote;]]></expression-component>
+        <logger doc:name="lowestQuote" level="INFO" message="Lowest loan quote: #[payload]"/>
+    </sub-flow>
+    <!-- MOCK SERVICES -->
+    <flow doc:description="    The credit agency service will get the credit profile for a customer   " doc:name="TheCreditAgencyService" name="TheCreditAgencyService">
+        <description>
+            The credit agency service will get the credit profile for a customer
+        </description>
+        <http:inbound-endpoint address="http://localhost:18080/mule/TheCreditAgencyService" doc:name="HTTP" exchange-pattern="request-response"/>
+        <cxf:jaxws-service doc:name="SOAP" serviceClass="org.mule.example.loanbroker.creditagency.DefaultCreditAgency"/>
+        <component doc:name="creditAgency">
+            <singleton-object class="org.mule.example.loanbroker.creditagency.DefaultCreditAgency"/>
+        </component>
+    </flow>
+    <flow doc:description="    Mock flow representing Bank 1   " doc:name="Bank1Flow" name="Bank1Flow">
+        <description>
+            Mock flow representing Bank 1
+        </description>
+        <http:inbound-endpoint address="http://localhost:10080/mule/TheBank1" doc:name="HTTP" exchange-pattern="request-response"/>
+        <cxf:jaxws-service doc:name="SOAP" serviceClass="org.mule.example.loanbroker.bank.Bank"/>
+        <component doc:name="Bank 1">
+            <singleton-object class="org.mule.example.loanbroker.bank.Bank">
+                <property key="bankName" value="Bank #1"/>
+            </singleton-object>
+        </component>
+    </flow>
+    <flow doc:description="    Mock flow representing Bank 2   " doc:name="Bank2Flow" name="Bank2Flow">
+        <description>
+            Mock flow representing Bank 2
+        </description>
+        <http:inbound-endpoint address="http://localhost:20080/mule/TheBank2" doc:name="HTTP" exchange-pattern="request-response"/>
+        <cxf:jaxws-service doc:name="SOAP" serviceClass="org.mule.example.loanbroker.bank.Bank"/>
+        <component doc:name="Bank 2">
+            <singleton-object class="org.mule.example.loanbroker.bank.Bank">
+                <property key="bankName" value="Bank #2"/>
+            </singleton-object>
+        </component>
+    </flow>
+    <flow doc:description="    Mock flow representing Bank 3   " doc:name="Bank3Flow" name="Bank3Flow">
+        <description>
+            Mock flow representing Bank 3
+        </description>
+        <http:inbound-endpoint address="http://localhost:30080/mule/TheBank3" doc:name="HTTP" exchange-pattern="request-response"/>
+        <cxf:jaxws-service doc:name="SOAP" serviceClass="org.mule.example.loanbroker.bank.Bank"/>
+        <component doc:name="Bank 3">
+            <singleton-object class="org.mule.example.loanbroker.bank.Bank">
+                <property key="bankName" value="Bank #3"/>
+            </singleton-object>
+        </component>
+    </flow>
+    <flow doc:description="    Mock flow representing Bank 4   " doc:name="Bank4Flow" name="Bank4Flow">
+        <description>
+            Mock flow representing Bank 4
+        </description>
+        <http:inbound-endpoint address="http://localhost:40080/mule/TheBank4" doc:name="HTTP" exchange-pattern="request-response"/>
+        <cxf:jaxws-service doc:name="SOAP" serviceClass="org.mule.example.loanbroker.bank.Bank"/>
+        <component doc:name="Bank 4">
+            <singleton-object class="org.mule.example.loanbroker.bank.Bank">
+                <property key="bankName" value="Bank #4"/>
+            </singleton-object>
+        </component>
+    </flow>
+    <flow doc:description="    Mock flow representing Bank 5   " doc:name="Bank5Flow" name="Bank5Flow">
+        <description>
+            Mock flow representing Bank 5
+        </description>
+        <http:inbound-endpoint address="http://localhost:50080/mule/TheBank5" doc:name="HTTP" exchange-pattern="request-response"/>
+        <cxf:jaxws-service doc:name="SOAP" serviceClass="org.mule.example.loanbroker.bank.Bank"/>
+        <component doc:name="Bank 5">
+            <singleton-object class="org.mule.example.loanbroker.bank.Bank">
+                <property key="bankName" value="Bank #5"/>
+            </singleton-object>
+        </component>
+    </flow>
+</mule>
+----
+....
+------
+
+== 另请参阅
+
+* 有关路由消息的更多信息，请参阅 link:/mule-user-guide/v/3.5/choice-flow-control-reference[选择路由器]。
+* 有关丰富邮件的更多信息，请参阅 link:/mule-user-guide/v/3.5/scopes[领域]。
+* 有关在消息上设置变量的更多信息，请参阅 link:/mule-user-guide/v/3.5/variable-transformer-reference[可变变压器参考]。
+* 有关迭代处理的更多信息，请参阅 link:/mule-user-guide/v/3.5/foreach[的foreach]。
+* 有关将异常策略应用于流程的更多信息，请参阅 link:/mule-user-guide/v/3.5/error-handling[错误处理]。
+* 有关配置CXF组件的更多信息，请参阅 link:/mule-user-guide/v/3.5/cxf-component-reference[CXF组件参考]。
+* 探索更多 link:/mule-user-guide/v/3.5/mule-examples[Mule应用程序示例]来检查不同功能的行为。

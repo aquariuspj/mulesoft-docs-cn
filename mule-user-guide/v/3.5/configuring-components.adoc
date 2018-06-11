@@ -1,0 +1,104 @@
+= 配置组件
+:keywords: components, anypoint, studio, esb
+
+组件包含用于处理通过Mule ESB传递的消息的业务逻辑。组件可以是任何类型的对象，包括 link:/mule-user-guide/v/3.7/using-spring-beans-as-flow-components[春豆]， link:/mule-user-guide/v/3.7/configuring-java-components[POJO]， link:/mule-user-guide/v/3.6/scripting-module-reference[脚本]， link:/mule-user-guide/v/3.7/using-web-services[网络服务]或REST调用。
+
+由于它们对于您的实施非常具体，因此您通常会 link:/mule-user-guide/v/3.7/developing-components[创建您自己的自定义组件]，或者只是使用现有的POJO。 Mule还附带一些标准组件，您可以根据需要使用或扩展它们。本页介绍如何配置不同类型的组件。
+
+有关为组件配置的元素的详细信息，请参阅 link:/mule-user-guide/v/3.6/component-configuration-reference[组件配置参考]。
+
+== 简单的组件
+
+Mule包含几个简单的组件，可用于测试或绕过组件执行。
+
+[%header%autowidth.spread]
+|===
+|配置元素 |描述
+| *<log-component/>*  |记录组件调用，将接收到的消息作为字符串输出。该组件不返回响应。
+| *<echo-component/>*  |将日志组件扩展为日志并回显传入的消息。消息在返回之前会被转换，因此将应用入站端点上的转换。
+| *<null-component/>*  |调用时引发异常。这对测试使用转发消费者入站路由器的用例很有用。
+| *<test:component/>*  |配置Mule `FunctionalTestComponent`，它允许创建更复杂的测试场景。有关更多信息，请参阅 link:/mule-user-guide/v/3.7/functional-testing[功能测试]。
+|===
+
+==  Java组件
+
+Java组件指定要用作组件的Java类或配置对容器（例如Spring）中的实现的引用。他们还配置了Mule应该如何管理Java组件的生命周期，调用它以及（如果合并）管理实例池的方式。
+
+通过在`<component>`或`<pooled-component>`元素上指定组件实现类名称，可以快速轻松地配置Java组件。 `<pooled-component>`元素允许您为流建立共享配置文件（请参阅 link:/mule-user-guide/v/3.6/tuning-performance[调整性能]）。在这两种情况下，默认都会使用`PrototypeObjectFactory`，并为每个请求创建新的对象实例，或者为池中的每个新对象创建新的对象实例（对于共用组件）。
+
+[source, xml, linenums]
+----
+<component class="org.my.ComponentImpl"/>
+...
+<pooled-component class="org.my.ComponentImpl"/>
+----
+
+或者，您可以明确指定对象工厂，例如创建对象的单个实例的`SingletonObjectFactory`：
+
+[source, xml, linenums]
+----
+<component>
+     <singleton-object class="org.my.ComponentImpl"/>
+</component>
+----
+
+如果向组件添加拦截器，则需要显式语法而不是快捷方式`<component class>`语法。有关应用的默认设置的更多配置选项和信息，请参阅 link:/mule-user-guide/v/3.7/configuring-java-components[配置Java组件]。
+
+== 使用拦截器自定义行为
+
+Mule拦截器对于将行为附加到多个组件很有用。拦截器模式通常被称为实用AOP（面向方面​​编程），因为它允许开发人员拦截对象上的处理并可能改变处理和结果。有关完整信息，请参阅 link:/mule-user-guide/v/3.6/using-interceptors[使用拦截器]。
+
+== 生命周期
+
+组件像Mule注册表中的任何其他对象一样具有生命周期。生命周期可通过向组件添加一个或多个生命周期界面进行配置。由于Mule 3.0 http://en.wikipedia.org/wiki/JSR_250[JSR-250]注释可用于配置初始化和销毁​​方法。以下列表按顺序描述了组件对象的生命周期阶段。
+
+[%header,cols="4*"]
+|===
+| {生命周期{1}}说明 | {接口{3}}注解
+|初始化 |调用组件上的任何注入器后调用的第一个生命周期方法。这意味着组件上的任何属性都将在初始化生命周期被调用之前设置。 | `org.mule.api.lifecycle.Initialisable`  | `javax.annotation.PostConstruct`
+| start  |这在MuleContext启动时调用。 | `org.mule.api.lifecycle.Startable`  | 
+| stop  |当MuleContext停止时调用此函数。 | `org.mule.api.lifecycle.Stoppable`  | 
+| dispose  |当对象正在处理时被调用。通常发生这种情况是因为MuleContext正在关闭。 | `org.mule.api.lifecycle.Disposible`  | `javax.annotation.PreDestroy`
+|===
+
+=== 生命周期示例
+
+==== 完整生命周期：
+
+[source, code, linenums]
+----
+org.my.ComponentImpl implements org.my.Component, org.mule.api.lifecycle.Lifecycle
+{
+    public void initialise() throws InitialisationException { }
+ 
+    public void start() throws MuleException { }
+ 
+    public void stop() throws MuleException { }
+ 
+    public void dispose() { }
+}
+----
+
+==== 仅初始化生命周期：
+
+[source, code, linenums]
+----
+org.my.ComponentImpl implements org.my.Component, org.mule.api.lifecycle.Initialisable
+{
+    public void initialise() throws InitialisationException { }
+}
+----
+
+==== 使用 http://en.wikipedia.org/wiki/JSR_250[JSR-250]批注初始化/处置生命周期：
+
+[source, code, linenums]
+----
+org.my.ComponentImpl implements org.my.Component
+{
+    @PostConstruct
+    public void init() { }
+ 
+    @PreDestroy
+    public void destroy() { }
+}
+----

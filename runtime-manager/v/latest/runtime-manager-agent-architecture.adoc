@@ -1,0 +1,139 @@
+= 运行时管理器代理体系结构
+:keywords: agent, mule, esb, servers, monitor, notifications, external systems, third party, get status, metrics
+
+image:logo-cloud-disabled.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-active.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-active.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+Runtime Manager Agent是一个Mule插件，它将Mule ESB JAVA API作为服务公开，允许用户从外部系统操纵和监控Mule ESB实例。
+
+本文档显示Runtime Manager Agent体系结构及其主要组件的概述。
+
+== 运行时管理器代理主要组件
+
+===  Mule服务
+
+连接到Mule API。该组件不知道传输层（消息将如何通过/向用户传送）。
+
+=== 运输
+
+处理通信层。包括保持活动状态，安全性和协议。
+
+=== 外部消息处理程序
+
+向用户公开Web服务API。任何传入的消息（例如部署请求）都由外部消息处理程序处理。根据请求，可以执行Mule服务或多个Mule服务。
+
+=== 内部消息处理程序
+
+每次收到Mule通知时都会被Mule服务调用。
+
+== 消息
+
+代理商有三种与Mule沟通的方式，如下所述。
+
+=== 同步通信
+
+示例：获取部署的应用程序
+
+image:synchronous.png[同步]
+
+=== 异步通信
+
+示例：部署并通知部署阶段。
+
+image:asynchronous-agent.png[异步]
+
+=== 推送沟通
+
+示例：将JMX信息推送到外部系统。
+
+image:push-agent.png[推]
+
+== 架构图
+
+代理的架构非常简单：
+
+* 传输处理通信
+* 外部消息处理程序分派消息
+* 服务连接到Mule API
+* 内部消息处理程序派发Mule通知
+
+下面的图表显示了每种组件的交互（三种消息类型（同步，异步和推送））：
+
+image:architecture-agent.png[建筑]
+
+
+== 组件如何交互
+
+以下是组件交互的典型序列的概述：
+
+. 外部系统向代理发送请求。
+. 执行外部消息处理程序，并使用该接口调用Mule服务。
+.  Mule服务调用Mule执行相应的操作。
+.  Mule回复通知。
+. 服务将通知映射到代理通知，并查找可处理通知类型的内部消息处理程序。
+. 执行相应的内部消息处理程序。
+
+== 运行时管理器代理配置
+
+启动时，Runtime Manager Agent从文件`$MULE_HOME/conf/mule-agent.yml`中读取其配置。您必须手动添加，然后使用安装的配置参数编辑此文件。格式是不言自明的;一个示例文件可供下载。
+
+在安装过程中，您还可以选择通过快速启动脚本配置Runtime Manager Agent。有关详情，请参阅 link:/runtime-manager/installing-and-configuring-runtime-manager-agent[安装和配置Runtime Manager Agent]
+
+== 可配置组件
+
+您可以在`mule-agent.yml`文件中配置组件属性。为此，您可以将类属性注释为`@Configurable`。
+
+[source, java, linenums]
+----
+@Singleton
+public class MyRequestHandler implements ExternalMessageHandler
+{
+    @Inject
+    private MuleService muleService;
+
+    @Configurable
+    public String host;
+    ...
+}
+----
+
+== 运行时管理器代理WebSocket协议
+
+通过WebSockets与代理进行通信实现HTTP协议。发往和来自代理的所有消息都是通过WebSocket作为二进制消息或文本（取决于代理配置）发送的HTTP消息。这些HTTP消息与代理REST通信中使用的相同。
+
+===  WebSocket握手
+
+握手是特定于WebSocket传输的过程。启动时，代理将握手请求发送到与控制台相对应的WebSocket地址（从代理配置获取）。之后，代理将忽略所有不能识别为握手响应的传入消息。当它收到它标识为握手响应的消息时，会检查响应是否有效。如果是，代理将开始响应所有传入消息。
+
+==== 握手请求
+
+以下是握手请求的示例。
+----
+POST handshake HTTP/1.1
+Content-Type: application/json
+Message-Id: ${messageId}
+accept: application/json
+Content-length: 1234
+
+{
+"agentVersion": "1.0.0",
+"muleVersion": "${muleVersion}",
+"uniqueId": "${uniqueId}"
+}
+----
+
+==== 握手响应
+
+授权：
+----
+HTTP 200 OK
+Message-Id: ${messageId}
+----
+
+未经授权：
+----
+HTTP 401 UNAUTHORIZED
+Message-Id: ${messageId}
+----

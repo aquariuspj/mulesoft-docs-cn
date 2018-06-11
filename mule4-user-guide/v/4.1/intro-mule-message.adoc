@@ -1,0 +1,76 @@
+=  Mule 4简介：骡子信息
+
+Mule 4包含一个简化的Mule消息模型，其中每个Mule事件都有一个消息和与其相关的变量。 Mule消息由有效载荷及其属性（元数据，如文件大小）组成。变量保存任意的用户信息，如操作结果，辅助值等。这种简化的消息模型使跨连接器以一致的方式处理数据变得更加容易，而不会覆盖信息。
+
+== 入站属性现在是属性
+
+在Mule 3中，入站属性存储有关通过消息源获得的有效负载的附加信息，例如通过HTTP侦听器发送的查询参数。 Mule 4中的属性取代入站属性并具有以下优点：
+
+* 它们是强类型的，所以您可以轻松查看可用的数据。
+* 它们可以轻松存储在您可以在整个流程中访问的变量中。下面是Mule 4中典型的Mule消息的HTTP侦听器示例：
+
+image:mule-message.png[Mule中的Mule消息结构4]
+
+例如，属性可以通过表达式轻松访问，就像入站属性在Mule 3中一样：
+[source,linenums]
+----
+attributes.requestPath
+attributes.queryParams.searchCriteria
+----
+
+== 出站属性
+
+在Mule 3中，需要发送额外数据的连接器和传输（如标题）必须明确指定出站属性。例如，使用HTTP侦听器，您可能需要指定传出状态码响应或标题。在Mule 4中，您可以分别使用各自的DataWeave表达式为它们中的每一个设置它们，而不会在主流程中引入任何副作用：
+
+[source,xml,linenums]
+----
+<http:request path="issues" config-ref="http" method="GET">
+    <{{0}}</http:headers>
+    <{{0}}</http:query-params>
+</http:request>
+----
+
+上面的示例执行HTTP请求，其中各个DataWeave脚本生成标题和查询参数，而不需要设置消息属性，也不会在消息上产生任何副作用。
+
+相同的概念可以应用于发出响应的消息源，例如HTTP侦听器：
+
+[source,xml,linenums]
+----
+<http:listener config-ref="api-httpListenerConfig" path="/api/*" doc:name="Listener">
+    <{{0}}">
+        <{{0}}</http:headers>
+    </http:response>
+    <{{0}}">
+        <{{0}}</http:body>
+        <{{0}}</http:headers>
+    </http:error-response>
+</http:listener>
+----
+
+//为JIRA提出建议https://www.mulesoft.org/jira/browse/DOCS-2114
+//请注意，变量在流程的上下文中工作。操作不会将变量传播到另一个流中的组件（如侦听器）。例如，变量不会在VM端点之间传播。为了使一个流（流1）的变量对另一个流（流2）可用，您需要将它们显式设置为通过VM连接器发送的消息的一部分，而不是使用Set Variable组件创建它们。
+
+// TODO：需要例子
+
+== 会话属性
+由于交通障碍不再存在，会话属性不再需要，并且在Mule 4中已被删除。您应该将数据存储在变量中。
+
+== 附件
+入站和出站附件已被删除。受影响的连接器现在自行处理附件概念：
+
+*  HTTP现在依赖于DataWeave的多部分格式支持。
+* 电子邮件和Web服务使用者允许使用DataWeave明确添加附件。
+
+
+== 消息集合
+
+新Mule Message结构的好处之一就是在处理集合时。在Mule 3中，返回多个有效载荷的组件使用称为`MuleMessageCollection`的特殊结构。在Mule 4中，任何组件
+需要处理多个消息的消息可以简单地将消息的有效载荷设置为Mule消息列表。然后，您可以使用DataWeave，For Each或其他组件遍历这些消息。
+
+例如，`<file:list>`操作检索消息列表。每条消息都具有每个文件的属性，这使得根据文件大小做出决定变得容易，无论是文件夹还是目录等。
+
+== 另请参阅
+
+link:migration-connectors-http[迁移HTTP连接器使用]
+link:dataweave-formats[DataWeave格式支持]
+link:migration-core-enricher[将Enricher迁移到目标变量]

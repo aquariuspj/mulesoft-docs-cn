@@ -1,0 +1,173 @@
+=  WS-Security示例
+
+[ <<Starting the Example>> ] [ <<No Security>> ] [ UsernameToken ] [ Signatures ] [ Encryption ] [ SAML ]
+
+WS-Security示例演示了将WS-Security合并到Mule应用程序中的不同可能性。
+
+== 开始示例
+
+WS-Security示例位于$ MULE_HOME / examples / security目录中，其中$ MULE_HOME是安装Mule Enterprise的路径。
+
+首先，将示例的$ MULE_HOME / examples / security中的zip文件复制到$ MULE_HOME / apps目录中，然后启动mule。
+
+从$ MULE_HOME / examples / security运行`./security`（Unix / Linux / Mac）或`security.bat`（Windows）。
+
+*Tip:*编辑示例的"log4j.properties"文件，以便将`org.apache.cxf`类的日志记录级别设置为INFO。这可以记录Mule日志文件中的请求/响应消息的SOAP XML。 log4j.properties文件可以在$ MULE_HOME / apps / mule-example-security  -  <version> / classes中找到。编辑完成后，触摸示例配置（在$ MULE_HOME / apps / mule-example-security  -  <version>中找到）来触发重新部署应用程序。
+
+启动`security`脚本后，出现以下菜单：
+
+----
+ 1. No security2. UsernameToken3. UsernameToken with wrong password (error)4. UsernameToken Signed5. UsernameToken missing signature (error)6. UsernameToken Encrypted7. SAMLToken8. SAMLToken wrong subject (error)q. Quit
+----
+
+这些选项中的每一个都会调用同一个简单Web服务的一个实例，每个实例都受到不同形式的安全保护。每个实例使用`$MULE_HOME/examples/security/src/main/app`目录中的配置文件。本示例中提供的其他资源可以在`$MULE_HOME/examples/security/src/main/resources`中找到。
+
+本页面的其余部分描述了这些场景。
+
+== 无安全性
+
+在我们的Mule配置中，我们将使用基本的Web服务，没有任何安全性。
+
+[source,xml]
+----
+<flow name="UnsecureServiceFlow">    <inbound-endpoint address="http://localhost:63081/services/unsecure" exchange-pattern="request-response"/>    <cxf:jaxws-service serviceClass="com.mulesoft.mule.example.security.Greeter">        <cxf:features>            <spring:bean class="org.mule.module.cxf.feature.PrettyLoggingFeature" />            </cxf:features>        </cxf:jaxws-service>        <component class="com.mulesoft.mule.example.security.GreeterService" /></flow>
+----
+
+
+从菜单中选择选项＃1以调用此服务。我们可以看到发送简单的SOAP请求消息：
+
+[source,xml]
+----
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">  <soap:Body>    <ns2:greet xmlns:ns2="http://security.example.mule.org/">      <name>Mule</name>    </ns2:greet>  </soap:Body></soap:Envelope>
+----
+
+和该服务的同样简单的响应信息：
+
+[source,xml]
+----
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">  <soap:Body>    <ns2:greetResponse xmlns:ns2="http://security.example.mule.org/">      <name>Hello Mule</name>    </ns2:greetResponse>  </soap:Body></soap:Envelope>
+----
+
+
+== 的UsernameToken
+
+现在让我们为服务添加一些简单的安全性。我们将从基本的用户名认证开始。为此，我们将向入站CXF端点添加一个WSS4J拦截器：
+
+[source,xml]
+----
+<cxf:inInterceptors>    <spring:bean class="org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor">        <spring:constructor-arg>            <spring:map>                  <spring:entry key="action" value="UsernameToken Timestamp" />                  <spring:entry key="passwordCallbackClass"value="org.mule.example.security.PasswordCallback" />            </spring:map>        </spring:constructor-arg>    </spring:bean></cxf:inInterceptors>
+----
+
+
+我们在这个拦截器上指定的最重要的是*action*，它是WS-Security的特性/方面列表，我们希望在收到传入消息时进行验证。在这种情况下，我们指定`UsernameToken`，它将检查用户名和密码，`Timestamp`将验证邮件是否过旧。我们还指定密码回调，以便我们的密码不会存储在配置文件本身中。
+
+[source,java]
+----
+public class PasswordCallback implements CallbackHandler{    public void handle(Callback[] callbacks)      {        ...cut...        if (pc.getIdentifier().equals("joe"))         {            pc.setPassword("secret");        }...cut...
+----
+
+
+从菜单中选择选项＃2将为我们的SOAP请求创建适当的WS-Security标头：
+
+[source,xml]
+----
+<soap:Header>  <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" soap:mustUnderstand="1">    <wsu:Timestamp xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" wsu:Id="Timestamp-2">      <wsu:Created>2009-11-11T00:05:05.044Z</wsu:Created>      <wsu:Expires>2009-11-11T00:10:05.044Z</wsu:Expires>    </wsu:Timestamp>    <wsse:UsernameToken xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" wsu:Id="UsernameToken-1">      <wsse:Username>joe</wsse:Username>      <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">53d055aB/snZJelfToizUd5s1p8=</wsse:Password>      <wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">uHT6rXehXO83lMQGKXg8uw==</wsse:Nonce>      <wsu:Created>2009-11-11T00:05:05.042Z</wsu:Created>    </wsse:UsernameToken>  </wsse:Security></soap:Header>
+----
+
+
+我们可以在标题中看到用户名和密码以及时间戳。请注意，密码是摘要形式，而不是纯文本，这是默认行为。
+
+现在选择选项＃3，看看如果提供了错误的密码会发生什么情况：
+
+----
+org.apache.ws.security.WSSecurityException: The security token could not be authenticated or authorized  at org.apache.ws.security.processor.UsernameTokenProcessor.handleUsernameToken(UsernameTokenProcessor.java:143)  at org.apache.ws.security.processor.UsernameTokenProcessor.handleToken(UsernameTokenProcessor.java:56)  at org.apache.ws.security.WSSecurityEngine.processSecurityHeader(WSSecurityEngine.java:326)  at org.apache.ws.security.WSSecurityEngine.processSecurityHeader(WSSecurityEngine.java:243)  at org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor.handleMessage(WSS4JInInterceptor.java:159)
+----
+
+
+== 签名
+
+验证用户的更高级的方式是通过数字签名。要基于签名进行验证，我们需要向入站端点添加新的签名操作：
+
+[source,xml]
+----
+<spring:entry key="action" value="UsernameToken Signature Timestamp" /><spring:entry key="signaturePropFile" value="wssecurity.properties" />
+----
+
+签名是基于密钥库进行验证的，所以我们还需要指定一些关于我们正在使用的密钥库的信息。以下属性位于`wssecurity.properties`文件中：
+
+[source,java]
+----
+org.apache.ws.security.crypto.merlin.file=keystore.jksorg.apache.ws.security.crypto.merlin.keystore.password=keyStorePassword
+----
+
+我们可以使用Java keytool命令来验证用户"joe"的证书是否存在于我们的密钥库中：
+
+----
+$ keytool -list -v -keystore ./src/main/resources/keystore.jks -alias joeEnter keystore password:  keyStorePassword Alias name: joeCreation date: Sep 24, 2009Entry type: keyEntryCertificate chain length: 1Certificate[1]:Owner: CN=joeIssuer: CN=joeSerial number: 4abb93daValid from: Thu Sep 24 11:44:26 CLT 2009 until: Wed Dec 23 12:44:26 CLST 2009Certificate fingerprints:   MD5:  24:08:D3:3B:D1:FE:E0:18:6B:12:DC:79:98:EE:62:6D   SHA1: 25:69:19:52:C9:FE:26:64:F7:C8:F3:BF:E4:9A:5B:71:B4:9E:9F:C3
+----
+
+
+请注意，此证书是自签名的。在现实世界中，它将由可信任的第三方如Verisign发布。
+
+从菜单中选择选项＃4将使用签名的SOAP消息调用Web服务：
+
+[source,xml]
+----
+<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"  Id="Signature-2">  <ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">    <ds:CanonicalizationMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#"      Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#" />    <ds:SignatureMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#"      Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1" />    <ds:Reference xmlns:ds="http://www.w3.org/2000/09/xmldsig#"  URI="#id-3">      <ds:Transforms xmlns:ds="http://www.w3.org/2000/09/xmldsig#">        <ds:Transform xmlns:ds="http://www.w3.org/2000/09/xmldsig#"          Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#" />      </ds:Transforms>      <ds:DigestMethod xmlns:ds="http://www.w3.org/2000/09/xmldsig#"        Algorithm="http://www.w3.org/2000/09/xmldsig#sha1" />      <ds:DigestValue xmlns:ds="http://www.w3.org/2000/09/xmldsig#">AtIQc6I4I62MvLRJd+S8jdiS5SE=</ds:DigestValue>    </ds:Reference>  </ds:SignedInfo>  <ds:SignatureValue xmlns:ds="http://www.w3.org/2000/09/xmldsig#">    VFT2zQ+wpoY/C1sTyDMYkD0Z/Vij4GM8mGaoa26aUw5WuRPUxHure7dwsGMF4ivj96cSMo/AQpFR    C/rVdwVEGbobmkrpp/IwkGIwXu2lNf5yAOalIVdLQCeSUdT8KqAHYzQbyYxOKWaroFzkws/+E4Xm    mNAoiJixK71EPmyqNe0=    </ds:SignatureValue>  <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="KeyId-FCBB1376C4DCB7E74C12579545658052">    <wsse:SecurityTokenReference      xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"      xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"      wsu:Id="STRId-FCBB1376C4DCB7E74C12579545658073">      <ds:X509Data xmlns:ds="http://www.w3.org/2000/09/xmldsig#">        <ds:X509IssuerSerial xmlns:ds="http://www.w3.org/2000/09/xmldsig#">          <ds:X509IssuerName xmlns:ds="http://www.w3.org/2000/09/xmldsig#">CN=joe</ds:X509IssuerName>          <ds:X509SerialNumber xmlns:ds="http://www.w3.org/2000/09/xmldsig#">1253807066</ds:X509SerialNumber>        </ds:X509IssuerSerial>      </ds:X509Data>    </wsse:SecurityTokenReference>  </ds:KeyInfo></ds:Signature>
+----
+
+
+选项＃5显示了如果我们尝试发送未被joe签名的消息，会发生什么情况：
+
+----
+org.apache.ws.security.WSSecurityException: An error was discovered processing the  header  at org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor.handleMessage(WSS4JInInterceptor.java:238)
+----
+
+
+== 加密
+
+请注意，到目前为止，所有的安全信息都包含在SOAP消息的头部，但消息的主体是完全透明的。我们可以通过向我们的服务添加加密操作来加密邮件正文：
+
+[source,xml]
+----
+<spring:entry key="action" value="UsernameToken Timestamp Encrypt" /><spring:entry key="decryptionPropFile" value="wssecurity.properties" />Selecting option #6 will send a SOAP message with the body encrypted:<soap:Body>  <xenc:EncryptedData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"    Id="EncDataId-9" Type="http://www.w3.org/2001/04/xmlenc#Content">    <xenc:EncryptionMethod xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"      Algorithm="http://www.w3.org/2001/04/xmlenc#aes128-cbc" />    <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">      <wsse:SecurityTokenReference        xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">        <wsse:Reference          xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"          URI="#EncKeyId-FCBB1376C4DCB7E74C12579575025715" />      </wsse:SecurityTokenReference>    </ds:KeyInfo>    <xenc:CipherData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">      <xenc:CipherValue xmlns:xenc="http://www.w3.org/2001/04/xmlenc#">4bJWs2bQKdzof3FM2U5O3qTa4EhuSdItuE6zjSfi8BNqO+y/7V3cU2T4j6ewMo/TAUyyvDNLqluL        +kaAJen3hE/KWkFKfo5CAVeE3ifbBK10lem8cGo5qwAPXZjlCYY52xv1QpW3hlv9E63J0hcbnQQr        BAcF4LwlGzIybwaeydju3Y34hU+nhVpgmiBahwKHD6R+7EuUrwby7t7pQnh53gtEvqkH0YES5dVx        yOqTtLsBTLu/Xz2IzeRiGQBqFJVHzwueOaS1L7A2mlLebmUiEQ==</xenc:CipherValue>    </xenc:CipherData>  </xenc:EncryptedData></soap:Body>
+----
+
+
+没有用户的签名，该消息将不会被解密，所以密钥库再次用于加密。
+
+==  SAML
+
+该场景使用SAML模块。由于SAML用于单点登录，因此假定用户的身份验证已经发生，并且SAML令牌仅包含一个或多个主题，这些主题提供一些其他系统可以理解的信息。在这种情况下，我们将配置我们的服务以要求AllowGreetingServices的SAML主题。对于我们的入站端点，我们添加一个带回调的SAMLVerifyInterceptor，它将检查正确的SAML主题：
+
+[source,xml]
+----
+<spring:bean class="org.mule.module.saml.cxf.SAMLVerifyInterceptor">     <spring:property name="callback">          <spring:bean class="org.mule.example.security.VerifyAuthorization">               <spring:property name="subject" value="AllowGreetingServices" />          </spring:bean>     </spring:property></spring:bean>
+----
+
+
+[source,java]
+----
+public class VerifyAuthorization implements SAMLVerifyCallback{    private String subject;        public SAMLAuthenticationAdapter verify(SAMLAuthenticationAdapter samlAuthentication) throws SecurityException    {        SAMLSubject samlSubject = samlAuthentication.getSubject();        if (!samlSubject.getNameIdentifier().getName().equals(subject))        {            throw new UnauthorisedException(...cut...
+----
+
+
+选项＃7将预期的SAML令牌添加到消息的WS-Security报头中：
+
+[source,xml]
+----
+<Assertion xmlns="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:samlp="urn:oasis:names:tc:SAML:1.0:protocol" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" AssertionID="_40082eadbf045476e26a107e4f37861d" IssueInstant="2009-11-13T02:26:06.569Z" Issuer="self" MajorVersion="1" MinorVersion="1">  <AuthenticationStatement AuthenticationInstant="2009-11-13T02:26:06.569Z" AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:password">    <Subject>      <NameIdentifier>AllowGreetingServices</NameIdentifier>      <SubjectConfirmation>        <ConfirmationMethod>urn:oasis:names:tc:SAML:1.0:cm:sender-vouches</ConfirmationMethod>      </SubjectConfirmation>    </Subject>  </AuthenticationStatement></Assertion>
+----
+
+
+选择选项＃8将发送没有预期主题的SAML令牌：
+
+----
+ Missing SAML authorization for resource: AllowGreetingServices. Message payload is of type: ChunkedInputStream  at org.mule.module.saml.cxf.SAMLVerifyInterceptor.handleMessage(SAMLVerifyInterceptor.java:99)
+----
+
+
+要验证收到的SAML令牌是否可信，SAML提供了两种不同的信任模式：*Sender Vouches*和*Holder of Key*。在这种情况下，我们使用Sender Vouches，这意味着消息的发送者必须是可信的（例如，通过数字签名）。在密钥模式的持有者中，消息的发送者并不重要，但SAML令牌主题必须包含来自可信来源的密钥（例如，来自Verisign的X.509证书）。
+
+有关SAML的更多信息，请参阅：http：//saml.xml.org/wiki/saml-wiki-knowledgebase
+

@@ -1,0 +1,149 @@
+
+= 获取流输出并从消息源发送响应
+:keywords: mule, sdk, sources, listener, triggers, response, output
+
+Source的主要属性之一表示它是否生成响应。
+
+不发出回应的来源示例：
+
+* 文件侦听器
+*  Salesforce流媒体API
+* 一个Scheduler元素
+* 侦听异步推送通知的源
+
+确实发出回应的来源：
+
+* 一个TCP服务器
+* 一个HTTP服务器
+*  JMS服务器
+
+如您所见，这种分类非常不确定，例如：
+
+* 虽然HTTP服务器支持发送响应，但用户可能会选择不这样做。
+* 尽管JMS侦听器可能会通过向响应队列发送消息来做出响应，但根据消息头可能不会。
+
+即使源可以发送响应，即使消息已成功处理，源也可能不会发送响应。有逻辑或配置情况可能会跳过发送响应的过程。
+
+要指定您的源可以生成响应，则必须使用`@EmitsResponse`进行注释。
+请注意，这只是告诉运行时和工具源代码有这样做的能力。
+
+但是请注意，SDK和运行时都不会：
+
+* 验证发出响应的源实际发出响应。
+* 即使源未声明它发出响应，也不允许源发送响应。
+
+== 回调参数
+
+每当流完成处理由源生成的消息时，源可能需要获得流已生成的响应。你可以通过_callback methods_来做到这一点。
+回调方法用于挖掘拥有源的流所产生的响应。您可以通过声明使用`@OnSucess`，`@OnError`和`@OnTerminate`注解的方法来完成此操作。这些方法是以与操作类似的方式声明的，但是它们需要是无效的，因为它们监听响应但不能改变它。
+
+这些回调方法中的每个参数都以与操作相同的方式进行评估
+（包括自动转换）。然而，请注意，因为这些回调函数是为了响应运行时处理消息而执行的，所以回调函数可以接受表达式（默认值）。
+
+[TIP]
+即使源不发出响应，也可能需要用于释放资源，日志记录，审计等的回调方法。
+
+== 聆听成功的输出
+
+源可以使用`@OnSuccess`注释声明一个方法，以便在流成功处理消息时执行该方法（或者因为不会抛出错误或者因为它们都处于正常状态）。
+
+此方法可以将参数视为源参数。请注意，连接器的用户不能（也不需要）区分常规参数和回调之间的区别。对于这种用途，它们都是一样的，工具（Studio或Flow Designer）会告诉用户哪些参数
+接受表达，哪些不接受。用户不需要担心其他事情。
+
+需要记住的另一件重要事情是，消息源将消息推送到流时的处理是异步的。所以`@OnSuccess`方法也将被异步调用。
+
+以下是HTTP连接器的另一个简单示例：
+
+[source, java, linenums]
+----
+@EmitsResponse
+public class HttpListener extends Source<InputStream, HttpRequestAttributes> {
+
+    @Override
+    public void onStart(SourceCallback<InputStream, HttpRequestAttributes> sourceCallback) throws MuleException {
+        httpServer = serverProvider.connect();
+        httpServer.listen(path).onRequest(request -> {
+            SourceCallbackContext ctx = sourceCallback.createContext(); // <2>
+            ctx.setVariable("responseContext", new HttpResponseContext(request.getResponseSender())); // <3>
+            Result<InputStream, HttpRequestAttributes> result = requestToResult(request);
+            sourceCallback.handle(result, ctx); // <4>
+        });
+    }
+
+    @OnSuccess
+    public void onSuccess(@Content String responseBody,
+                          @Optional String responseStatusCode,
+                          SourceCallbackContext callbackContext) // <5
+    throws Exception {
+        if (hasResponse(responseStatusCode)) { // <6>
+            HttpResponseContext responseContext = callbackContext.getVariable("responseContext"); // <7>
+            responseContext.sendResponse(responseBody, statusCode); // <8>
+        }
+    }
+}
+----
+
+<1>该示例使用`@EmitsResponse`注释源，因为此`HttpListener`可能会发送响应。
+<2>因为`@OnSuccess`方法是异步调用的（并且很可能是并行的），所以有必要将状态传递给回调方法。更确切地说，有必要提供一些关于实际请求回复的参考。为此，该示例使用`SourceCallback`创建一个新的`SourceCallbackContext`。
+<3>该示例将一个变量添加到包含`HttpResponseContext`的上下文中。这是一个定义在自定义对象中的对象
+知道如何发送响应的连接器。
+<4>示例使用`Result`对象和新创建的上下文，通过`SourceCallback`生成并推送消息。
+<5>回调方法有两个参数，一个`@Content`用于发送响应的主体和响应的HTTP状态码。有`SourceCallbackContext`类型的第三个参数。这不是一个参数，而是一种告诉SDK恢复传递给`handle()`方法的相同上下文的方式。
+<6>由于HTTP协议并不总是发送响应，因此该示例将检查响应状态代码是否需要发送响应。
+<7>如果需要响应，该示例将恢复最初在上下文中设置的响应上下文。
+<8>发送响应。
+
+== 收听错误输出
+
+与`@OnSuccess`类似，在流中引发未处理的错误时会执行`@OnError`，例如：
+
+[source, java, linenums]
+----
+@OnError
+public void onError(@Optional @DisplayName(ERROR_RESPONSE_SETTINGS) @NullSafe HttpListenerErrorResponseBuilder errorResponseBuilder,
+                   SourceCallbackContext callbackContext,
+                   Error error) {
+
+}
+----
+
+在这种情况下，该方法与成功示例非常相似。它还接收参数和回调上下文，并将错误响应发送回请求者。它也可以接收一个Error对象。这是包含有关获取失败信息的Mule Error对象。
+
+[TIP]
+`Error`对象不是Java `java.lang.Error`对象，而是SDK `org.mule.runtime.api.message.Error`。
+
+== 内容参数
+
+回调就像任何操作一样接受内容参数。对于HTTP连接器，`HttpListenerResponseBuilder`使用它们，以便DataWeave可用于将流程结果转换为连接器想要返回的任何格式。内容和主要内容的所有概念都适用，以及相关限制。
+
+== 在终止
+
+来源不需要提供`@OnSuccess`或`@OnError`方法。源可以声明它需要的或根本不需要的。但是，如果至少定义了其中一个，那么您还需要定义一个`@OnTerminate`方法。
+
+这是必需的，因为`@OnSuccess`或`@OnError`可能会失败。如果其中任何一个引发异常，则远程系统可能会在等待响应时挂起，资源可能泄漏，审计日志可能未完成等等。
+
+以下是`onTerminate`方法的示例：
+
+[source, java, linenums]
+----
+  public void onTerminate(SourceResult sourceResult) {
+    Boolean sendingResponse = (Boolean) sourceResult.getSourceCallbackContext().getVariable(RESPONSE_SEND_ATTEMPT).orElse(false);
+    if (FALSE.equals(sendingResponse)) {
+      sourceResult
+          .getInvocationError()
+          .ifPresent(error -> sendErrorResponse(new
+                                HttpListenerErrorResponseBuilder(),
+                                sourceResult.getSourceCallbackContext(),
+                                error,
+                                null));
+    }
+  }
+----
+
+该方法接收`SourceResult`对象，其中包含可能在`onSuccess`或`onError`方法和关联的`SourceCallbackContext`中发生的可选错误。
+
+在上面的示例中，如果发现错误，该方法会发送一个通用错误响应。
+
+== 下一步
+
+*  <<sources-async-response#, Sending asynchronous responses from a Message Source>>

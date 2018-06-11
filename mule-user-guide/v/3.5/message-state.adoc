@@ -1,0 +1,216 @@
+= 消息状态
+
+为了更好地理解Mule消息处理器如何处理消息，在处理消息之前和之后检查消息的状态是非常有用的。当转换器将消息有效载荷的内容从一个数据结构转换为另一个数据结构时，或者从一种数据格式转换为另一种数据格式时 - 例如，JSON转换为Java对象，映射为CSV或Java对象转换为XML  - 您可能想知道Mule更改，删除或添加到邮件的内容。查看其"before and after"状态应该有助于您更好地在流程中进一步处理消息。
+
+本文档使用示例应用程序并利用 link:/mule-user-guide/v/3.5/mule-message-structure[Mule消息结构文档]的内容来检查消息在通过流中的DataMapper转换器时的状态。在Anypoint Studio中以调试模式运行应用程序，屏幕截图使用便于"frozen-in-time"查看消息的 link:/mule-user-guide/v/3.5/studio-visual-debugger[可视化调试器]来说明消息的状态。
+
+== 假设
+
+本文档在Mule ESB的图形用户界面（GUI）*Anypoint Studio*的上下文中描述了示例的细节。在适当的情况下，XML配置伴随着Studio界面截图。本文档假定您熟悉Mule ESB和Anypoint Studio界面。此外，它假定您已阅读 link:/mule-user-guide/v/3.5/mule-message-structure[Mule消息结构文档]以了解Mule消息的内容。
+
+== 示例
+
+为了检查消息的状态，本文档使用一个示例应用程序将CSV文件的内容转换为Salesforce中的联系人。作为Studio中的示例应用程序捆绑在一起，您可以阅读其移动部分的完整详细信息以及它在 link:/mule-user-guide/v/3.5/connect-with-salesforce-example[与Salesforce示例连接]文档中的工作原理。
+
+简而言之，文件端点** **每10秒轮询输入文件夹以查找新文件。当它发现一个新文件时，它会读取内容，然后将数据传递给DataMapper Transformer。此转换器不仅可将数据格式从CSV转换为集合，还可自动将CSV文件（FirstName，LastName等）中的输入字段映射到Salesforce在集合中使用的输出字段。每个映射都会获得一个箭头，它可以帮助您可视化DataMapper转换器中发生的活动。将文件中的所有联系人转换为一组适用于Salesforce的数据后，应用程序将使用Salesforce Connector将数据推送到您的Salesforce帐户中。连接器的配置指定了*operation*  -  `Create`  - 和*sObject type*  -  `Contact`  - 它确切地说明数据如何上传到Salesforce;在这种情况下，它会创建新的联系人。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+
+image:flow_contacts_to_sfdc.png[flow_contacts_to_sfdc]
+
+....
+[tab,title="Studio XML Editor"]
+....
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule version="EE-3.5.0" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <sfdc:config doc:name="Salesforce" name="Salesforce" password="password" username="salesforceuser@email.com">
+        <sfdc:connection-pooling-profile exhaustedAction="WHEN_EXHAUSTED_GROW" initialisationPolicy="INITIALISE_ONE"/>
+    </sfdc:config>
+    <data-mapper:config doc:name="DataMapper" name="datamapper_grf" transformationGraphPath="datamapper.grf"/>
+    <flow doc:description="Upload a csv file of contact information into Salesforce as new contacts." doc:name="Contacts_to_SFDC" name="Contacts_to_SFDC">
+        <file:inbound-endpoint doc:name="File Input" moveToDirectory="src/test/resources/output" path="src/test/resources/input" pollingFrequency="10000" responseTimeout="10000"/>
+        <data-mapper:transform config-ref="datamapper_grf" doc:name="DataMapper"/>
+        <sfdc:create config-ref="Salesforce" doc:name="Salesforce" type="Contact">
+            <sfdc:objects ref="#[payload]"/>
+        </sfdc:create>
+    </flow>
+</mule>
+----
+
+....
+------
+
+在DataMapper之前=== 
+
+正如 link:/mule-user-guide/v/3.5/mule-message-structure[消息结构文档]中所讨论的，Mule消息由两个主要部分组成：
+
+*  a *message header*，属性驻留在其中
+包含Mule处理的数据的*  a *message payload*
+
+包含Mule消息本身的**Mule message object, **也可能包含*variables*。以下部分在消息遇到DataMapper转换器之前检查消息头，负载和变量。
+
+[TIP]
+====
+要访问有关消息头和有效负载状态的信息，我们在应用程序中的消息处理器上设置断点，然后在Studio中以调试模式运行应用程序。 Studio的*Visual Debugger*将消息的标题和有效内容信息显示在画布下方的*Mule Debugger Console*中。
+
+详细了解如何使用 link:/mule-user-guide/v/3.5/studio-visual-debugger[可视化调试器]检查消息的状态。
+====
+
+==== 消息标题
+
+*Message*（见下图）包含消息头部的数据（即元数据）。在这个例子中，你可以看到消息的标识符，并确定是否有附件，如果它们存在，它们就是数组。
+
+请注意，*Message Processor*名称表示DataMapper的*Value*;消息处理器项目指示消息将遇到的流中的下一个消息处理器。
+
+image:message.png[信息]
+
+==== 消息有效负载
+
+毫不奇怪，*payload*（见下图）包含消息的有效载荷，或者说，包含Mule应用程序处理的数据。在遇到DataMapper之前，有效内容包含CSV文件 -  `currentFile`  - 类型为`java.io.File`。
+
+image:payload.png[有效载荷]
+
+==== 属性
+
+可视调试器还会在消息进入DataMapper时在消息上显示任何入站和出站属性。消息中的*Inbound Properties*包含有关负载的元数据，包括其文件名，时间戳和进入应用程序的端点MULE_ORIGINATING_ENDPOINT。入站属性是_read-only_，不能通过应用程序中的消息处理器添加，删除或复制。
+
+image:inbound.png[入站]
+
+*Outbound Properties*指示有关有效负载的类似信息，并可由应用程序中的消息处理器删除或复制。
+
+image:outbound.png[出站] +
+
+==== 变量
+
+Visual Debugger在遇到DataMapper时显示包含在消息对象中的所有变量或会话变量。此流程中的File端点在消息上设置了两个*Variables*，以指示DataMapper在处理后应移动文件的位置，以及端点轮询输入文件夹以查找新数据的频率。
+
+image:variables.png[变量] +
+
+此消息在遇到DataMapper之前没有*Session Variables*。
+
+image:session.png[会议] +
+
+DataMapper之后=== 
+
+此应用程序中DataMapper的任务是将CSV文件的内容转换为Salesforce可处理的Java对象。此外，它还映射内容，以便CSV文件中的名字列中的值转换为Salesforce联系人中的名字字段，以此类推每个字段。以下显示从DataMapper出现的消息状态。
+
+==== 消息标题
+
+DataMapper未对*message*标头内容进行更改。
+
+image:message2.png[消息2]
+
+==== 消息有效负载
+
+DataMapper极大地改变了*payload*！现在，一个地图数组列表（图像在下面，顶部），来自CSV文件的联系人显示为每个散列图的值。进一步扩展内容，每个hashmap包含一个键值对（下方，下方）。
+
+image:payload2.png[payload2]
+
+image:keyValuePair.png[keyValuePair]
+
+==== 属性
+
+由于Mule消息处理器无法添加，删除或对*inbound properties*执行操作，因此没有任何更改。
+
+image:inbound2.png[inbound2]
+
+DataMapper未设置，移除或复制邮件上的任何*outbound properties*。
+
+image:outbound2.png[outbound2] +
+
+==== 变量
+
+DataMapper未添加或删除任何*Variables*或*Session Variables*。
+
+image:variables2.png[variables2]
+
+image:session2.png[会议2]
+
+== 更多示例
+
+==== 在消息上设置变量
+
+流中的 link:/mule-user-guide/v/3.5/variable-transformer-reference[变压器]将消息的有效负载设置为消息上的minPrice变量。回想一下，消息处理器项目指示消息将遇到的流中的下一个消息处理器。
+
+[source,xml,linenums]
+----
+<flow>
+...
+    <set-variable doc:name="Variable" value="#[payload]" variableName="minPrice"/>
+...
+</flow>
+----
+
+之前
+
+image:beforeVariable.png[beforeVariable]
+
+后
+
+image:afterVariable.png[afterVariable]
+
+==== 在消息上设置属性
+
+流中的 link:/mule-user-guide/v/3.5/property-transformer-reference[物业变压器]将消息的有效负载设置为消息上的`size`属性。
+
+[source,xml,linenums]
+----
+<flow>
+...
+    <set-property doc:name="Property" propertyName="size" value="small"/>
+...
+</flow>
+----
+
+之前
+
+image:beforeProperty.png[beforeProperty]
+
+后
+
+image:afterProperty.png[afterProperty]
+
+==== 在消息上设置有效负载
+
+流中的 link:/mule-user-guide/v/3.5/set-payload-transformer-reference[设置有效负载变压器]用字符串`Hello, World`替换消息的有效负载。
+
+[source, xml, linenums]
+----
+<flow>
+...
+    <set-payload value="#['Hello, world.']" doc:name="Set Payload"/>
+...
+</flow>
+----
+
+
+之前
+
+image:beforeSetPayload.png[beforeSetPayload] +
+
+后
+
+image:afterSetPayload.png[afterSetPayload]
+
+[TIP]
+====
+要访问您在流中的早期消息中设置的属性或变量，或者在应用程序中使用不同的流，请使用MEL表达式。
+
+在标题设置和使用属性和变量标题下的 link:/mule-user-guide/v/3.5/mule-message-structure[Mule消息结构]文档中了解更多信息。
+====
+
+== 另请参阅
+
+*  *NEXT STEP:*请阅读 link:/mule-user-guide/v/3.5/global-elements[全球元素]。
+* 详细了解 link:/mule-user-guide/v/3.5/studio-visual-debugger[Studio可视化调试器]。

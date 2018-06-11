@@ -1,0 +1,406 @@
+=  DotNet连接器用户指南
+:keywords: dotnet connector, dotnet, dot net, microsoft, c#, c sharp, visual studio, visual basic
+
+.NET连接器允许您在Mule应用程序中执行本机.NET代码。受支持的方案包括：在不修改的情况下在现有二进制程序集（DLL）中执行代码，或者扩展集成应用程序功能的.NET代码的新开发。
+
+*Release Notes:* link:/release-notes/dotnet-connector-release-notes[DotNet连接器发行说明]
+
+*Samples*： link:_attachments/dotnet-connector-samples.zip[dotnet-connector-samples.zip]
+
+该连接器使用Java Native Interface（JNI）执行.NET代码，该代码提供Java虚拟机（JVM）和在主机操作系统中运行的本机应用程序之间的快速进程间通信。
+
+image:01ConnectorDotNET.png[01ConnectorDotNET]
+
+.NET连接器使用JNI调用Microsoft Common Language Runtime（CLR）中运行的.NET组件。运行的Mule流中的消息在JVM和CLR之间传递，以在现有类中调用.NET方法。
+
+连接器使用以下策略在JVM和CLR之间编组Mule消息，主要依赖于与消息有效负载相关的内容类型：
+
+* 原始类型和Java类被序列化为JSON。
+
+*  JSON或XML数据直接作为字符串传递，无需数据转换。
+
+* 二进制数据直接作为字节数组传递，而不进行数据转换。
+
+== 调用罩下方法
+
+只要它是公共的，.NET连接器就会调用现有类中的实例或静态方法。根据名称和数据类型，Mule消息的属性映射到.NET方法中的预期参数。
+
+以下流程演示了连接器如何执行映射：
+
+image:demoflow.png[demoflow]
+
+Set Payload转换器生成JSON内容并将其设置为Mule消息的有效负载：
+
+image:Setpayload.png[Setpayload]
+
+例如，对于URL `http://localhost:8081/?name=foo&age=10`，Mule消息的有效负载设置为：`{"name":"foo", "age":10}`
+
+JSON表示包含名称和年龄的属性，该属性自动将（按名称）映射到.NET方法*ExecuteSimple*的参数：
+
+image:public-object.png[公共对象]
+
+指定要调用的.NET方法的名称：
+
+image:dotnet-method.png[DOTNET-方法]
+
+== 参数映射的高级方案
+
+=== 与属性的映射
+
+Mule消息是通过一个或多个流通过应用程序的数据。该消息由两个主要部分组成：
+
+* 消息头，其中包含有关消息的元数据
+
+* 消息有效内容，其中包含特定于业务的数据
++
+image:MessageObject.png[MessageObject]
+
+在.NET方面，您可以使用属性来指示从何处映射参数：
+
+[%header%autowidth.spread]
+|===
+|属性 |使用
+| `MessagePart.FromQuery`  |查询字符串集合
+| `MessagePart.FromBody`  | Mule消息的有效载荷
+| `MessagePart.FromInboundProperty`  |入站属性集合
+| `MessagePart.FromInvocationProperty`  |调用属性集合
+| `MessagePart.FromOutboundProperty`  |出站属性集合
+| `MessagePart.FromSessionProperty`  |会话属性集合
+|===
+
+这些属性不是强制性的。如果未指定属性，则.NET连接器将使用Mule消息的有效内容（`MessagePart.FromBody`）。您可以组合属性以获得更多灵活性。
+
+以下是使用属性组合的方法示例：
+
+image:public_object_execute_complex.png[public_object_execute_complex]
+
+方法参数：
+
+*  _ person_：从Mule消息的有效内容映射而来，其中包含Person类型的JSON表示
+
+*  _ id_：从名为“id”的查询字符串映射，如http：// localhost：8081 /？id = 1
+
+*  _ increment_：从名为“增量”的入站属性映射
+
+=== 映射XML数据
+
+.NET连接器自动将XML数据映射到XML文档。连接器直接将XML数据作为字符串传递，而不执行序列化。如果调用的.NET方法包含XmlDocument类型的参数，则XML数据将加载到XmlDocument中并传递给该方法。
+
+以下显示了将XML数据传递给.NET Connector的流程：
+
+image:xml_data_tp_dotnet_connector.png[xml_data_tp_dotnet_connector]
+
+.NET连接器被配置为调用*ExecuteXml*方法。以下显示了该方法的签名：
+
+image:public_object_execute_xml.png[public_object_execute_xml]
+
+*Note*：如果Mule流中的消息源未将`Content-Type`设置为`text/xml`，那么您必须手动设置。如果未设置，则您的消息将被视为字符串并以转义形式传递给.NET。要手动设置`Content-Type`，请使用以下设置添加一个Property Transformer：
+
+image:set_property-1.png[set_property-1]
+
+=== 映射JSON数据
+
+.NET连接器将原始类型和POJO作为JSON序列化。 JSON数据结构的属性会自动按名称映射到.NET方法参数。
+
+===  Anypoint DataMapper支持
+
+.NET连接器支持Anypoint DataMapper，用于将输入元素图形化映射到.NET方法的参数。
+
+image:datamapper_support.png[datamapper_support]
+
+复杂映射示例：
+
+image:complex_mapping.png[complex_mapping]
+
+=== 在完全信任中执行.NET代码
+
+.NET代码可以在具有有限权限的应用程序域中执行，以避免执行可能影响Mule稳定性的恶意代码。这些限制包括对文件系统的有限访问，本地代码执行，网络调用或注册表访问等等。
+
+默认情况下，.NET连接器被设置为使用完全信任。您可以使用下图中显示的`fullTrust`属性来禁用它：
+
+image:full_trust.png[full_trust]
+
+=== 执行范围
+
+.NET连接器支持这些范围：
+
+*  Singleton：跨多个调用共享.NET组件的同一个实例。这对于跨不同调用的类实例成员中存储共享状态很有用。
+
+* 瞬变：为每个请求创建一个.NET组件的新实例。
+
+使用下面的scope属性来设置.NET组件的作用域：
+
+image:execute_scope.png[execute_scope]
+
+==== 热插拔和部署
+
+连接器支持部署包含.NET组件的新版本程序集，而无需重新启动Mule中的应用程序。
+
+当.NET组件第一次由路由器执行时，文件观察器将开始检测组件部件所在的文件夹中的更改。如果组件检测到更改或新的程序集部署，路由器将开始使用此新版本进行连续调用。
+
+==== 打包的程序集
+
+对于打包的程序集，部署策略有点不同。将位于文件夹`AnypointStudio/.mule/apps/applicationName/classes`下的现有.NET程序集替换为新版本。 （替换_applicationName_的应用程序名称。）在Mule中重新部署应用程序后，使用新的程序集版本。
+
+记录以下消息：
+
+NET组装地点：
+
+`/studio_path/.mule/apps/application_name/classes/assembly_name`
+
+将_studio_path_，_application_name_，_assembly_name_替换为Anypoint Studio安装位置的路径，应用程序的名称和程序集的名称。
+
+使用此路径来部署新的.NET程序集。
+
+==== 外部程序集
+
+将位于外部位置的旧.NET组件替换为新的。
+
+== 程序集配置
+
+对于从Mule流中引用的.NET程序集，可以使用标准`System.Configuration`类（如ConfigurationManager）访问.NET配置文件中定义的配置设置。组件的配置文件的命名遵循类库的约定，其中名称的格式如下：`assembly_name.dll.config`  - 将_assembly_name_替换为程序集的名称。
+
+如果您为程序集使用配置文件，请将配置文件添加到Mule应用程序的`resources`文件夹（`src/main/resources`）。如果您选择包部署模型，则这与您部署程序集本身的位置相同。当引用全局程序集缓存（GAC）中托管的程序集时，Mule还会检查资源目录中的匹配程序集配置文件：
+
+image:transform_dll_config.png[transform_dll_config]
+
+如果您使用Mule应用程序外部的程序集引用路径，请将程序集配置文件与程序集位于同一目录中。
+
+重新加载配置：
+
+* 触摸Mule应用程序的`.xml`文件，这会导致Mule服务器热重新载入应用程序（您可以使用`copy filename+,,`命令来触摸Windows文件，该命令会更新最后一次写入时间在文件上）。
+
+* 触摸程序集配置文件所属的程序集。这会导致应用程序域与新配置一起重新加载。
+
+== 高级集成概念
+
+=== 程序集引用
+
+.NET连接器支持以下部署类型：
+
+*  *Package*：作为应用程序资源嵌入的程序集。将程序集作为应用程序资源添加到应用程序目录下的`src/main/resources`文件夹中：
++
+image:assembly_reference.png[assembly_reference]
++
+将程序集的部分名称`[Namespace.ClassName], [Assembly]`和程序集的名称指定为*Assembly Path*。
++
+*   *External*：您可以引用外部程序集。将组件部分名称`[Namespace.ClassName], [Assembly]`和外部程序集的绝对路径指定为*Assembly Path*。
++
+*  *GAC*：安装在GAC（全局程序集缓存）中的程序集。要引用安装在GAC中的程序集，请使用`Assembly Fully Qualified Name: [Namespace.ClassName], [Assembly], [Version], [Culture], [PublicKey]`并将程序集路径留空。有关更多信息，请参阅： link:http://msdn.microsoft.com/en-us/library/dkkx7f79%28v=vs.110%29.aspx[如何：将程序集安装到全局程序集缓存中]
+
+== 创建一个.NET全局元素
+
+Mule link:/mule-user-guide/v/3.9/global-elements[全球元素]允许您定义连接器参数一次，然后从应用程序中任意数量的单个连接器引用同一组参数。在这个例子中，我们创建了一个.NET全局元素，它被我们应用程序流中的.NET连接器引用。
+
+要创建和配置.NET全局元素，请按照下列步骤操作：
+
+. 点击画布底部的*Global Elements*标签，然后点击*Create*。
+
+. 使用.NET Connector作为过滤器来查找和选择全局类型：
+
+. 点击*OK*。 Studio将显示全局元素属性窗口。
+
+.  .NET连接器有四种类型的全局元素可用。如下所述输入所需参数的值。
+
+..  *GAC Assembly:*用于选择安装在GAC中的程序集（ http://msdn.microsoft.com/en-us/library/yf1d93sz%28v=vs.110%29.aspx[全局程序集缓存]。
++
+输入元素的值，如下所示：
++
+image:GAC.png[GAC]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | Dot_Net_GAC_Connector
+| *Enable DataSense*  |真（选中复选框）
+| *Scope*  |瞬态
+| *Grant Full Trust to the .NET assembly*  |真（选中复选框）
+| *Declared methods only*  |真（选中复选框）
+| *Assembly Type*  |使用程序集完全限定名称（ http://msdn.microsoft.com/en-us/library/2exyydhb%28v=vs.110%29.aspx[http://msdn.microsoft.com/en-us/library/2exyydhb(v=vs.110).aspx]）。
+|===
+
+..   *Legacy:*用于向后兼容。输入元素的值，如下所示：
++
+image:Legacy.png[遗产]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+
+| *Name*  | Dot_Net_Legacy
+| *Enable DataSense*  | True（选中复选框）
+| *Scope*  |的Singleton
+| *Assembly Type*  | Test.SampleComponent.Sample，Test.SampleComponent
+| *Grant Full Trust to the .NET assembly*  | True（选中复选框）
+| *Assembly Path*  | Test.SampleComponent.dll文件的路径
+| *Declared methods only*  | True（选中复选框）
+|===
+
+..   *External Assembly*：用于选择作为应用程序外部的程序集嵌入的程序集。输入元素的值，如下所示：
++
+image:External_Assembly_1.png[External_Assembly_1]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | Dot_Net_Resource_External_Assembly
+| *Enable DataSense*  |真（选中复选框）
+| *Scope*  |瞬态
+| *Grant Full Trust to the .NET assembly*  |真（选中复选框）
+| *Declared methods only*  |真（选中复选框）
+| *Assembly Path*  | Test.SampleComponent.dll文件的路径
+|===
+
+..   *Project Resource*：用于选择作为应用程序外部的程序集嵌入的项目。输入元素的值，如下所示：+
+image:project_resource.png[project_resource]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | Dot_Net_Project_资源
+| *Enable DataSense*  |真（选中复选框）
+| *Scope*  |瞬态
+| *Grant Full Trust to the .NET assembly*  |真（选中复选框）
+| *Declared methods only*  |真（选中复选框）
+| *Assembly Path*  |汇编文件的名称或路径的名称
+Test.SampleComponent.dll文件
+|===
+
+== 支持的功能
+
+===  DataSense
+
+.NET连接器支持数据感应，允许用户浏览并选择配置程序集的类型和方法：
+
+image:datasense_support.png[datasense_support]
+
+=== 骡子上下文
+
+.NET连接器通过_MuleContext.Current_属性为开发人员提供上下文。
+
+MuleContext结构：
+
+*  *Message*：正在处理的MuleMessage的包装。
+
+*  *Logger*：允许您通过Mule应用程序中配置的log4j记录器记录消息。
+
+MuleContext和消息映射属性是.NET Connector SDK程序集的一部分，可从此处下载： link:_attachments/dotnet-connector-sdk.zip[dotnet-connector-sdk.zip]。要利用SDK中的类，只需解压该包，然后从项目中添加对Org.Mule.Api.dll程序集的引用。您可以从Org.Mule.Api命名空间导入这些类型。
+
+===  Mule消息元数据
+
+.NET连接器提供有关正在处理的消息的上下文。您可以使用_MuleContext.Current.Message_属性来访问它。
+
+该消息是MuleMessage的包装，并包含以下属性：
+
+*  *InboundProperties*：特定于消息源的元数据属性的只读列表。
+
+*  *OutboundProperties*：包含与入站属性相似的元数据，但在消息进入流程后应用出站属性。
+
+*  *InvocationProperties*：包含有关仅适用于其所在流的消息的用户定义的元数据。
+
+*  *SessionProperties*：包含用户定义的有关适用于同一应用程序中的所有流的消息的元数据。
+
+*  *QueryStrings*：查询字符串的集合
+
+*  *Payload*：消息的有效载荷
+
+=== 日志记录
+
+.NET连接器使用_Log4j_记录其调试目的。
+
+*  *Mule Runtime 3.5*：使用log4j，并且使用标准_log4j.properties_文件启用和配置日志，标准_log4j.properties_文件应放置在与Mule应用程序相同的目录中。将DotNet连接器添加到log4j.properties文件并将其设置为“debug”：
++
+[source,code]
+----
+log4j.logger.org.mule.modules.dotnet.jni.DotNetBridge=debug
+----
++
+*  *Mule Runtime 3.6:*使用log4j2并启用日志并使用log4j2.xml文件进行配置，log4j2.xml文件应放置在与Mule应用程序相同的目录中。将DotNet连接器添加到log4j2.xml文件并将其设置为“debug”：
++
+[source,xml]
+----
+<Logger name="org.mule.modules.dotnet.jni.DotNetBridge" level="DEBUG"> </Logger>
+----
+
+[WARNING]
+====
+在这种情况下，我们使用名为Console的Appender写入Mule控制台。您可以将其添加到Appenders部分：
+
+[source,xml,linenums]
+----
+<Appenders>
+<Console name="Console" target="SYSTEM_OUT">
+<PatternLayout pattern="%-5p %d [%t] %c: %m%n"/>
+</Console>
+</Appenders>
+----
+====
+
+*Using the MuleLogger in your .NET code:* +
+您可以通过`MuleContext.Current.Logger`属性访问MuleLogger。 MuleLogger提供了2种写日志的方法：
+
+*  *Write(string message)*：写入一条消息
+
+*  *Write(string format, params object[] args)*：写入格式化的消息
+
+=== 通知
+
+.NET连接器支持Mule服务器通知。配置后，只要调用.NET方法就会触发这些通知。
+
+要启用通知，您必须在您的Mule配置文件中添加<notifications>元素：
+
+.NET连接器仅在`DotNetConnectorNotificationListener`的实例注册时触发通知。您必须创建自己的Notification Listener并扩展`DotNetConnectorNotificationListener`。
+`DotNetNotification`包含以下注册操作：
+
+*   `DOTNET_ARGUMENT_MAPPING_START`：参数映射策略启动时触发
+
+*   `DOTNET_ARGUMENT_MAPPING_STOP`：参数映射策略结束时触发
+
+*   `DOTNET_METHOD_START`：在.NET执行开始时触发
+
+*   `DOTNET_METHOD_STOP`：.NET执行结束时触发
+
+===  DataWeave
+.NET连接器支持DataWeave，允许用户将输出转换为任何格式（XML，CSV，JSON，Pojos，地图等）。
+
+.NET连接器将其输出描述为`Map`：
+
+image:dotnet_output.png[dotnet_output]
+
+
+使用DataWeave中的.NET连接器的输出来转换消息的有效负载：
+
+image:dotnet_dataweave.png[dotnet_dataweave]
+
+*Transformed output:*
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?> +
+<weather>
+  <item id="1">
+    <name>Thunder Storms</name>
+    <icon>http://ws.cdyne.com/WeatherWS/Images/thunderstorms.gif</icon>
+  </item>
+  <item id="2">
+    <name>Partly Cloudy</name>
+    <icon>http://ws.cdyne.com/WeatherWS/Images/partlycloudy.gif</icon>
+  </item>
+  <item id="3">
+    <name>Mostly Cloudy</name>
+    <icon>http://ws.cdyne.com/WeatherWS/Images/mostlycloudy.gif</icon>
+  </item>
+  <item id="4">
+    <name>Sunny</name>
+    <icon>http://ws.cdyne.com/WeatherWS/Images/sunny.gif</icon>
+  </item>
+  ...
+</weather>
+----
+
+== 另请参阅
+
+* 详细了解 link:/mule-user-guide/v/3.9/dotnet-connector-faqs[DotNet连接器常见问题]中的DotNet连接器。
+
+
+
+

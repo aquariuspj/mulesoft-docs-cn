@@ -1,0 +1,319 @@
+= 可靠性模式
+
+== 概述
+
+高可靠性应用程序（对消息丢失具有零容忍度的应用程序）不仅要求底层ESB可靠，而且需要将可靠性扩展到单个连接。如果您的应用程序使用事务传输（如JMS，VM或JDBC），则通过对传输中的事务的内置支持来确保可靠的消息传递。这意味着，例如，您可以在JMS入站端点上配置事务，以确保在提交事务时仅从JMS服务器中删除消息。通过这样做，您可以确保如果在处理消息时发生错误，它仍然可用于重新处理。
+
+换句话说，这些传输中的事务支持确保消息从入站端点可靠地传输到出站端点或流中的处理器之间。但请注意，如果您要在支持事务的不同传输之间移动消息，则需要使用XA事务来确保两个传输的事务都作为一个原子单位提交。有关XA和其他类型交易的更多信息，请参阅 link:/mule-user-guide/v/3.4/transaction-management[交易管理]。
+
+但是，假设您有一个使用非事务性传输（如HTTP）的Web应用程序。你如何确保你的应用程序的可靠消息传递？答案是遵循可靠性模式。
+
+[NOTE]
+请注意，在群集上禁用了VM文件持久性，因此VM端点在群集拓扑中保留在内存中。
+
+== 什么是可靠性模式？
+
+*reliability pattern*是一种设计，即使应用程序接收到来自非事务性传输的消息，也会为应用程序提供可靠的消息传递。可靠性模式将可靠的采集流程与应用程序逻辑流程相结合，如下图所示。
+
+image:Reliability_Pattern.png[Reliability_Pattern +％281％29]
+
+即使入站端点用于非事务性传输，*reliable acquisition flow*（也就是图的左侧部分）可将来自入站端点的消息可靠地传送到出站端点。出站端点可以是任何类型的事务端点，例如VM或JMS。如果可靠的采集流程无法传递消息，则确保消息不会丢失：
+
+* 对于像HTTP这样的基于套接字的传输，这意味着向客户端返回一个"unsuccessful request"响应，以便客户端可以重试请求。
+* 对于基于资源的传输（如文件或FTP），这意味着不会删除该文件，以便可以对其进行重新处理。
+
+*application logic flow*（也就是图的右侧）将来自入站端点（使用事务传输）的消息传递给应用程序的业务逻辑。
+
+== 比较可靠性模式中的端点
+
+如前所述，您可以将可靠的采集流程与任何类型的事务端点结合在一起 - 您不必在可靠性模式中使用VM端点。下图说明可靠获取流向JMS端点传递消息的可靠性模式。
+
+image:ReliabilityPatternwithJMS.png[ReliabilityPatternwithJMS]
+
+但是，由于默认情况下，VM传输使用内存队列，因此它可能比另一个事务端点（如JMS）快得多。
+
+下表列出了在可靠的采集流程中使用VM，JMS和JDBC端点的优缺点。
+
+[%header,cols="34,33,33"]
+|===
+| {端点{1}}优势 |缺点
+| VM（独立Mule） |比JMS更快，因为一切都在内存和进程中。随机提供Mule  - 无需购买额外的软件。 | Mule退出时丢失数据。
+|基于文件的虚拟机（独立Mule） | Mule开箱即用 - 无需购买额外的软件。 |不是事务性的
+| VM（Mule HA集群） |比JMS更快，因为所有内容都在共享内存中。提供的开箱即用的Mule  - 无需购买额外的软件。 |当整个Mule群集退出时数据丢失。
+| JDBC  |根据可用资源，可以保存大量信息。 |可能会很复杂，因为需要适当的DBMS模式
+| JMS（未启用持久性） |允许与其他Mule实例或非Mule客户端共享数据。 |比VM慢，因为它在另一个进程中。
+| JMS（启用持久性） |最可靠的选择，因为消息会持久保存到磁盘。 |由于磁盘访问而比虚拟机慢。
+|===
+
+== 实施可靠性模式
+
+这是一个代码示例，显示完整的可靠性模式的样子（即包括可靠的采集流程和应用程序逻辑流程）。在这个例子中，可靠性模式的可靠采集流程部分是HTTP到VM。请注意，VM文件持久性如下所示，不适用于群集。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xsi:schemaLocation="
+               http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+               http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd
+               http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd">
+ 
+    <vm:connector name="persistent">
+       <vm:queue-profile maxOutstandingMessages="500">
+          <default-persistent-queue-store />
+       </vm:queue-profile>
+    </vm:connector>
+ 
+ 
+    <!-- This is the reliable acquisition flow in the reliability pattern.  -->
+    <flow name="reliable-data-acquisition" processingStrategy="synchronous"> ❶
+ 
+ 
+        <http:inbound-endpoint address="..." exchange-pattern="request-response" />
+ 
+        <message-filter>
+            <not-filter>
+                <wildcard-filter pattern="/favicon.ico"/>
+            </not-filter>
+        </message-filter>
+ 
+        <vm:outbound-endpoint path="input" exchange-pattern="one-way"
+                              connector-ref="vmConnector" /> ❷
+    </flow>
+ 
+    <!-- This is the application logic flow in the reliability pattern.
+         It is a wrapper around a sub-flow, "business-logic-processing".
+    -->
+    <flow name="main-flow">
+    <vm:inbound-endpoint path="input" exchange-pattern="one-way" connector-ref="vmConnector" >
+            <vm:transaction action="ALWAYS_BEGIN"/> ❸
+        </vm:inbound-endpoint>
+         
+        <flow-ref name="business-logic-processing" />
+    </flow>
+     
+    <!-- This is where the real work of the application will happen. -->
+    <sub-flow name="business-logic-processing" processingStrategy="synchronous">
+        <!--
+            This flow is where the actual business-logic is performed.
+        -->
+    </sub-flow>
+</mule>
+----
+
+有些事情要特别注意可靠采集流程中的代码：
+
+❶该流程指定了一个同步处理策略（`processingStrategy="synchronous"`）。在同步处理策略中，整个流程在接收线程中处理。这确保了到VM端点的传输发生在同一个线程中。有关同步处理策略的更多详细信息，请参阅 link:/mule-user-guide/v/3.4/flow-processing-strategies[流程处理策略]。 +
+❷消息被写入VM队列。它现在可用于主流程的处理。 +
+transaction事务性地从VM队列中读取消息。这确保了如果发生任何错误，读取将回滚并重新处理消息。
+
+以下是完整可靠性模式的代码，其中可靠性模式的可靠采集流程部分是HTTP-to-JMS。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+               http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd
+               http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.2/mule-jms.xsd
+               http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd">
+ 
+    <jms:activemq-connector name="jmsConnector"
+        brokerURL="tcp://localhost:61616">
+    </jms:activemq-connector>
+ 
+    <!-- This is the reliable acquisition flow in the reliability pattern.  -->
+    <flow name="reliable-data-acquisition" processingStrategy="synchronous">
+ 
+        <http:inbound-endpoint address="..." exchange-pattern="...-response" />
+ 
+        <message-filter>
+            <not-filter>
+                <wildcard-filter pattern="/favicon.ico"/>
+            </not-filter>
+        </message-filter>
+ 
+        <jms:outbound-endpoint queue="input" exchange-pattern="one-way"/>
+    </flow>
+ 
+    <!-- This is the application logic flow in the reliability pattern.
+         It is a wrapper around a sub-flow, "business-logic-processing".
+    -->
+    <flow name="main-flow">
+    <jms:inbound-endpoint queue="input" exchange-pattern="request-response">
+            <jms:transaction action="ALWAYS_BEGIN"/>
+        </jms:inbound-endpoint>
+         
+        <flow-ref name="business-logic-processing" />
+    </flow>
+     
+    <!-- This is where the real work of the application will happen. -->
+    <sub-flow name="business-logic-processing" processingStrategy="synchronous">
+        <!--
+            This flow is where the actual business-logic is performed.
+        -->
+    </sub-flow>
+</mule>
+----
+
+== 实施可靠的采集流程
+
+让我们关注可靠性模式的可靠采集流程部分。此外，让我们专注于具有非事务性入站端点的可靠采集流程。您已经在实现可靠消息模式中看到了HTTP入站端点到VM或JMS出站端点的可靠采集流。我们来看看其他三种情况：FTP到VM，文件到VM和IMAP到VM。
+
+您可以将以下每个示例中的出站端点更改为JMS。请记住将XML名称空间和XML模式位置替换为适合JMS传输的位置：
+
+[source, xml, linenums]
+----
+xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+ 
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.2/mule-vm.xsd
+----
+
+并相应地替换出站端点。
+
+===  FTP到VM
+
+以下代码实现了从FTP入站端点到JMS出站端点的可靠采集流程：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+        http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd
+        http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/jms/3.2/mule-vm.xsd
+        http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+ 
+ 
+    <flow name="ftp-reliability" processingStrategy="synchronous"> ❶
+ 
+        <ftp:inbound-endpoint user="dirk" password="dirk" host="localhost" port="2121" path="/">
+            <idempotent-redelivery-policy maxRedeliveryCount="2"> ❷
+                <dead-letter-queue>
+                    <vm:endpoint path="error-queue" />❸
+                </dead-letter-queue>
+            </idempotent-redelivery-policy>
+        <ftp:inbound-endpoint/>
+        <custom-transformer class="mycompany.mule.transformers.FTPInput"/>
+        <vm:outbound-endpoint path="from-ftp" exchange-pattern="one-way"/>
+    </flow>
+</mule>
+----
+
+请注意，与HTTP-to-JMS方案的情况一样：
+
+流程指定同步流策略（`processingStrategy="synchronous"`）。
+
+还要注意，因为我们正在调用一个变压器，所以我们必须考虑到它可能失败并抛出异常的可能性。如果是，则文件将被重新处理，并可能抛出相同的异常，依此类推。为了避免无限循环，我们使用了在conf处配置的重新传送策略。这样，第二次将相同的文件重新发送到入站端点后，会将文件发送到❸处的错误队列，并声明成功，这将允许文件重新发送。
+
+=== 文件到VM
+
+以下代码实现了从文件入站端点到JMS出站端点的可靠采集流程：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+        http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd
+        http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.2/mule-jms.xsd
+        http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd">
+ 
+    <file:connector name="fileConnector" streaming="false"/>
+ 
+    <flow name="file-reliability" processingStrategy="synchronous"> ❶
+ 
+        <file:inbound-endpoint path="/tmp/file2ftp/ftp-home/dirk">
+            <idempotent-redelivery-policy maxRedeliveryCount="2"> ❷
+                <dead-letter-queue>
+                    <vm:endpoint path="error-queue" />
+                </dead-letter-queue>
+            </idempotent-redelivery-policy>
+        </file:inbound-endpoint>
+        <custom-transformer class="mycompany.mule.transformers.FTPInput"/>
+        <vm:outbound-endpoint path="from-file"/>
+    </flow>
+</mule>
+----
+
+这里也是，流程指定：
+
+synchronous同步流策略。 +
+rede重新送货政策
+
+另请注意，文件连接器的配置指定了`streaming="false"`。这是必需的，因为关闭流具有删除文件的副作用。还请注意，其他文件传输标志（如`moveTo`和`workDirectory`）不应在可靠性模式中使用，因为它们会以干扰重新处理故障时的方式移动或重命名文件。
+
+===  IMAP到VM
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:imap="http://www.mulesoft.org/schema/mule/imap"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+        http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd
+        http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.2/mule-jms.xsd
+        http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.2/mule-imap.xsd">
+ 
+    <imap:connector name="imapConnector" mailboxFolder="INBOX.MuleTest" deleteReadMessages="false"/>
+    <jms:activemq-connector name="amqConnector" brokerURL="tcp://localhost:61616"/>
+ 
+    <flow name="imap-reliability" processingStrategy="synchronous">
+        <imap:inbound-endpoint host="localhost" port="143" user="dirk" password="dirk">
+            <wildcard-filter pattern="*"/>
+        </imap:inbound-endpoint>
+        <vm:outbound-endpoint path="from-imap"/>
+    </flow>
+</mule>
+----
+
+与其他可靠采购流程一样，该流程具体规定：
+
+synchronous同步流策略。 +
+JMS出站端点配置一个事务。
+
+另请注意，在imap连接器上配置了`deleteReadMessages="false"`。这在此处是必需的，以便当处理遇到错误时邮件留在邮箱中。此外，必须在端点上配置`wildcard-filter`以标记已成功处理的邮件。这是必需的，以便这些消息不会再被处理。
+
+== 一般注意事项
+
+在实施可靠性模式时，需要考虑以下几点：
+
+* 交通工具允许您这样做时，始终使用交易。
+* 在采集流程中始终使用同步处理策略。
+* 使用XA事务桥接传输，即您希望在同一事务中登记多个托管资源的位置。
+*  JMS的可靠性与MQ实现以及它的配置密切相关。大多数MQ实现允许您配置消息是仅存储在内存中还是要保存。只有将MQ服务器配置为在发送消息之前持久存储消息，才能实现可靠性。否则，如果发生MQ服务器崩溃，您可能会丢失消息。
+* 可靠性对性能有影响。
+* 如果可靠采集流中的出站传输不是事务性的（例如，从文件到FTP的流），确保消息传递的唯一方法是关闭相应连接器上的线程。为了理解这一点，假设在将消息发送到出站端点时发生异常（如果FTP服务器关闭，可能会发生这种情况）。如果线程没有关闭，调用者可能不会注意到这个异常。这是因为异常发生在另一个线程中，并且一个线程无法查看另一个线程中发生的异常。以下示例显示如何关闭连接器中的线程：
++
+
+[source, xml, linenums]
+----
+<ftp:connector name="ftpConn">
+<dispatcher-threading-profile doThreading="false"/>
+</ftp:connector>
+----

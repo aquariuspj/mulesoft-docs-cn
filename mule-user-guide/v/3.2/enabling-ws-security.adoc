@@ -1,0 +1,230 @@
+= 启用WS-Security
+
+本页介绍如何配置客户端和服务以使用WS-Security。您应该已经有一个基本的客户端和服务器运行。有关WS-Security的良好入门知识，请参阅Microsoft网站上的 http://msdn.microsoft.com/en-us/library/ms977327.aspx[了解WS-Security]。
+
+如果您使用的是Mule企业版，则可以使用 link:/mule-user-guide/v/3.2/saml-module[SAML模块]将SAML支持添加到您的配置中。有关使用Mule企业版的WS-Security的示例，请参阅 link:/mule-user-guide/v/3.2/ws-security-example[WS-Security示例]。
+
+==  UsernameToken方案
+
+WS-Security中的UsernameToken功能是一种在SOAP消息中交换安全令牌的互操作方式。以下部分介绍如何配置客户端和服务器以交换用户名/密码安全令牌。
+
+=== 服务器配置
+
+在服务器端，您执行以下操作：
+
+* 为您的组件实现创建一个Mule服务
+* 配置WSS4JInInterceptor和SAAJInInterceptor。前者负责检查消息的安全性。
+* 编写一个验证密码的服务器PasswordCallback。
+
+您在Mule配置文件中配置服务器。以下是一个例子：
+
+[source, xml, linenums]
+----
+<flow name="greeterFlow">
+    <http:inbound-endpoint address="http://localhost:63081/services/greeter" exchange-pattern="request-response"/>
+    <cxf:jaxws-service serviceClass="org.apache.hello_world_soap_http.GreeterImpl">
+        <cxf:inInterceptors>
+            <spring:bean class="org.apache.cxf.binding.soap.saaj.SAAJInInterceptor" />
+            <spring:bean class="org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor">
+                <spring:constructor-arg>
+                    <spring:map>
+                        <spring:entry key="action" value="UsernameToken" />
+                        <spring:entry key="passwordCallbackRef" value-ref="serverCallback" />
+                    </spring:map>
+                </spring:constructor-arg>
+            </spring:bean>
+        </cxf:inInterceptors>
+    </cxf:jaxws-service>
+    </http:inbound-endpoint>
+    <component>
+        <singleton-object class="org.apache.hello_world_soap_http.GreeterImpl" />
+    </component>
+</flow>
+----
+
+<cxf:inInterceptors>元素配置服务上的传入拦截器。 WSS4JInInterceptor对传入的SOAP消息执行安全操作。 "action"参数控制它对传入消息执行哪些操作 - 在这种情况下，"UsernameToken"操作指定它将通过指定的密码回调验证用户名令牌。密码回调由"passwordCallbackRef"属性指定，详见下一节。 SAAJInInterceptor也安装在这里。它支持使用SAAJ，这是WSS4J需要的内存DOM文档格式。
+
+服务器回调通过提供与传入密码进行比较的密码来验证密码。
+
+[source, code, linenums]
+----
+import java.io.IOException;
+
+import javax.security.auth.callback.Callback;
+import javax.security.auth.callback.CallbackHandler;
+import javax.security.auth.callback.UnsupportedCallbackException;
+
+import org.apache.ws.security.WSPasswordCallback;
+
+public class ServerPasswordCallback implements CallbackHandler
+{
+
+    public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+
+        WSPasswordCallback pc = (WSPasswordCallback) callbacks[0];
+
+        if (pc.getIdentifer().equals("joe")) {
+            // set the password on the callback. This will be compared to the
+            // password which was sent from the client.
+            pc.setPassword("password");
+        }
+    }
+}
+----
+
+这使您可以编写自定义代码，以加载和比较自定义后端（如数据库或LDAP）的密码。
+
+=== 客户端配置
+
+在客户端，您执行以下操作：
+
+* 设置CXF出站端点
+* 配置CXF客户端，以便它使用ws-security
+* 设置提供调用密码的ClientPasswordCallback
+
+以下是配置CXF JAX-WS客户端消息处理器的简单示例：
+
+[source, xml, linenums]
+----
+<cxf:jaxws-client
+    name="clientEndpoint"
+    clientClass="org.apache.hello_world_soap_http.SOAPService"
+    port="SoapPort"
+    wsdlLocation="classpath:/wsdl/hello_world.wsdl"
+    operation="greetMe">
+    <cxf:outInterceptors>
+      <spring:bean class="org.apache.cxf.binding.soap.saaj.SAAJOutInterceptor" />
+      <spring:bean class="org.apache.cxf.ws.security.wss4j.WSS4JOutInterceptor">
+          <spring:constructor-arg>
+              <spring:map>
+                  <spring:entry key="action" value="UsernameToken" />
+                  <spring:entry key="user" value="joe" />
+                  <spring:entry key="passwordType" value="PasswordDigest" />
+                  <!-- The callback supplies the password so its not stored in our config file -->
+                  <spring:entry key="passwordCallbackRef" value-ref="clientCallback" />
+              </spring:map>
+          </spring:constructor-arg>
+      </spring:bean>
+    </cxf:outInterceptors>
+</cxf:jaxws-client>
+----
+
+== 配置CXF客户端以使用WS-Security
+
+要使用WS-Security，请将配置部分添加到您的"my-cxf-config.xml"文件中。
+
+*NOTE*：
+如果您的客户端和服务器位于不同的计算机上，则会创建两个单独的文件，然后在每个文件上创建一个CXF连接器配置。
+
+[source, xml, linenums]
+----
+<jaxws:client name="{http://apache.org/hello_world_soap_http}SoapPort" createdFromAPI="true">
+  <jaxws:outInterceptors>
+      <bean class="org.apache.cxf.binding.soap.saaj.SAAJOutInterceptor" />
+      <bean class="org.apache.cxf.ws.security.wss4j.WSS4JOutInterceptor">
+          <constructor-arg>
+              <map>
+                  <entry key="action" value="UsernameToken" />
+                  <entry key="user" value="joe" />
+                  <entry key="passwordType" value="PasswordDigest" />
+                  <!-- The callback supplies the password so its not stored in our config file -->
+                  <entry key="passwordCallbackRef" value-ref="clientCallback" />
+              </map>
+          </constructor-arg>
+      </bean>
+  </jaxws:outInterceptors>
+</jaxws:client>
+
+<bean id="clientCallback" class="org.mule.providers.soap.cxf.wssec.ClientPasswordCallback"/>
+----
+
+以上配置指定了以下内容：
+
+*  CXF应该调用UsernameToken操作。
+* 用户名是"joe"
+* 以摘要形式发送密码。
+* 使用"clientCallback" bean提供密码。 （见下文）
+
+=== 客户端密码回拨
+
+以下是一个简单的示例客户端密码回调，它设置用于传出调用的密码：
+
+[source, code, linenums]
+----
+import java.io.IOException;
+
+import javax.security.auth.callback.Callback;
+import javax.security.auth.callback.CallbackHandler;
+import javax.security.auth.callback.UnsupportedCallbackException;
+
+import org.apache.ws.security.WSPasswordCallback;
+
+public class ClientPasswordCallback implements CallbackHandler
+{
+    public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+        WSPasswordCallback pc = (WSPasswordCallback) callbacks[0];
+
+        // set the password for our message.
+        pc.setPassword("yourpassword");
+    }
+}
+----
+
+与Mule SecurityManager进行==  UsernameToken验证
+
+如果您使用Mule link:/mule-user-guide/v/3.2/configuring-security[安全经理]，则可以设置WSS4J以验证密码。这使您可以轻松集成您自己的身份验证机制或使用Mule对Spring Security的支持。
+
+首先，您需要设置您的安全管理员：
+
+[source, xml, linenums]
+----
+<mule-ss:security-manager>
+      <mule-ss:delegate-security-provider name="memory-dao" delegate-ref="authenticationManager"/>
+  </mule-ss:security-manager>
+
+  <spring:beans>
+      <ss:authentication-manager alias="authenticationManager"/>
+
+      <ss:authentication-provider>
+          <ss:user-service id="userService">
+              <ss:user name="joe" password="password" authorities="ROLE_ADMIN" />
+              <ss:user name="anon" password="anon" authorities="ROLE_ANON" />
+          </ss:user-service>
+      </ss:authentication-provider>
+
+  </spring:beans>
+----
+
+接下来，您需要创建一个`<cxf:security-manager-callback>`元素。此回调负责将Mule安全管理器和WSS4J连接在一起。
+
+[source, xml, linenums]
+----
+<spring:beans>
+       ...
+       <cxf:security-manager-callback id="serverCallback"/>
+   </spring:beans>
+----
+
+最后，你需要设置你的服务器端WSS4J处理程序来使用这个回调函数：
+
+[source, xml, linenums]
+----
+<cxf:jaxws-service>
+    <cxf:inInterceptors>
+        <spring:bean class="org.apache.cxf.binding.soap.saaj.SAAJInInterceptor" />
+        <spring:bean class="org.apache.cxf.ws.security.wss4j.WSS4JInInterceptor">
+            <spring:constructor-arg>
+                <spring:map>
+                    <spring:entry key="action" value="UsernameToken" />
+                    <spring:entry key="passwordCallbackRef" value-ref="serverCallback" />
+                </spring:map>
+            </spring:constructor-arg>
+        </spring:bean>
+    </cxf:inInterceptors>
+</cxf:jaxws-service>
+----
+
+在本例中，CXF `jaxws-service} creates a WSS4JInInterceptor which performs UsernameToken verification of the message. Once it reads in the username/password, it will perform a callback to the Mule security manager using the {{<cxf:security-manager-callback>`。
+
+[WARNING]
+在客户端，您需要使用明文密码才能正常工作。为此，请将WSS4JOutInterceptor上的"passwordType"属性设置为"PasswordText"。

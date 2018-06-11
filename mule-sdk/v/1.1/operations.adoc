@@ -1,0 +1,259 @@
+= 操作
+:keywords: mule, sdk, operation, processor, result, execution, void, payload,
+
+操作是最重要的Mule概念之一，因为它们表示模块在流程中可以执行的操作。您可以使用它们通过模块中实现的业务逻辑来处理传入的消息。
+
+== 为配置声明操作
+
+操作必须在一个单独的类中声明。请参阅<<module-structure#, Structure>>，了解如何正确组织模块的代码。
+
+提示：类是Config类或Operations类。你不能在同一个班上混合两种东西。
+
+[source, Java, linenums]
+----
+@Extension(name = "Foo")
+@Operations(FooOperations.class)
+public class FooModule {
+
+    @Parameter
+    private String fooModuleParameter;
+
+    public String getFooModuleParameter() {
+        return fooModuleParameter;
+    }
+}
+----
+
+`FooOperations`中定义的所有公共方法都将被视为我们的操作。如果你想在你的操作类中拥有一个公共方法，但是你不希望它被认为是一种操作，那么你
+只需要使用`@Ignore`注释该方法即可。
+
+喜欢这个：
+
+[source, Java, linenums]
+----
+public class FooOperations {
+
+    public String foo(@Config FooModule config) {
+        return config.getFooModuleParameter();
+    }
+
+    private String thisIsNotAnOperation() {
+        return "bar";
+    }
+
+    @Ignore
+    public String thisIsNotAnOperationEither() {
+        return "foobar";
+    }
+}
+----
+
+在上面的例子中，操作类绑定到唯一的配置（与扩展类相同）。这意味着在`FooOperations`中定义的操作仅适用于特定类型的配置（在这种情况下为`FooModule`）。
+
+提示：请记住，您可以将您的扩展用作配置_if，并且只有if_是您拥有的唯一配置。
+
+因此，定义了一个名为`foo`的操作。由于*it belongs to the configuration* `FooModule`，它可以接收配置类作为使用注释`@Config`注释的参数。
+
+您无法使用您用于任何<<parameters#, Parameter>>的批注注释为`@Config`的参数，因为该配置不是参数。
+
+== 全球运营
+
+除了添加特定配置独占的操作外，还可以在扩展级别添加操作，即对模块全局的操作。
+
+扩展级别的操作不能有配置，除非扩展类是唯一的配置。这意味着他们没有绑定到配置。要在扩展级别定义操作，需要在定义配置的同时用`@Operations`注释扩展类，而不是使用扩展类作为唯一配置。
+
+考虑到这只有在不止一个配置的情况下才有意义。那是因为如果我们只有扩展类（我们唯一的配置），
+那么我们定义的所有操作都会绑定它。
+
+下一个示例添加两个配置并为其中的每个配置操作。然后它添加一些对模块来说是全局的操作。
+
+[source, Java, linenums]
+----
+@Extension(name = "Foo")
+@Operations(GlobalOperations.class)
+@Configurations({FooConfig.class, BarConfig.class})
+public class FooModule {
+}
+----
+
+[source, Java, linenums]
+----
+public class GlobalOperations {
+    public String fooModuleOperation() {
+        return "this operation is global to the module!";
+    }
+}
+----
+
+上面的示例定义了具有两种配置`FooConfig`和`BarConfig`的模块，以及在`GlobalOperations`中定义的一组操作。
+
+现在，看看配置和他们的操作：
+
+[[example_1]]
+[source, Java, linenums]
+----
+@Operations({FooConfigOperations.class})
+public class FooConfig {
+
+    @Parameter
+    private String fooParameter;
+
+    public String getFooParameter() {
+        return fooParameter;
+    }
+}
+----
+
+[source, Java, linenums]
+----
+public class FooConfigOperations {
+    public String fooConfigOperation(@Config FooConfig config) {
+        return "this operation receives the FooConfig which has a fooParameter with value: " + config.getFooParameter();
+    }
+}
+----
+
+上面的示例定义了一个名为`FooConfig`的新配置，其中有一些在`FooConfigOperations`中定义的独占操作。然后它定义一个名为`fooConfigOperation`的操作。因为它属于配置`FooConfig`，所以它可以接收配置类作为使用特殊注释`@Config`注释的参数。
+
+[source, Java, linenums]
+----
+@Operations({BarConfigOperations.class})
+public class BarConfig {
+
+    @Parameter
+    private String barParameter;
+
+    public String getBarParameter() {
+        return barParameter;
+    }
+}
+----
+
+[source, Java, linenums]
+----
+public class BarConfigOperations {
+    public String barConfigOperation(@Config BarConfig config){
+        return "this operation receives the BarConfig which has a barParameter with value: " + config.getBarParameter();
+    }
+}
+----
+
+在扩展级别定义操作（与上面的`GlobalOperations`方法一样）表示定义的操作没有接收（因此不需要）任何配置来操作。
+
+有关配置的更多信息，请参阅<<configs#, Configs>>。
+
+[[_using_connections]]
+== 连接的操作
+
+除了将配置作为参数接收外，您还可以将连接作为_special_参数进行接收。您可以通过为此操作所属的配置定义一个<<connections#, Connection Provider>>来执行此操作。
+
+下一个示例将连接添加到<<example_1, previous example>>。
+
+假设您在别处定义了`FooConnectionProvider`，并提供`FooConnection`类型的连接。 （要了解如何定义连接提供程序，请参阅<<connections#, Connection Provider>>。）
+
+[source, Java, linenums]
+----
+@Operations({FooConfigOperations.class})
+@ConnectionProviders(FooConnectionProvider.class)
+public class FooConfig {
+
+    @Parameter
+    private String fooParameter;
+
+    public String getFooParameter() {
+        return fooParameter;
+    }
+}
+----
+
+[source, Java, linenums]
+----
+public class FooConfigOperations {
+    public String fooConfigOperation(@Config FooConfig config){
+        return "this operation receives the FooConfig!";
+    }
+
+    public String fooConnectedOperation(@Connection FooConnection connection){
+        return "this operation receives FooConnection!";
+    }
+
+    public String fooConnectedOperation(@Config FooConfig config, @Connection FooConnection connection){
+        return "this operation receives both config and connection!";
+    }
+}
+----
+
+现在有三种不同的操作：
+
+* 接收配置`FooConfig`的人。
+* 接收连接`FooConnection`的人。
+* 一个接收配置`FooConfig`并获得由`FooConnectionProvider`提供者类提供的`FooConnection`类型的连接。
+
+== 操作结构
+
+一个操作是从一个Java方法定义的，它使得方法的参数和操作参数直接映射。遵循相同的逻辑，操作的输出类型取自方法的返回类型。
+
+=== 输出
+
+接下来的部分将说明在调用操作时，操作的输出如何影响流中发生的情况。
+
+==== 有效载荷
+
+常见的行为是定义一个操作，该操作返回将在操作输出消息的有效负载中设置的任何类型。
+
+[source, Java, linenums]
+----
+
+public String outputStringPayload(){
+    return "this string is going directly into the payload!";
+}
+----
+
+[提示]如果操作指定了*only*有效内容，则消息属性将设置为`null`。
+
+==== 空
+
+void操作是从返回`void`的方法创建的操作。此操作不会修改收到的消息，但会将该消息传递给流中的下一个组件，例如：
+
+[source, xml, linenums]
+----
+<flow>
+    <set-payload value="Hello" />
+    <foo:output-string-payload/>
+    <foo:other-operation />
+</flow>
+----
+
+这里，`void-operation`中收到的消息与`other-operation`中收到的消息相同。
+
+==== 结果
+
+如果你想输出比简单的有效载荷更多的东西，比如关于有效载荷的信息（Mule消息的属性），你需要使用`Result`作为你的方法的返回类型。有关更多信息，请参阅<<result-object#, Result>>。
+
+=== 特殊参数
+
+因此，您可以在操作中接收配置和连接。除常规参数外还有其他特殊参数吗？是。
+
+这里有一些你可以在操作中作为参数接受的特殊事物，Mule会自动为你注入正确的值：
+
+*  `AuthenticationHandler`：`AuthenticationHandler`类型的参数，允许您配置当前上下文的身份验证。这用于加密和入站认证。
+*  `StreamingHelper`：类型为`StreamingHelper`的参数，带有用于处理流的实用程序。有关更多信息，请参阅<<streaming#, Streaming>>。
+*  `DefaultEncoding`：用`@DefaultEncoding`注解的`String`类型参数，其中包含有关运行时默认编码的信息。
+
+[source, Java, linenums]
+----
+public String foo(@DefaultEncoding String encoding) {
+    return "Mule default encoding is " + encoding;
+}
+----
+
+== 别名操作
+
+您可以更改操作的名称，而无需使用`@Alias`更改方法的名称。您还可以按照<<parameters#, Parameters>>中的说明别名操作参数。
+
+[source, Java, linenums]
+----
+@Alias("fooOperation")
+public void thisWillNotBeTheOperationName(@Alias("fooParameter") String aliasedParameter) {
+}
+----

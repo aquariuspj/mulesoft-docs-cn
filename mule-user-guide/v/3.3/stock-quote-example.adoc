@@ -1,0 +1,99 @@
+= 股票报价示例
+
+此示例演示如何从Mule ESB调用Web Service，使用 http://en.wikipedia.org/wiki/Xslt[XSLT]转换结果，并将结果反序列化为StockQuote Java bean。该应用程序演示如何使用 http://en.wikipedia.org/wiki/Representational_state_transfer[休息]， http://en.wikipedia.org/wiki/SOAP[肥皂]和 http://en.wikipedia.org/wiki/Wsdl[WSDL]来调用服务。过程如下：
+
+* 应用程序使用 link:/mule-user-guide/v/3.3/http-endpoint-reference[HTTP入站端点]接收来自用户的查询
+* 它从查询中提取报价符号，并用符号调用股票报价服务
+* 当股票报价服务回复时，应用程序首先使用 link:/mule-user-guide/v/3.3/xslt-transformer-reference[XSLT变压器]转换结果，然后使用 link:/mule-user-guide/v/3.3/xml-to-object-transformer-reference[XML到对象变换器]将其转换为StockQuote Java bean。
+* 最后，它将引用返回给浏览器，并将其转换回纯文本。
+
+== 假设
+
+本文档假定您熟悉Mule ESB和 link:/mule-user-guide/v/3.3/mule-studio-essentials[Mule Studio界面]。要提高您对Studio的熟悉度，请考虑完成一个或多个 link:/mule-user-guide/v/3.3/mule-studio[Mule Studio教程]。
+
+本文档在Mule ESB的图形用户界面（GUI）*Mule Studio*的上下文中描述了示例的细节。在适当的情况下，XML配置在可扩展部分的Studio界面屏幕截图之后。
+
+== 设置
+
+与此股票报价示例一样，您可以直接在*Mule Studio*或*Mule Standalone*（没有Studio的Mule ESB）中创建模板应用程序。您可以调整这些基于用例的模板的配置，以在Mule中创建您自己的自定义应用程序。
+
+按照以下步骤创建，然后运行Mule ESB中的股票报价应用程序。
+
+. 完成示例和练习中的过程以创建，然后运行Mule Studio中的股票报价模板或Mule Standalone（无Studio中的Mule ESB）中的股票报价示例。
+. 打开Web浏览器。
+. 根据您要使用的示例风格，在浏览器的地址栏中输入以下URL之一，然后按*enter*。 +
+*  `+http://localhost:48309/stockquote?symbol=IBM&method=REST+`
+*  `+http://localhost:48309/stockquote?symbol=IBM&method=SOAP+`
++
+URL中的最后四个字符决定了应用程序将用于查询股票报价服务的方法。 `symbol`参数允许您选择想要获取其报价的股票代码（在上例中，`IBM`）。
+. 按回车键以从应用程序中获取响应，以显示类似于以下内容的数据：
++
+image:app.output.png[app.output]
+
+== 它是如何工作的
+
+=== 全局配置元素
+
+此应用程序的某些配置元素存储在外部文件中。要从这些文件加载​​配置，应用程序使用全局元素。要查看应用程序的全局元素，请单击Studio画布下的*Global Elements*选项卡。下面的图片突出显示了*Global Elements*选项卡，并显示了此示例中配置的全局元素。 +
++
+image:global.elements.png[global.elements]
+
+第一个全局元素是*Property Placeholder*。它将包含在配置文件中的属性加载到Mule上下文中。要查看此全局元素的配置，请双击*Global Elements*选项卡中的*Properties Placeholder*。
+
+image:StockQuote+Property+Placeholder.png[股票报价+物业+占位符]
+
+[source, xml, linenums]
+----
+<context:property-placeholder location="proxy.properties"/>
+----
+
+在这种情况下，Property占位符将读取文件`stockquote.properties`（请参见下文）。
+
+[source, code, linenums]
+----
+port1=48309
+----
+
+接下来的五个全局元素定义变压器的配置。请注意，XSLT转换器引用应用程序的`xsl`子目录中的XSLT文件。 XSLT文件可以位于类路径中的任何位置。
+
+image:Stockquote+Global+Elements.png[股票报价+全球要素+]
+
+//查看XML
+
+===  HTTP_input流
+
+HTTP_input流程是此示例应用程序查询的主要入口点。它接收发送到应用程序URL的HTTP请求，并确定调用哪个子流来处理请求。
++
+image:StockQuote+HTTP+Input.png[的StockQuote + HTTP +输入]
+
+//查看XML
+
+流程中的第一个构建块 link:/mule-user-guide/v/3.3/http-endpoint-reference[HTTP端点]从应用程序的URL接收HTTP请求。第二个构建块（*Body to Parameter Map*转换器）将HTTP请求解析为映射。流程然后使用流程处理策略从映射（REST，SOAP或WSDL）提取方法，然后调用适当的子流程进行处理。
+
+===  REST子流
+
+image:Stockquote+rest+flow.png[股票报价+休息+流]
+
+//查看XML
+
+REST子流程使用*Set Payload*转换器从有效负载中提取股票代码的值。 （该值在URL中定义;在此示例中，值为`IBM`。）随后，流设置有效内容的`Content-Type`属性，该属性使用HTTP将其作为表单发布到REST服务出站端点。最后，它解码响应并使用`rest-stock.xsl`文件应用XSLT转换。
+
+===  SOAP子流
+
+除了其服务配置外，此子流与REST子流非常相似。它不是使用REST，而是在*soapClient*子流中使用 link:/mule-user-guide/v/3.3/soap-component-reference[SOAP组件]以提取的符号作为参数来调用股票报价服务。
+
+image:SOAPflows.png[SOAPflows]
+
+//查看XML
+
+流程中的第二个构件块*Soap Client*是 link:/mule-user-guide/v/3.3/flow-ref-component-reference[流量参考组件]。它调用soapClient子流程，该子流程依次使用HTTP端点将提取的符号作为表单发布到股票报价服务。 soapClient流等待回复，然后转发回SOAP子流。 SOAP子流解码回复，然后使用`soap-stock.xsl`文件应用XSLT转换。
+
+===  WSDL子流程
+
+像REST和SOAP子流一样，WSDL子流使用Set Payload变换器从有效负载中提取股票代码的值。然后，它使用 link:/mule-user-guide/v/3.3/generic-endpoint-reference[通用出站端点]将请求表单发布到股票报价服务。
+
+image:Stockquote+WSDL+flow.png[股票报价+ WSDL +流]
+
+//查看XML
+
+WSDL子流中的出站端点在其配置的地址中使用`wsdl-cxf`前缀。这种方法的局限性在于它只支持处理原始数据类型。现实生活中的正确方法是使用`jaxws-client`或`simple-client`作为地址前缀。

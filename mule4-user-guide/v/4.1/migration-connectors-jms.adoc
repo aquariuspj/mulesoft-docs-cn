@@ -1,0 +1,624 @@
+//作者：马拉，瓦辛格可以在1/18之后开始
+= 迁移到JMS连接器
+
+//一般地解释Mule 3和Mule 4之间如何以及为什么会发生变化。
+JMS传输已完全重塑，并从Mule 3传输模型演变为基于操作的连接器，并具有简化的UX和完全支持DataSense的消息信息。
+这意味着使用JMS现在不仅可以在连接和配置方面提供相同的体验，而且可以根据结构化的消息信息更简单地生成任何其他连接器，还可以生成和使用消息。
+
+此外，新版本的JMS连接器还支持所需的JMS 2.0规范，并具有所有新功能（如共享订阅）。
+
+////
+不需要，因为正确的导航栏涵盖这些主题
+
+本节涵盖的内容：
+
+*  <<ConfiguringTheConnector>>
+*  <<ConnectingToABroker>>
+*  <<SendingMessages>>
+*  <<ListeningForNewMessages>>
+*  <<ConsumingMessages>>
+*  <<HandlingTopicSubscriptions>>
+*  <<RespondingToIncomming Messages>>
+*  <<DoingRequest-Reply>>
+*  <<UsingTransactions>>
+
+////
+
+[[ConfiguringTheConnector]]
+== 配置连接器
+
+从Mule 4中的3.x传输配置转移到JMS连接器配置意味着基本上使用相同的确切参数，但是以更紧密的方式声明它们。
+这意味着例如用于消费消息的参数在'consumer-config'组中声明，而一般认证参数在General组中配置。此外，影响连接器（存在于配置中）行为的参数与仅影响连接如何建立（连接级别存在）的参数之间存在分离：
+
+.Mule 3示例：配置连接器
+[source, xml, linenums]
+----
+<jms:connector name="JMS_Config"
+     acknowledgementMode="DUPS_OK_ACKNOWLEDGE"
+     clientId="myClient"
+     durable="true"
+     noLocal="true"
+     persistentDelivery="true"
+     maxRedelivery="5"
+     cacheJmsSessions="true"
+     eagerConsumer="false"
+     specification="1.1"
+     numberOfConsumers="7"
+     username="myuser"
+     password="mypass" />
+----
+
+Mule 4在实际应用的环境中设置相同的参数，如'noLocal'或'durable'只影响'主题 - 消费者'：
+
+.Mule 4示例：配置连接器
+[source, xml, linenums]
+----
+<jms:config name="JMS_Config">
+  <jms:active-mq-connection specification="JMS_1_1" clientId="myClient" username="myuser" password="mypass">
+      <jms:factory-configuration maxRedelivery="5"/>
+  </jms:active-mq-connection>
+  <jms:consumer-config ackMode="DUPS_OK">
+      <jms:consumer-type>
+          <jms:topic-consumer noLocal="true" durable="true"/>
+      </jms:consumer-type>
+  </jms:consumer-config>
+  <jms:producer-config persistentDelivery="true"/>
+</jms:config>
+----
+
+[[ConnectingToABroker]]
+== 连接到经纪商
+
+在用于Mule 4的JMS连接器中，通用JMS连接和简化的ActiveMQ连接之间的区别仍然存在，但具有仅与连接相关的更多集中的参数集。我们将首先看到如何配置这个简化的连接，然后转到通用的方法。
+
+=== 连接到ActiveMQ
+
+使用transport，配置ActiveMQ特定参数的唯一方法是将ConfiguratioFactory定义为spring bean，然后传递每个属性：
+.Mule 3示例：连接到ActiveMQ
+[source, xml, linenums]
+----
+<spring:bean name="connectionFactory"
+             class="org.apache.activemq.ActiveMQConnectionFactory">
+    <property name="brokerURL"
+              value="tcp://activemqserver:61616"/>
+
+    <property name="redeliveryPolicy">
+        <spring:bean class="org.apache.activemq.RedeliveryPolicy">
+            <property name="initialRedeliveryDelay"
+                      value="20000"/>
+            <property name="redeliveryDelay"
+                      value="20000"/>
+            <property name="maximumRedeliveries"
+                      value="10"/>
+       </spring:bean>
+    </property>
+</spring:bean>
+
+
+<jms:activemq-connector name="jmsConnector" connectionFactory-ref="connectionFactory"/>
+----
+
+使用新的JMS连接器，可以直接在activemq连接中配置此属性：
+
+.Mule 4示例：连接到ActiveMQ
+[source, xml, linenums]
+----
+<jms:config name="JMS_Config">
+  <jms:active-mq-connection>
+      <jms:factory-configuration brokerUrl="tcp://activemqserver:61616"
+                                 initialRedeliveryDelay="20000" redeliveryDelay="20000"  maxRedelivery="10"/>
+  </jms:active-mq-connection>
+</jms:config>
+----
+
+如果您需要迁移使用JMS连接器中不支持的Connection Factory的传输配置，仍然可以使用'activemq-connection'中的'connectionFactory'属性将引用传递给任何Connection工厂bean。
+
+
+=== 使用不同的代理
+
+Mule 3 JMS transport和Mule 4 JMS Connector允许你定义一个到你需要的任何连接工厂的通用连接。
+
+我们有两种方法来做到这一点，第一种方法是使用spring bean创建一个Connection Factory，然后将其引用为Connection Factory：
+
+.Mule 3示例：使用Spring Bean的通用连接
+[source, xml, linenums]
+----
+<spring:bean name="connectionFactory" class="com.foo.CustomConnectionFactory"/>
+
+<jms:connector name="jmsConnector" connectionFactory-ref="connectionFactory" />
+----
+
+骡子4的版本几乎完全相同：
+
+.Mule 4示例：使用Spring Bean进行通用连接
+[source, xml, linenums]
+----
+<spring:bean name="connectionFactory" class="com.foo.CustomConnectionFactory"/>
+
+<jms:config name="JMS_Config">
+  <jms:generic-connection connectionFactory="customConnectionFactory"/>
+</jms:config>
+----
+
+创建通用连接的另一种方法是使用使用JNDI发现的连接工厂。在这种情况下，功能保持不变，但从传输到连接器的语法更改：
+
+.Mule 3示例：使用JNDI进行通用连接
+[source, xml, linenums]
+----
+<beans>
+    <util:properties id="providerProperties">
+        <prop key="queue.jndi-queue-in">in</prop>
+        <prop key="topic.jndi-topic-in">in</prop>
+    </util:properties>
+</beans>
+
+
+<jms:connector name="jmsConnector"
+    jndiInitialFactory="com.sun.jndi.ldap.LdapCtxFactory"
+    jndiProviderUrl="ldap://localhost:10389/"
+    jndiProviderProperties-ref="providerProperties"
+    connectionFactoryJndiName="cn=ConnectionFactory,dc=example,dc=com"
+    jndiDestinations="true"
+    forceJndiDestinations="false"/>
+----
+
+在Mule 4的版本中，你可以这样配置内联的JNDI：
+
+.Mule 4示例：使用Spring Bean进行通用连接
+[source, xml, linenums]
+----
+<jms:config name="JMS_Config">
+    <jms:generic-connection>
+        <jms:connection-factory>
+            <jms:jndi-connection-factory connectionFactoryJndiName="cn=ConnectionFactory,dc=example,dc=com"
+                                         lookupDestination="TRY_ALWAYS">
+                <jms:name-resolver-builder
+                        jndiInitialContextFactory="com.sun.jndi.ldap.LdapCtxFactory"
+                        jndiProviderUrl="ldap://localhost:10389/">
+                  <jms:provider-properties>
+                      <jms:provider-property key="queue.jndi-queue-in" value="in"/>
+                      <jms:provider-property key="topic.jndi-topic-in" value="in"/>
+                  </jms:provider-properties>
+                </jms:name-resolver-builder>
+            </jms:jndi-connection-factory>
+        </jms:connection-factory>
+    </jms:generic-connection>
+</jms:config>
+----
+
+这个例子有三个主要的区别：
+
+* 现在，属性被声明为内联，不需要使用spring bean utils。
+* 使用JNDI强制执行目标查找现在配置为名为'lookupDestination'的单个参数，该参数统一了前两个参数'jndiDestinations'和'forceJndiDestinations'。
+* 参数现在存在于它们相关的上下文中，如'jndiProviderUrl'是'name-resolver'的一部分。
+
+
+[[SendingMessages]]
+== 发送消息
+
+JMS Transport依赖有效负载来包含JMS消息的主体，并使用Mule的出站属性来自定义JMS属性和头。使用新的Mule 4方法，JMS的“发布”操作仅依赖其输入参数来完全构建要发布的JMS消息。
+
+例如，如果我们想发送一个高优先级的JMS消息，并在消息体中只包含一部分负载，并将该消息关联到一个组，我们需要：
+<1>）使用`transform`将有效负载设置为消息正文所期望的内容。
+<2>）将生成的流转换为一个字符串以将其作为文本消息发送。
+<3>）使用`priority`设置出站消息属性作为设置JMSPriority的关键字。
+<4>）使用`JMSXGroupID`设置出站消息属性作为设置JMSXGroupID的关键字。
+
+.Mule 3示例：发送优先消息作为组的一部分
+[source, xml, linenums]
+----
+<flow name="JmsTransportOutbound">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/orders"/>
+    <dw:transform-message> // <1>
+        <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+order_id: payload.id,
+supplier: payload.warehouse
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <object-to-string-transformer/> <2>
+    <jms:outbound-endpoint queue="storage" connector-ref="Active_MQ">
+      <message-properties-transformer scope="outbound">
+          <add-message-property key="JMSXGroupID" value="#[message.inboundProperties."http.query.params".packageGroup]"/> // <3>
+          <add-message-property key="priority" value="9"/> // <4>
+      </message-properties-transformer>
+    </jms:outbound-endpoint>
+</flow>
+----
+
+在使用JMS连接器的Mule 4中，使用以下配置可以实现相同的结果：
+
+.Mule 4示例：发送优先消息作为组的一部分
+[source, xml, linenums]
+----
+<flow name="JMSConnectorPublish">
+		<http:listener config-ref="HTTP_Listener_config" path="/orders"/>
+    // <2>
+		<jms:publish config-ref="JMS_Config" destination="storage" priority="9"> // <3>
+			<jms:message> // <1>
+				<jms:body>#[output application/json ---
+        {
+          order_id: payload.id,
+          supplier: payload.warehouse
+        }]</jms:body>
+				<jms:jmsx-properties jmsxGroupID="#[attributes.queryParams.packageGroup]"/> // <4>
+			</jms:message>
+		</jms:publish>
+	</flow>
+----
+
+差异要注意：
+
+1）不需要`transform`组件，因为消息的`body`是内联创建的，因此有效负载保持不变。
+2）`object-to-string`变压器也被移除，因为连接器可以自动处理变换输出。
+3）优先级被设置为`publish`操作的参数，并且不依赖于用户知道确切的密钥。
+4）Group被设置为Message JMSX属性的一部分，并且不依赖于知道确切头名称的用户。
+
+作为总结，当使用JMS传输在3.x中发布消息时，我们依赖MuleMessage负载和出站属性来配置创建JMS消息，这意味着对传输如何工作有了更深入的了解。在4.x中，JMS连接器将每个可配置元素公开为它所属范围中的一个参数，从而以更清晰的方式公开所有JMS功能。
+
+
+[[ConsumingMessages]]
+== 消费邮件
+
+[[ListeningForNewMessages]]
+=== 收听新邮件
+
+JMS传输`inbound-endpoint`允许您等待给定主题或队列上的新消息。此侦听器的输出将包含有效内容中的消息正文，以及所有JMS标头和属性，如`inboundProperties`。
+
+.Mule 3示例：通过选择器筛选收听邮件
+[source, xml, linenums]
+----
+<flow name="JmsTransportInbound">
+  <jms:inbound-endpoint connector-ref="Active_MQ" queue="in">
+    <jms:selector expression="JMSPriority=9"/>   // <1>
+  </jms:inbound-endpoint>
+  <dw:transform-message> // <2>
+      <dw:set-payload><![CDATA[%dw 1.0
+        %output application/json
+        ---
+        {
+        items: payload,
+        costumer: message.inboundProperties.'costumer_id',
+        type: message.inboundProperties.'JMSType'
+        }]]></dw:set-payload>
+  </dw:transform-message>
+  <object-to-string-transformer/>  // <3>
+  <jms:outbound-endpoint queue="v2/prime/orders" connector-ref="Active_MQ"/>  // <4>
+</flow>
+----
+
+在这种情况下，我们正在侦听高优先级消息，然后将它们调整为优先级订单版本2所需的新格式：
+
+1）按优先级过滤消息。
+2）使用inboundProperties中包含的元数据转换MuleMessage，以使有效负载与新API所需的新JSON格式相匹配。
+3）将转换后的有效内容转换为JSON字符串。
+4）将负载发布到代理队列。
+
+在Mule 4中执行相同的操作如下所示：
+
+.Mule 4示例：通过选择器筛选收听邮件
+[source, xml, linenums]
+----
+<flow name="JMSConnectorPublish">
+  <jms:listener config-ref="JMS_Config" destination="in" selector="JMSPriority=9"/> // <1>
+  <jms:publish config-ref="JMS_Config" destination="v2/prime/orders"> // <2>
+    <jms:message>
+      <jms:body>#[output application/json ---
+      {
+        items: payload,
+        costumer: attributes.properties.userProperties.costumer_id, // <3>
+        type: attributes.headers.type
+      }]</jms:body>
+    </jms:message>
+  </jms:publish>
+</flow>
+----
+
+现在，流的组件数量较少，不需要修改消息有效负载以使用不同的格式发布：
+
+<1>使用筛选器进行侦听可以在侦听器中配置'选择器'。
+<2>新消息的定义是内联完成的，所以它只为新消息主体创建JSON。
+<3>我们使用消息'attributes'POJO而不是'inboundProperties'，它现在将JMS Messsage的'headers'与'properties'区分开来。
+
+
+[[ConsumingMessages]]
+=== 消费邮件
+
+从Mule的3个JMS传输中不支持来自给定目的地的消息中间流消息，并且还需要将“Mule请求者模块”添加到您的应用程序，然后处理中间消息消息。
+
+因此，例如，如果您想在新的REST API后面展示您的JMS队列，那么您的应用程序将与此类似：
+
+.Mule 3示例：消费中间流消息
+[source, xml, linenums]
+----
+<mulerequester:config name="Mule_Requester"/>
+<jms:activemq-connector name="Active_MQ" brokerURL="tcp://localhost:61616" specification="1.1"/>
+
+<flow name="ordersFromJMS">
+  <http:inbound-endpoint exchange-pattern="request-response" path="orders" host="localhost" port="8081"/>
+  <mulerequester:request config-ref="Mule_Requester"
+                         resource="jms://Orders?selector=shipped%3D'#[message.inboundProperties.'shipped']'"/>
+  <logger level="INFO" message="CorrelationId: #[message.inboundProperties.'JMSCorrelationId']"/>
+</flow>
+----
+
+这里需要注意的一些事情是：
+
+* 有关JMS消息的所有元数据都完全丢失，因此记录CorrelationId依赖于您知道获取标题的语法。
+* 'selector'的动态筛选必须在请求者的'resource'url中完成，因此多个参数最终会出现容易出错的配置。
+* 我们需要JMS和Mule Requester配置。
+
+通过使用thr'消费'操作，Mule 4能够通过消息中间消息传递消息。这个操作与我们之前看到的Listener非常相似，区别在于它可以在流程中的任何地方使用：
+
+.Mule 4示例：消费中等流量消息
+[source, xml, linenums]
+----
+<flow name="ordersFromJMS">
+  <http:listener config-ref="HTTP_Listener_config" path="/orders"/>
+  <jms:consume destination="Orders" selector=#['shipped=' ++ attributes.queryParams.shipped]/>
+  <logger level="INFO" message="#['CorrelationId: ' ++ attributes.headers.correlationId]"/>
+</flow>
+----
+
+现在我们只需要一个JMS连接器，通过使用来自监听器的元数据的'selector'参数配置'consume'操作，并且还能够在Message属性中记录具有元数据支持的correlationId。
+
+
+[[HandlingTopicSubscriptions]]
+=== 处理主题订阅
+
+在3.x中用作入站端点的主题允许用户配置是否对主题的订阅必须作为`durable`订阅完成。这样做有不同的方式，并且也存在为`queues`公开`durable`配置的问题，这是没有意义的。
+
+3.x中的主题订阅如下所示：
+
+.Mule 3示例：主题订阅
+[source, xml, linenums]
+----
+<jms:inbound-endpoint connector-ref="Active_MQ" topic="trackedEvents" durable="true" durableName="inboundEvents_1"/>
+----
+
+对于Mule 4，订阅机制已经过审查，订阅选项的范围仅限于主题，并且由于支持JMS 2.0而增加了更多的功能。
+
+和以前一样，但在4.x中将是：
+
+.Mule 4示例：主题订阅
+[source, xml, linenums]
+----
+<jms:listener config-ref="JMS_Config" destination="trackedEvents">
+    <jms:consumer-type>
+        <jms:topic-consumer durable="true" subscriptionName="inboundEvents_1"/>
+    </jms:consumer-type>
+</jms:listener>
+----
+
+但在这种情况下，`topic-consumer`配置允许我们也设置`shared`订阅（仅在使用JMS 2.0连接时），以允许通过多线程，连接或JVM处理来自主题订阅的消息：
+
+.Mule 4示例：主题订阅
+[source, xml, linenums]
+----
+<jms:listener config-ref="JMS_Config" destination="trackedEvents">
+    <jms:consumer-type>
+        <jms:topic-consumer durable="true" shared="true" subscriptionName="inboundEvents_1"/>
+    </jms:consumer-type>
+</jms:listener>
+----
+
+[[RespondingToIncommingMessages]]
+响应收到消息的== 
+
+当新JMS消息的侦听器接收到配置了'JMSReplyTo'头的消息时，则希望一旦完成消息处理，就会向应答目标发送响应。
+
+对于Mule 3，这意味着在流程结束时使用`exchange-pattern="request-response"` `, where the result of the flow will automatically become the payload of the response. Headers of the response Message were configured using the `出站属性`, while the body of the Message was taken from the `有效载荷来配置传输。
+
+.Mule 3示例：响应收到消息
+[source, xml, linenums]
+----
+<flow name="jmsBridge">
+  <jms:inbound-endpoint queue="storage" exchange-pattern="request-response" connector-ref="PublicAMQ">
+    <message-properties-transformer scope="outbound">
+      <add-message-property key="timeToLive" value="2000"/>
+      <add-message-property key="timeToLive" value="2000"/>
+    </message-properties-transformer>
+  </jms:inbound-endpoint>
+  <http:request config-ref="HTTP_Request_Configuration" path="/storage" method="POST"/>
+  <set-payload value="BRIDGED">
+</flow>
+----
+
+Mule 4改为允许您配置与响应关联的所有参数，直接作为`listener`组件的一部分内联，在到达流程结束时不需要转换。
+
+.Mule 4示例：响应接收消息
+[source, xml, linenums]
+----
+<flow name="jmsBridge">
+  <jms:listener config-ref="config" destination="storage">
+    <jms:response timeToLive="2" timeToLiveUnit="SECONDS">
+        <jms:body>#['BRIDGED']</jms:body>
+    </jms:response>
+  </jms:listener>
+  <http:request config-ref="HTTP_Request_Configuration" path="/storage" method="POST">
+</flow>
+----
+
+[[DoingRequestReply]]
+== 做请求 - 回复
+
+JMS允许您使用`JMSReplyTo`标头执行同步通信。这可以通过客户端即时创建的临时目标或使用已存在的目标来完成。
+
+=== 请求回复临时目的地
+
+在Mule 3中，对于第一种情况，应答目标是一旦消息到达后将被丢弃的临时队列，我们​​在出站端点中有"request-response"交换模式：
+
+.Mule 3示例：使用临时答复目标执行请求 - 答复
+[source, xml, linenums]
+----
+<flow name="jmsRequestReplyTemporaryDestination">
+  <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8080" path="invoices"/>
+  <dw:transform-message>
+      <dw:set-payload><![CDATA[%dw 1.0
+        %output application/xml
+        ---
+        {
+        data: payload,
+        costumer: message.inboundProperties."http.query.params".costumer_id
+        }]]></dw:set-payload>
+  </dw:transform-message>
+  <object-to-string-transformer/>
+  <jms:outbound-endpoint exchange-pattern="request-response" queue="invoiceProcessor" connector-ref="Active_MQ"/>
+  <logger level="INFO" message="Status: #[payload]">
+</flow>
+----
+
+相反，在Mule 4中，您有一个名为`publish-consume`的全新操作，旨在解决此特定用例：
+
+.Mule 4示例：使用临时答复目标执行请求 - 答复
+[source, xml, linenums]
+----
+<flow name="jmsRequestReplyTemporaryDestination">
+  <http:listener config-ref="HTTP_Listener_config" path="/invoices"/>
+  <jms:publish-consume config-ref="JMS_Config" destination="invoiceProcessor">
+    <jms:message>
+      <jms:body>#[output application/xml ---
+      {
+        data: payload,
+        costumer: attributes.queryParams.costumer_id
+      }]</jms:body>
+    </jms:message>
+  </jms:publish-consume>
+  <logger level="INFO" message="#['Status: ' ++ payload]">
+</flow>
+----
+
+您可能会再次看到，构建消息的操作在`message`元素中是内联的，并且影响外发消息的任何转换或配置都将作为该元素的一部分完成。
+
+
+使用显式目标的=== 请求回复
+
+由于需要一个新组件，所以`requet-reply`作用域：3.x使用明确的`reply-to`目标执行请求 - 回复有点棘手。
+
+.Mule 3示例：使用显式答复目标执行请求 - 答复
+[source, xml, linenums]
+----
+<flow name="JMS-request-reply">
+  <jms:inbound-endpoint queue="invoices" exchange-pattern="request-response" connector-ref="Active_MQ"/>
+  <dw:transform-message>
+      <dw:set-payload><![CDATA[%dw 1.0
+        %output application/xml
+        ---
+        {
+        data: payload,
+        costumer: message.inboundProperties."http.query.params".costumer_id
+        }]]></dw:set-payload>
+  </dw:transform-message>
+  <object-to-string-transformer/>
+  <request-reply> // <1>
+    <jms:outbound-endpoint connector-ref="Active_MQ" exchange-pattern="one-way" queue="invoiceProcessor"/>
+    <jms:inbound-endpoint connector-ref="Active_MQ" exchange-pattern="one-way" topic="processedInvoiceEvents"/>
+  </request-reply>
+  <logger level="INFO" message="#['Status: ' ++ payload]">
+</flow>
+----
+
+此范围（1）允许您设置入站和出站传输以执行请求 - 回复模式。这样，它会自动在外发消息中注入`JMSReplyTo`标头，然后开始在入站端点进行监听
+
+对于具有新`publish-consume`操作的Mule的4 JMS连接器，它需要您几乎不对流进行任何更改。如果您想要发送回复的特定目的地，只需直接在“消息”构建器中配置`reply-to`标题，就如同在发布或响应的任何其他情况下一样：
+
+.Mule 4示例：使用临时答复目标执行请求 - 答复
+[source, xml, linenums]
+----
+<flow name="jmsRequestReplyTemporaryDestination">
+  <http:listener config-ref="HTTP_Listener_config" path="/invoices"/>
+  <jms:publish-consume config-ref="JMS_Config" destination="invoiceProcessor">
+    <jms:message>
+      <jms:body>#[output application/xml ---
+      {
+        data: payload,
+        costumer: attributes.queryParams.costumer_id
+      }]</jms:body>
+    </jms:message>
+    <jms:reply-to destination="processedInvoiceEvents" destinationType="TOPIC"/> // <1>
+  </jms:publish-consume>
+  <logger level="INFO" message="#['Status: ' ++ payload]">
+</flow>
+----
+
+在这个例子中，我们将回复目标标题（<1>）设置为已知主题，以说明其他人可以使用已知的目标来执行事件跟踪或后处理触发器等操作。
+
+[[UsingTransactions]]
+== 使用事务
+
+事务支持在从3.x迁移到4.x时的配置上十分相似，预期的变化将在`inbound-endpoint`和`outbound-endpoint`中配置为操作事务的规范化Mule 4方法：
+
+.Mule 3示例：使用事务
+[source, xml, linenums]
+----
+<flow name="transactedJmsFlow">
+    <jms:inbound-endpoint queue="${in}">
+        <jms:transaction action="ALWAYS_BEGIN" /> //<1>
+    </jms:inbound-endpoint>
+    <set-variable variableName="originalPayload" value="#[payload]"/> //<2>
+    <dw:transform-message> //<3>
+        <dw:set-payload><![CDATA[%dw 1.0
+          %output application/xml
+          ---
+          payload
+          ]]></dw:set-payload>
+    </dw:transform-message>
+    <object-to-string-transformer/>
+    <jms:outbound-endpoint queue="${out}"> //<4>
+        <jms:transaction action="ALWAYS_JOIN"/>
+    </jms:outbound-endpoint>
+    <default-exception-strategy>
+        <commit-transaction exception-pattern="*"/> //<5>
+        <set-payload value="#[flowVars.originalPayload]"/> //<6>
+        <jms:outbound-endpoint queue="dead.letter"> //<7>
+            <jms:transaction action="JOIN_IF_POSSIBLE"/>
+        </jms:outbound-endpoint>
+    </default-exception-strategy>
+</flow>
+----
+
+需要注意的是：
+
+<1>事务由具有`ALWAYS_BEGIN`的入站端点启动
+<2>我们确保不会丢失原有的有效负载
+<3>有效负载被转换，因此可以通过出站端点发送
+<4>出站端点被配置为`ALWAYS_JOIN`
+<5>我们设置了异常策略来捕获所有异常
+<6>原始有效内容已恢复，因此原始消息将发布到dead.letter
+<7>最后，我们将原始邮件发送给尝试加入当前事务的dead.letter。
+
+
+同样的情况可以通过以下方法在Mule 4中实施：
+
+.Mule 4示例：使用事务
+[source, xml, linenums]
+----
+<flow name="transactedJmsFlow">
+    <jms:listener config-ref="JMS_Config" destination="${in}" transactionalAction="ALWAYS_BEGIN"/> //<1>
+    <jms:publish config-ref="JMS_Config" destination="${out}" transactionalAction="ALWAYS_JOIN"> //<2>
+        <jms:message>
+            <jms:body>#[output application/xml --- payload</jms:body>
+        </jms:message>
+    </jms:publish>
+    <error-handler>
+        <on-error-continue type="ANY"> //<3>
+          <jms:publish config-ref="JMS_Config" destination="dead.letter" transactionalAction="JOIN_IF_POSSIBLE"/> //<4>
+        </on-error-continue>
+    </error-handler>
+</flow>
+----
+
+<1>交易由具有`ALWAYS_BEGIN`的`listener`发起
+<2>以XML格式发布有效内容由`publish`操作完成，无需修改当前有效内容，也可以将事务与`ALWAYS_JOIN`结合
+<3>捕获发生的任何错误的错误处理程序用于确保消息不会丢失
+<4>由于当前有效负载仍然是接收到的原始消息，因此我们只需使用`JOIN_IF_POSSIBLE`事务操作将其发布到死信中
+
+== 另请参阅
+
+// link:migration-examples[迁移示例]
+
+link:migration-patterns[迁移模式]
+
+// link:migration-components[迁移组件]

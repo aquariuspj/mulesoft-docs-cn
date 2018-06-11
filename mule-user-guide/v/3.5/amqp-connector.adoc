@@ -1,0 +1,151 @@
+=  AMQP连接器
+
+高级消息队列协议（ http://www.amqp.org/[AMQP]）是一个开放标准，它定义了在应用程序或组织之间传递业务消息的协议。它是为互操作性而设计的应用程序级别，供应商无关的协议。 AMQP的定义特征是消息定向，排队，路由（包括点对点和发布和订阅），可靠性和安全性（ http://en.wikipedia.org/wiki/AMQP[维基百科]）。该协议的规范可用 http://www.amqp.org/resources/download[线上]，并且存在多个代理实现，例如非常受欢迎的 http://www.rabbitmq.com[VMware RabbitMQ]和 http://qpid.apache.org/[Apache Qpid]。
+
+AMQP建立在易于理解的概念之上：
+
+* 客户通过渠道连接到AMQP代理以发送或接收 http://en.wikipedia.org/wiki/AMQP#Messages[消息]。
+* 客户可以将消息发布到 http://en.wikipedia.org/wiki/AMQP#Exchanges[交流]。
+* 发布到交易所的邮件将路由到 http://en.wikipedia.org/wiki/AMQP#Queues[队列]，在那里它们积累起来供以后使用。
+* 消息发布者不知道哪个队列将成为消息的最终目的地;队列由交换类型和一段称为"routing key"的元信息决定。
+* 如果没有将队列绑定到目标交换机，或者没有现有队列与路由规则匹配，则消息可能无处不在。
+* 有四种主要类型的交换：直接，扇出，主题和标题。有关更多信息，请参阅 http://en.wikipedia.org/wiki/AMQP#Exchange_types_and_the_effect_of_bindings[交换类型和绑定的效果]。
+* 对消费消息感兴趣的客户必须创建队列和 http://en.wikipedia.org/wiki/AMQP#Bindings[捆绑]这些队列进行交换。
+* 队列和交换声明是幂等操作;因此通常他们通常在每个客户启动时进行。
+
+[TIP]
+====
+*AMQP for the JMS-savvy*
+
+如果您是Java开发人员，您有可能已经接触过JMS，并且想知道AMQP与JMS的区别。
+
+主要区别是：
+
+*  AMQP定义了一个API和一个连线格式，确保了实现之间的兼容性（JMS只定义了一个API）
+* 在JMS中，您直接发布到目标（队列或主题）;在AMQP中，您发布到队列绑定（或不绑定）的交换机;这将生产者从其消息的最终目的地分离出来
+* 对于某些类型的交换，到最终目的地的交付取决于路由密钥，这是一个简单的字符串，为成功路由消息提供必要的元数据（与JMS中不同的是，所需的只是目标的名称）
+====
+
+== 支持的AMQP版本
+
+此传输基于 http://www.rabbitmq.com/[的RabbitMQ] Java客户端，该客户端与支持AMQP 0.9.1版的代理兼容。
+
+== 特点
+
+其中，AMQP连接器包含以下功能：
+
+* 它可以通过订阅现有的或已声明的交易所和队列来接收入站消息
+* 它会将出站邮件发布到现有或已声明的交易所
+* 通过临时答复队列支持的出站请求 - 响应模式
+* 支持入站和出站事务，并具有可选的通道自恢复功能
+* 请求同步消息，超时
+* 被动或仅主动交换和队列声明
+* 跨AMQP主机列表的连接回退
+* 所有AMQP消息属性，包括自定义标题
+* 回复（发布对默认交换的回复）
+* 自动，骡驱动和手动消息确认
+* 手动拒绝信息
+* 手动频道恢复
+* 出站端点中的默认交换语义
+* 强制和立即发布参数并处理返回的（未传送的）消息
+* 预取大小并统计"quality of service"设置
+* 无本地和独家消费者
+* 自定义交换和队列参数
+*  SSL连接
+
+核心运输原则== 
+
+Mule AMQP Transport是一个建立在先前引入的AMQP构造之上的抽象：连接，通道，交换，队列和消息。
+
+传输层隐藏了低层概念，比如处理通道，但是对所封装的所有构造进行了大量的控制，使您能够体验AMQP的丰富性，而不需要对其API进行编码。
+
+以下是对使用传输时要处理的主要配置元素的快速回顾：
+
+* 连接器元素：
+** 建立与AMQP代理商的连接
+** 处理频道
+** 管理由使用此连接器的所有使用者或发布者共享的一组公共属性
+* 入站端点元素：
+** 使用来自AMQP队列的消息
+根据您的Mule应用程序配置中的定义，** 将这些消息路由到您的组件，转换器或其他出站端点
+* 出站端点元素：
+** 从您的Mule配置向AMQP交换机发布消息
+
+=== 消息有效载荷和属性
+
+AMQP传输与另一个非常重要的抽象概念相结合： link:/mule-user-guide/v/3.5/mule-message-structure[骡信息]。 Mule消息是封装了*_properties_*中定义的有效负载和元信息的传输无关抽象。这允许应用程序中的不同配置元素处理消息而不知道其源或目标。
+
+AMQP消息还具有有效载荷（以字节为单位）和消息属性。消息属性由一组预定义的属性（称为基本属性）和任何其他自定义属性组成。而且，当消息被传送时，可以将额外的属性（称为信封属性）添加到消息中。
+
+从入站AMQP消息中，AMQP传输创建一个带有byte []有效载荷的Mule消息。对于发往出站AMQP消息的Mule消息，Mule使用其自动转换基础结构来提取Mule消息的byte []有效载荷。如果您需要使用特定的有效负载表示（例如XML或JSON），则需要添加必要的变换器以执行所需的序列化/反序列化步骤。
+
+该传输还负责将入站消息属性作为标准Mule消息属性提供，并且相反地将Mule消息的属性转换为出站消息的AMQP属性。
+
+以下是交通工具支持的属性列表：
+
+[%header%autowidth.spread]
+|===
+|基本属性 |封套属性 |技术属性
+| `app-id`  | `delivery-tag`  | `amqp.headers`
+| `content-encoding`  | `exchange`  | `consumer-tag`
+| `content-type`  | `redelivered`  | `amqp.channel`
+| `correlation-id`  | `routing-key`  | `amqp.delivery-tag`
+| `delivery_mode`  |   | `amqp.return.listener`
+| `expiration`  |   | `amqp.return.reply-code`
+| `message-id`  |   | `amqp.return.reply-text`
+| `priority`  |   | `amqp.return.exchange`
+| `reply-to`  |   | `amqp.return.routing-key`
+| `timestamp`  |   | 
+| `type`  |   | 
+| `user-id`  |   | 
+|===
+
+此外，AMQP基本属性中定义的所有自定义标题（在`amqp.headers`入站属性下的映射中都可用）将作为标准入站属性添加。
+
+== 安装AMQP连接器
+
+===  Maven支持
+
+要安装AMQP连接器，请将以下存储库添加到Maven安装中：
+
+[source, xml, linenums]
+----
+<repository>
+  <id>mule-releases</id>
+  <name>Mule Releases Repository</name>
+  <url>https://repository-master.mulesoft.org/nexus/content/repositories/releases</url>
+  <layout>default</layout>
+</repository>
+----
+
+要将Mule AMQP连接器添加到Maven项目，请添加以下依赖项：
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-amqp</artifactId>
+  <version>x.y.z</version>
+</dependency>
+----
+
+==  Studio插件
+
+Anypoint Exchange中的AMQP连接器可用作https://www.mulesoft.com/exchange/org.mule.modules/mule-transport-amqp-studio/[Studio插件]。
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+==  AMQP注释
+
+*  AMQP连接器定义要连接的代理程序，此时使用的凭证以及入站和出站端点使用此连接器使用的所有常用属性。
+* 您可以创建连接到同一代理的多个连接器，以便为终端使用不同的通用属性集。
+*  AMQP连接器接受并使用用于根据 link:https://www.rabbitmq.com/api-guide.html#consumer-thread-pool[RabbitMQ消费者线程池]设置使用者线程池的`receiver-threading-profile`。有关如何在Mule link:/mule-user-guide/v/3.5/tuning-performance[调整性能]指南中设置接收者线索配置文件的更多信息。
+*  AMQP连接器不支持群集。每个入站端点都充当与队列关联的AMQP使用者，并且消耗队列中的消息是使用连接到它的使用者之间的循环策略执行的。这意味着虽然入站端点未被群集，但这不会导致相同的消息被不同的消费者两次使用。如果你需要pub-sub语义，你应该考虑为每个消费者使用一个队列。
+
+== 另请参阅
+
+* 阅读 link:/mule-user-guide/v/3.5/amqp-connector-examples[AMQP连接器示例]以获取常见用例的实用说明。
+* 访问 link:/mule-user-guide/v/3.5/amqp-connector-reference[AMQP连接器参考]以获取所有AMQP连接器配置属性的完整列表和描述。

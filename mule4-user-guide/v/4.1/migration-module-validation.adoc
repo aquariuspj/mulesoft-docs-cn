@@ -1,0 +1,251 @@
+// sme：MG，作者：ndinu
+= 迁移验证模块
+
+//一般地解释Mule 3和Mule 4之间如何以及为什么会发生变化。
+Mule 4中的验证模块与Mule 3中的验证模块非常相似
+这些市长版本之间受影响的区域是错误处理和表达式支持。
+错误处理是不同的，因为Mule 4扩展有不同的声明方式
+通过错误类型的错误。关于表达式，Mule 4只支持MEL表达式
+在兼容性模块中，所有其他表达式必须是DataWeave表达式。
+
+本节涵盖的内容：
+
+*  <<errors>>
+*  <<functions>>
+*  <<all_scope>>
+*  <<custom_validator>>
+
+[[errors]]
+=== 错误类型
+在Mule 3验证模块中，验证过程中的任何失败都会抛出相同的异常或a
+ 配置了一个，您可以根据错误自定义消息。在另一
+在 手中，在Mule 4中，模块声明了它们自己的错误类型。在这种情况下
+ 模块，验证操作具有不同类型的错误类型
+验证失败的 。在`all`范围的情况下，类型是
+  *VALIDATION:MULTIPLE*，无论内部失败的验证或验证如何
+  `all`范围。您仍然可以自定义错误消息或使用默认消息。
+
+下面的例子显示验证器，如果可变电子邮件不是，将会失败
+ 一个可能的有效电子邮件。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<validation:is-email email="#[flowVars.email]" message="The value is not a valid email"/>
+----
+
+如果此验证失败，则会抛出*ValidationException*。
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<validation:is-email email="#[vars.email]" message="The value is not a valid email"/>
+----
+
+如果此验证失败，则错误将是*VALIDATION:INVALID_EMAIL*类型。
+
+[[functions]]
+=== 从MEL表达式中的函数到DataWeave中的函数
+
+以与Mule 3相同的方式，您可以在表达式中执行验证，您可以在Mule 4中执行验证。
+不同的是，在Mule 4中，这些验证在DataWeave表达式中调用，而不是在MEL表达式中调用。
+这是Mule 4支持的功能列表：`isEmail`，`matchesRegex`，`isTime`，`isNumber`，`isIp`和`isUrl`
+
+在下面的例子中，我们可以看到如何执行不同的操作，具体取决于
+名为unknownVariable的变量上的内容是：有效的电子邮件地址，有效的Url或者两者都不是。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<choice>
+  <when expression="#[validator.validateEmail(flowVars.unknownVariable)]">
+    <set-payload value="#[flowVars.unknownVariable + &quot; is a valid email.&quot;]"/>
+  </when>
+  <when expression="#[validator.validateUrl(flowVars.unknownVariable)]">
+    <set-payload value="#[flowVars.unknownVariable+ &quot; is a valid URL.&quot;]"/>
+  </when>
+  <otherwise>
+    <set-payload value="#[flowVars.unknownVariable + &quot; is a not a valid email or a valid url.&quot;]"/>
+  </otherwise>
+</choice>
+----
+
+在MEL表达式中，我们使用验证器来访问验证方法。
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<choice>
+  <when expression="#[Validation::isEmail(vars.unknownVariable)]" >
+    <set-payload value='#[vars.unknownVariable ++ " is a valid email."]'/>
+  </when>
+  <when expression="#[Validation::isUrl(vars.unknownVariable)]" >
+    <set-payload value='#[vars.unknownVariable ++ " is a valid URL."]'/>
+  </when>
+  <otherwise >
+    <set-payload value='#[vars.unknownVariable ++ " is a not a valid email or a valid url."]'/>
+  </otherwise>
+</choice>
+----
+
+在Validation模块中，有一些函数声明为从DataWeave表达式中调用。
+像Mule 4中的其他函数一样，它们使用ExtensionName :: functionName来调用，在这种情况下为`Validation::isEmail(vars.email)`。
+
+[[all_scope]]
+=== 使用全部范围
+
+在Mule 4中，您仍然可以按照您在Mule 3中的相同方式对一组验证进行分组，但只有dsl的一小部分发生了变化。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<validation:all>
+  <validation:validations>
+    <validation:is-email email="#[flowVars.email]"/>
+    <validation:matches-regex value="#[flowVars.email]" regex="^.*\.com$"/>
+    <validation:validate-size value="#[flowVars.email]" min="5" max="20"/>
+  </validation:validations>
+</validation:all>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<validation:all>
+  <validation:is-email email="#[vars.email]"/>
+  <validation:matches-regex value="#[vars.email]" regex="^.*\.com$"/>
+  <validation:validate-size value="#[vars.email]" min="5" max="20"/>
+</validation:all>
+----
+
+[[custom_validator]]
+=== 构建自定义验证器
+
+自定义验证器被替换为扩展验证器，这些验证器是
+就像操作一样，它们总是返回无效。为了表示这一点
+验证失败了，Java方法应该抛出`ModuleException`
+各自的错误类型。通过使用这些验证器，我们可以创建我们自己的
+错误类型，更好地解释失败的验证和用户体验
+使用它们就像使用其他操作一样。更深入的什么扩展
+验证器，请参阅扩展验证器文档。
+// TODO：准备好后重定向到验证器文档
+
+*Note:*这些验证器也可以在`all`验证范围内使用。
+
+让我们看看如何将Mule 3 Custom Validator迁移到Mule 4.在下面的例子中，
+我们可以看到我们已经习惯了整个活动，并从中获得了我们需要的信息
+验证。
+在Mule 4的例子中，我们仅给Validator使用所需的参数。
+
+.Mule 3的例子
+
+这是Custom Validator用于查看dsl的方式。
+
+[source,xml,linenums]
+----
+<validation:custom-validator class="BalanceValidator"/>
+----
+
+这就是验证器接口的实现方式，请参阅验证所用的信息
+必须在消息的特定部分，在这种情况下流量变量的价格和平衡。
+
+[source,java,linenums]
+----
+public class BalanceValidator implements Validator {
+  @Override
+  public ValidationResult validate(MuleEvent event) {
+    Integer price = new Integer((String) event.getMessage().getInvocationProperty("price"));
+    Integer balance = new Integer((String) event.getMessage().getInvocationProperty("balance"));
+    return new ValidationResult() {
+      @Override
+      public boolean isError() {
+        return price > balance;
+      }
+      @Override
+      public String getMessage() {
+        return "There is not enough money to make the transaction";
+      }
+    };
+  }
+}
+----
+
+.Mule 4的例子
+
+这是你如何在Mule 4中使用扩展验证器，我们可以看到名称空间和标签名称
+对我们正在验证的内容更具描述性。此外，这里的参数是dsl和的一部分
+我们可以将表达式放在这里，而不必在之前将其设置为变量。
+
+[source,xml,linenums]
+----
+<balance:has-sufficient-funds balance="#[vars.balance]" price="#[vars.price]"/>
+----
+
+为了实现这一点，我们创建了一个名为`balance`的简单扩展：
+
+[source,java,linenums]
+----
+@Operations({BalanceOperations.class})
+@Extension(name = "balance")
+@ErrorTypes(BalanceError.class)
+public class BalanceExtension {
+
+}
+----
+
+在`BalanceOperations`类中，我们添加了验证方法，并使用`@Validator`对其进行了标注。该
+方法需要抛出一个来自通用验证错误类型的错误类型。
+
+[source,java,linenums]
+----
+public class BalanceOperations {
+  @Validator
+  @Throws(BalanceErrorsProvider.class)
+  public void hasSufficientFunds(Integer balance, Integer price) throws Exception {
+    if (price > balance){
+      throw new ModuleException(BalanceError.INSUFFICIENT_FUNDS, new IllegalArgumentException("There is not enough money to make the transaction"));
+    }
+  }
+}
+----
+
+在这里，我们创建如果验证失败将会抛出的错误。看到的是一个
+根据验证失败命名。
+
+[source,java,linenums]
+----
+public enum BalanceError implements ErrorTypeDefinition<BalanceError> {
+  INSUFFICIENT_FUNDS(MuleErrors.VALIDATION);
+
+  private ErrorTypeDefinition<? extends Enum<?>> parent;
+
+  BalanceError(ErrorTypeDefinition<? extends Enum<?>> parent) {
+    this.parent = parent;
+  }
+
+  @Override
+  public Optional<ErrorTypeDefinition<? extends Enum<?>>> getParent() {
+    return Optional.ofNullable(parent);
+  }
+}
+----
+
+Validator方法需要知道所有错误类型的`ErrorTypeProvider`
+验证可以抛出，在这种情况下，我们创建一个`ErrorTypeProvider`来表示
+该方法可能抛出的唯一错误是*BALANCE:INSUFFICIENT_FUNDS*类型
+
+[source,java,linenums]
+----
+public class BalanceErrorsProvider implements ErrorTypeProvider {
+  @Override
+  public Set<ErrorTypeDefinition> getErrorTypes() {
+    HashSet<ErrorTypeDefinition> errors = new HashSet<>();
+    errors.add(BalanceError.INSUFFICIENT_FUNDS);
+    return errors;
+  }
+}
+----
+
+== 另请参阅
+
+link:migration-patterns[迁移模式]

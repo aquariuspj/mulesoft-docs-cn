@@ -1,0 +1,172 @@
+= 与Ant集成
+:keywords: tcat, ant
+
+Apache Ant可以通过HTTP与Tcat Server控制台集成。 Ant具有内置的HTTP客户端，包括HTTP `<get>` Ant任务，但Ant不包含HTTP POST或PUT任务。您可以通过下载包含其他Ant任务的以下JAR将任务添加到Ant构建环境。
+
+以下是开源组件的列表以及每个组件需要的JAR文件：
+
+http://sourceforge.net/projects/ant-contrib/files/ant-contrib/1.0b3[Ant-Contrib 1.0b3] +
+ant-contrib-1.0b3.jar +
+公地httpclient的-3.0.1.jar
+
+http://www.java2s.com/Code/Jar/s/Downloadsardinejar.htm[沙丁鱼任务] +
+sardine.jar
+
+http://hc.apache.org/downloads.cgi[HttpClient 4.0.3] +
+httpclient-4.0.3.jar +
+httpmime-4.0.3.jar
+
+http://hc.apache.org/downloads.cgi[HttpCore 4.1] +
+的HttpCore-4.1.jar
+
+http://archive.apache.org/dist/commons/codec/binaries[雅加达共同编码器1.4] +
+公地编解码器1.4.jar
+
+http://archive.apache.org/dist/commons/logging/binaries[Jakarta Commons Logging 1.0.4] +
+共享记录-1.0.4.jar
+
+== 持续的Web应用程序构建和部署
+
+如果您需要自动将Web应用程序上传到Tcat Server控制台存储库并自动部署它们，作为Ant构建的一部分，请执行以下步骤：
+
+. 通过您的网络浏览器登录到控制台。
+. 导航到顶级“部署”选项卡。
+. 通过单击“新建部署”按钮并填写表单来创建新的部署。
+. 将您的web应用的第一个副本上传到您的新部署中。
+. 保存部署。您不一定需要部署它。
+. 通过Tcat的REST API列出部署，获取新部署的对象ID。一种方法是使用`curl`命令（您可能已经安装了它）：
++
+[source, code]
+----
+$ curl --basic -u admin:youradminpassword http://localhost:8080/console/api/deployments
+----
+
+输出列出了您的所有部署，包括完整的URL。 URL的末尾是部署的ID。
+
+例如：`local$4f1b9bf8-613d-41d4-9423-09ccc33fa20e`。编辑以下Ant构建文件的属性值（位于顶部），并设置您的Tcat服务器控制台主机名和端口号，部署ID，用户名和密码以及Web应用程序WAR文件的目录和文件名：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<project basedir="." default="build" name="tcat-deployment-update">
+ 
+  <!-- Properties required for calling the update-tcat-deployment target. -->
+  <property name="tcat.console.host" value="localhost"/>
+  <property name="tcat.console.port" value="8080"/>
+  <property name="tcat.console.user" value="admin"/>
+  <property name="tcat.console.pass" value="admin"/>
+  <property name="tcat.deployment.id" value="local$4f1b9bf8-613d-41d4-9423-09ccc33fa20e"/>
+  <!-- This is the path of the directory where your WAR file resides. -->
+  <property name="war.dist.dir" value="${basedir}/dist"/>
+  <!-- This is just the filename of your WAR file, not containing directories. -->
+  <property name="war.filename" value="mywebapp.war"/>
+  <!-- You might want to use a version control revision number for war.rev.number. -->
+  <property name="war.rev.number" value="2"/>
+ 
+  <!-- Include the ant-contrib tasks. -->
+  <taskdef resource="net/sf/antcontrib/antlib.xml">
+    <classpath>
+      <fileset dir="${basedir}/lib">
+        <include name="ant-contrib-1.0b3.jar"/>
+      </fileset>
+      <fileset dir="${basedir}/lib">
+        <include name="commons-httpclient-3.0.1.jar"/>
+      </fileset>
+      <fileset dir="${basedir}/lib">
+        <include name="commons-logging-1.0.4.jar"/>
+      </fileset>
+      <fileset dir="${basedir}/lib">
+        <include name="commons-codec-1.4.jar"/>
+      </fileset>
+    </classpath>
+  </taskdef>
+ 
+  <!-- Include the sardine task (to use the HTTP PUT method). -->
+  <typedef resource="com/googlecode/sardine/ant/sardinetask.xml">
+    <classpath>
+      <fileset dir="${basedir}/lib">
+        <include name="sardine.jar"/>
+      </fileset>
+      <fileset dir="${basedir}/lib">
+        <include name="httpclient-4.0.3.jar"/>
+      </fileset>
+      <fileset dir="${basedir}/lib">
+        <include name="httpcore-4.1.jar"/>
+      </fileset>
+      <fileset dir="${basedir}/lib">
+        <include name="httpmime-4.0.3.jar"/>
+      </fileset>
+      <fileset dir="${basedir}/lib">
+        <include name="commons-logging-1.0.4.jar"/>
+      </fileset>
+      <fileset dir="${basedir}/lib">
+        <include name="commons-codec-1.4.jar"/>
+      </fileset>
+    </classpath>
+  </typedef>
+ 
+  <target name="build">
+    <!-- Build your webapp, then send it to the Tcat Server console repository. -->
+    <antcall target="tcat-deployment-update"/>
+  </target>
+ 
+  <target name="tcat-deployment-update"
+          description="Uploads the WAR to the Tcat repository + redeploys">
+    <!-- Upload (POST) the war file into the Tcat Server console repository. -->
+    <echo>POST http://${tcat.console.host}:${tcat.console.port}/console/api/registry/Applications/${war.filename} rev ${war.rev.number}</echo>
+    <postMethod url="http://${tcat.console.host}:${tcat.console.port}/console/api/registry/Applications/${war.filename}"
+                doAuthentication="true">
+      <header name="Title" value="${war.filename}"/>
+      <header name="Slug" value="${war.filename}"/>
+      <header name="X-Artifact-Version" value="${war.rev.number}"/>
+      <file path="${war.dist.dir}/${war.filename}"/>
+      <httpClient>
+        <clientParams authenticationPreemptive="true"/>
+        <httpState>
+          <credentials host="${tcat.console.host}"
+                       port="${tcat.console.port}"
+                       username="${tcat.console.user}"
+                       password="${tcat.console.pass}"/>
+        </httpState>
+      </httpClient>
+    </postMethod>
+ 
+    <!-- Retrieve the webapp's deployment metadata from Tcat's console repository. -->
+    <property name="tcat.deployment.file" value="${war.dist.dir}/.deployment.txt"/>
+    <delete file="${tcat.deployment.file}" failonerror="false"/>
+    <get src="http://${tcat.console.host}:${tcat.console.port}/console/api/deployments/${tcat.deployment.id}"
+         dest="${tcat.deployment.file}"
+         username="${tcat.console.user}"
+         password="${tcat.console.pass}"/>
+ 
+    <!-- Update the deployment metadata with the new revision number. -->
+    <replaceregexp file="${tcat.deployment.file}"
+                   match="${war.filename}/[^&quot;/]+"
+                   replace="${war.filename}/${war.rev.number}"
+                   flags="g" byline="true"/>
+ 
+    <!-- PUT the deployment metadata back to the console, and redeploy the webapp. -->
+    <echo>Updating deployment metadata and redeploying ${war.filename}.</echo>
+    <sardine username="${tcat.console.user}"
+             password="${tcat.console.pass}">
+      <put url="http://${tcat.console.host}:${tcat.console.port}/console/api/deployments/${tcat.deployment.id}"
+           contentType="application/json">
+        <fileset dir="${war.dist.dir}">
+          <include name=".deployment.txt"/>
+        </fileset>
+      </put>
+    </sardine>
+  </target>
+ 
+</project>
+----
+
+运行Ant，并且此构建文件将WAR文件作为您通过Web浏览器上传的Web应用程序的新修订版上载。更新部署元数据，以便部署使用新版本，并将部署元数据保存到控制台中。这会导致控制台触发重新部署。
+
+使用Ant脚本更新应用程序后，您可以安排脚本来侦听这些更新并自动重新部署它们的包。有关示例，请参阅
+link:/tcat-server/v/7.1.0/scripting-examples#automatically-redeploying-after-an-artifact-update[在工件更新后自动重新部署]。
+
+== 另请参阅
+
+*  https://www.mulesoft.com/tcat/download [Tcat下载]
+*  https://support.mulesoft.com [联系MuleSoft]

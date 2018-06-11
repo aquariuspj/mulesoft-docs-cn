@@ -1,0 +1,128 @@
+
+= 故障处理
+
+此页面包含针对 link:/mule-user-guide/v/3.7/mulesoft-enterprise-java-connector-for-sap-reference[SAP连接器]的一些常见问题排查建议。
+
+== 检查日志文件
+
+Mule ESB在`$MULE_HOME\logs`目录中存储日志文件（基于每个应用程序存储）：
+
+*  `mule.log`：默认的Mule ESB日志文件
+*  `mule-app-YOUR_APP_NAME.log`：每个应用程序日志文件+
+
+== 启用JCo Trace
+
+[TIP]
+====
+可以从Mule ESB外部启用`JCo Trace`;它的值为以下java启动环境属性：
+
+*  `-Djco.trace_level=N`（其中0 <= N <= 10，10 =最详细的跟踪）
+*  `-Djco.trace_path=<PATH>`（可选）
+
+有关更多信息，请参阅JCo文档。
+====
+
+要在连接器级别启用跟踪，请完成以下步骤“：
+
+. 将属性*jcoTrace*设置为*true*或提供值为*1*的扩展JCo属性*jco.client.trace*或*jco.server.trace*。
+. 在Mule ESB启动时为**-Djco.trace_level=N**提供一个值。允许的水平是[0 .. 10]。最常用的级别是：
+*  0  - 无
+*  1  - 错误和警告
+*  2  - 执行路径，错误和警告
+*  3  - 完整的执行路径，错误和警告
+*  4  - 执行路径，信息消息，错误和警告
+*  6  - 完整的执行路径，信息消息，错误和警告
+*  7  - 调试消息，完整执行路径，信息消息，错误和警告
+*  8  - 详细的调试消息，完整的执行路径，信息消息，错误和警告
+. 或者，您可以为**-Djco.trace_path=<PATH>**提供值。这应该是存储跟踪文件的现有目录的完整路径，但可以应用其他特殊值：
+*  stdout  -  JCo跟踪信息被发送到标准输出流
+*  stderr  -  JCo跟踪信息发送到标准错误流
+
+如果*-Djco.trace_path*未设置，则跟踪文件将存储在工作目录中。对于Mule ESB独立版，通常是`$MULE_HOME/bin`文件夹。
+
+== 常见错误
+
+======  IDOC_ERROR_METADATA_UNAVAILABLE
+
+[source, code, linenums]
+----
+RfcException: [mc-vmware|a_rfc] message: (3) IDOC_ERROR_METADATA_UNAVAILABLE: The meta data for the IDoc type "??????????????????????????å å" with extension "  ORDSAPB6L B60CL          ???" is unavailable.
+    Return code: RFC_FAILURE(1)
+    error group: 104
+    key: RFC_ERROR_SYSTEM_FAILURE
+----
+
+RFC目标应该支持_Unicode_。您可以使用事务_SM59_在SAP中实现此功能。
+
+======  SAP Transport无法加入[org.mule.TransactionClass]类型的事务。
+
+类型[srfc | trfc | qrfc]的操作将是无状态的，因为目前SAP Transport不支持多事务。
+
+====== 缺少事务处理程序
+
+[source, code, linenums]
+----
+[10-11 08:02:26] ERROR SapJcoServerDefaultListener [JCoServerThread-1]: Exception occured on idoc_send connection 3-10.30.9.26|sapgw00|idoc_send: check TID fault: No transaction handler is installed. Unable to process tRFC/qRFC requests.
+RfcException: [mule.local|MULESOFT_IDOC_SEND_TEST]
+    message: check TID fault: No transaction handler is installed. Unable to process tRFC/qRFC requests.
+    Return code: RFC_FAILURE(1)
+    error group: 104
+    key: RFC_ERROR_SYSTEM_FAILURE
+Exception raised by myhost.com.ar|MULESOFT_IDOC_SEND_TEST
+    at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcServer.playbackTRfc(MiddlewareJavaRfc.java:2625)
+    at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcServer.handletRfcRequest(MiddlewareJavaRfc.java:2546)
+    at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcServer.listen(MiddlewareJavaRfc.java:2367)
+    at com.sap.conn.jco.rt.DefaultServerWorker.dispatch(DefaultServerWorker.java:284)
+    at com.sap.conn.jco.rt.DefaultServerWorker.loop(DefaultServerWorker.java:369)
+    at com.sap.conn.jco.rt.DefaultServerWorker.run(DefaultServerWorker.java:245)
+    at java.lang.Thread.run(Thread.java:680)
+----
+
+如果您收到*No transaction handler is installed. Unable to process tRFC/qRFC requests*消息，则可能需要将`<sap:inbound-endpoint />`中的*rfcType*设置为*trfc*或{{3}
+
+====== 不支持参数“参数名称”
+
+SAP扩展属性（在Map bean中配置或作为端点地址参数）应该具有有效的名称。如果您提供了无效的属性名称，您将收到类似于以下内容的错误消息：
+
+[source, code, linenums]
+----
+Root Exception stack trace:
+RfcException: [null]
+message: Parameter 'type' not supported: 'f'
+Return code: RFC_INVALID_PARAMETER(19)
+error group: 101
+key: RFC_ERROR_PROGRAM
+ 
+at com.sap.conn.rfc.api.RfcOptions.checkParameters(RfcOptions.java:182)
+at com.sap.conn.jco.rt.MiddlewareJavaRfc$JavaRfcClient.connect(MiddlewareJavaRfc.java:1328)
+at com.sap.conn.jco.rt.ClientConnection.connect(ClientConnection.java:731)
++ 3 more (set debug level logging or '-Dmule.verbose.exceptions=true' for everything)
+----
+
+在此示例中，JCo库正在通知名称_type_的参数无效。有效的属性名称的完整列表可以在 link:/mule-user-guide/v/3.6/sap-jco-extended-properties[这里]中找到。
+
+====== （101）JCO_ERROR_CONFIGURATION：您的服务器的服务器配置已用于正在运行的服务器
+
+[source, code, linenums]
+----
+ERROR 2012-07-05 10:11:30,525 [WrapperListener_start_runner] com.mulesoft.mule.transport.sap.SapMessageReceiver: Error connecting to server
+com.sap.conn.jco.JCoException: (101) JCO_ERROR_CONFIGURATION: Server configuration for sapavalara-1.0-SNAPSHOT-gettax is already used for a running server
+at com.sap.conn.jco.rt.StandaloneServerFactory.update(StandaloneServerFactory.java:358)
+at com.sap.conn.jco.rt.StandaloneServerFactory.getServerInstance(StandaloneServerFactory.java:176)
+at com.sap.conn.jco.server.JCoServerFactory.getServer(JCoServerFactory.java:74)
+at com.mulesoft.mule.transport.sap.jco3.SapJcoRfcServer.initialise(SapJcoRfcServer.java:46)
+at com.mulesoft.mule.transport.sap.jco3.SapJcoServerFactory.create(SapJcoServerFactory.java:60)
+at com.mulesoft.mule.transport.sap.SapMessageReceiver.doConnect(SapMessageReceiver.java:56)
+at org.mule.transport.AbstractTransportMessageHandler.connect(AbstractTransportMessageHandler.java:218)
+at org.mule.transport.AbstractConnector.registerListener(AbstractConnector.java:1254)
+----
+
+不能有两个或多个具有相同配置参数集的JCo服务器，即使它们具有不同的配置名称。
+
+服务器组密钥（决定JCo服务器连接的唯一性）由以下属性给出：
+
+*  jco.server.gwhost
+*  jco.server.gwserv
+*  jco.server.progid
+
+因此，只要对gwhost，gwserv和progId有不同的值，就可以在同一个Mule实例中启动两个服务器（JCo将此信息保存在Singleton类中）。

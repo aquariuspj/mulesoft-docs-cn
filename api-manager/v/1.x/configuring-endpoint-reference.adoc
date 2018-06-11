@@ -1,0 +1,98 @@
+= 端点配置参考
+
+您可以配置API的入站端点，以便Anypoint Platform可以直接或通过代理进行管理。代理是一种应用程序，用于阻止针对实际服务器的攻击。
+
+在API版本详细信息页面上，灰色的端点未注册指示器保持不变，除非您已经为您部署和配置了组织凭证的API声明了端点。当您为端点设置代理并将代理部署到Mule运行时或API网关运行时时，Anypoint Platform会识别该API并将替换您在API版本详细信息页面上使用代理端点声明的原始端点。
+
+== 端点状态
+
+声明您的端点后，Anypoint Platform使用灰色，绿色或黄色状态指示器显示该端点的状态。
+
+[%header%autowidth.spread]
+|===
+|端点状态 |颜色 |说明
+| *Endpoint unregistered*  |灰色 | Anypoint Platform从未跟踪此API版本的端点。您要么输入了尚未部署的API或代理的URL，要么已声明了除API网关以外的其他位置托管的端点，并且需要代理该端点以便平台可以跟踪该端点。
+| *Endpoint active*  |绿色 | Anypoint Platform正在主动跟踪端点。请注意，为了使治理策略和SLA层能够正常工作，必须由Anypoint Platform主动跟踪端点。
+| *Endpoint inactive*  |黄色 | Anypoint Platform先前正在跟踪此端点，但API或代理应用程序当前处于脱机状态。将鼠标悬停在状态指示器上可查看指示端点上次跟踪时间的工具提示。
+|===
+
+== 端点追踪故障排除
+
+如果您部署API或代理服务器，并且认为应该跟踪它，请检查以下所有内容是否属实：
+
+* 在您的API或代理中配置的您的端点没有任何结尾的斜线
+连接到您的Anypoint平台组织。
+* 如果您部署到CloudHub，请确保您已将Anypoint Platform组织的客户端ID和客户端密码正确输入为环境变量。
+
+如果您将代理部署到云中，则您的端点应与您在部署时选择的域匹配。如果您部署到本地网关，则您的端点可能为http://0.0.0.0:8081。 Anypoint Platform代理正在使用此URI来跟踪您的端点，但是您公开给开发人员的URI可能有所不同。
+
+如果您在本地笔记本电脑上运行本地API网关，则其他开发人员无法在其计算机上使用此端点。
+
+== 代理的端点
+
+在API Manager中，如果您下载并部署代理，则会在API版本详细信息页面上自动更新端点以反映代理的入站端点。 API Manager将代理URL识别为原始URL的替身，并在此屏幕上自动更新。如果您将代理部署到云网关，则端点应与您在部署时选择的域匹配。如果您部署到本地网关，则您的端点可能为http://0.0.0.0:8081。 Anypoint Platform代理正在使用此URI来跟踪您的端点，但是您公开给开发人员的URI可能会根据您的使用情况而有所不同。
+
+如果您在本地笔记本电脑上运行本地API网关，则其他开发人员无法在其计算机上使用此端点。
+
+部署到可由第三方安全访问的URL，并在您的所有文档中提供IP地址作为API的入口点。例如，在您的API的所有文档中，将+ http：//0.0.0.0：8081 / api +替换为服务器的IP地址，例如+ http：//133.45.65.2/api+。
+
+您也可以从 http://ngrok.com[ngrok.com]下载并使用本地主机隧道，例如ngrok。您可以评估这是否适合您的用例，并且不会违反贵公司的安全策略。如果您使用ngrok，请务必在完成本教程时关闭ngrok。
+
+
+== 代理设置
+
+以下选项设置代理：
+
+* 为CloudHub配置代理
+部署到CloudHub。此选项将端口号修复为CloudHub所需的特定值。
++
+* 参考用户域。
++
+该选项需要创建一个API网关域。
++
+默认值既不是选项。
++
+* 在Scheme中，HTTP（默认）或HTTPS。
++
+* 端口和路径
++
+* 在高级选项中，响应超时
++
+（可选）自定义为部署创建的自动生成的代理的响应超时。响应超时选项接受以毫秒为单位的值。
+
+HTTPS请求使用您的默认JVM HTTPS证书。如果您想为您的API代理的HTTP侦听器使用HTTPS，则您的Web服务器必须具有由*trusted certificate authority*签名的*public key certificate*。获得该信息后，您可以将此HTTP侦听器设置为HTTPS。
+
+== 管理API代理中的内部链接
+
+如果您的API返回提供应用程序内部链接到API其他部分的URL，请配置API代理应用程序以使用代理替代方法修改内部链接。然后，API Manager可以通过代理管理进出API的流量。
+
+在以下示例中，必须更改的链接位于API返回的有效内容中。通过将这个有效载荷转换为字符串来更容易地进行扫描。添加一个Groovy表达式来替换代理域的链接的原始基本URI，如果有的话。在对象到字符串转换器之后，在流中添加一个*Expression*组件。当API返回到您的API域中的内容链接时，它将被更改为通过代理进行路由。
+
+[source, xml, linenums]
+----
+<https:outbound-endpoint exchange-pattern="request-response" method="POST" address="https://myapi.com#[message.inboundProperties['http.request']]" doc:name="Request to API"/>
+<choice doc:name="Choice">
+            <when expression="">
+                <file:file-to-string-transformer doc:name="File to String"/>
+            </when>
+            <when expression="">
+                <scripting:transformer doc:name="Groovy">
+                    <scripting:script engine="Groovy"/>
+                </scripting:transformer>
+            </when>
+            <otherwise>
+                <object-to-string-transformer doc:name="Object to String"/>
+            </otherwise>
+</choice>
+<expression-component doc:name="Replace BaseUri in payload">      <![CDATA[message.setPayload(message.getPayload().toString().replace("https://myapi.com/", "http://localhost:8083/"));]]>
+</expression-component>
+----
+
+
+== 另请参阅
+
+*  link:/api-manager/v/1.x/setting-up-an-api-proxy[设置一个代理]
+*  link:/api-manager/v/1.x/setting-up-an-api-proxy#deploying-a-proxy[部署代理]
+*  link:/api-manager/v/1.x/configuring-an-api-gateway[负载平衡器端点]
+*  link:/api-manager/v/1.x/https-reference[HTTPS参考]。
+*  link:/api-manager/v/1.x/setting-up-an-api-proxy[代理修改参考]

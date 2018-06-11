@@ -1,0 +1,81 @@
+= 强制输出媒体类型
+
+<<result-object#, `Result` object>>允许您设置输出`mimeType`。但是，此设置是可选的（SDK开发人员不必强制设置`mimeType`）。
+
+但是，在某些情况下，必须指定操作的输出`mimeType`：
+
+* 当操作返回`String`时。
+* 当操作返回`InputStream`时。
+
+这个限制不是任意的。 Mule 4使用DataWeave作为表达式语言，因此用户不需要担心数据的格式。他们只需要关心自己的结构。但是，这意味着DataWeave必须能够确定Mule消息中携带的所有值的媒体类型。
+
+SDK自动处理DataWeave自动获取该信息所需的大部分工作，但是当操作返回`String`等通用类型时，不可能知道数据是否应该使用JSON，XML或甚至纯文本格式。 `InputStream`会发生同样的情况：它可能是JSON，XML或CSV流，也可能是二进制信息。无论哪种情况，SDK都需要开发人员的帮助才能在设计时间内了解这一点。
+
+为此目的存在`@MediaType`注释。即使指定的mediaType为`*/*`，每个返回`String`或`InputStream`的源或操作都将被强制使用此注释。
+
+例如，假设您正在开发一个返回有关客户信息的操作。还假设这个操作返回XML格式的信息。你会这样做：
+
+[source, java, linenums]
+----
+@MediaType(MediaType.APPLICATION_XML)
+public String getCustomerInfo(String customerId) {
+  return fetchCustomerXml(customerId);
+}
+----
+
+或者，假设您正在开发以`mp4`格式返回视频的视频流模块：
+
+[source, java, linenums]
+----
+@MediaType("video/mp4")
+public InputStream getVideo(String videoId) {
+  return getVideoStream(videoId);
+}
+----
+
+提示：`@MediaType`注释定义了一组具有最常见媒体类型的常量。但是，如视频媒体类型示例所示，您可以使用您需要的任何自定义`mediaType `。
+
+== 不严格的媒体类型
+
+在上面的例子中，操作不可能返回指定的媒体类型。在其他情况下，您可能知道最可能的媒体类型，或者您根本不知道`mediaType`。对于这些情况，`@MediaType`注释具有`strict = false`选项。
+
+=== 可变媒体类型
+
+回到获取客户信息操作的示例，假设您要连接的服务返回XML _by default_，但您也可以将特定帐户配置为使用其他格式。另外，假设你没有办法事先知道这一点。你可以这样做：
+
+[source, java, linenums]
+----
+@MediaType(MediaType.APPLICATION_XML, strict = false)
+public String getCustomerInfo(String customerId) {
+  return fetchCustomerXml(customerId);
+}
+----
+
+将`strict`参数设置为`false`将自动为该操作添加一个`outputMimeType`参数。该参数允许模块的用户手动覆盖`mimeType`。因此，知道他们的帐户被配置为使用JSON的用户可以这样做：
+
+[source, XML, linenums]
+----
+<customers:get-customer-info customerId="999" outputMimeType="application/JSON" />
+----
+
+=== 未知媒体类型
+
+考虑一个HTTP请求的情况。根据您点击的端点，获取的媒体类型将会更改。由于您不知道将获得哪种媒体类型，因此您使用`ANY`（`*/*`）。
+
+[source, java, linenums]
+----
+@MediaType("*/*", strict = false)
+public InputStream rquest(String path) {
+  return httpClient.request(path);
+}
+----
+
+同样，`strict = false`属性允许最终用户根据端点手动设置`mimeType`：
+
+[source, XML, linenums]
+----
+<http:request path="/customer/999" outputMimeType="application/JSON" />
+----
+
+[TIP]
+自动添加的`outputMimeType`参数是可选的，并且没有默认值。用户可以将其留空。在这种情况下，SDK将使用您在注释中设置的媒体类型。

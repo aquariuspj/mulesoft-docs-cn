@@ -1,0 +1,123 @@
+=  API网关运行时到Mule 3.8.0迁移指南
+:keywords: api, gateway, mule, migration guide
+
+将API和应用程序迁移到Mule Runtime 3.8.0涉及适应访问令牌执行策略，阻塞的API和API网关域迁移的更改。
+
+== 访问令牌执行策略
+调整API以处理令牌执行策略行为的改进。当请求，令牌或范围无效时，Ping Federate，OpenAM和OAuth访问令牌执行策略返回403状态代码。要符合 link:https://tools.ietf.org/html/rfc6750#section-3.1[RFC6750]中描述的最佳做法，此行为已修改为返回以下某个响应：
+400（错误请求）：请求无效
+401（未经授权）：访问令牌无效
+403（禁止）：范围不足
+在每个无效响应中，都包含WWW-Authenticate标头。
+
+== 被封锁的API
+
+作为 link:/api-manager/gatekeeper[看门人的安全改进]的一部分，启动时，托管API流量将被禁用，直到成功应用在线策略为止。在启用流量之前，API会根据请求接收503状态码。
+
+此阻止行为默认情况下处于启用状态，仅存在于独立实例中。要禁用阻止行为，请将`anypoint.platform.gatekeeper`属性设置为false。
+
+
+==  API网关域迁移
+
+由于API Gateway Runtime与Mule Runtime 3.8.0的统一以及之前网关版本中报告的几个可用性问题，默认的API网关域不再与发行版捆绑在一起。如果您想要像以前版本一样使用域来共享资源，请按照本文档中的迁移过程进行操作。
+
+== 迁移过程 -  CloudHub用户
+
+在Cloudhub中迁移到Mule 3.8.0的用户需要将域的侦听器配置复制到API或生成的代理。
+
+== 迁移过程 - 其他用户
+
+如果要继续使用域，请在部署代理之前运行Mule 3.8.0发行版中包含的以下脚本之一以生成API网关域：
+
+*  Windows：`gateway_domain_setup.bat`
+*  Linux和Mac OSX：`gateway_domain_setup`
+
+在Mule 3.8发行版中没有域的情况下，此脚本将生成一个具有一个http-listener-config和一个https-listener-config的api-gateway域。
+
+或者，您可以将api-gateway域从旧版本复制到新版本，但MuleSoft建议运行提供的脚本。从API Gateway 2.x迁移的用户需要在创建代理或复制api-gateway域之前执行该脚本。
+
+API Manager继续支持生成引用域的代理，如 link:/api-manager/api-gateway-domain[API网关域]文档中所述。
+
+=== 语法
+
+`gateway_domain_setup`脚本的语法是：
+
+----
+gateway_domain_setup -[http-port] -[http-host]
+                     -[https-port]
+                     -[https-host]
+                     -[key-store-file]
+                     -[store-password]
+                     -[key-password] -[force]
+                     -[print-output]
+----
+哪里：
+
+[cols="2*a"]
+|===
+|  -  f， -  force  | 覆盖`mule-domain-config.xml`文件，如果它已经存在
+|  -  h， -  help  | 显示使用情况信息
+|  -  hh， -  http-host <http-host>  |  http侦听器配置的主机
+|  -  hp， -  http-port <http-port>  |  http侦听器配置的端口
+|  -  hsh， -  https-host <https-host>  |  https监听器配置的主机
+|  -  hsp， -  https-port <https-port>  |  https侦听器配置的端口
+|  -  kp， - 密钥 - 密码<key-password>  | 密钥密码
+|  -  ksf， - 密钥存储文件<key-store-file>  | 密钥存储文件的路径
+|  -  sp， -  store-password <store-password>  | 存储密码
+|===
+
+=== 使用默认配置创建域
+
+域的默认配置包括绑定到所有接口并使用端口8081的侦听器配置。以下过程显示了在Mac OSX上运行脚本的输出，该脚本使用不同的配置创建新域。
+
+要创建默认域：
+
+. 在Mule Enterprise Standalone 3.8.0发行版的bin目录中运行gateway_domain_setup脚本。
++
+出现一个提示，询问您是否要使用默认值来创建HTTP-listener-config。
+. 键入`y`。
++
+输出是：
++
+----
+$ bin/gateway_domain_setup
+
+MULE_HOME is set to /Users/muleuser/Downloads/mule-enterprise-standalone-3.8.0-RC1
+No parameters were provided. Do you want to use the default values for creating a HTTP-listener-config? [y/n]: y
+Domain successfully created
+----
+
+=== 使用自定义配置创建域
+
+或者，如果您没有安装它，并且希望在运行迁移脚本时使用制表符完成来自动填充值，请安装 link:https://en.wikipedia.org/wiki/GNU_Readline[的ReadLine]。安装了readline后，脚本运行如下：
+
+* 如果您未向脚本提供任何参数（或提供-f），则当您使用Tab完成时，脚本将使用默认值。
+* 如果您提供了一些http值，则脚本仅使用默认值填充http侦听器配置。
+* 如果您未提供任何http侦听器配置信息，但确实提供了所有https侦听器配置信息，那么脚本将创建https侦听器配置。
+
+如前所述，该脚本生成具有一个http-listener-config和一个https-listener-config的api-gateway域。您可以只使用其中一个侦听器配置生成域，或者可以在域中同时配置两个侦听器配置。
+
+使用自定义http侦听器配置创建域：
+
+创建一个域，并将http侦听器配置从默认值更改为以下http侦听器配置：
+
+* 从默认侦听器配置：
++
+`<http:listener-config name="http-lc-0.0.0.0-8081" host="0.0.0.0" port="8081" />`
++
+* 到自定义配置：
++
+`<http:listener-config name="http-lc-0.0.0.0-8081" host=“localhost" port=“999" />`
+
+这是一个一步式的程序。在Mule Enterprise Standalone 3.8.0发行版的bin目录中运行gateway_domain_setup脚本，指定HTTP端口8111和端口999，如下所示：
+
+`bin/gateway_domain_setup -f -hh localhost -hp 999`
+
+输出是：
+
+----
+bin/gateway_domain_setup -f -hh localhost -hp 999
+MULE_HOME is set to /Users/muleuser/Downloads/mule-enterprise-standalone-3.8.0-RC1
+Domain successfully created
+----
+

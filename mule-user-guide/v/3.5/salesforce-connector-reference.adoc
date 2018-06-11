@@ -1,0 +1,452 @@
+=  Salesforce连接器参考
+
+根据您配置的操作，Salesforce Connector会执行针对Salesforce的SOAP API，REST API，Bulk API或Streaming API的API调用。连接器对Salesforce的API调用通过HTTPS连接使用XML请求/响应。所有必需的请求标头，错误处理和HTTPS连接配置都从用户中抽象出来并构建到连接器中。
+
+此页面汇总了当前版本的Salesforce连接器的基本配置参数：
+
+* 使用用户名/密码/ securityToken或通过OAuth创建全局连接器配置
+* 为您的用例选择适当的<<Operations>>。
+
+此页面_does not_列出每个操作的属性。
+
+*Note*： http://mulesoft.github.io/mule-salesforce-connector/[GitHub Salesforce连接器站点]提供了其他版本的Salesforce连接器参考信息。
+
+== 全球Salesforce连接器配置
+
+根据您是否使用OAuth连接到您的Salesforce帐户，使用这些全局配置之一配置您的连接器。
+
+*  `sfdc:config`
+*  `sfdc:config-with-oauth`
+
+请注意，如果您选择`sfdc:config-with-oauth`，则还必须配置<<Configuring the Authorization Flow>>以获取访问令牌。此访问令牌通过配置为使用OAuth连接的所有Salesforce操作中的`accessTokenId`属性进行引用。
+
+对于非OAuth配置，Mule在与Salesforce操作本身相同的流程内使用Salesforce执行身份验证 - 不需要单独的授权流程。
+
+=== 全局配置
+
+[%header%autowidth.spread]
+|===
+|元素 |说明
+| *sfdc:config*  |用于配置到您的Salesforce帐户的连接。
+|===
+
+[%header%autowidth.spread]
+|===
+|属性 |描述 |是否必需？ |默认值
+| *name*  |为全局元素 | X  | 
+定义唯一标识符
+| *username*  |用于初始化会话的用户名 | X  | 
+| *password*  |用于认证用户的密码 | X  | 
+| *securityToken*  |用户安全令牌 | X  | 
+| *url*  | Salesforce端点网址 |   | `+https://login.salesforce.com/services/Soap/u/30.0+`
+| *proxyHost*  |代理的主机名 |   | 
+| *proxyPort*  |代理端口 |   | 
+| *proxyUsername*  |用户名用于对代理 |   | 
+进行身份验证
+| *proxyPassword*  |用于对代理进行认证的密码 |   | 
+| *sessionId*  |该值可用于指定活动的Salesforce会话。重新连接时将使用所需的连接参数。 |   | 
+| *serviceEndpoint*  |指定服务端点。该值仅在配置sessionId属性时使用。否则，将从登录结果中检索服务端点。 |   | 
+|===
+
+如果您愿意，您可以通过显式配置连接池来指定参数来自定义自动连接管理。有关更多信息，请参阅 link:/mule-user-guide/v/3.6/tuning-performance[调整性能]。
+
+您还可以选择使用重新连接子元素来配置重新连接策略。有关更多信息，请参阅 link:/mule-user-guide/v/3.6/configuring-reconnection-strategies[配置重新连接策略]。
+
+使用OAuth的=== 全局配置
+
+[%header%autowidth.spread]
+|===
+|元素 |说明
+| *sfdc:config-with-oauth*  |用于通过OAuth配置到您的Salesforce帐户的连接。
+|===
+
+[%header,cols="4*"]
+|===
+|属性 |描述 |是否必需？ |默认值
+| *name*  |为此配置定义一个名称，以便稍后可以引用它。 | X  | 
+| *onNoToken*  |定义在没有OAuth令牌的用户尝试使用该服务时连接器的行为。可能的值是EXCEPTION和STOP_FLOW。   | X  |例外
+| *assignmentRuleId*  |为大小写或潜在客户执行的特定分配规则的ID。分配规则可以是活动的或不活动的。该ID可以通过查询AssignmentRule对象来检索。如果指定，请不要指定useDefaultRule。这个元素在帐户中被忽略，因为所有的地域分配规则都被应用。如果值不是正确的ID格式（15个字符或18个字符的Salesforce ID），则调用失败并返回MALFORMED_ID异常。 |   | 
+| *consumerKey*  |您的应用程序的客户端标识符（远程访问详细信息中的使用者密钥）。 | X  | 
+| *consumerSecret*  |您的应用程序的客户端密钥（远程访问详细信息中的使用者密钥）。 | X  | 
+| *timeObjectStore-ref*  |应该由getUpdatedObjects（）操作使用的对象存储实例。如果未定义，则连接器将使用Mule默认用户对象存储。 |   | 
+| *clientId*  |合作伙伴的客户ID。 |   | 
+| *batchSobjectMaxDepth*  |创建批处理会使用此值进行MAX_DEPTH检查，从而创建sObject。 |   | 
+| *useDefaultRule* a |
+如果对案例或潜在顾客为真，则连接器将使用默认（活动）分配规则。如果某个帐户属实，则应用所有地区分配规则;如果帐户为false，则不会分配任何地区规则。
+
+如果将此属性设置为true，则不要指定assignmentRuleId。
+
+  |   |假
+| *allowFieldTruncationSupport* a |
+如果为true，则连接器会截短太长的字段值，这是API版本14.0及更低版本中的行为。
+
+如果为false（默认），则行为不变。如果字符串或textarea值太大，则操作失败，并显示错误代码STRING_TOO_LONG。
+
+  |   |假
+|===
+
+==== 自定义回叫网址
+
+OAuth需要回调配置。 Salesforce会在用户通过身份验证后自动调用回调端点，并授予连接器访问其私人信息的权限。
+
+[%header%autowidth.spread]
+|===
+|子元素 |描述
+| *sfdc:oauth-callback-config*  |用于配置回叫网址。
+|===
+
+[%header%autowidth.spread]
+|===
+|属性 |描述 |是否必需？ |默认值
+| *domain*  |托管OAuth回调的端点域。在制作时，这是您的应用程序托管的域名。 | X  | 
+| *localPort*  |托管授权流的端口。这是您的HTTP端点托管的端口。 | X  | 
+| *remotePort*  |托管OAuth回调的端点的端口。 |   | 
+| *path*  |您的OAuth回调托管的端点路径。 |   | 
+| *connector-ref*  |引用全局HTTP连接器，sfdc：oauth-callback-config元素从中借用配置细节。如果指定，则sfdc：oauth-callback-config使用引用的连接器。 |   | 
+| *defaultAccessTokenId*  | Mule使用这个值来命名一个存储令牌ID的对象存储变量。您可以将此属性设置为表达式，以避免在多个用户访问同一个帐户时覆盖令牌ID。 |   | 
+| *async*  |确定回调是同步执行（默认）还是异步执行。 |   | false
+|===
+
+例：
+
+[source, xml, linenums]
+----
+<sfdc:oauth-callback-config domain="localhost" localPort="8081" remotePort="8081" path="oauthcallback"/>
+----
+
+==== 自定义对象存储
+
+Salesforce连接器可以自动保存和恢复访问令牌。连接器使用访问令牌标识符作为密钥在默认用户对象库或用户定义对象库中存储获取的访问令牌，刷新令牌和任何其他相关信息。
+
+要配置现有的用户定义的对象库，请在您的应用程序中包含**sfdc:object-store-config**，并配置**objectStore-ref**属性以引用现有对象库的名称。如果您已经配置了一个对象存储库，并且您希望使用该存储库来存取您的访问权限和刷新令牌，请使用此配置。
+
+[%header%autowidth.spread]
+|====
+|可选子元素 |描述
+| *sfdc:oauth-store-config*  |用于定义自定义对象存储以保留访问和刷新标记。
+|====
+
+[%header%autowidth.spread]
+|====
+|属性 |描述 |是否必需？ |默认值
+| *objectStore-ref*  |您希望持久存取和刷新令牌的对象库的名称。 | X  | 
+|====
+
+==== 配置授权流程
+
+配置为使用OAuth的每个Salesforce连接器都有一个称为*accessTokenId*的额外属性，它是授权连接器的用户的标识。为了获得访问令牌标识，您需要先在单独的授权流程中调用*authorize*操作。此流程必须由HTTP入站端点和*sfdc:authorize*元素组成，如图所示。
+
+[source, xml, linenums]
+----
+<flow name="authorizationAndAuthenticationFlow">
+        <http:inbound-endpoint host="localhost" port="8081" path="oauth-authorize" />
+        <sfdc:authorize/>
+    </flow>
+----
+
+sfdc：authorize元素支持以下属性。
+
+[%header,cols="4*"]
+|===
+|属性 |描述 |是否必需？ |默认值
+| *display* a |
+用于将登录页面定制为用户的设备类型。有效值是：
+
+* 页面 - 整页授权屏幕。如果没有指定，这是默认值。
+* 弹出窗口 - 为现代Web浏览器弹出窗口优化的紧凑对话框。
+* 触摸移动优化对话框。
+针对不支持触摸屏的智能手机的* 移动设备优化对话框。
+
+  | X  |页
+| *immediate* a |
+确定是否提示用户登录和批准。
+
+* 如果设置为true，并且用户当前已登录并且之前已批准该应用程序，则批准步骤将被跳过。
+* 如果设置为true并且用户未登录或以前未批准应用程序，则会话立即以immediate_unsuccessful错误代码终止。
+
+  |   |假
+| *prompt*  |指定授权服务器如何提示用户进行重新认证和重新认证。 |   | 
+| *authorizationUrl*  |资源所有者重定向的授权给连接器的URL。 |   | `+https://test.salesforce.com/services/oauth2/authorize+`
+| *accessTokenUrl*  |用户可以获取访问令牌的网址。 |   | `+https://test.salesforce.com/services/oauth2/token+`
+|===
+
+通过浏览器调用此入站端点将启动OAuth舞蹈，将用户重定向到Salesforce授权页面并创建回叫端点，以便Salesforce在用户通过身份验证并正确授权连接器后可以回拨。一旦回调被调用，连接器会自动发出一个访问令牌标识符，Mule使用密钥*OAuthAccessTokenId*进行保存。连接器自动将OAuthAccessTokenId设置为授权调用完成后所有消息处理器可用的流变量。授权流程之后的所有Salesforce连接器操作都需要*accessTokenId*作为操作的参数。指定表达式`#[flowVars.OAuthAccessTokenId]`，如以下示例所示，以提供此参数。
+
+[source, xml, linenums]
+----
+...
+<sfdc:query config-ref="mySalesforceConfig" query="SELECT Id FROM Account" accessTokenId="#[flowVars.OAuthAccessTokenId]"/>
+...
+----
+
+== 操作
+
+以下操作定义您希望通过Salesforce SOAP API，REST API，Bulk API或Streaming API执行的交互。请注意，Salesforce连接器不公开这些Salesforce API的所有可能操作。在某些情况下，下面选定的操作也会从相应API调用的最小值修改，以更改返回类型。有关更多信息，请参阅返回类型描述列。
+
+[TIP]
+点击列标题按您的首选列按字母顺序对操作进行排序。
+
+[%header,cols="5*"]
+|===
+|具有链接到完整引用的 | XML元素 |描述 | Salesforce API文档 |返回类型描述
+| *Authorize*  | `sfdc:authorize` |仅与OAuth配置的连接器相关。如果连接器尚未获得授权，授权操作将重定向到服务提供商，以便用户授权连接器。请参阅上面的<<Configuring the Authorization Flow>>。一个|
+REST API
+
+http://www.salesforce.com/us/developer/docs/api_rest/Content/intro_understanding_web_server_oauth_flow.htm[了解Web服务器OAuth流程]
+
+  | N / A
+| *Unauthorize*  | `sfdc:unauthorize` |仅与OAuth配置的连接器相关。将连接器的状态重置回非授权状态。一个|
+REST API
+
+http://www.salesforce.com/us/developer/docs/api_rest/Content/intro_understanding_web_server_oauth_flow.htm[了解Web服务器OAuth流程]
+
+  | N / A
+| *Abort job*  | `sfdc:abort-job` |根据ID取消开放工作。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_jobs_abort.htm[中止工作]
+
+  |标识中止作业的JobInfo。
+| *Batch info*  | `sfdc:batch-info` |访问提交的BatchInfo的最新BatchInfo。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_batches_get_info.htm[获取批量信息]
+
+  |表示批处理作业结果状态的最新BatchInfo。
+| *Batch result*  | `sfdc:batch-result` |访问提交的BatchInfo的com.sforce.async.BatchResult。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_batches_get_results.htm[获得批量结果]
+
+  | com.sforce.async。 BatchResult表示批处理作业结果的结果。
+| *Batch result stream*  | `sfdc:batch-result-stream` |访问提交的BatchInfo的com.sforce.async.BatchResult。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_batches_get_results.htm[获得批量结果]
+
+  |代表批处理作业结果的结果的java.io.InputStream。
+| *Close job*  | `sfdc:close-job` |根据ID关闭一个开放的Job。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_jobs_close.htm[关闭工作]
+
+  |标识关闭的Job的JobInfo。
+| *Convert lead*  | `sfdc:convert-lead` |将潜在客户转换为账户，联系人或（可选）机会。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_convertlead.htm[convertLead（）]
+
+  |一个`LeadConvertResult`对象。
+| *Create*  | `sfdc:create` |向您组织的数据添加一条或多条新记录。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_create.htm[创建（）]
+
+  |如果async为false，则为`SaveResult`的数组。
+| *Create batch*  | `sfdc:create-batch` |使用指定作业中的给定对象创建批处理。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_batches_create.htm[将批次添加到作业]
+
+  | com.sforce.async。 BatchInfo标识批处理作业。
+| *Create batch for query*  | `sfdc:create-batch-for-query` |使用给定的查询创建批处理。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_batches_create.htm[将批次添加到作业]
+
+  |标识批处理作业的BatchInfo。
+| *Create batch stream*  | `sfdc:create-batch-stream` |使用给定的流在指定的Job内创建一个批处理。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_batches_create.htm[将批次添加到作业]
+
+  | com.sforce.async。 BatchInfo标识批处理作业。
+| *Create bulk*  | `sfdc:create-bulk` |向您组织的数据添加一条或多条新记录。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_batches_create.htm[将批次添加到作业]
+
+  |标识批处理作业的BatchInfo。
+| *Create job*  | `sfdc:create-job` |创建作业，以便通过批量API操作执行一个或多个批次。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_jobs_create.htm[创建一个新的工作]
+
+  | com.sforce.async。标识创建的作业的JobInfo。
+| *Create single*  | `sfdc:create-single` |向组织的数据添加一条新记录。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_create.htm[创建（）]
+
+  |一组SaveResult
+| *Delete*  | `sfdc:delete`  |从组织数据中删除一条或多条记录。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_delete.htm[删除（）]
+
+| `DeleteResult`的数组
+| *Describe global*  | `sfdc:describe-global`  |检索组织数据的可用对象列表。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_describeglobal.htm[describeGlobal（）]
+
+  | A `DescribeGlobalResult`
+| *Describe sObject*  | `sfdc:describe-sobject`  |描述指定对象的元数据（字段列表和对象属性）。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_describesobject.htm[describeSObject（）]
+
+| `DescribeSObjectResult`
+通过回收站，您可以查看和还原最近删除的记录30天，然后才能永久删除它们。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_emptyrecyclebin.htm[emptyRecycleBin（）]
+
+  | `EmptyRecycleBinResult`的列表
+| *Get deleted*  | `sfdc:get-deleted`  |检索从现在到现在持续时间之间已删除的单个记录的列表。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_getdeleted.htm[getDeleted（）]
+
+  | `GetDeletedResult`
+| *Get deleted range*  | `sfdc:get-deleted-range`  |检索在指定对象的给定时间范围内已删除的单个记录的列表。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_getdeletedrange.htm[getDeletedRange（）]
+
+  | `GetDeletedResult`
+| *Get server timestamp*  | `sfdc:get-server-timestamp`  |从API获取当前系统时间戳（协调世界时（UTC）时区）。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_getservertimestamp.htm[getServerTimestamp（）]
+
+带有当前时间戳的日历  |。
+| *Get updated*  | `sfdc:get-updated`  |检索已在现在范围内更新的单个记录列表。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_getupdated.htm[getUpdated（）]
+
+包含GetUpdatedResult对象数组的GetUpdatedResult对象包含每个创建或更新的对象的ID和创建或更新它的日期/时间（协调世界时（UTC）时区）的  {{1}分别。
+| *Get updated objects*  | `sfdc:get-updated-objects`  |检查上次调用此方法的时间戳，然后检索在之间更新的记录列表，现在。第一次调用时，该方法使用配置`getUpdatedObjects from [currentTime-window] to [ currentTime ]`调用API，然后将`[ currentTime ] `存储在对象库中作为时间戳。所有使用此方法的后续调用均使用此配置：`getUpdatedObjects from [storedValue] to [currentTime]`。为了重置上次更新的时间，请调用resetUpdatedObjectsTimestamp，如下所述。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_getupdated.htm[getUpdated（）]
+
+  |列出计算出的时间范围内的更新对象。
+| *Get updated range*  | `sfdc:get-updated-range`  |检索在给定时间范围内为指定对象创建/更新的单个记录列表。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_getupdatedrange.htm[getUpdatedRange（）]
+
+  | `GetUpdatedResult`
+| *Get user info*  | `sfdc:get-user-info`  |为与当前会话关联的用户检索个人信息。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_getuserinfo.htm[getUserInfo（）]
+
+  | `GetUserInfoResult`
+| *Hard delete bulk*  | `sfdc:hard-delete-bulk`  |从组织数据中删除一条或多条记录。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_batches_create.htm[将批次添加到作业]
+
+  |标识批处理作业的BatchInfo。
+|  *Paginated query*  | `sfdc:paginated-query`  |弃用。针对指定对象执行分页查询并返回符合指定条件的数据。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_query.htm[查询（）]
+
+  | `QueryResultObject`与查询的结果或null。
+| *Publish topic*  | `sfdc:publish-topic`  |创建表示查询的主题，该查询是向组织中的记录通知监听者的基础。一个|
+流
+
+http://www.salesforce.com/us/developer/docs/api_streaming/Content/pushtopic.htm[推主题]
+
+  | N / A
+| *Query*  | `sfdc:query`  |针对指定对象执行分页查询并返回符合指定条件的数据。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_query.htm[查询（）]
+
+  |一系列SObjects
+| *Query all*  | `sfdc:query-all`  |从指定对象中检索数据，不管它们是否已被删除或存档。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_queryall.htm[queryAll（）]
+
+  |一系列SObjects。
+| *Query result stream*  | `sfdc:query-result-stream`  |使用提交的BatchInfo的查询结果返回InputStream。在内部，包含在序列中的InputStreams将被按需请求（延迟加载）。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_batches_get_results.htm[获得批量结果]
+
+  | InputStream与批处理的结果。
+| *Query single*  | `sfdc:query-single`  |对指定对象执行查询并返回与指定条件匹配的第一条记录。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_query.htm[查询（）]
+
+  |一个SObject。
+| *Reset updated objects timestamp*  | `sfdc:reset-updated-objects-timestamp`  |重置上次更新对象的时间戳。调用此方法后，getUpdatedObjects方法设置的初始时间戳记（如果已设置）将被清除。 | N / A  | 
+| *Retrieve*  | `sfdc:retrieve`  |根据指定的ID检索一个或多个记录。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_retrieve.htm[检索（）]
+
+  |一系列SObjects。
+| *Search*  | `sfdc:search`  |使用Salesforce对象搜索语言搜索对象。使用Salesforce UI内的搜索框进行模仿。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_search.htm[搜索（）]
+
+  |一系列SObjects。
+| *Set password*  | `sfdc:set-password`  |将用户或SelfServiceUser的密码更改为您指定的值。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_setpassword.htm[设置密码（）]
+
+  | N / A
+| *Subscribe topic*  | `sfdc:subscribe-topic`  |订阅主题。要使用此操作，请将连接器作为流中的第一项。一个|
+流
+
+http://www.salesforce.com/us/developer/docs/api_streaming/index_Left.htm[流媒体API]
+
+  | org.mule.api.callback。 StopSourceCallback
+| *Update*  | `sfdc:update`  |更新组织数据中的一个或多个现有记录。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_update.htm[更新（）]
+
+  |一组SaveResult。
+| *Update bulk*  | `sfdc:update-bulk`  |更新组织数据中的一个或多个现有记录。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_batches_create.htm[将批次添加到作业]
+
+  |标识批处理作业的BatchInfo。
+| *Update single*  | `sfdc:update-single`  |更新组织数据中的一条记录。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_update.htm[更新（）]
+
+  | SaveResult。
+插入同类对象列表：创建新记录并更新现有记录，使用自定义字段确定是否存在已存在的记录。| *Upsert*  | `sfdc:upsert` {{4}记录。一个|
+SOAP API
+
+http://www.salesforce.com/us/developer/docs/api/Content/sforce_api_calls_upsert.htm[UPSERT（）]
+
+  | `UpsertResult`的列表，每个传递的对象一个。
+插入同类对象列表：创建新记录并更新现有记录，使用自定义字段确定存在的现有记录记录。在大多数情况下，为`create(String, List, Map)`优先选择`upsert(String, String, List, Map)`，以避免产生不需要的重复记录。一个|
+批量API
+
+http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_batches_create.htm[将批次添加到作业]
+
+  |标识批处理作业的BatchInfo。
+|===
+
+== 另请参阅
+
+* 所有属性的完整文档可以在 http://mulesoft.github.io/mule-salesforce-connector/[github上的参考索引]中找到。
+* 请参阅您的运营所遵循的标准 http://www.salesforce.com/us/developer/docs/officetoolkit/Content/sforce_api_objects_list.htm[Salesforce对象]的表格。
+* 访问Salesforce.com的 http://www.salesforce.com/us/developer/docs/api/[SOAP API]， http://www.salesforce.com/us/developer/docs/api_asynch/[批量API]和 http://www.salesforce.com/us/developer/docs/api_streaming/[流媒体API]文档。
+* 访问 link:/mule-user-guide/v/3.7/salesforce-connector[Salesforce连接器]的说明性文档。

@@ -1,0 +1,268 @@
+= 在Anypoint Studio中使用Workday
+
+您可以在Anypoint Studio中使用此连接器，将它作为Mule应用程序的依赖项添加。
+
+== 在Studio中安装连接器
+
+. 在Anypoint Studio中打开您的Mule项目。
+. 将连接器添加为pom.xml文件中的依赖项：
+[source, linenums]
+----
+<dependency>
+  <groupId>org.mule.connectors</groupId>
+  <artifactId>mule-workday-connector</artifactId>
+  <version>9.0.0</version>
+</dependency>
+----
+
+== 在Studio 7中进行配置
+
+. 将连接器拖放到Studio画布。
+. 为连接器配置全局元素
++
+// image::configWorkdayStudio.png[配置连接器]
++
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+|用户名 |输入用户名登录。
+|密码 |输入相应的密码。
+|租户名称 | 输入Workday Tenant ID。它通常带有后缀"pt_1"，例如"acme_pt1"。
+|主机名 | 输入Workday的云服务器之一的主机名。默认值：impl-cc.workday.com。
+|自定义传输|连接空闲超时和响应超时，并设置代理连接。
+
+|===
+
+//配置屏幕的工作室图像
+
+== 用例：Studio
+
+=== 获取Workday Incident Table Keys
+
+创建一个Mule流程，以便从Workday实例中的Incident表中获取密钥。
+
+// image::createPositionStudio.png[流程示例]
+
+. 在Studio上创建一个新的Mule应用程序，并在新流程中选择一个HTTP侦听器作为源。
+. 添加新的HTTP侦听器配置全局元素：
+.. 使用以下值填充主机和端口参数：
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| {主机{1}} 0.0.0.0
+| {端口{1}} 8081
+|===
++
+.. 点击保存。
+. 将新的全局配置分配给您的HTTP侦听器。
+. 使用`/incident/get`值填充HTTP侦听器路径。
+. 将新的Workday组件拖放到流上。
+. 使用常规选项卡下的环境值配置Workday连接器全局元素。
+. 在连接器之前添加变换消息并添加如下输出：
++
+[source,xml,linenums]
+----
+%dw 2.0
+output application/xml
+ns ns0 urn:com.workday/bsvc
+---
+{
+	ns0#Put_Applicant_Request @(ns0#version: "v28.0"): {
+		ns0#Applicant_Data: {
+			ns0#Personal_Data: {
+				ns0#Name_Data: {
+					ns0#Legal_Name_Data: {
+						ns0#Name_Detail_Data: {
+							ns0#Country_Reference: {
+								ns0#ID @(ns0#"type": "ISO_3166-1_Alpha-2_Code"): payload.countryIDValue
+							},
+							ns0#First_Name: payload.firstName,
+							ns0#Last_Name: payload.lastName
+						}
+					}
+				},
+				ns0#Contact_Data: {
+					ns0#Email_Address_Data: {
+						ns0#Email_Address: payload.email,
+						ns0#Usage_Data @(ns0#Public: true): {
+							ns0#Type_Data @(ns0#Primary: true): {
+								ns0#Type_Reference: {
+									ns0#ID @(ns0#"type": "Communication_Usage_Type_ID"): "Home"
+								}
+							}
+						}
+					}
+				}
+			},
+			ns0#Recruiting_Data: {
+				ns0#Ineligible_for_Hire: false,
+				ns0#Positions_Considered_for_Reference: {
+					ns0#ID @(ns0#"type": "Position_ID"): payload.applicantPositionIDValue
+				}
+			},
+			ns0#Background_Check_Data: {
+				ns0#Status_Date: payload.statusDate,
+				ns0#Status_Reference: {
+					ns0#ID @(ns0#"type": "Background_Check_Status_ID"): payload.backgroundCheckStatusIDValue
+				}
+			}
+		}
+	}
+}
+----
++
+. 将项目保存并运行为Mule应用程序。
+. 要测试该应用，请导航至`+http://127.0.0.1:8081/incident/get+`
+
+
+== 用例：XML
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:workday="http://www.mulesoft.org/schema/mule/workday" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/workday http://www.mulesoft.org/schema/mule/workday/current/mule-workday.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="47ffb091-e6c8-4f12-a8d3-6abf609f1c1a" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<configuration-properties file="mule-app.properties"/>
+	<workday:config name="Workday_Config" doc:name="Workday Config" doc:id="392b0328-41f3-40a7-8f85-4b53471ec4d2" >
+		<workday:basic-connection username="${workday.username}" password="${workday.password}" tenantName="${workday.tenantName}" hostName="${workday.hostName}">
+			<workday:transport >
+				<workday:default-http-message-dispatcher-provider />
+			</workday:transport>
+		</workday:basic-connection>
+	</workday:config>
+	<flow name="payroll-gbr-get-form" doc:id="713bc3e9-1752-433f-b2d8-afb4d59c3e66" >
+		<http:listener config-ref="HTTP_Listener_config" path="/" doc:name="/" doc:id="a4769708-a7b3-40b4-961c-6104ac02d612" />
+		<parse-template location="form.html" doc:name="Parse Template" doc:id="be0f09df-04d1-4fc4-a068-123800676de8" />
+	</flow>
+	<flow name="create-position" doc:id="c61dfb65-2a60-48b6-b9e5-deaf79da7b94" >
+		<http:listener config-ref="HTTP_Listener_config" path="/create-position" doc:name="/create-position" doc:id="e2bfe765-5136-4605-a6ea-2709656a47e5" />
+		<logger level="INFO" doc:name="Logger" doc:id="ae9dac6f-fed2-4571-ba17-0ee47006d690" />
+		<ee:transform doc:name="Transform Message" doc:id="d1688064-f089-46de-9060-7f94d66babd6" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/xml
+ns ns0 urn:com.workday/bsvc
+---
+{
+	ns0#Create_Position_Request @(ns0#version: "v28.0"): {
+		ns0#Business_Process_Parameters: {
+			ns0#Auto_Complete: true,
+			ns0#Run_Now: true
+		},
+		ns0#Create_Position_Data: {
+			ns0#Supervisory_Organization_Reference: {
+				ns0#ID @(ns0#"type":"Organization_Reference_ID"): payload.organizationReferenceID
+			},
+			ns0#Position_Data: {
+				ns0#Job_Posting_Title: payload.jobPostingTitle
+			},
+			ns0#Position_Group_Restrictions_Data: {
+				ns0#Availability_Date: payload.availabilityDate,
+				ns0#Earliest_Hire_Date: payload.earliestHireDate
+			},
+			ns0#Edit_Assign_Organization_Sub_Process: {
+				ns0#Business_Sub_Process_Parameters: {
+					ns0#Skip: true
+				}
+			},
+			ns0#Request_Default_Compensation_Sub_Process: {
+				ns0#Business_Sub_Process_Parameters: {
+					ns0#Skip: true
+				}
+			},
+
+			ns0#Assign_Pay_Group_Sub_Process: {
+				ns0#Business_Sub_Process_Parameters: {
+					ns0#Skip: true
+				}
+			},
+			ns0#Assign_Costing_Allocation_Sub_Process: {
+				ns0#Business_Sub_Process_Parameters: {
+					ns0#Skip: true
+				}
+			}
+		}
+	}
+}]]></ee:set-payload>
+	</ee:message>
+	<ee:variables >
+	<ee:set-variable variableName="myPayload" ><![CDATA[%dw 2.0
+output application/xml
+ns ns0 urn:com.workday/bsvc
+---
+{
+	ns0#Create_Position_Request @(ns0#version: "v28.0"): {
+		ns0#Business_Process_Parameters: {
+			ns0#Auto_Complete: true,
+			ns0#Run_Now: true
+		},
+		ns0#Create_Position_Data: {
+			ns0#Supervisory_Organization_Reference: {
+				ns0#ID @(ns0#"type":"Organization_Reference_ID"): payload.organizationReferenceID
+			},
+			ns0#Position_Data: {
+				ns0#Job_Posting_Title: payload.jobPostingTitle
+			},
+			ns0#Position_Group_Restrictions_Data: {
+				ns0#Availability_Date: payload.availabilityDate,
+				ns0#Earliest_Hire_Date: payload.earliestHireDate
+			},
+			ns0#Edit_Assign_Organization_Sub_Process: {
+				ns0#Business_Sub_Process_Parameters: {
+					ns0#Skip: true
+				}
+			},
+			ns0#Request_Default_Compensation_Sub_Process: {
+				ns0#Business_Sub_Process_Parameters: {
+					ns0#Skip: true
+				}
+			},
+
+			ns0#Assign_Pay_Group_Sub_Process: {
+				ns0#Business_Sub_Process_Parameters: {
+					ns0#Skip: true
+				}
+			},
+			ns0#Assign_Costing_Allocation_Sub_Process: {
+				ns0#Business_Sub_Process_Parameters: {
+					ns0#Skip: true
+				}
+			}
+		}
+	}
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<workday:invoke config-ref="Workday_Config" doc:name="Staffing-Create_Position" doc:id="f5feef4c-3975-45d3-bb86-c1069e8b3299" service="Staffing" operation="Create_Position">
+			<workday:message >
+				<workday:body ><![CDATA[#[vars.myPayload]]]></workday:body>
+			</workday:message>
+		</workday:invoke>
+		<ee:transform doc:name="Transform Message" doc:id="b79cdf0a-0b40-4dc2-9ab8-161b2bda39b3" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+ns ns0 urn:com.workday/bsvc
+---
+{
+	ID: payload.body.Create_Position_Response.Position_Reference[1]
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="25f5342a-19cb-4d37-9977-ee8ab1f000b1" />
+	</flow>
+</mule>
+----
+
+== 另请参阅
+
+*  https://www.mulesoft.com/legal/versioning-back-support-policy#anypoint-connectors [选择连接器支持策略]

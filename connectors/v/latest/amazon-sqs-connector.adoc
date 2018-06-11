@@ -1,0 +1,361 @@
+=  Amazon SQS连接器
+:keywords: anypoint studio, connector, endpoint, amazon, sqs, simple queue service
+：imagesdir：./_images
+
+_选择_
+
+用于Amazon SQS的Anypoint连接器提供了一种简单的方式与亚马逊简单队列服务API连接，允许Mule用户管理SQS排队服务，而无需直接处理API。
+
+亚马逊简单队列服务（Amazon SQS）提供可靠，高度可扩展的托管队列，用于在消息在计算机之间传输时存储消息。通过使用Amazon SQS，开发人员可以简单地在执行不同任务的分布式应用程序组件之间移动数据，而不会丢失消息或要求每个组件始终可用。 Amazon SQS可以轻松构建自动化工作流程，并与Amazon Elastic Compute Cloud（Amazon EC2）和其他AWS基础架构Web服务紧密配合。
+
+适用于Java的AWS开发工具包为AWS基础架构服务提供了Java API。 Amazon SQS连接器是使用SDK for Java构建的。
+
+Amazon SQS连接器支持两种类型的队列"Standard Queue"和"FIFO Queue"。标准队列具有高吞吐量，但偶尔可以传递多个消息副本，并且可以按照与发送消息不同的顺序传递消息。 FIFO队列的吞吐量有限，但消息的发送顺序与发送顺序完全相同。
+
+== 先决条件
+
+本文档假定您熟悉Mule，Anypoint连接器，
+Anypoint Studio基本要素，骡流中的元素以及全局元素。
+
+由于连接器预装了Anypoint Studio，您必须：
+
+* 安装Anypoint Studio。
+* 注册亚马逊网络服务。要使用连接器访问AWS，您需要IAM形式的凭证。
+
+== 兼容性
+
+Amazon SQS连接器5.0兼容于：
+
+[%header%autowidth.spread]
+|===
+|应用/服务 |版本
+| Mule运行时 | 4.0.x或更高版本
+|适用于Java的AWS开发工具包 | 1.11.79
+|===
+
+
+大多数操作的参数的包名称和返回类型已在此版本的连接器中更新。取决于您如何使用连接器，请参阅更新的软件包名称。例如，发送消息操作中的消息属性输入参数需要一个`Map<String, MessageAttributeValue>`对象，该对象要求您引用`org.mule.extension.sqs.api.model.MessageAttributeValue`包而不是`com.amazonaws.services.sqs.model.MessageAttributeValue`。
+
+要使连接器中的所有操作都能正常工作，您需要使用新操作更新当前SQS策略中整个Amazon SQS操作列表的子集，以指定哪个AWS账户有权访问队列上的操作。
+
+确保在Amazon SQS策略中为测试中的队列启用`sqs:GetQueueAttributes`操作，因为全局配置中的测试连接功能使用该操作。
+
+
+== 创建FIFO队列
+
+要创建FIFO队列，您必须使用连接器中的“创建队列”操作并添加两个属性。这两个属性
+FifoQueue为true，ContentBasedDeduplication为true。队列名称应以.fifo后缀结尾。示例是'MyTestFIFOQueue.fifo'。
+
+在创建FIFO队列时，您必须选择美国东部（俄亥俄州）或美国西部（俄勒冈州）两个地区中的任何一个，因为亚马逊仅支持这两个地区的FIFO队列。
+
+在使用SQS连接器将消息发送到FIFO队列时，应该提及在创建FIFO队列时使用的相同队列URL和区域名称。您还必须在发送消息时将值赋给连接器配置中的属性“消息组ID”。
+
+== 安装此连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+=== 更新您的POM文件
+
+当新版本的连接器发布后，您必须在您的mule应用程序POM.xml文件中添加POM依赖项。例如：
+
+[source, code]
+----
+<dependency>
+    <groupId>org.mule.connectors</groupId>
+    <artifactId>mule-sqs-connector</artifactId>
+    <version>5.0.0</version>
+    <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== 创建一个新项目
+
+. 在Studio中，单击文件>新建> Mule项目。
+. 为您的新项目输入一个名称，并将其余选项保留为默认值。
++
+image:amazon-sqs-new-project.png[亚马逊SQS-新项目] +
++
+. 如果您计划使用Git，请为Studio项目选择使用默认忽略为项目创建.gitignore文件，然后单击下一步。
+. 点击完成创建项目。
+
+== 配置Amazon SQS连接器全局元素
+
+要在Mule应用程序中使用Amazon SQS连接器，请配置一个全局元素，供应用程序中的所有Amazon SQS连接器使用。
+
+创建全局的Amazon SQS连接器配置：
+
+. 点击画布底部的全局元素标签。
+. 在全局配置元素屏幕上，单击创建。
+. 在Choose Global Type向导中，展开Connector Configuration，然后选择Amazon SQS：Configuration。
++
+image:amazon-sqs-global-type.png[亚马逊SQS-全球型]
++
+. 单击确定。
+. 输入全局元素属性：
++
+image:amazon-sqs-config-pic.png[亚马逊SQS-配置-PIC]
++
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+|访问密钥 |唯一标识拥有该帐户的用户的字母数字文本字符串。
+|密钥 |扮演密码角色的密钥。
+|尝试AWS Credentials提供商链|控制是否应使用临时凭证的下拉菜单。
+|队列名称 |默认队列名称;如果它不存在，Mule会自动创建队列。
+|队列URL  |要对其执行操作的Amazon SQS队列的URL。
+|区域端点 |处理您的请求的区域端点。
+|===
++
+当在全局元素中提供队列名称时，连接器会自动创建队列并将此队列的URL设置为队列URL。所有引用全局元素的Amazon SQS消息处理器都使用此队列URL执行操作。
+
+如果必须为流中特定的消息处理器引用不同的队列URL，则可以使用消息处理器提供的队列URL属性执行操作。
++
+. 保留“代理”和“高级”选项卡的默认条目。
+. 单击测试连接以确认您的全局配置参数是否准确，并且Mule能够成功连接到您的Amazon SQS实例。
+. 单击确定以保存全局连接器配置。
+
+== 使用连接器
+
+Amazon SQS连接器是基于操作的连接器，这意味着将连接器添加到流时，需要配置连接器要执行的特定操作。 Amazon SQS连接器支持以下操作：
+
+* 添加权限
+* 更改消息的可见性
+* 更改消息可见性批次
+* 创建队列
+* 删除消息
+* 删除邮件批处理
+* 删除队列
+* 获取消息的大致数量
+* 获取队列属性
+* 获取队列URL
+* 列出死信源队列
+* 列出队列
+* 清除队列
+* 阅读（接收消息）
+* 删除权限
+* 发送批量消息
+* 发送消息
+* 设置队列属性
+
+=== 将Amazon SQS连接器添加到Studio Flow
+
+. 在Anypoint Studio中创建一个新的Mule项目。
+. 选择Amazon SQS连接器并将操作“读取”拖到画布上，然后选择它以打开属性编辑器。
+. 配置操作参数：
++
+image:amazon-sqs-demo-receive-messages.png[亚马逊SQS-演示收到的消息]
++
+[%header%autowidth.spread]
+|===
+| {字段{1}}值
+|显示名称 |为应用程序中的连接器操作输入唯一标签。
+|连接器配置 |从下拉菜单中选择全局的Amazon SQS连接器元素。
+|队列URL  |为操作选择一个参数。
+|最大消息数 |为操作的参数赋予值。
+|===
++
+. 保存连接器配置。
+
+== 示例用例
+
+将元数据与消息一起发送到Amazon SQS队列，然后从队列中接收消息。这可以分成以下两个流程：
+
+. 与元数据一起发送消息，然后获取队列中的消息数以验证消息已发送。
+. 接收消息，记录消息正文。
+
+
+===  Studio Visual Editor
+
+image:amazon-sqs-send-message-operation-demo-flow.png[发送消息操作流程]
+
+image:amazon-sqs-receive-delete-message-operations-demo-flow.png[接收和删除消息操作流程]
+
+=== 创建一个流来发送消息
+
+通过向队列发送消息开始流程：
+
+. 在Anypoint Studio中创建一个新的Mule项目。
+. 将HTTP Connector Listener操作拖到画布中，然后选择它以打开属性编辑器控制台。
+. 添加一个新的HTTP侦听器配置全局元素。
+. 在项目的常规组中，将路径设置为`/`值。
+. 在基本设置中，点击加号按钮：
++
+image:amazon-sqs-http-config.png[亚马逊SQS-HTTP-配置]
++
+. 配置以下HTTP参数，同时保留其他字段的默认值：
++
+image:amazon-sqs-http-params.png[亚马逊SQS-HTTP-PARAMS]
++
+[%header%autowidth.spread]
+|===
+| {字段{1}}值
+| {主机{1}} 0.0.0.0
+| {端口{1}} 8081
+|===
++
+. 添加转换消息组件以附加元数据：
++
+image:amazon-sqs-transform-message.png[转换消息组件]
++
+[source, dataweave, linenums]
+----
+%dw 2.0
+output application/java
+---
+{
+	delaySeconds: 0,
+	body: "Hello World",
+	messageAttributes: {
+		"AccountId": {
+			"stringValue" : "000123456",
+			"dataType" : "String.AccountId"
+		} as Object {
+			class: "org.mule.extension.sqs.api.model.MessageAttributeValue"
+		},
+		"NumberId": {
+			"stringValue" : "230.000000000000000001",
+			"dataType" : "Number"
+		} as Object {
+			class : "org.mule.extension.sqs.api.model.MessageAttributeValue"
+		}
+	} as Object {
+		class: "java.util.HashMap"
+	}
+} as Object {
+	class: "org.mule.extension.sqs.api.model.Message"
+}
+----
++
+. 将Amazon SQS连接器发送消息操作拖到流中，然后双击连接器以打开其属性编辑器。
+. 在扩展配置字段右侧的基本设置中，单击加号图标并为访问密钥，密钥和队列名称添加值。
+. 配置连接器的其余参数。
++
+image:amazon-sqs-send-message.png[发送消息参数]
++
+[%header%autowidth.spread]
+|===
+| {字段{1}}值
+|显示名称 |输入连接器操作的名称。
+|连接器配置 |选择您创建的全局配置。
+|消息 | `#[payload]`
+|===
++
+. 添加记录器以在Mule控制台中打印响应。
++
+image:amazon-sqs-demo-logger.jpg[亚马逊SQS-演示记录仪]
++
+[%header%autowidth.spread]
+|===
+| {字段{1}}值
+|显示名称 |输入记录器的名称。
+|信息 |已发信息：`#[payload]`
+|级别 |信息（默认）
+|===
++
+. 添加另一个Amazon SQS连接器>获取消息的近似数量以获取队列中消息的数量。
++
+image:amazon-sqs-demo-get-message-count.jpg[亚马逊SQS-演示得到消息数]
++
+[%header%autowidth.spread]
+|===
+| {字段{1}}值
+|显示名称 |输入连接器操作的名称。
+|连接器配置 |选择您创建的全局配置。
+|===
++
+. 添加记录器以在Mule控制台中打印该号码。
++
+image:amazon-sqs-demo-logger2.jpg[亚马逊SQS-演示logger2]
+
+=== 创建一个流来接收消息
+
+这完成了用例的第一部分。现在创建另一个流程来接收消息，并在将它们从队列中删除之前记录它们。
+
+. 拖动Amazon SQS连接器并将其配置为入站端点：
++
+image:amazon-sqs-demo-receive-messages.png[亚马逊SQS-演示收到的消息]
++
+[%header%autowidth.spread]
+|===
+| {字段{1}}值
+|显示名称 |输入连接器操作的名称。
+|连接器配置 |选择您创建的全局配置。
+|邮件数量 | 10
+|===
++
+消息处理器的队列URL属性优先于全局元素属性队列URL。如果没有提供属于全局元素属性的属性（包括队列名称，队列URL和消息处理器的队列URL），则连接器将引发异常。
++
+. 添加记录器以在Mule控制台中打印消息：
++
+[%header%autowidth.spread]
+|===
+| {字段{1}}值
+|显示名称 |输入您选择的名称。
+|消息 |＃[有效载荷]
+|级别 |信息（默认）
+|===
+
+
+===  Studio XML编辑器
+
+要使此代码在Anypoint Studio中工作，您必须提供Amazon Web Services凭据。您可以使用代码中的值替换变量，也可以为`src/main/resources/mule-artifact.properties file`中的每个变量提供值。
+
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:sqs="http://www.mulesoft.org/schema/mule/sqs" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/sqs http://www.mulesoft.org/schema/mule/sqs/current/mule-sqs.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+  <configuration-properties file="mule-artifact.properties"/>
+  <sqs:config name="Amazon_SQS_Configuration" doc:name="Amazon SQS Configuration" doc:id="ID_VALUE">
+    <sqs:basic-connection accessKey="${sqs.accessKey}" secretKey="${sqs.secretKey}" defaultQueueName="${sqs.queueName}"/>
+  </sqs:config>
+  <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="ID_VALUE">
+    <http:listener-connection host="0.0.0.0" port="8081"/>
+  </http:listener-config>
+  <flow name="sqs-send-message-operation-demo-flow" doc:id="ID_VALUE">
+    <http:listener config-ref="HTTP_Listener_config" path="/" doc:name="Listener" doc:id="ID_VALUE"/>
+    <ee:transform doc:name="Transform Message" doc:id="ID_VALUE">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+	delaySeconds: 0,
+	body: "Hello World",
+	messageAttributes: {
+		"AccountId": {
+			"stringValue" : "000123456",
+			"dataType" : "String.AccountId"
+		} as Object {
+			class: "org.mule.extension.sqs.api.model.MessageAttributeValue"
+		},
+		"NumberId": {
+			"stringValue" : "230.000000000000000001",
+			"dataType" : "Number"
+		} as Object {
+			class : "org.mule.extension.sqs.api.model.MessageAttributeValue"
+		}
+	} as Object {
+		class: "java.util.HashMap"
+	}
+} as Object {
+	class: "org.mule.extension.sqs.api.model.Message"
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+    <sqs:send-message config-ref="Amazon_SQS_Configuration" doc:name="Send message" doc:id="ID_VALUE" message="#[payload]"/>
+    <logger level="INFO" doc:name="Logger" doc:id="ID_VALUE" message="#[payload]"/>
+    <sqs:get-approximate-number-of-messages config-ref="Amazon_SQS_Configuration" doc:name="Get approximate number of messages" doc:id="ID_VALUE"/>
+    <logger level="INFO" doc:name="Logger" doc:id="ID_VALUE" message="#[payload]"/>
+  </flow>
+  <flow name="sqs-receive-delete-message-operations-demo-flow" doc:id="ID_VALUE">
+    <sqs:receivemessages config-ref="Amazon_SQS_Configuration" doc:name="Receivemessages" doc:id="ID_VALUE"/>
+    <logger level="INFO" doc:name="Logger" doc:id="ID_VALUE message="#[payload]"/>
+  </flow>
+</mule>
+----

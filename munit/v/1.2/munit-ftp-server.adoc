@@ -1,0 +1,312 @@
+=  MUnit FTP服务器
+：version-info：3.7.0及更高版本
+:keywords: munit, testing, unit testing
+
+== 概述
+
+测试生产代码的主要问题之一是外部系统连接。如果我们创建一个连接FTP服务器的代码的测试，我们需要在我们的本地环境中安装一个FTP服务器以运行测试。另一个选择是只有一个外部FTP服务器用于测试，但这种方法的主要问题是我们的Maven项目不能移植 - 我们无法将它发送给第三方，因为他们无法首先编译它而不安装FTP服务器。
+
+为了使您避免此问题，MUnit允许您在本地环境中实施FTP服务器。
+
+== 安装MUnit FTP服务器模块
+
+在这个例子中，你需要安装MUnit提供的*FTP server Module*。 +
+从Anypoint Studio中，转到*Help*和*Install New Software...*。 +
+在*Work with:*面板中查找*MUnit Update Site*，然后从*MUnit Tools for Mule*部分选择*FTP server Module (Mule 3.4.0+)*
+
+[NOTE]
+--
+如果您使用Maven，请注意以下几点：
+
+您需要将MUnit FTP服务器工件添加到您的`pom`文件中：
+
+[source,xml,linenums]
+----
+<!-- ftpServer Dependency -->
+<dependency>
+	<groupId>com.mulesoft.munit.utils</groupId>
+	<artifactId>munit-ftpserver-module</artifactId>
+		<version>1.1.0</version>
+	<scope>test</scope>
+</dependency>
+----
+
+此代码示例还使用Spring进行数据库配置。从Maven运行时，您应该将Spring的依赖项添加到您的`pom.xml`文件中。
+
+[source,xml,linenums]
+----
+<!-- Spring Dependency -->
+<dependency>
+  <groupId>org.springframework</groupId>
+  <artifactId>spring-jdbc</artifactId>
+  <version>4.1.6.RELEASE</version>
+</dependency>
+----
+--
+
+
+== 使用MUnit FTP服务器创建测试
+
+为了本文件的目的，我们假设我们正在测试
+遵循Mule代码：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:ftp-code-to-test.png[ftp-code-to-test]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<flow name="exampleFlow">
+  <set-payload value="#['something_something_dark_side']"/>
+
+  <ftp:outbound-endpoint host="${host}" port="${ftp.port}" user="${ftp.user}" password="${ftp.password}" outputPattern="ftp-jsonResult.txt" path="/tmp">
+  </ftp:outbound-endpoint>
+</flow>
+----
+....
+------
+
+[NOTE]
+--
+对于这个例子，我们使用属性`${host}`和`${ftp.port}`。 +
+请记住在您的`mule-app.properties`文件中添加这些属性：
+
+ftp.port = 22 +
+主机=本地主机/
+
+您还需要为FTP配置设置用户和密码。 +
+对于此示例，任何凭据均可使用，因此请在您的`mule-app.properties`文件中添加以下行：
+
+ftp.user = max +
+ftp.password = munittest
+--
+
+[CAUTION]
+--
+用户名字段不能为空。 +
+如果您没有用户名/密码对，请将用户名设置为`anonymous`，并且不要设置任何密码，因为默认情况下，`anonymous`属性设置为true。 +
+在<<Defining the FTP Server, defining the FTP server>>的属性表中了解更多信息
+--
+
+=== 定义FTP服务器
+
+使用Mule Pallet中`MUnit Integration Test Tools`的{​​{0}}连接器定义FTP服务器。 +
+数据库服务器可以采用以下参数：
+
+[%header,cols="30,70"]
+|===
+|属性名称 |描述
+| `name`  |定义此FTP服务器的配置名称。该值必须是唯一的。
+| `port`  |定义FTP服务器应侦听的端口。
+| `Anonymous`  | （布尔值）设置对FTP服务器的匿名访问。如果Anonymous设置为true，则通过将用户名设置为"anonymous"，您无需设置密码即可访问FTP服务器。默认值为true。
+| `secure` |（布尔值）定义FTP协议。当安全参数设置为true时，服务器将作为SFTP服务器运行，并且只有通过身份验证才允许连接。如果设置为false，则服务器将作为FTP服务器运行，并允许通过身份验证或匿名连接。默认值为false。
+| `homeDir` |定义用户主目录。默认值是文件系统根目录。 +
+可以使用"~"字符来定义FTP用户主目录以表示文件系统上的主目录。
+|===
+
+继续在新的 link:/munit/v/1.2/munit-suite[MUnit套件]中定义您的FTP服务器配置。
+
+首先，您需要将`both mock connectors`和`mock inbounds`选项设置为false：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:munit-configuration-mock-false.png[munit-configuration-mock-false]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<munit:config mock-inbounds="false" mock-connectors="false"/>
+----
+....
+------
+
+接下来，定义您的FTP配置：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+Navigate to your *Global Elements* tab, and select your *FTP Server* element. Click *Edit* and complete the fields:
+
+_Name_: ftpServer +
+_port_.: ${ftp.port} +
+_Username_.: ${ftp.user} +
+_Password_.: ${ftp.password} +
+
+
+image:ftp-server-config.png[ftp-server-config]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source,xml,linenums]
+----
+<ftpserver:config port="${ftp.port}" name="ftpServer"/>
+----
+....
+------
+
+=== 启动FTP服务器
+
+为了运行，FTP服务器必须在`before-suite`中启动。使用`start-server`消息处理器启动服务器。
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:ftp-server-start.png[ftp-server-start]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<munit:before-suite name="before.suite" description="Starting FTP server">
+  <ftpserver:start-server config-ref="ftpServer"/>
+</munit:before-suite>
+----
+....
+------
+
+
+=== 运行测试
+
+一旦我们的FTP服务器启动并运行，我们就可以运行我们的测试。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:run-ftp-server-test.png[run-ftp-server-test]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<munit:test name="testFTPServer" description="Data must be stored in the ftp server">
+  <flow-ref name="exampleFlow" />
+  <ftpserver:contains-files file="ftp-jsonResult.txt" path="/tmp" config-ref="ftpServer"/>
+</munit:test>
+----
+....
+------
+
+注意：此FTP接受任何用户，因此不需要设置用户数据库或列表。
+
+正如您在测试中看到的，我们使用了`contains-file`消息处理器。
+
+该消息处理器尝试验证FTP服务器中是否存在文件。如果文件不存在，则消息处理器失败，从而导致测试失败。
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `config-ref`
+|定义FTP服务器配置。
+
+| `path`
+|根据之前定义的用户主目录定义要在哪个文件夹中进行搜索。
+
+
+| `file`
+|定义要查找的文件的名称。
+
+|===
+
+`remove`消息处理器提供另一个可能有用的操作。此操作指示FTP服务器从存储中删除文件。
+
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:ftp-server-delete.png[ftp-server-delete]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source,xml,linenums]
+----
+<ftpserver:remove config-ref="ftpServer" path="/tmp/ftp-jsonResult.txt"/>
+----
+
+....
+------
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `config-ref`
+|定义FTP服务器配置。
+
+| `path`
+|要删除的文件的完整路径。
+
+|===
+
+提示：当我们多次创建相同的文件名时，此功能有用。例如，我们可以在`after-test`中使用它，以确保没有名称冲突导致测试失败。
+
+=== 停止FTP服务器
+
+要正常停止FTP服务器，需要使用`stop-server`消息处理器在`after-suite`中停止。
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:stop-ftp-server.png[stop-ftp-server]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<munit:after-suite name="after.suite" description="Stoping FTP server">
+  <ftpserver:stop-server config-ref="ftpServer"/>
+</munit:after-suite>
+----
+
+....
+------
+
+== 执行环境
+
+您可能已经注意到，我们的产品代码示例在以下示例中广泛使用了某些参数的占位符，例如`host`，`port`等：
+
+[source, xml, linenums]
+----
+<ftp:outbound-endpoint host="${host}" port="${ftp.port}" user="${ftp.user}" password="${ftp.password}" outputPattern="ftp-jsonResult.txt" path="/tmp"/>
+----
+
+原因是属性允许我们创建更具可配置性的代码。比较上面的例子：
+
+[source, xml, linenums]
+----
+<ftp:outbound-endpoint host="some.host" port="myPort" user="myUser" password="myPassword" outputPattern="ftp-jsonResult.txt" path="/tmp"/>
+----
+
+第二个示例代码是无法测试的，即使没有MUnit也是如此。如果我们需要在投入生产之前测试这些代码，我们总是用真实的证书打印生产数据库服务器，这带来了风险。
+
+另一方面，第一个示例代码允许我们定义两个不同的属性文件：
+
+* 一个用于测试环境
+* 一个用于生产环境
+
+这与Mule属性占位符结合使用，如下面的`${env}`所示：
+
+[source, xml, linenums]
+----
+<global-property value="mule.${env}.property"/>
+----
+
+在上例中，使用`${env}`可以让我们利用执行环境。因此，例如，我们可以定义两个单独的属性文件`mule.test.properties`和`mule.prod.properties`，它们包含相同的属性，其值根据我们希望使用的环境而定。
+
+提示：要从Maven运行测试并从命令行发出env参数，可以运行：`mvn -DargLine="-Dmule.env=test" clean test`。
+

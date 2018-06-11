@@ -1,0 +1,119 @@
+=  OpenID Connect，OpenAM或PingFederate OAuth令牌执行策略
+
+//故意不在TOC中，只是为了防止404
+
+您应用于Anypoint Platform中的API的授权实施策略连接到OpenID Connect令牌自检端点，OpenAM授权服务器或PingFederate授权服务器。该策略根据以下配置执行访问：
+
+* 访问范围（可选）
+*  OAuth客户端
+* 到授权服务器的代理连接
+
+要将策略应用于API，请使用应用策略的一般步骤。您在应用策略时配置访问范围。
+
+除了配置任务之外，您还可以实现请求访问令牌的用户凭证的验证。
+
+== 先决条件
+
+* 您的Anypoint Platform组织使用OpenAM，OpenID Connect或PingFederate设置为联合组织。
++
+* 您是Anypoint Platform组织管理员或具有创建或管理API的权限。
+
+== 政策实施
+
+此图显示策略如何与现有的OpenAM或PingFederate授权服务器或OpenID Connect令牌自检端点配合使用，以保护对您API版本的访问。
+
+image::openam-oauth-token-enforcement-policy-0fbb9.png[1授权应用访问API 2发送用户凭证3发送有效令牌4调用API 5检查头/参数中的范围和令牌6验证头/参数和范围中的令牌7调用API]
+
+* 首先，客户端应用程序在进行API调用之前直接从授权服务器请求令牌。客户端应用程序通过使用用户凭据进行身份验证来发出此请
+* 服务器为客户端应用程序提供有效的令牌。
+* 接下来，客户端应用程序在API调用中发送有效令牌。
+由OpenAM，OpenID Connect或OAuth令牌执行策略管理的*  Mule会检查头或查询参数中的令牌是否有效并与正确的范围相匹配。
+* 策略调用OpenAM授权服务器，OpenID Connect令牌自检端点或PingFederate授权服务器来验证令牌和检查范围。
+* 最后，API接收来自客户端应用程序的调用。
+
+为了提高性能，Mule将调用缓存到授权服务器，该授权服务器仅在令牌的生命周期中执行一次。如果OAuth令牌无效，授权服务器将返回错误。例如：
+
+*  OpenAM 11.0.0返回`404 NOT FOUND`
+*  OpenAM 12.0.0返回`400 BAD REQUEST`
+*  PingFederate返回`403 FORBIDDEN`
+
+== 配置OpenAM OAuth客户端和授予类型
+
+OpenAM支持两种OAuth客户端：
+
+* 机密客户
++
+保持其凭据的机密性
++
+* 公共客户端
++
+与其他方分享其凭据。
+
+每种类型的客户端都支持四种OAuth授权类型中的三种。因此，为OpenAM客户端配置Mule 3.8或更高版本或旧版API网关时，只能选择四种授权类型中的三种。其他授予类型不可用。您根据您选择的授予类型确定OpenAM客户端的公共或机密属性。
+
+== 配置PingFederate OAuth客户端和授予类型
+
+PingFederate客户端支持全部四种OAuth授权类型：隐式，客户端凭证，资源所有者密码凭证和授权码。作为PingFederate用户，您可以以任何您想要的顺序启用或禁用授予类型。
+
+== 获取用户凭证
+
+联合政策使用OAuth提供程序中存储的用户信息丰富了流程，可用于用户验证。这些信息可以从Mule 4或更高版本的attributes.headers或早期版本的出站属性访问。提供信息的元素取决于用于检索令牌的授权类型。
+
+* 这些授权类型的用户ID是X-AGW-userid：
+** 资源所有者凭证
+** 隐
+** 授权码
+* 用户ID是客户端证书授权类型的X-AGW-client_id。
+
+这些信息可供流程中的任何组件在您的代理内部引用和使用。
+
+该策略丰富的所有用户信息都有"X-AGW-"前缀。
+
+==  Mule 3.x及更早版本的部署
+
+生成代理输出的HTTP连接器将收到的所有出站属性转换为返回给请求者的HTTP消息头。
+用户信息可以从地图访问。使用MEL表达式来访问包含地图`['_agwUser']`的流变量。如果你想访问地图的特定值，你可以使用这个表达式，例如：
+
+`#[flowVars['_agwUser']['uid']]`
+
+==  Mule下的部署4
+
+在联合OAuth 2策略之后或在流中调用的策略可以使用`Authentication.properties`对象。该对象包含以下元素：
+
+* 原始回复消息
++
+`#[authentication.properties.tokenContext]`
++
+* 访问令牌
++
+`#[authentication.properties.accessToken]`
+*  OAuth提供商响应标头
++
+＃[authentication.properties.userProperties]
+
+如果您将策略配置为公开头部，则来自此对象的信息将作为头部到达后端API。
+
+=== 令牌验证响应示例
+
+以下示例显示了形成HTTP消息标题的返回信息。
+
+[source, code, linenums]
+----
+HTTP/1.1 200 OK
+Cache-Control: no-cache, no-store
+Date: Mon, 09 Mar 2015 19:08:07 GMT
+Accept-Ranges: bytes
+Server: Restlet-Framework/2.1.1
+Vary: Accept-Charset, Accept-Encoding, Accept-Language, Accept
+Content-Type: application/json;charset=UTF-8
+Transfer-Encoding: chunked
+{"uid":"john.doe","mail":"john.doe@example.com","scope":["uid","mail","cn","givenName"],"grant_type":"password","cn":"John Doe Full","realm":"/","token_type":"Bearer","expires_in":580,"givenName":"John","access_token":"fa017a0e-1bd5-214c-b19d-03efe9f9847e"}
+----
+
+
+== 另请参阅
+
+*  link:/api-manager/v/1.x/using-policies#applying-and-removing-policies[适用政策的一般程序]
+*  link:https://forgerock.org/openam/[OpenAM]身份提供商
+*  link:https://www.pingidentity.com/en/products/pingfederate.html[的PingFederate]身份提供商
+*  link:/access-management/configure-client-management-openid-task[配置OpenID Connect客户端管理]

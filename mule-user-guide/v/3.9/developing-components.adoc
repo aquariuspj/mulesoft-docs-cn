@@ -1,0 +1,130 @@
+= 开发组件
+:keywords: customize, custom components
+
+在开发组件时，您专注于开发处理业务逻辑的代码，而不是将组件与Mule集成。例如，如果您正在开发将客户数据添加到发票的组件，则您将专注于编写查询客户数据库的代码并根据需要更新发票。您不必编写任何特殊代码来处理传递给组件或与Mule集成的消息，因为所有集成都是通过配置来处理的。您可以将组件开发为POJO，或者将其开发为使用流行容器（如Spring，EJB或Plexus）的Web服务。
+
+Mule允许您启用组件来获取有关甚至控制当前消息的信息，而不是仅使用消息有效负载。要使组件直接处理消息，您必须在组件中实现`Callable`接口（请参见下面的入口点）。
+
+要开始开发Mule组件，您可以使用Mule IDE。 Mule IDE是一个Eclipse插件，为开发Mule应用程序提供了一个集成开发环境。您也可以使用Mule提供的 link:/mule-user-guide/v/3.9/configuring-components[标准组件]，或者将它们用作构建自己的起点。
+
+== 入口点
+
+_entry point_是组件中的方法，当收到消息时由Mule调用。要在端点上明确指定方法，您可以在端点上使用`method`参数，例如：
+
+[source, xml]
+----
+<outbound-endpoint address="ejb://localhost:1099/SomeService?method=remoteMethod"/>
+----
+
+要么：
+
+[source, xml]
+----
+<ejb:endpoint host="localhost" port="1099" object="SomeService" method="remoteMethod"/>
+----
+
+如果不指定此参数，则Mule会使用_entry point resolver_根据消息的有效内容类型动态选择要调用的方法。找到匹配项后，该方法会缓存参数类型，以便在流程的每个方法中仅对每个方法进行一次内省。如果组件中的多个方法与有效内容类型匹配，或者没有方法匹配，则会引发错误。您也可以在没有参数的组件上调用方法。
+
+或者，您的组件可以实现 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/lifecycle/Callable.html[org.mule.api.lifecycle.Callable]接口。如果你的组件实现了这个接口，它将覆盖任何动态解析并改为调用接口方法实现。
+
+有关配置入口点解析器的详细信息，请参阅 link:/mule-user-guide/v/3.9/entry-point-resolver-configuration-reference[入口点解析器配置参考]。
+
+=== 传统入口点解析器集
+
+如果没有配置其他解析器，则使用`LegacyEntryPointResolverSet`。 `LegacyEntryPointResolverSet`提供了如下通用入口点解析：
+
+. 检查组件类的注释方法（请参阅 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/impl/model/resolvers/AnnotatedEntryPointResolver.html[org.mule.impl.model.resolvers.AnnotatedEntryPointResolver]）。
+. 如果指定了一个，请使用上述"method"属性（请参阅 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/model/resolvers/MethodHeaderPropertyEntryPointResolver.html[org.mule.model.resolvers.MethodHeaderPropertyEntryPointResolver]）。
+. 如果组件实现了 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/lifecycle/Callable.html[org.mule.api.lifecycle.Callable]生命周期接口，请使用`onCall(MuleEventContext)`方法接收消息。
+. 消息类型与组件上的方法相匹配，以查看是否存在接受变换器返回类型的方法。如果是这样，则使用此方法。请注意，如果有多个匹配项，则会引发异常。
+. 如果以上都不匹配，则抛出异常并且组件注册失败。
+
+`LegacyEntryPointResolverSet`不合适的情况很多。更多的控制可以通过扩展它的实现集或者配置一个全新的集来实现。有几个EntryPointResolver实现，例如 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/model/resolvers/CallableEntryPointResolver.html[org.mule.model.resolvers.CallableEntryPointResolver]， link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/model/resolvers/MethodHeaderPropertyEntryPointResolver.html[org.mule.model.resolvers.MethodHeaderPropertyEntryPointResolver]和 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/model/resolvers/ReflectionEntryPointResolver.html[org.mule.model.resolvers.ReflectionEntryPointResolver]。这些在`LegacyEntryPointResolverSet`中使用时，可以在单独指定时进行更全面的配置。
+
+=== 调用无参数方法
+
+如果你想调用一个没有参数的方法，你可以使用 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/model/resolvers/NoArgumentsEntryPointResolver.html[org.mule.model.resolvers.NoArgumentsEntryPointResolver]。无论当前消息的有效载荷如何，此解析器只会查找组件中的无参数方法。另外，如果收到的有效内容是NullPayload类型，则 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/model/resolvers/ReflectionEntryPointResolver.html[ReflectionEntryPointResolver]支持无参数方法的解析。
+
+=== 自定义入口点解析器
+
+如果您想创建您自己的入口点解析器，您可以创建一个实现 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/model/EntryPointResolver.html[EntryPointResolver]接口的类，并使用Mule配置中的`<custom-entry-point-resolver>`元素指定它。
+
+== 默认消息流行为
+
+Mule有一些关于管理进出组件的消息流的默认行为规则。
+
+. 接收到消息时，将按照上述方式调用入口点方法。
+. 响应或出站消息的获取方式如下：
+** 如果调用的方法不是void（即Callable.onEvent（）返回Object），则使用方法返回值。如果返回null，则不会对当前请求进行进一步的处理。
+** 如果该方法是无效的，则使用用于调用该方法的参数。这假定参数本身被改变或者没有改变消息。
+. 如果入站端点具有配置了返回响应的交换模式，则组件调用的结果将返回给调用者。
+. 出站消息根据`<outbound>`配置进行路由：
+
+== 自定义消息流行为
+
+要自定义消息流行为，您必须获得对 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/MuleEventContext.html[org.mule.api.MuleEventContext]的引用。您可以通过实现Callable接口来获取参考，该接口将事件上下文作为参数传递给此接口：
+
+[source, java, linenums]
+----
+public interface Callable
+{
+    public Object onCall(MuleEventContext eventContext) throws Exception;
+}
+----
+
+从MuleEventContext中，您可以同步和异步地发送和接收事件，管理事务并覆盖默认的事件流行为。例如：
+
+[source, code, linenums]
+----
+MuleEventContext context = RequestContext.getEventContext();
+OutboundEndpoint endpoint = ...
+ 
+//to send asynchronously
+context.dispatchEvent(new MuleMessage("IBM:0.01", null), endpoint);
+ 
+//or to request
+InboundEndpoint endpoint = ...
+MuleMessage quote = context.requestEvent(endpoint, 5000);
+----
+
+即使您使用事件上下文来手动控制事件流，当您的方法返回时，Mule会正常路由出站事件。您可以进一步停止Mule处理事件，如下所示：
+
+* 如果你的方法不是void，你可以返回null。这种方法告诉骡子没有进一步的事件信息来处理。
+
+* 如果你的方法是无效的，Mule使用入站消息有效载荷作为出站消息有效载荷。您可以使用`setStopFurtherProcessing`方法覆盖此行为，如下所述。
+
+=== 暂停消息流
+
+要停止消息流，您可以从 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/MuleEventContext.html[MuleEventContext]调用`setStopFurtherProcessing()`，否则会引发异常。这会导致组件上的`ExceptionStrategy`被调用。
+
+[NOTE]
+====
+使用额外的流程或使用组件绑定比上述用于控制组件实现中的消息流的技术更受欢迎。这是因为它允许更多的解耦实现，可以通过配置文件进行修改，并避免在组件实现中使用Mule API。要采取这种方法，请执行以下操作之一：
+
+* 确保您的组件的实现方式使得它们可以完成不需要发送/接收任何消息的单个工作单元。这个额外的发送/接收/路由然后使用Mule流完成。
+* 设计组件的方式可以将接口方法映射到出站端点，然后使用绑定将其映射到配置中。有关如何配置绑定的信息，请参阅 link:/mule-user-guide/v/3.9/configuring-java-components[配置Java组件]。
+====
+
+== 组件生命周期
+
+你的组件可以实现多个生命周期接口。生命周期流程通常如下所示，`onCall()`通常被上面描述的入口点解析器所取代：
+
+image:component-lifecycle.jpeg[组件的生命周期]
+
+以下是最常用的接口：
+
+*  link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/lifecycle/Initialisable.html[org.mule.api.lifecycle.Initialisable]
++
+这在组件的生命周期中仅被调用一次。当组件池初始化时创建组件时调用它。
+*  link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/lifecycle/Startable.html[org.mule.api.lifecycle.Startable]
++
+这在组件启动时调用。服务器启动时以及组件停止并通过API或JMX启动时会发生这种情况。
+*  link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/lifecycle/Stoppable.html[org.mule.api.lifecycle.Stoppable]
++
+这在组件停止时调用。这发生在服务器停止或组件通过API或JMX停止时。
+*  link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/lifecycle/Disposable.html[org.mule.api.lifecycle.Disposable]
++
+这在组件被处理时被调用。这在服务器关闭时调用一次。
+
+有关更多信息，请参阅 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/lifecycle/package-summary.html[的Javadoc]。
+

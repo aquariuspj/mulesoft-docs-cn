@@ -1,0 +1,108 @@
+= 关于DataWeave
+:keywords: studio, anypoint, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datawave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+DataWeave是MuleSoft表达式语言，用于访问和转换通过Mule应用程序接收到的数据。 DataWeave与Mule运行时紧密集成，运行Mule应用程序中的脚本和表达式。
+
+DataWeave作用于Mule事件中的数据。最常见的情况是，您使用它来访问和转换消息负载中的数据。例如，在应用程序中的组件从一个系统中检索数据后，可以使用DataWeave修改该数据中的选定字段并将其输出为新的数据格式，然后使用应用中的另一个组件将该数据传递给另一个系统。
+
+下面的简单示例演示了DataWeave语言的一些重要特性：
+
+* 从一种格式到另一种格式的数据转换。该示例将`application/json`输入转换为`application/xml`输出。
+* 访问输入数据结构中的字段的数据选择器。该脚本从消息负载输入中选择JSON对象中的键（例如，`payload.title`），然后输出它们的值。
+* 对输入字段`upper(payload.author)`的值使用核心DataWeave函数。
+
+。输入负载
+[source,json,linenums]
+----
+{
+  "title": "Java 8 in Action",
+  "author": "Mario Fusco",
+  "year": 2014
+}
+----
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  order: {
+    'type': 'Book',
+    'title': payload.title,
+    'author': upper(payload.author),
+    'year': payload.year
+  }
+}
+----
+
+。输出有效负载
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<order>
+  <type>Book</type>
+  <title>Java 8 in Action</title>
+  <author>MARIO FUSCO</author>
+  <year>2014</year>
+</order>
+----
+
+更复杂的数据操作和转换是可能的。
+
+除了XML和JSON之外，DataWeave还支持多种文件输入和输出格式。它提供了许多用于处理数据的函数，并包含用于访问数据结构中字段的选择器。除了数组，键值对，Java对象，字符串和数字之外，它还可以处理多种数据类型。它还支持类型强制，以及在脚本中创建和使用自己的函数，数据类型和变量。
+
+在Anypoint Studio或Design Center中创建应用程序或手写XML配置文件时，您可以在消息处理器（组件，连接器或模块）中编写DataWeave表达式和脚本。
+
+*  Transformer组件用于创建执行数据转换的脚本，无论是简单的格式转换还是复杂的数据提取和转换过程。
++
+请参阅 link:transform-component-about[关于变换组件]。
++
+* 许多Mule消息处理器支持DataWeave表达式，允许您在需要的Mule事件的某些部分访问和使用核心DataWeave函数。
++
+请参阅 link:dataweave-language-introduction[关于DataWeave脚本]中用于设置有效载荷的内嵌DataWeave脚本示例。有关其他示例，请参阅 link:logger-component-reference[记录器组件]示例中的`message`属性， link:for-each-scope-concept[针对每个范围]示例中的设置有效负载（`<ee:set-payload>`）和Set Variable组件，文件连接器文档。
+
+//请参阅 link:dataweave-using[使用DataWeave]。
+
+////
+TODO：需要将其部分内容移植到自己的主题中，并与其他内容重叠以避免重复。它谈论的有些东西还没有介绍。其他技术人员可能会对DW着陆页面进行详细描述。由于这个页面必须由DW新手读取，他们不一定是真正的开发者，所以我们应该保持这个DW着陆页更一般。
+==  DataWeave如何确定数据类型
+
+要理解DataWeave如何确定输入和输出的数据类型，有助于理解DataWeave在Mule运行时内的工作原理。
+
+=== 输入
+
+Mule有一个特殊的对象叫做`TypedValue`。这个类代表一个`Pair<Object,DataType> Being DataType = Pair<MimeType,Encoding>`。
+
+所有变量和有效载荷都是`TypedValue`。 `TypedValue`也可以存在于更多嵌套的地方。例如，File连接器中的List操作返回`List<TypedValue>`，所以有效载荷为`TypedValue<List<TypedValue, DataType>, DataType<Java>>`。这允许DataWeave列出不同类型的文件（JSON，XML，CSV等）供DataWeave读取。
+
+=== 字段类型字段
+
+DataWeave使用`DataType`部分根据MimeType确定要使用哪个阅读器，以及如何基于MimeType属性配置该阅读器（编码，阅读器属性）。
+
+=== 输出
+
+DataWeave总是输出一个`TypedValue`。有趣的部分是DataWeave如何传播驱动要使用的写入器的DataType部分。
+
+您可以使用`output`指令在脚本上手动指定DataType。
+
+如果正在执行的脚本被分配给消息处理字段，则引擎将根据该字段的元数据为DataWeave提供什么是预期类型。例如，如果它是Pojo，那么DW将知道要创建什么类，并知道它需要使用Java Writer，因此您不需要知道所有内部细节。
+
+当DataWeave无法确定`DataType`时，它会执行以下操作：
+
+* 查看脚本并查看使用了哪些输入。如果所有输入都是兼容的或相同的`DataType`，DataWeave使用该`DataType`。例如，如果在您的脚本中，您将`<set-payload value="#[payload.foo]/>` DataWeave检查有效内容的`DataType`。如果有效负载是JSON，DataWeave将使用JSON编写器。如果您使用了多个输入，并且它们来自不同的数据类型，则会引发错误。例如，`<set-payload value="#[payload.foo ++ vars.bar]/>`是类型为XML的`vars.bar`和类型为JSON的`payload`。有时，特别是对于XML，您可能会在集合有效负载上编写表达式，并且会失败，因为它实际上是一个无效的XML结构。
+
+* 如果未使用任何输入，则使用Java编写器`<set-payload value="#[{a: true}]/>`将输出带有条目（"a"，true）的`java.util.Map`。
+
+* 对于Logger消息处理器，DataWeave具有避免错误的特殊功能。 DataWeave尝试使用＃3下的逻辑，但如果由于该写入程序无法发出该DataStructure而失败，DataWeave将使用DataWeave编写器来写出任何可能的数据结构。
+////
+
+== 另请参阅
+
+*  link:about-mule-event[关于骡子事件]
+*  link:dataweave-formats[DataWeave支持的格式]
+*  link:dataweave-selectors[DataWeave选择器]
+*  link:dataweave-language-introduction[DataWeave脚本]
+*  link:about-components[关于Mule Apps的组件]
+*  link:/connectors/index[连接器和模块]

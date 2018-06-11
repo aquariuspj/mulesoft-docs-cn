@@ -1,0 +1,110 @@
+= 使用Mule SDK的验证器
+:keywords: validation, validators, mule, sdk
+
+验证程序是操作验证Mule消息而不更改消息。验证器可以产生这些效果：
+
+* 如果验证程序强加的条件满足，则流程继续，并且Mule消息保持不变。
+* 如果验证程序强加的条件未满足，则会抛出错误。
+
+== 验证器的要求是什么？
+
+要成为验证者，操作应符合以下要求：
+
+* 应该通过`@Validator`注释来达到。这可以在课堂级别或方法级别进行分配。当您在类级别使用`@Validator`注释时，所有公共方法都会被标记为验证器。
+* 它应该返回`void`。
+* 它应该抛出至少一个（或从`MULE:VALIDATION`延伸的错误）。验证失败后，验证器必须抛出一个Mule验证错误或一个孩子。
+
+使用`@Validator`注释的方法属于Stereotype `ValidatorStereotype`。组件不能有两个构造型，所以你不能将一个以上的构造型赋给一个方法。
+
+验证程序与操作共享相同的用户体验。一旦您的模块添加到Studio中使用，验证器将出现在调色板中。当一个验证器被添加到一个流程中时，它的参数被分配，就像它是一个操作一样。
+
+== 如何制作验证器
+
+这个例子展示了如何做一个简单的验证器。它创建一个名为`balance`的简单扩展名：
+
+[source,java,linenums]
+----
+@Operations({BalanceOperations.class})
+@Extension(name = "balance")
+@ErrorTypes(BalanceError.class)
+public class BalanceExtension {
+
+}
+----
+
+下面的`BalanceOperations`类添加了一个用`@Validator`注释的验证方法。该方法抛出一个来自通用验证错误类型的错误类型。请注意，您也可以使用`@Validator`对类`BalanceOperations`进行注释，但如果这样做，则其中的任何其他操作都将被标记为验证程序。
+
+[source,java,linenums]
+----
+public class BalanceOperations {
+  @Validator
+  @Throws(BalanceErrorsProvider.class)
+  public void hasSufficientFunds(Integer balance, Integer price) throws Exception {
+    if (price > balance){
+      throw new ModuleException(BalanceError.INSUFFICIENT_FUNDS, new IllegalArgumentException("There is not enough money to make the transaction"));
+    }
+  }
+}
+----
+
+如果验证失败，此示例创建抛出的错误。注意它是根据验证失败命名的。
+
+[source,java,linenums]
+----
+public enum BalanceError implements ErrorTypeDefinition<BalanceError> {
+  INSUFFICIENT_FUNDS(MuleErrors.VALIDATION);
+
+  private ErrorTypeDefinition<? extends Enum<?>> parent;
+
+  BalanceError(ErrorTypeDefinition<? extends Enum<?>> parent) {
+    this.parent = parent;
+  }
+
+  @Override
+  public Optional<ErrorTypeDefinition<? extends Enum<?>>> getParent() {
+    return Optional.ofNullable(parent);
+  }
+}
+----
+
+验证器方法需要知道所有错误类型的`ErrorTypeProvider`
+验证可能会抛出。此示例创建一个`ErrorTypeProvider`，表示该方法可能抛出的唯一错误是*BALANCE:INSUFFICIENT_FUNDS*类型。
+
+[source,java,linenums]
+----
+public class BalanceErrorsProvider implements ErrorTypeProvider {
+  @Override
+  public Set<ErrorTypeDefinition> getErrorTypes() {
+    HashSet<ErrorTypeDefinition> errors = new HashSet<>();
+    errors.add(BalanceError.INSUFFICIENT_FUNDS);
+    return errors;
+  }
+}
+----
+
+== 如何使用验证器
+
+假设您想要在流上使用上面创建的验证器。语法将与操作一样。由于`balance`和`price`是必需的参数，因此有必要分配这些参数。在这种情况下，验证是使用变量`price`和`balance`中的值进行的，但您可以在其中使用任何表达式：
+
+[source,xml,linenums]
+----
+<balance:has-sufficient-funds balance="#[vars.balance]" price="#[vars.price]"/>
+----
+
+== 验证程序和"all"范围
+
+由于验证器属于Stereotype `ValidatorStereotype`，因此它们可以在Validation模块的`all`范围中使用。
+
+下一个示例使用验证模块中的验证程序。它还假定有一个数字扩展名具有一个名为`isPositive`的验证程序，用于验证值是否实际为正。
+
+[source,xml,linenums]
+----
+<validation:all>
+  <validation:is-not-blank-string value="#[vars.buyerName]"/>
+  <number:is-positive value="#[vars.price]"/>
+  <number:is-positive value="#[vars.balance]"/>
+  <balance:has-sufficient-funds balance="#[vars.balance]" price="#[vars.price]"/>
+</validation:all>
+----
+
+此示例检查是否存在不是空字符串的`buyerName`变量。之后，它确保两个变量`price`和`balance`具有正值。最后，它会检查帐户与验证器之间是否有足够的余额。

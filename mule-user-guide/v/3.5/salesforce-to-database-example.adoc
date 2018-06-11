@@ -1,0 +1,346 @@
+Salesforce to Database示例= 
+
+*_Enterprise, CloudHub_*
+
+此应用程序说明如何使用批处理将Salesforce信息与数据库同步。
+
+== 批次
+
+批处理允许您将有效载荷分成单独的元素以分别处理每个元素。此功能在处理流式输入或在SaaS应用程序之间设计"near real-time"数据集成时特别有用。
+
+数据库连接器== 
+
+数据库连接器提供了一种访问任何JDBC关系数据库的标准方式，并且对每种情况始终使用同一个接口。此连接器允许您在数据库上运行不同的SQL操作，包括选择，插入，更新，删除甚至存储过程。
+
+== 信息丰富
+
+Mule使用消息聚合器来丰富带有数据的消息有效载荷（即，添加到有效载荷），而不是改变有效载荷内容。 Mule丰富了消息的有效载荷，以便应用程序中的其他消息处理器可以访问原始有效载荷。
+
+== 假设
+
+本文档假定您熟悉Mule ESB和 link:/anypoint-studio/v/5/basic-studio-tutorial[Anypoint Studio界面]。
+
+本文档描述了实施例的细节Anypoint Studio中，骡ESB的图形用户界面（GUI）的范围内，并且包括用于两个视觉和XML编辑器配置细节。
+
+== 示例用例
+
+此应用程序定期查询Salesforce帐户是否有新的或更新的联系人，然后一次处理返回的有效负载一条记录。它检查数据库中当前是否存在联系人，然后相应地更新或创建新联系人。一旦整个批次的过程完成，就会记录成功消息。
+
+治疗由Salesforce的整体恢复接触的整个列表 -   - 虽然这种使用情况下可以不使用批处理来满足使用批处理使这一过程更加可靠，因为发生在单一的记录将不会传播超出历史最高水平的任何错误。
+
+== 设置并运行示例
+
+完成以下过程来创建，然后在您自己的*Anypoint Studio*实例中运行此示例。您可以创建模板的应用直出在Anypoint Studio中的箱子，这种调整基于使用案例模板的配置，以创建骡子自己的定制应用程序。
+
+. 在Anypoint Studio中创建示例应用程序。
+. 设置*Salesforce credentials*：+
+.. 登录到您的Salesforce帐户。从您的帐户菜单（您的帐户标有您的姓名）中选择*Setup*。
+.. 在左侧导航栏的*Personal Setup*标题下，单击以展开*My* **Personal Information **文件夹。
+.. 点击*Reset My Security Token*。 Salesforce会将令牌和电子邮件重置为新的令牌和电子邮件。
+.. 访问Salesforce发送的电子邮件并将新令牌复制到您的本地剪贴板上。
+.. 在资源管理器中，打开`src/main/resources/connector.properties`
+.. 用您自己的用户名，密码和安全令牌完成文件。
+. 创建一个*Database*并设置*credentials*：+
+.. 创建一个新的MySQL数据库
++
+
+[TIP]
+如果您没有可供您使用的MySQL数据库，则可以在本地计算机上安装MySQL。请访问 http://dev.mysql.com/downloads/[dev.MySQL.com]下载并安装免费版本。同时安装MySQL工作台也是一个好主意。还请配置一个用于此项目的MySQL用户名和密码。
+
+.. 该项目需要进行以下数据库配置：+
+*  MySQL数据库架构：*SFtoDB_Example*
+* 一张表：*contact*
+* 四个字段：*email,  first_name,  last_name, last_modified*
+* 应将一行或多行数据插入表中
+* 必须拥有对此数据的读写权限的用户。
+.. 您可以执行以下SQL语句来生成此模式并填充一行数据。有关执行此SQL的提示，请参阅下面的绿色框。
++
+
+[source, code, linenums]
+----
+USE SFtoDB_Example;
+CREATE TABLE contact (
+    ID INT(11) NOT NULL AUTO_INCREMENT,
+    email varchar(255) NOT NULL,
+    first_name varchar(255) DEFAULT NULL,
+    last_name varchar(255) DEFAULT NULL,
+    last_modified varchar(255) NOT NULL,
+PRIMARY KEY (email)
+);
+INSERT INTO contacts VALUES (NULL, "leonardmule@mulesoft.com", "Leonard", "Mule", "");
+----
++
+
+[TIP]
+====
+如果您正在使用MySQL Workbench，请首先创建模式*SFtoDB_Example*，然后从MySQL Workbench SQL Editor中执行上述SQL语句。
+
+或者，您可以使用MySQL命令行工具，如下所示：
+
+. 执行此命令：`CREATE DATABASE SFtoDB_Example;`。这将创建数据库模式。
+. 将上面的SQL代码块保存到文本文件**SQL_for_example.sql**
+. 然后使用以下命令执行SQL：`mysql SFtoDB_Example < SQL_for_example.sql`
+
+无论哪种情况，您都可能需要分配一个用户访问模式。有关使用MySQL Workbench或命令行工具的更多信息，请参阅 http://dev.mysql.com/doc/[MySQL文档]。
+====
+
+.. 在资源管理器中，打开`src/main/resources/connector.properties`
+.. 用您自己的数据库凭证填写该文件
+. 在*Package Explorer*中，右键单击connect-with-salesforce项目名称，然后选择*Run As*> *Mule Application*。 Studio在嵌入式服务器上运行应用程序。
+
+== 它是如何工作的
+
+与组织成Flows的典型Mule项目不同，此项目运行 link:/mule-user-guide/v/3.5/batch-processing[批处理]。该过程分为三个阶段，其中行动有不同的范围：
+
+[%header%autowidth.spread]
+|===
+| {阶段{1}}活动
+|输入 |定期轮询Salesforce以获取新联系人。
+|处理记录 |检查数据库中是否存在记录，然后更新/创建数据库记录。
+|完成 |记录成功消息。
+|===
+
+Process Records阶段分为两个单独的*batch steps*：第一步检查记录是否存在于数据库中，第二步是在数据库中添加/更新这些记录。如果在处理记录时第一步失败，第二步不处理失败的记录。
+
+image:full.png[充分]
+
+=== 输入
+
+每隔30分钟，轮询范围就会触发对Salesforce连接器的新请求。 Salesforce连接器被设置为执行下面的查询，**`timestamp` flow variable**定期更新为最后一次迭代迭代的时间：
+
+[source, code, linenums]
+----
+SELECT Email,FirstName,LastModifiedDate,LastName FROM Contact WHERE LastModifiedDate > #[flowVars['timestamp']]
+----
+
+Salesforce连接器返回的响应是联系人列表。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:input.png[input]
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<batch:input>
+    <poll doc:name="Poll">
+        <fixed-frequency-scheduler frequency="30" startDelay="10" timeUnit="MINUTES"/>
+        <watermark default-expression="#['1900-12-11T14:16:00.000Z']" selector="MAX" selector-expression="#[payload.LastModifiedDate]" variable="timestamp"/>
+        <sfdc:query config-ref="Salesforce_Configuration" doc:name="Query Salesforce" query="dsql:SELECT Email,FirstName,LastModifiedDate,LastName FROM Contact WHERE LastModifiedDate > #[flowVars['timestamp']]"/>
+    </poll>
+</batch:input>
+----
+....
+------
+
+=== 处理记录
+
+该过程记录批处理作业的各个阶段 - 记录 - 每个代表一个联系人 - 一次一个。如果其中一条记录失败，整个任务不会失败;骡跳过记录，继续处理下一个。
+
+image:process.png[处理]
+
+==== 第1步
+
+在这一步中，DataMapper首先重命名这些字段，以便它们与数据库中的字段匹配。数据库连接器向数据库发出以下查询：
+
+[source, code, linenums]
+----
+SELECT first_name,last_name,email FROM contact WHERE email=#[payload.email]
+----
+
+由于数据库连接器位于消息富集范围内，Mule不会用来自数据库查询的响应覆盖有效负载，而是会将响应作为附加变量添加到消息中。因此，源自Salesforce的所有信息都会保留下来，并可以传递到下一步。
+
+消息richher创建两个*record variables*：
+
+*  *`dbRecord`*：存储数据库查询的响应
+*  *`exists`*：根据对查询的响应，指示联系人是否已存在于数据库中
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:step1.png[step1]
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<batch:step name="Batch_Step1">
+    <data-mapper:transform config-ref="contact_to_map" doc:name="Contact To Map"/>
+    <enricher doc:name="Message Enricher">
+        <db:select config-ref="MySQL_Configuration" doc:name="Check existence in Database">
+            <db:parameterized-query><![CDATA[SELECT first_name,last_name,email FROM contact WHERE email=#[payload.email]]]></db:parameterized-query>
+        </db:select>
+        <enrich source="#[payload.size() > 0]" target="#[recordVars['exists']]"/>
+        <enrich source="#[payload]" target="#[recordVars['dbRecord']]"/>
+    </enricher>
+</batch:step>
+----
+....
+------
+
+==== 第2步
+
+只有第一步成功时，Mule才会执行第二批步骤。根据存储在flowVar `exists`（`true`  - 联系人存在; `false`  - 联系人不存在）中的消息富集器的值，选择路由器将流路由到下列之一处理路径：
+
+*  `exists =` `false`：联系人必须添加为新联系人。以下*insert*查询在数据库中执行：
+
+[source, code, linenums]
+----
+INSERT INTO contact (first_name, last_name, email) VALUES (#[payload.first_name],#[payload.last_name],#[payload.email])
+----
+
+*  `exists = true`：Mule填充recordVar `dbRecord`。以下*update*查询在数据库中执行：
+
+[source, code, linenums]
+----
+UPDATE contact SET first_name=#[payload.first_name],last_name=#[payload.last_name] WHERE email = #[payload.email]
+----
+
+* 如果这两个条件都不符合，则发生错误，所以Mule会记录一条消息以通知此错误。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:step2.png[step2]
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<batch:step name="Batch_Stepx">
+    <choice doc:name="Choice">
+        <when expression="#[recordVars['exists']==false]">
+            <db:insert config-ref="MySQL_Configuration" doc:name="Create contact">
+                <db:parameterized-query><![CDATA[INSERT INTO contact (first_name, last_name, email) VALUES (#[payload.first_name],#[payload.last_name],#[payload.email])]]></db:parameterized-query>
+            </db:insert>
+        </when>
+        <when expression="#[recordVars['exists']==true and recordVars['dbRecord'] != null]">
+            <db:update config-ref="MySQL_Configuration" doc:name="Update Contact">
+                <db:parameterized-query><![CDATA[UPDATE contact SET first_name=#[payload.first_name],last_name=#[payload.last_name] WHERE email = #[payload.email]]]></db:parameterized-query>
+            </db:update>
+        </when>
+        <otherwise>
+            <logger doc:name="Logger" level="INFO" message="Error with #[payload.email] contact"/>
+        </otherwise>
+    </choice>
+</batch:step>
+----
+....
+------
+
+=== 完成
+
+批处理的`On Complete`阶段在所有记录处理完成后执行一次，无论是成功，失败还是跳过。在这种情况下，记录器会宣布完成任务。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:complete.png[complete]
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<batch:on-complete>
+    <logger doc:name="Log completion" level="INFO" message="Batch sf->db has finished"/>
+</batch:on-complete>
+----
+....
+------
+
+== 完整代码
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:full.png[full]
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<mule version="EE-3.5.0" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:context="http://www.springframework.org/schema/context" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:sap="http://www.mulesoft.org/schema/mule/sap" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.mulesoft.org/schema/mule/sap http://www.mulesoft.org/schema/mule/sap/current/mule-sap.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd">
+      
+ 
+    <data-mapper:config doc:name="contact_to_map" name="contact_to_map" transformationGraphPath="contact_to_map.grf"/>   
+     
+   <context:property-placeholder location="connectors.properties"/>
+    <sfdc:config doc:name="Salesforce" name="Salesforce_Configuration" password="${sfdc.password}" securityToken="${sfdc.securityToken}" username="${sfdc.user}">
+        <sfdc:connection-pooling-profile exhaustedAction="WHEN_EXHAUSTED_GROW" initialisationPolicy="INITIALISE_ONE"/>
+    </sfdc:config>
+    <db:mysql-config database="${mysql.database}" doc:name="MySQL Configuration" host="${mysql.host}" name="MySQL_Configuration" password="${mysql.password}" port="3306" user="${mysql.user}"/>
+    <batch:job name="salesforce-to-database-Batch1">
+        <batch:threading-profile poolExhaustedAction="WAIT"/>
+        <batch:input>
+            <poll doc:name="Poll">
+                <fixed-frequency-scheduler frequency="30" startDelay="10" timeUnit="MINUTES"/>
+                <watermark default-expression="#['1900-12-11T14:16:00.000Z']" selector="MAX" selector-expression="#[payload.LastModifiedDate]" variable="timestamp"/>
+                <sfdc:query config-ref="Salesforce_Configuration" doc:name="Query Salesforce" query="dsql:SELECT Email,FirstName,LastModifiedDate,LastName FROM Contact WHERE LastModifiedDate > #[flowVars['timestamp']]"/>
+            </poll>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Batch_Step1">
+                <data-mapper:transform config-ref="contact_to_map" doc:name="Contact To Map"/>
+                <enricher doc:name="Message Enricher">               
+                    <db:select config-ref="MySQL_Configuration" doc:name="Check existence in Database">
+                        <db:parameterized-query><![CDATA[SELECT first_name,last_name,email FROM contact WHERE email=#[payload.email]]]></db:parameterized-query>
+                    </db:select>             
+                    <enrich source="#[payload.size() > 0]" target="#[recordVars['exists']]"/>
+                    <enrich source="#[payload]" target="#[recordVars['dbRecord']]"/>
+                </enricher>
+            </batch:step>
+            <batch:step name="Batch_Stepx">
+                <choice doc:name="Choice">
+                    <when expression="#[recordVars['exists']==false]">
+                        <db:insert config-ref="MySQL_Configuration" doc:name="Create contact">
+                            <db:parameterized-query><![CDATA[INSERT INTO contact (first_name, last_name, email) VALUES (#[payload.first_name],#[payload.last_name],#[payload.email])]]></db:parameterized-query>
+                        </db:insert>
+                    </when>
+                    <when expression="#[recordVars['exists']==true and recordVars['dbRecord'] != null]">
+                        <db:update config-ref="MySQL_Configuration" doc:name="Update Contact">
+                            <db:parameterized-query><![CDATA[UPDATE contact SET first_name=#[payload.first_name],last_name=#[payload.last_name] WHERE email = #[payload.email]]]></db:parameterized-query>
+                        </db:update>
+                    </when>
+                    <otherwise>
+                        <logger doc:name="Logger" level="INFO" message="Error with #[payload.email] contact"/>
+                    </otherwise>
+                </choice>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger doc:name="Log completion" level="INFO" message="Batch sf->db has finished"/>
+        </batch:on-complete>
+    </batch:job>
+     
+</mule>
+----
+....
+------
+
+== 另请参阅
+
+* 详细了解 link:/mule-user-guide/v/3.5/database-connector[数据库连接器]。
+* 了解 link:/mule-user-guide/v/3.5/batch-processing[批量处理]。
+* 详细了解 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[的DataMapper]。
+* 了解 link:/mule-user-guide/v/3.5/anypoint-connectors[Anypoint连接器]。
+* 了解 link:/mule-user-guide/v/3.5/poll-reference[投票范围]。
+* 详细了解 link:/mule-user-guide/v/3.5/choice-flow-control-reference[选择流量控制]。
+* 详细了解 link:/mule-user-guide/v/3.5/message-enricher[消息Enricher]。
+* 了解有关 link:/mule-user-guide/v/3.5/datasense-query-language[DataSense查询语言]的更多信息，以便在支持DSQL的Mule连接器中编写查询。

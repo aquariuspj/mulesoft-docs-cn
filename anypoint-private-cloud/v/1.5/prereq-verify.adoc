@@ -1,0 +1,194 @@
+= 验证系统要求
+
+本主题提供有关如何验证您的系统是否满足安装和运行Anypoint Platform Private Cloud Edition的最低先决条件的信息。
+
+
+== 安装逻辑卷管理器2（LVM2）
+
+要安装并运行Anypoint平台私有云版，您必须安装LVM2。 LVM2是一种在您的操作系统与其使用的磁盘/分区之间添加抽象层的工具。您必须拥有root用户权限才能安装LVM2。
+
+[WARNING]
+只支持LVM2版本2.02.166-1.el7_3.5及更早版本。不支持更高版本的LVM2。
+
+您可以使用Yum安装LVM。 Yum是使用RPM软件包管理器的Linux操作系统的开源命令行软件包管理实用程序。使用Yum，您可以通过以下命令安装LVM：
+
+----
+sudo yum install lvm2
+----
+
+== 卸载不支持的软件包
+
+以下各节介绍可能会导致与Anypoint Platform私有云版发生冲突的软件。在执行安装之前，您必须先卸载这些组件。
+
+== 磁盘性能验证
+
+=== 验证磁盘性能
+
+要测量磁盘吞吐量，请使用诸如`hdparm`之类的工具。在CentOS上，`hdparm`可以通过运行来安装
+
+----
+sudo yum install -y hdparm
+----
+
+=== 测试磁盘吞吐量
+
+所有的磁盘应该至少有300 MB /秒的吞吐量。使用以下命令验证磁盘的吞吐量：
+
+----
+sudo hdparm -d <device>
+----
+
+该命令输出以下内容：
+
+----
+$ sudo hdparm -t /dev/sdd
+
+/dev/sdd:
+Timing buffered disk reads: 4726 MB in  3.00 seconds = 1574.94 MB/sec
+----
+
+您也可以使用`dd`工具来衡量吞吐量。 `dd`直接写入指定的文件，即使它是一个设备。请勿在裸露的设备上使用此工具。相反，在设备格式化并装载后，您可以写入该设备上的文件以测量吞吐量。
+
+----
+$ sudo mount /dev/sdb /var/lib/gravity # must be already formatted!
+$ sudo dd if=/dev/zero of=/var/lib/gravity/testfile count=1000 bs=1M
+1000+0 records in
+1000+0 records out
+1048576000 bytes (1.0 GB, 1000 MiB) copied, 0.382535 s, 2.7 GB/s
+----
+
+`dd`命令提供的准确信息不如`hdparm`，但在大多数操作系统上都可用，并且可以轻松验证一般磁盘性能。
+
+=== 测试磁盘IOPS
+
+根据您的硬件或虚拟化提供商，您可能可以配置每秒磁盘I / O操作（IOPS）。使用像`iops`这样的工具（https://benjamin-schweizer.de/files/iops/iops-2011-02-11），您可以验证可用的IOPS：
+
+----
+$ sudo ./iops --time 2 /dev/xvdb
+/dev/xvdb, 107.37 GB, 32 threads:
+ 512   B blocks: 1893.0 IO/s, 946.5 KiB/s (  7.8 Mbit/s)
+   1 KiB blocks: 1354.8 IO/s,   1.3 MiB/s ( 11.1 Mbit/s)
+   2 KiB blocks: 1091.8 IO/s,   2.1 MiB/s ( 17.9 Mbit/s)
+   4 KiB blocks:  807.1 IO/s,   3.2 MiB/s ( 26.4 Mbit/s)
+   8 KiB blocks:  803.7 IO/s,   6.3 MiB/s ( 52.7 Mbit/s)
+  16 KiB blocks:  787.4 IO/s,  12.3 MiB/s (103.2 Mbit/s)
+  32 KiB blocks:  700.8 IO/s,  21.9 MiB/s (183.7 Mbit/s)
+  64 KiB blocks:  590.0 IO/s,  36.9 MiB/s (309.3 Mbit/s)
+ 128 KiB blocks:  327.6 IO/s,  40.9 MiB/s (343.5 Mbit/s)
+...
+----
+
+== 泊坞
+
+Docker应该从运行Anypoint Platform私有云版的服务器上卸载。 Anypoint平台安装包括由Kubernetes正式支持的Docker软件包。
+
+=== 本地DNS服务器
+
+应该删除在端口53上侦听的本地高速缓存DNS服务器，例如，命名，dnsmasq，绑定或其他。
+
+
+[[network-req]]
+== 设备要求
+
+对于平台配置，您必须分配四个专用设备供使用。一个作为系统状态目录，一个保存应用程序数据，另一个保存集群信息，最终设备用作Docker devicemapper配置的目标。
+
+=== 任意点系统数据设备
+
+系统状态目录的主要目的是存储系统配置和元数据 - 例如数据库和软件包等等。由于封装尺寸可以任意大，因此提前估算最小尺寸要求并作为专用设备分配足够的空间非常重要。
+
+此设备将被格式化为`xfs`或`ext4`，并被挂载为`/var/lib/gravity`。您可以使用以下外壳程序片段来指导此过程（请务必在2处指定正确的设备名称）。
+
+以下内容仅作为示例提供，不应按原样用于生产。格式化和挂载磁盘应该由系统管理员完成。最终的结果是将Anypoint系统数据设备安装到路径`/var/lib/gravity`。这可以使用systemd挂载文件来实现，如下例所示，或者`/etc/fstab`或其他方法。请咨询您的系统管理员以确定满足此要求的最佳方式。
+
+
+----
+sudo mkfs.ext4 /dev/<device name>
+sudo mkdir -p /var/lib/gravity
+echo -e "[Mount]\nWhat=/dev/<device name>\nWhere=/var/lib/gravity\nType=ext4\n[Install]\nWantedBy=local-fs.target" | sudo tee /etc/systemd/system/var-lib-gravity.mount
+sudo systemctl daemon-reload
+sudo systemctl enable var-lib-gravity.mount
+sudo systemctl start var-lib-gravity.mount
+----
+
+===  etcd设备
+
+etcd设备的主要目的是为用于集群协调的分布式数据库提供专用存储。它不需要太多空间，20GB应该足够了。
+
+此设备将被格式化为`xfs`或`ext4`，并被挂载为`/var/lib/gravity/planet/etcd`。您可以使用以下外壳程序片段来指导此过程（请务必在2处指定正确的设备名称）。
+
+以下内容仅作为示例提供，不应按原样用于生产。格式化和挂载磁盘应该由系统管理员完成。最终的结果是将Etcd设备安装到路径`/var/lib/gravityi/planet/etcd`。这可以使用systemd挂载文件来实现，如下例所示，或者`/etc/fstab`或其他方法。请咨询您的系统管理员以确定满足此要求的最佳方式。
+
+----
+sudo mkfs.ext4 /dev/<device name>
+sudo mkdir -p /var/lib/gravity/planet/etcd
+echo -e "[Mount]\nWhat=/dev/<device name>\nWhere=/var/lib/gravity/planet/etcd\nType=ext4\n[Install]\nWantedBy=local-fs.target" | sudo tee /etc/systemd/system/var-lib-gravity-planet-etcd.mount
+sudo systemctl daemon-reload
+sudo systemctl enable var-lib-gravity-planet-etcd.mount
+sudo systemctl start var-lib-gravity-planet-etcd.mount
+----
+
+
+=== 任意点应用程序数据设备
+
+应用程序数据目录的主要目的是存储应用程序配置和数据。所需的空间量应至少为250GB，但可能因您的具体使用情况而异。估计最小尺寸要求并提前为专用设备分配足够的空间非常重要。
+
+此设备将被格式化为`xfs`或`ext4`，并被挂载为`/var/lib/data`。您可以使用以下外壳程序片段来指导此过程（请务必在2处指定正确的设备名称）。
+
+以下内容仅作为示例提供，不应按原样用于生产。格式化和挂载磁盘应该由系统管理员完成。最终的结果是将Anypoint应用程序数据设备安装到路径`/var/lib/data`。这可以使用systemd挂载文件来实现，如下例所示，或者`/etc/fstab`或其他方法。请咨询您的系统管理员以确定满足此要求的最佳方式。
+
+----
+sudo mkfs.ext4 /dev/<device name>
+sudo mkdir -p /var/lib/data
+echo -e "[Mount]\nWhat=/dev/<device name>\nWhere=/var/lib/data\nType=ext4\n[Install]\nWantedBy=local-fs.target" | sudo tee /etc/systemd/system/var-lib-data.mount
+sudo systemctl daemon-reload
+sudo systemctl enable var-lib-data.mount
+sudo systemctl start var-lib-data.mount
+----
+
+===  Docker设备
+
+该设备由Docker的Device Mapper存储驱动程序使用。您必须至少为Device Mapper目录分配100Gb大小。使用50Gb或更少的设备时，系统性能会急剧下降或根本无法工作。
+
+除非指定，否则Docker配置默认使用设备映射器在使用`/dev/loopX`设备的环回模式下使用。但是，不建议在生产环境中使用此设置。要将Docker配置为使用Device Mapper存储驱动程序的专用设备，可以在安装过程中提供未格式化的设备或分区，例如`/dev/sdd`。这个目录是自动配置的。
+
+未格式化的设备由每个节点上运行的代理程序自动发现。在开始安装之前，从下拉菜单中提供已发现的设备进行配置。
+
+您可以使用以下命令列出未安装的设备：
+
+----
+lsblk --output=NAME,TYPE,SIZE,FSTYPE -P -I 8,9,202|grep 'FSTYPE=""'
+----
+
+未安装的设备在FSTYPE列中具有空值。 TYPE = "part"的设备是另一台设备上的分区。该命令仅列出特定的设备类型：
+
+|===
+|设备类型|说明
+| 8    | SCSI磁盘设备
+| 9    |元数据（RAID）设备
+|  | Xen虚拟块设备（Amazon EC2）
+|===
+
+=== 手动重置设备和分区
+
+逻辑卷管理器允许将多个物理卷分组到单个存储卷（卷组）中，然后将其分成逻辑卷。物理卷是整个设备或分区。
+
+在某些情况下，当某个设备正在被另一个逻辑卷使用时，或者您想手动重置之前为Device Mapper配置的设备时，以下命令可能会有用。
+
+逻辑卷管理器工具集由以下命令组成：
+
+ * `dmsetup`:  enables you to perform low-level logical volume management
+ *  `pvdisplay`，`pvcreate`和`pvremove`：使您可以配置特定的LVM对象类型。
+
+要重置设备，请使用以下命令：
+
+*  `lvremove -f docker/thinpool`：可让您确定要移除的音量。
+*  `vgremove docker`：删除卷组。与`vgdisplay`一起使用此命令以找到要删除的卷组。
+*  `pvremove /dev/<device name>`：删除物理卷并重置设备。
+*  `pvdisplay`：使您能够找到要删除的物理卷以及它正在运行的设备名称。
+
+
+== 另请参阅
+
+*  link:https://docs.docker.com/engine/userguide/storagedriver/device-mapper-driver/[Docker和DeviceMapper存储驱动程序]
+*  link:https://linuxconfig.org/linux-lvm-logical-volume-manager[Linux lvm  - 逻辑卷管理器]
+

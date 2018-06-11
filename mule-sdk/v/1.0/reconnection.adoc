@@ -1,0 +1,205 @@
+= 连接器重新连接
+:keywords: anypoint, studio, reconnection strategies, reconnection strategy, retry policies, retry
+
+SDK和Mule提供了即将应用的开箱即用重连策略
+到与连接一起工作的所有连接器。这种支持是通用的，所以
+配置和调整重新连接规则的体验是相同的
+跨连接器。
+
+====  SDK如何知道何时触发重新连接
+
+SDK和Mule提供了重新连接引擎，但连接器负责在发生重新连接，连接断开时以及需要新连接时进行通信。
+
+== 什么是连接错误？
+
+重新连接机制可以在现有连接不再工作并且不允许连接器执行其业务逻辑时获得新的有效连接。这些错误是连接或连接错误。
+
+了解错误是否是连接错误是非常重要的
+当它不是。以下是一些示例。
+
+=== 连接错误的示例
+
+* 连接超时
+* 无效的凭证
+* 令牌已过期
+
+=== 非连接错误的示例
+
+* 执行HTTP请求时缺少必需的HTTP查询参数
+尝试复制文件时，* 目录不存在
+* 发布一条空消息给Slack
+执行数据库查询时出现* 语法错误
+
+== 如何触发重新连接
+
+重新连接的主要原因是能够正确地进行通信
+发生连接错误并需要重新连接。如何沟通
+根据检测到错误的组件，错误可能会有所不同。
+
+下面的部分解释了如何触发每个组件的重新连接
+一个连接器。
+
+=== 连接提供程序
+
+==== 创建连接
+
+连接提供商是连接生命的第一时刻。此时此刻，
+连接提供程序可能无法创建连接，因为有几个
+问题，所以在这一刻，连接提供商能够沟通
+连接错误并触发重新连接，这意味着尝试创建
+再次连接。
+
+// TODO：UNCLEAR
+创建连接时，`connect()`方法声明连接问题
+并且需要重新连接<<connection-exception,`ConnectionException()`>>
+应该抛出。
+
+[source, java, linenums]
+----
+@Override
+public Connection connect() throws ConnectionException {
+  Connection connection;
+  try {
+    connection = new Connection();
+  } catch (Exception e) {
+    throw new ConnectionException("Error occurred trying to connect.", e);
+  }
+  return connection;
+}
+----
+
+==== 验证连接
+
+要检查连接是否仍然有效，SDK可以随时获取实时连接，并根据创建连接的连接提供程序对其进行验证。
+
+为了验证连接，`validate(Connection)`被调用，并且
+连接提供者应该检查给定的连接是否有效。
+如果连接提供程序检测到连接无效，
+它应该传递一个<<connections#connection-validation-result, connection validation result>>和一个失败结果`ConnectionValidationResult.failure(Cause, Exception)`。如果可能的话，这将断开连接并使当前连接无效，并且将再次创建新的连接。
+
+。示例：通过连接进行验证
+[source, java, linenums]
+----
+@Override
+public ConnectionValidationResult validate(Connection connection) {
+  if(connection.isValid()){
+    return ConnectionValidationResult.success();
+  } else {
+    return ConnectionValidationResult.failure("Connection Problem", new RuntimeException());
+  }
+}
+----
+
+=== 操作
+
+由于多种原因，操作可能会失败，例如参数值错误和意外错误。错误也可能是由于连接错误。为了表明错误来自非工作连接，会引发{{0}​​}。这个例外是*triggers the reconnection, and the operation is executed again*。
+
+==== 操作示例
+。例
+[source, java, linenums]
+----
+public void operationTriggersReconnection(@Connection Connection connection, boolean connectionException){
+    if(connectionException){
+      throw new ConnectionException("Connection Error"); //<1>
+    } else {
+      throw new RuntimeException(); //<2>
+    }
+}
+----
+<1>如果`ConnectionException`被抛出，则使用的连接将失效。
+连接提供者将尝试创建一个新的有效连接，如果a
+连接可用，操作将再次执行。
+<2>如果抛出任何其他异常，则该错误将被视为业务
+错误，连接将不会失效，并且操作不会再次执行。
+
+=== 来源
+
+由于<<sources-config-connection#obtaining-a-connection, Sources are responsible of creating their own Connections>>，Source触发重新连接的方式与Operations不同。如果成功创建的连接稍后断开连接，则源应传达连接失败：<<connection-exception,`ConnectionException(Exception, Connection)`>>。
+
+// TODO：UNCLEAR SECOND SENTENCE
+信息来源有两个阶段，分别是<<starting-source, starting>>和
+当他们是<<running-source, running>>时。每一刻都要传达自己的想法
+以不同方式连接失败。
+
+警告：未在`ConnectionException`中传递连接失败
+可能会使重新连接机制无法正常工作。
+
+[[starting-source]]
+==== 开始来源
+
+启动Source时，执行`onStart()`方法，如果有连接
+问题被发现并且需要被提出，以与操作相同的方式，a
+必须抛出`ConnectionException()`。
+抛出连接异常，源文件将停止运行，并尝试执行
+重新连接并重新启动Source。
+
+。例
+[source, java, linenums]
+----
+@Override
+public void onStart(SourceCallback<String, Void> sourceCallback) throws MuleException {
+Connection connection = connectionProvider.connect();
+  try {
+    connection.startStreaming();
+  } catch(Exception e){
+    throw new ConnectionException(e, connection); //<1>
+  }
+}
+----
+
+[[running-source]]
+==== 正在运行源代码
+
+当源正确启动时，这意味着`onStart()`方法结束
+正确，剩下的逻辑正在其他线程上运行。
+
+在其他线程上运行时，SDK无法检测到任何类型的错误
+用`throw`语句引发。所以错误必须通过
+`SourceCallback`，使用`onConnectionException()`。
+
+。例
+[source, java, linenums]
+----
+@Connection
+ConnectionProvider<Connection> connectionProvider;
+
+@Inject
+SchedulerService schedulerService;
+
+private Scheduler scheduler;
+
+@Override
+public void onStart(SourceCallback<Connection, Void> sourceCallback) throws MuleException {
+  Connection connection = connectionProvider.connect();
+    scheduler = schedulerService.ioScheduler(); //<1>
+    scheduler.execute(() -> {
+      while (true) {
+        try {
+          connection.receiveMessage();
+        } catch (Exception e){
+          sourceCallback.onConnectionException(new ConnectionException(e, connection)); //<2>
+        }
+      }
+    });
+}
+----
+<1>创建一个调度程序以在新线程中运行源逻辑。
+<2>与`SourceCallback`通信`ConnectionException`
+应该更换的故障连接。
+
+[[connection-exception]]
+== 连接异常
+
+可以使用以下属性构建`ConnectionException`：
+
+*  *Message*：描述当前错误的字符串。
+*  *Cause*：如果存在，Throwable表示导致当前错误的原因。
+*  link:errors[*错误类型*]：如果存在，描述当前错误的ErrorType。
+*  *Connection*：如果存在，表示连接失败的Object。这会
+被用来断开和摧毁它。
+
+==== 另请参阅
+
+*  link:sources-config-connection[源配置和连接]
+*  link:sources-lifecycle[来源生命周期]
+*  link:errors[模块上的错误]

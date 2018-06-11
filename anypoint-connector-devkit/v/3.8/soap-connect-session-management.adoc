@@ -1,0 +1,124 @@
+=  SOAP会话管理
+:keywords: soap connect, session management, wsdl, web service, soap
+
+为了支持基于SOAP的连接器开发，*DevKit 3.8.0*为连接器开发人员提供了一个选项，用于定义用于管理SOAP服务连接，SOAP会话或需要令牌的任何服务操作的*session token*。
+
+== 介绍
+
+根据{{​​0}}方法中的连接器代码创建会话标记，并根据SOAP服务所需的任何操作使用它。
+
+这是管理用户通过连接器访问服务的一种方法。有关正文内部会话令牌位置的更多信息，请参阅 link:/anypoint-connector-devkit/v/3.8/soap-connect-session-management#enriching-soap-body-with-session-token[使用会话令牌丰富SOAP主体]。
+
+会话管理允许您：
+
+* 将会话标记注入到：
+**  HTTP Cookie和标题
+**  SOAP头
+**  SOAP Payload：管理消息负载的责任链。这可能需要由WSDL Consumer进行管理。
+* 管理会话到期/超时
+* 获取连接管理智能（关于配置和重新连接）
+// todo：我没有创建'连接智能'这个术语，但我想这意味着开发人员可以使用会话令牌来允许使用相同的令牌重新连接。或者更好的做法是使用不同的会话令牌来标识“重新连接”，或者我们的业务无法确定？
+
+== 要求
+
+要为连接器启用会话管理，必须使用`@WsdlProvider`和`@ConnectionManagement`对`Config`类进行注释，它们分别需要实施以下方法：
+
+对于WSDL管理：
+
+*  @ WsdlServiceRetriever
+*  @ WsdlServiceEndpoint
+
+对于连接管理：
+
+*  @连接
+*  @断开
+*  @ ValidateConnection
+
+请参阅下面 link:/anypoint-connector-devkit/v/3.8/soap-connect-session-management#wsdlprovider-with-session-management[带会话管理的@WsdlProvider]部分中启用会话管理的Config类的存根。
+
+具有会话管理的== 连接器生命周期
+
+在获取元数据和操作调用期间，连接器的生命周期将由"session control"修改。在获取元数据并调用操作之前，从池中检索或创建连接器实例，然后调用`@Connect`方法来初始化连接。
+
+连接池像当前的 link:/anypoint-connector-devkit/v/3.8/connection-management#about-connection-management[连接管理]机制一样工作;通过使用与通过连接器配置选项卡可用的连接器实例相同类型的池配置。现有连接器实例的配置或创建新连接器实例由用户从那里处理。
+
+由于`@Connect`方法在任何常用的`@WsdlProvider`方法之前被调用，所有必需的连接参数必须通过`@Configurable`字段或`@Connect`参数提供。初始化可以在`@Connect`方法内部进行，以保存会话令牌等结果。
+
+带有会话管理的==  @ WsdlProvider
+
+请参阅下面的`@WsdlProvider` Config类的结构，注意会话标记应该在`@Connect`方法中创建，并存储在实例字段中，以供需要的任何部分SOAP消息使用，具体取决于案子：
+// todo：描述实例字段
+
+[source,java,linenums]
+----
+@WsdlProvider(friendlyName = "Configuration")
+@ConnectionManagement
+public class Config {
+
+    private String username;
+    private String password;
+
+    @Configurable
+    @Default("http://localhost:8088/mockTshirt")
+    @Placement(order = 3)
+    private String endpoint;
+
+    @Connect
+    @TestConnectivity
+    public void connect(@ConnectionKey String username,  @Password String password)  throws ConnectionException {
+        // obtain session token
+    }
+
+    @Disconnect
+    public void disconnect() {
+        // end connection
+    }
+
+    @ValidateConnection
+    public boolean isConnected() {
+        return false;
+    }
+
+    @WsdlServiceRetriever
+    public ServiceDefinition getServiceDefinition() {
+           return new DefaultServiceDefinition("ServiceID", "tshirt", "tshirt.wsdl","TshirtService","TshirtServicePort");
+    }
+
+    @WsdlServiceEndpoint
+    public String getServiceEndpoint(ServiceDefinition definition) {
+         return endpoint;
+    }
+
+    @WsdlHeaders
+    public List<Document> cookHeaders(ServiceDefinition serviceDefinition, String operationName){
+        // Customize headers with session token
+    }
+
+    @WsdlTransportRetriever
+    public WsdlTransport resolveTransport(ServiceDefinition serviceDefinition) {
+        return new HttpBasicWsdlTransport(getUsername(), getPassword());
+    }
+
+    // ...
+}
+----
+
+使用会话令牌丰富SOAP正文。== 
+
+随着DevKit 3.8.0的发布，可以使用`@WsdlBodyEnricher`将会话令牌注入到SOAP主体中。
+
+===  @ WsdlBodyEnricher
+
+标记为`@WsdlBodyEnricher`的方法应接收表示消息有效内容的对象，并返回使用会话令牌修改的对象。
+
+[source,java,linenums]
+----
+@WsdlBodyEnricher
+    public Document cookPayload(ServiceDefinition serviceDefinition, String operationName, Document payload){
+        // Customize payload with session token
+    }
+----
+
+== 另请参阅
+* 有关 link:/anypoint-connector-devkit/v/3.8/creating-a-soap-connector[创建一个SOAP连接器]的更多信息
+* 访问 link:/anypoint-connector-devkit/v/3.8/connection-management#about-connection-management[连接管理]的基本DevKit支持

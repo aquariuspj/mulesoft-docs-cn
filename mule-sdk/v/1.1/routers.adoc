@@ -1,0 +1,98 @@
+= 使用Mule SDK创建路由器
+:keywords: mule, sdk, routers, router
+
+从概念上讲，路由器<<operations#, operations>>可以接收许多可执行路由和一组处理一个，全部或全部不执行的参数。
+
+应该使用路由来接收多个可能的执行路径，其中路径的参数可以用来决定是否应该执行包含的处理器。可以在路由声明中使用定型来定义所包含的链的定型。路由不允许内联定义复杂的参数，因为元素的DSL内容将不包含参数化的<<operations#, operations>>。
+
+== 定义路线
+
+首先，您需要通过扩展`Route`基类来在模块中声明至少一个路由：
+
+[source,java,linenums]
+----
+public class WhenRoute extends Route {
+
+  @Parameter
+  @Optional
+  private boolean shouldExecute;
+
+  public boolean shouldExecute() {
+    return shouldExecute;
+  }
+
+}
+----
+
+== 声明路由器
+
+接下来，您需要将路由器方法声明为模块的<<operations#, operations>>之一。任何接收至少一个`Route`实现以及`RouterCompletionCallback`的操作都将被注册为路由器：
+
+[source,java,linenums]
+----
+@Extension(name = "Docs")
+@Operations(ChoiceRouter.class)
+public class DocsModule {
+
+}
+----
+
+`ChoiceRouter`类定义了以下方法：
+
+[source,java,linenums]
+----
+public void choice(WhenRoute when,
+                   @Optional OtherwiseRoute otherwise,
+                   RouterCompletionCallback callback) {
+
+  if (when.shouldExecute()) {
+    when.getChain().process(callback::success, (error, previous) -> callback.error(error));
+
+  } else if (otherwise != null && otherwise.shouldExecute()) {
+    otherwise.getChain().process(callback::success, (e, r) -> callback.error(e));
+
+  } else {
+    callback.success(Result.builder().build());
+  }
+}
+----
+
+在上面，你可以看到路由器是如何声明的以及路由是如何根据配置有条件地执行的。路线执行通过它们的链执行，就像每条路线本身就是一个范围一样。
+
+使用路由器包括配置路由器参数，然后使用自己的参数添加每个路由声明：
+
+[source,xml,linenums]
+----
+<flow name="logDecoratorSampleFlow">
+    <docs:choice>
+      <docs:when shouldExecute="#[payload != null]">
+        <http:request config-ref="config" path="/" method="GET"/>
+      </docs:when>
+      <docs:otherwise>
+        <logger message="Payload was null"/>
+      </docs:otherwise>
+    </docs:choice>
+</flow>
+----
+
+每当`payload`不为空时，这将执行`when`路由包含的`http:request`操作。如果空`payload`到达，则执行后备`otherwise`。
+
+== 虚拟路由器
+
+*Available since version 1.1*
+
+您可能需要创建一个路由器，该路由器在其执行结束时将事件和消息留在与路由器执行前相同的位置。这种类型的路由器称为无效路由器。
+
+要实现无效路由器，该方法需要有`VoidCompletionCallback`类型的参数，而不是`RouterCompletionCallback`。您可以像以前一样使用此回调（使用`success`和`error`方法），除非在这种情况下，`success`不会接收任何参数。
+
+== 限制
+
+以下限制适用。
+
+=== 无配置和无连接
+
+路由器有一些限制，将它们与<<operations#, operations>>区分开来。根据定义，路由器不允许依赖或接收特定的配置或连接。
+
+=== 始终不阻止
+
+所有路由器都必须定义为接收`RouterCompletionCallback`的{​​{0}}方法来传递其结果。这意味着所有路由器在默认情况下都是非阻塞的。

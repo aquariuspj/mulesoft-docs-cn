@@ -1,0 +1,297 @@
+= 教程 - 谷仓连接器
+:keywords: devkit, barn, connector, javadoc, studio, ui
+
+本文档描述了在Anypoint Studio中构建，安装和测试连接器所需的步骤。
+
+以下教程介绍了如何创建一个在浏览器中显示"Mule has been placed in the barn"的简单连接器。您可以使用Anypoint Studio中连接器的用户界面来更改放入谷仓的动物。
+
+== 创建连接器之前
+
+. 安装：
+..  link:http://www.oracle.com/technetwork/java/javase/downloads/java-archive-downloads-javase7-521261.html[Java 7]
+..  link:http://maven.apache.org/download.cgi[Maven的]
+..  link:http://www.mulesoft.org/download-mule-esb-community-edition[工作室]
+. 启动Anypoint Studio。
+. 配置Maven：
+.. 点击*Anypoint Studio*> *Preferences*> *Anypoint Studio*> *Maven Settings*。在DevKit 3.7中，当您第一次创建连接器时，如果未配置Maven，则会提示您安装它。
+. 安装DevKit插件：
+.. 点击*Install New Software*。
+.. 点击*Work with*> *Anypoint Addons Update Site*> *Anypoint Devkit Plugin*。
+.. 点击*Next*，*Finish*，然后重新启动Studio。
+
+== 创建连接器项目
+
+. 创建您的初始谷仓连接器。使用*File*> *New*> *Project*> *Anypoint Connector Project*。命名连接器*Barn*。您可以保留所有其他字段相同。点击*Finish*。您可以忽略Studio Console中的任何警告消息。
+. 查看脚手架连接器：
++
+[source,java, linenums]
+----
+/**
+ * (c) 2003-2015 MuleSoft, Inc. The software in this package is published under the terms of the CPAL v1.0 license,
+ * a copy of which has been included with this distribution in the LICENSE.md file.
+ */
+package org.mule.modules.barn;
+import org.mule.api.annotations.ConnectionStrategy;
+import org.mule.api.annotations.Connector;
+import org.mule.api.annotations.Configurable;
+import org.mule.api.annotations.Processor;
+import org.mule.api.annotations.param.Default;
+import org.mule.modules.barn.strategy.ConnectorConnectionStrategy;
+/**
+ * Anypoint Connector
+ *
+ * @author MuleSoft, Inc.
+ */
+@Connector(name="barn", schemaVersion="1.0", friendlyName="Barn")
+public class BarnConnector
+{
+    /**
+     * Configurable
+     */
+    @Configurable
+    @Default("value")
+    private String myProperty;
+    @ConnectionStrategy
+    ConnectorConnectionStrategy connectionStrategy;
+    /**
+     * Custom processor
+     *
+     * {@sample.xml ../../../doc/barn-connector.xml.sample barn:my-processor}
+     *
+     * @param content Content to be processed
+     * @return Some string
+     */
+    @Processor
+    public String myProcessor(String content) {
+        /*
+         * MESSAGE PROCESSOR CODE GOES HERE
+         */
+        return content;
+    }
+    /**
+     * Set property
+     *
+     * @param myProperty My property
+     */
+    public void setMyProperty(String myProperty) {
+        this.myProperty = myProperty;
+    }
+    /**
+     * Get property
+     */
+    public String getMyProperty() {
+        return this.myProperty;
+    }
+    public ConnectorConnectionStrategy getConnectionStrategy() {
+        return connectionStrategy;
+    }
+    public void setConnectionStrategy(ConnectorConnectionStrategy connectionStrategy) {
+        this.connectionStrategy = connectionStrategy;
+    }
+}
+----
+
+== 编码连接器
+
+编码连接器：
+
+. 在Studio中，打开主要Java文件*`src/main/java/org/mule/modules/barn/BarnConnector.java`*
++
+image:BarnJava.png[BarnJava]
++
+. 将以下代码粘贴到连接器类中，在最终的大括号之前和现有的`@Processor`块之后：
++
+[source, java, linenums]
+----
+/**
+ * Custom processor that places an animal in the barn.
+ *
+ * {@sample.xml ../../../doc/barn-connector.xml.sample barn:putInBarn}
+ *
+ * @param animal Name of the animal to be place in the barn
+ * @return returns processed message
+ */
+@Processor(friendlyName="Put an animal in the barn")
+public String putInBarn(@Placement(group="Parameters")
+  @FriendlyName("The animal's name") String animal) {
+        return animal + " has been placed in the barn";
+    }
+----
++
+`@Sample`语句中的路径名指示Studio中Javadoc * .xml.sample文件的路径 - 它不是文件系统路径。对于连接器中的每个Javadoc示例文件，请在xml.sample文件中指定相应的语句。 +
+ +
+以`@Processor`开头的行标识处理器函数，该函数指定连接器的用户界面。 +
+以`@FriendlyName`开头的行指示连接器在Anypoint Studio中运行时在浏览器中显示的UI元素。
++
+此代码将操作名称更改为"Put an animal in the barn"，并将动物提示更改为"The animal's name"。插入后，`@Placement`和`@FriendlyName`被强调为错误条件。将鼠标悬停在每个注释上，然后从弹出菜单中选择*import*命令以将导入命令添加到连接器：
++
+image:BarnImportAnno2.png[BarnImportAnno2] +
++
+image:BarnImportAnnotation.png[BarnImportAnnotation]
++
+. 通过提供map-payload语句为连接器中的未来Javadoc文档添加加载语句：
+.. 打开*doc/barn-connector.xml.sample:*
++
+[source, xml, linenums]
+----
+<!-- BEGIN_INCLUDE(barn:my-processor) -->
+  <barn:my-processor config-ref="" content="#[map-payload:content]" />
+<!-- END_INCLUDE(barn:my-processor) -->
+----
++
+.. 为连接器中的每个`@Processor`语句块添加一个BEGIN / END块。对于第二个`@Processor`语句块，添加这些行：
++
+[source, code, linenums]
+----
+<!-- BEGIN_INCLUDE(barn:my-processor) -->
+  <barn:put-in-barn config-ref="" animal="#[map-payload:content]" />
+<!-- END_INCLUDE(barn:my-processor) -->
+----
++
+//完成barn-connector.xml.sample文件
+.. 保存此文件。
+. 使用红色下划线鼠标悬停文字并点击*Disable spell checking*，即可停用拼写检查：
++
+image:BarnDisableSpellChecking.png[BarnDisableSpellChecking]
++
+. 完成的连接器代码如下所示：
++
+查看完成连接器的代码：
++
+[source,java, linenums]
+----
+/**
+ * (c) 2003-2014 MuleSoft, Inc. The software in this package is published under the terms of the CPAL v1.0 license,
+ * a copy of which has been included with this distribution in the LICENSE.md file.
+ */
+package org.mule.modules.barn;
+import org.mule.api.annotations.ConnectionStrategy;
+import org.mule.api.annotations.Connector;
+import org.mule.api.annotations.Configurable;
+import org.mule.api.annotations.Processor;
+import org.mule.api.annotations.display.FriendlyName;
+import org.mule.api.annotations.display.Placement;
+import org.mule.api.annotations.param.Default;
+import org.mule.modules.barn.strategy.ConnectorConnectionStrategy;
+/**
+ * Anypoint Connector
+ *
+ * @author MuleSoft, Inc.
+ */
+@Connector(name="barn", schemaVersion="1.0", friendlyName="Barn")
+public class BarnConnector
+{
+    /**
+     * Configurable
+     */
+    @Configurable
+    @Default("value")
+    private String myProperty;
+    @ConnectionStrategy
+    ConnectorConnectionStrategy connectionStrategy;
+    /**
+     * Custom processor
+     *
+     * {@sample.xml ../../../doc/barn-connector.xml.sample barn:my-processor}
+     *
+     * @param content Content to be processed
+     * @return Some string
+     */
+    @Processor
+    public String myProcessor(String content) {
+        /*
+         * MESSAGE PROCESSOR CODE GOES HERE
+         */
+        return content;
+    }
+    /**
+     * Custom processor that places an animal in the barn.
+     *
+     * {@sample.xml ../../../doc/barn-connector.xml.sample barn:putInBarn}
+     *
+     * @param animal Name of the animal to be place in the barn
+     * @return returns processed message
+     */
+    @Processor(friendlyName="Put an animal in the barn")
+    public String putInBarn(@Placement(group="Parameters")
+      @FriendlyName("The animal's name") String animal) {
+            return animal + " has been placed in the barn";
+    }
+    /**
+     * Set property
+     *
+     * @param myProperty My property
+     */
+    public void setMyProperty(String myProperty) {
+        this.myProperty = myProperty;
+    }
+    /**
+     * Get property
+     */
+    public String getMyProperty() {
+        return this.myProperty;
+    }
+    public ConnectorConnectionStrategy getConnectionStrategy() {
+        return connectionStrategy;
+    }
+    public void setConnectionStrategy(ConnectorConnectionStrategy connectionStrategy) {
+        this.connectionStrategy = connectionStrategy;
+    }
+}
+----
+
+== 在Studio中识别您的连接器
+
+当您创建Anypoint连接器项目时，Studio将创建包含名称，架构版本和友好名称的`@Connector`注释。
+
+连接器使用`@Connector`注释来描述连接器的内容。 `friendlyName`参数定义Studio调色板中的连接器标签。
+
+[source, code, linenums]
+----
+@Connector(name="barn", schemaVersion="1.0", friendlyName="Barn")
+----
+
+在Studio中安装连接器后，当用户创建一个Mule项目时，friendlyName标识您的连接器：
+
+image:connector-display.png[连接器显示]
+
+== 安装连接器
+
+. 安装项目：在Package Explorer中右键单击连接器项目的名称，然后单击*Anypoint Connector*> *Install or Update*。
+. 按照提示接受详细信息，许可协议的条款以及安装带有未签名内容的软件。重新启动Studio以使更改生效。该连接器可以包含在Mule项目中。
+
+== 使用连接器创建一个Mule项目
+
+.  Studio重新启动后，使用*File*> *New*> *Mule Project*创建一个Mule项目。
+. 搜索"http"并将HTTP连接器拖到画布上。默认设置是正确的。
+. 搜索"barn"并将谷仓连接器拖到画布上。 +
+画布显示为：
++
+image:BarnFlow.png[BarnFlow]
++
+配置谷仓连接器：
++
+.. 点击绿色加：
++
+image:BarnPanel1.png[BarnPanel1]
++
+.. 确保屏幕显示如下，然后点击*OK*：
++
+image:BarnPanel2.png[BarnPanel2]
++
+My Property和My Strategy Property的两个值由默认连接器提供。你可以忽略这些。
+.. 在第一个屏幕中，点击*Operation*，然后点击*Put in barn*。在*Animal*字段中指定一个名称，例如** `Mule`**动物：
++
+image:BarnPanel3.png[BarnPanel3]
++
+. 点击*Run*> *Run As*> *Mule Application*，部署您的Mule项目。
+. 打开浏览器并将地址设置为http://0.0.0.0:8081  - 浏览器显示：
++
+image:BarnBrowser.png[BarnBrowser]
++
+. 您可以更改动物价值，保存您的项目并刷新浏览器以将其他动物放入谷仓。
+
+== 另请参阅
+
+*  **NEXT STEP:**在您的连接器中实现 link:/anypoint-connector-devkit/v/3.9/authentication[认证]
+*  link:/anypoint-connector-devkit/v/3.9/installing-and-testing-your-connector-in-studio[构建和安装连接器]

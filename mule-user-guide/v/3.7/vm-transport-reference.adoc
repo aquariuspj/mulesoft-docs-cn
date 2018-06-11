@@ -1,0 +1,356 @@
+=  VM传输参考
+:keywords: anypoint studio, studio, mule, connector, endpoint, vm, jvm, java virtual machine
+
+您可以将Java虚拟机（VM）传输用于Mule link:/mule-user-guide/v/3.7/flows-and-subflows[流动]之间的JVM内部通信。此传输默认使用内存队列，但可以选择配置为使用持久队列。 *Note:* VM文件持久性在群集上无效。
+
+*Note:* CloudHub上的VM队列持久性行为有所不同。有关更多详细信息，请参阅 link:/runtime-manager/cloudhub-fabric[CloudHub Fabric]文档。
+
+==  VM传输信息
+
+[%header,cols="20a,20a,60a"]
+|===
+| {区{1}}值|说明
+|传输 | `VM` |列出传输的名称或协议
+|文档 | link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/vm/package-summary.html[的JavaDoc] link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_vm/namespace-overview.html[SchemaDoc]  |链接到传输的JavaDoc和SchemaDoc。
+|入站 | image:check.png[查]  |传输是否可以接收入站事件并可用于入站端点。
+|出站 | image:check.png[查]  |传输是否可以生成出站事件并与出站端点一起使用。
+|请求 | image:check.png[查]  |是否可以通过请求调用直接查询此端点。
+|交易 | `XA` |交易是否受交通支持。支持事务的传输可以在本地或分布式两阶段提交（XA）事务中进行配置。
+|流式传输 | image:check.png[查]  |此传输是否可以处理输入流中传入的消息。这可以非常有效地处理大数据。有关更多信息，请参阅流式传输。
+|重试次数 | |此传输是否支持重试策略。请注意，所有传输都可以配置Retry策略，但只有这里标记的传输才是MuleSoft官方支持的。
+| MEP  | `one-way`，`request-response`  |此传输支持的消息交换模式。
+|默认MEP  | `one-way`  |使用此传输的端点的默认MEP未明确配置MEP
+| Maven Artifact  |查看文本 |组在 link:http://maven.apache.org/[Maven的]中为此传输命名工件名称。价值：+
+`org.mule.transports:mule-transport-vm`
+|===
+
+== 命名空间和语法
+
+===  XML命名空间
+
+[source, xml]
+----
+xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+----
+
+===  XML模式位置
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/vm
+http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+----
+
+=== 连接器语法
+
+具有持续队列的*  VM：
++
+[source,xml, linenums]
+----
+<vm:connector name="persistent">
+   <vm:queue-profile maxOutstandingMessages="500">
+       <default-persistent-queue-store/>
+   </vm:queue-profile>
+</vm:connector>
+----
++
+具有内存队列的*  VM：
++
+[source, xml]
+----
+<vm:connector name="memory" />
+----
+
+=== 端点语法
+
+* 前缀端点：
++
+[source, xml]
+----
+<vm:outbound-endpoint path="out"/>
+----
++
+* 没有前缀的URI：
++
+[source, xml]
+----
+<outbound-endpoint address="vm://out">
+----
+
+== 变压器
+
+VM传输没有特定的转换器。
+
+== 注意事项
+
+VM传输通常用于实现由多个应用程序组成的复杂集成。 Mule 3的改进在很多情况下避免了对VM的需求。您可以使用 link:/mule-user-guide/v/3.7/flow-reference-component-reference[流量参考]直接引用另一个流程，而不需要中间的传输。
+
+VM在某些情况下仍然有用。例如，假设解决方案的大多数部分都是本地的，但有些需要进行解耦以进行测试，或者因为需要将某些部分设置为远程。
+
+[WARNING]
+====
+*WARNING* +
+
+Mule实例中的每个应用程序都有自己的唯一一组VM端点。因此，VM传输只能处理同一个应用程序内的通信，或者共享在 link:/mule-user-guide/v/3.7/shared-resources[相同的域]中定义的VM连接器的应用程序之间的通信。
+====
+
+== 特点
+
+内存（VM）传输具有两种操作模式：一种用于_request-response_，另一种用于_one-way_端点。
+
+*_request-response:_*
+
+使用_request-response_端点时，消息直接从出站虚拟机端点传递到正在侦听相同路径的入站虚拟机端点。此交货被阻止并发生在同一个线程中。如果在正在侦听此路径的相同Mule应用程序中没有入站_request-response_ VM端点，则从出站端点分派消息将失败。
+
+*_one-way:_*
+
+使用_one-way_端点时，消息通过队列传递到相应的入站端点。这种交付是非阻塞的。如果在同一个Mule应用程序中侦听此路径中没有入站_one-way_端点，则尽管分派消息成功，但消息仍保留在队列中。默认情况下，此队列在内存中，但也可以配置使用文件系统作为其持久性机制的持久队列。
+
+== 用法
+
+要使用VM端点，请按照以下三个步骤操作。以下将进一步详细解释这些步骤中的每一个。
+
+. 将MULE VM命名空间添加到您的配置中：+
+** 使用`xmlns:vm="http://www.mulesoft.org/schema/mule/vm"`定义VM前缀
+** 使用`http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd`定义架构位置
+. （可选）为VM端点定义一个或多个连接器。
+** 创建一个VM连接器：
++
+[source, xml]
+----
+<vm:connector name="vmConnector"/>
+----
++
+如果没有创建，则所有VM端点使用默认连接器。
++
+. 创建VM端点。
+** 邮件在入站端点上收到。
+** 邮件被发送到出站端点。
+** 这两种端点都由路径名或地址标识。
+
+=== 声明VM命名空间
+
+要使用VM传输，您必须在Mule配置文件的标头中声明VM名称空间。例如：
+
+*VM Transport Namespace Declaration*
+
+[source,xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+----
+
+=== 配置VM连接器
+
+VM连接器的配置是可选的。配置连接器允许您配置队列配置文件。有关更多信息，请参阅 link:/runtime-manager/managing-queues[管理队列]。
+
+==== 如何在VM传输中使用队列
+
+默认情况下，Mule在使用VM传输的消息的异步处理中使用队列。 VM传输可用于流，其中所有消息处理都在运行Mule实例的JVM中完成。
+
+当请求进入使用VM传输的流的接收器时，它们将存储在队列中，直到线程池中的线程可以接收并处理它们。接收者线程然后释放回接收者线程池，以便它可以携带另一个传入消息。在队列中等待的每条消息都可以从线程池中分配一个不同的线程。
+
+您可以通过队列配置文件为VM传输配置队列。队列配置文件指定队列的行为方式。通常，您不需要配置队列配置文件的性能，因为默认配置通常就足够了，也就是说，队列不是瓶颈。 （性能通常受到组件或其中一个端点的限制。）由于其他原因，您仍可能需要指定最大队列大小，或启用队列上的持久性（默认情况下禁用）。
+
+您可以使用<queue-profile>元素配置队列配置文件。对于VM传输，您可以在连接器上指定<queue-profile>元素。
+
+<queue-profile>元素的属性：
+
+* 名称：`maxOutstandingMessages`：
+** 类型：整数
+** 必需：否
+** 默认值：0
+** 定义可以排队的最大消息数。缺省值0表示对可排队的消息数量没有限制。
+
+* 名称：`persistent`：
+** 类型：布尔值
+** 必需：否
+** 默认值：false
+** 指定Mule消息是否保存到商店。首先，这用于将排队的消息保存到磁盘，以便在服务器出现故障并需要重新启动的情况下将服务器的内部状态镜像到磁盘上。
+
+根据您指定的持久属性值，Mule选择一个持久性策略用于队列。默认情况下，Mule使用两个持久性策略：
+
+*  `MemoryPersistenceStrategy`，这是一种易变的，内存中的持久性策略。
+*  `FilePersistenceStrategy`，它使用文件存储将消息保存到（非易失性）磁盘，因此即使Mule重新启动也会保留消息。
+
+=== 配置端点
+
+端点配置与所有传输一样。
+
+VM传输特定端点使用vm命名空间进行配置，并使用_path_或_address_属性。例如：
+
+[source, xml]
+----
+<vm:outbound-endpoint path="out" exchange-pattern="one-way"/>
+----
+
+如果您需要从Mule客户端调用VM端点，请使用端点URI。 VM的端点URI的格式如下所示：
+
+[source, xml]
+----
+vm://<your_path_here>
+----
+
+== 使用事务
+
+_One-way_ VM队列可以参与分布式 link:/mule-user-guide/v/3.7/xa-transactions[XA交易]。要使VM端点处于事务处理状态，请使用类似于以下的配置：
+
+[source,xml, linenums]
+----
+<flow>
+  <vm:inbound-endpoint address="vm://dispatchInQueue">
+    <vm:transaction action="BEGIN_OR_JOIN"/>
+  </vm:inbound-endpoint>
+</flow>
+----
+
+使用XA需要您将事务管理器添加到您的配置中。有关更多信息，请参阅 link:/mule-user-guide/v/3.7/transaction-management[交易管理]。
+
+=== 事务性入站VM队列
+
+入站虚拟机端点支持完全事务流。例如，以下配置会创建一个VM队列（因为入站端点是单向的），并且同步处理从该队列读取的消息：
+
+[source,xml, linenums]
+----
+<flow name="transactionalVM">
+    <vm:inbound-endpoint path="orders" exchange-pattern="one-way">
+        <vm:transaction action="ALWAYS_BEGIN"/>
+    </vm:inbound-endpoint>
+    <component class="com/mycomany.ProcessOrder"/>
+</flow>
+----
+
+XA交易也受到支持：
+
+[source,xml, linenums]
+----
+<flow name="transactionalVM">
+    <vm:inbound-endpoint path="orders" exchange-pattern="one-way">
+        <xa-transaction action="ALWAYS_BEGIN"/>
+    </vm:inbound-endpoint>
+    <component class="com/mycomany.ProcessOrder"/>
+    <jms:outbound-endpoint ref="processedOrders">
+        <xa-transaction action="ALWAYS_JOIN"/>
+    </jms:outbound-endpoint>
+</flow>
+----
+
+== 示例配置
+
+*Example Usage of VM Endpoints*
+
+[source, xml, linenums]
+----
+<vm:connector name="persistentVmConnector" queueTimeout="1000"> //<1>
+   <queue-profile maxOutstandingMessages="100" persistent="true"/>
+</vm:connector>
+ 
+<flow>
+    <vm:inbound-endpoint path="in" exchange-pattern="request-response"/> //<2>
+    <component class="org.mule.ComponentClass"/>
+    <vm:outbound-endpoint exchange-pattern="one-way" path="out" connector-ref="persistentVmConnector" /> //<3>
+</flow>
+----
+<1>具有队列配置文件和queueTimeout的自定义连接器配置。
+<2>第一个VM端点（入站）使用_request-response_交换模式和默认连接器配置，因此不需要连接器定义。
+<3>第二个VM端点（出站）使用_one-way_交换模式和＃1中的自定义连接器配置。
+
+== 配置参考
+
+===  VM传输
+
+VM传输用于Mule管理的组件之间的VM内部通信。传输提供了配置VM瞬态或持久队列的选项。
+
+=== 连接器
+
+以下部分列出连接器的属性和子元素。
+
+==== 连接器的属性
+
+`queueTimeout`：
+
+* 类型：`positiveInteger`
+* 必需：是
+* 用于异步端点的队列的超时设置
+
+连接器的==== 子元素
+
+*  queueProfile，基数：0..1，DEPRECATED。改用"<queue-profile>"。
+* 队列配置文件，基数：0..1，配置此连接器队列的属性（请参阅 link:/runtime-manager/managing-queues[管理队列]）。
+
+=== 入站端点
+
+此连接器接收来自传输的消息的端点。
+
+入站端点的==== 属性
+
+* 名称：路径
+* 类型：字符串
+* 必需：否
+* 队列路径，例如dispatchInQueue来创建地址vm：// dispatchInQueue。
+
+没有子元素。
+
+=== 出站端点
+
+此连接器发送消息的端点。
+
+==== 出站端点的属性
+
+* 名称：路径
+* 类型：字符串
+* 必需：否
+* 队列路径，例如dispatchInQueue来创建地址vm：// dispatchInQueue。
+
+没有子元素。
+
+=== 端点
+
+通过引用端点名称，可用于在配置中的其他位置构建入站或出站端点的端点"template"。
+
+==== 端点的属性
+
+* 名称：路径
+* 类型：字符串
+* 必需：否
+* 队列路径，例如dispatchInQueue来创建地址vm：// dispatchInQueue。
+
+没有子元素。
+
+=== 事务
+
+事务元素配置一个事务。事务处理允许将一系列操作分组在一起，以便在出现故障时将它们回滚。有关更多信息，请参阅 link:/mule-user-guide/v/3.7/transaction-management[交易管理]。
+
+没有子元素。
+
+== 架构
+
+link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_vm/namespace-overview.html[Schemadocs]
+
+==  Javadoc API参考
+
+这个模块的Javadoc可以在这里找到：
+
+link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/vm/package-summary.html[VM JavaDoc]
+
+== 的Maven
+
+内存传输可以包含以下依赖项：
+
+[source, xml, linenums]
+----
+<dependency>
+   <groupId>org.mule.transports</groupId>
+   <artifactId>mule-transport-vm</artifactId>
+</dependency>
+----
+
+== 最佳实践
+
+确保入站请求 - 响应端点与出站请求 - 响应端点配对，并且入站单向端点与出站单向端点配对。
+
+考虑在 link:/mule-user-guide/v/3.7/reliability-patterns[可靠性模式]之后设置您的应用程序。

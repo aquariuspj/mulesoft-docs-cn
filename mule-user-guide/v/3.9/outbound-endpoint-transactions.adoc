@@ -1,0 +1,227 @@
+= 出站端点事务
+:keywords: anypoint studio, esb, connector, endpoint, outbound endpoints, sap
+
+此页面列出了 link:/mule-user-guide/v/3.9/mulesoft-enterprise-java-connector-for-sap-reference[SAP连接器]的出站终端事务。
+
+==  sRFC有状态
+
+所有调用均使用同步RFC作为传输并共享相同的上下文。
+
+=== 配置示例
+
+*Version 1.x*
+
+[source, xml, linenums]
+----
+<sap:outbound-endpoint
+    exchange-pattern="request-response"
+    type="function"
+    rfcType="srfc" ...>
+     
+    <sap:transaction action="NONE | ALWAYS_BEGIN | BEGIN_OR_JOIN | ALWAYS_JOIN | JOIN_IF_POSSIBLE" bapiTransaction="false"/>
+     
+</sap:outbound-endpoint>
+----
+
+*Version 2.x+*
+
+[source, xml, linenums]
+----
+<sap:outbound-endpoint
+    exchange-pattern="request-response"
+    type="function"
+    bapiTransaction="false"
+    rfcType="srfc" ...>
+     
+    <sap:transaction action="NONE | ALWAYS_BEGIN | BEGIN_OR_JOIN | ALWAYS_JOIN | JOIN_IF_POSSIBLE"/>
+     
+</sap:outbound-endpoint>
+----
+
+有状态调用用于使用相同的上下文调用SAP中的多个BAPI。如果调用这些BAPI的执行发生在同一个线程中，那么JCo就相当于：
+
+[source, code, linenums]
+----
+JCoContext.begin(destination);
+ 
+function1.execute(destination);
+function2.execute(destination);
+function3.execute(destination);
+ 
+JCoContext.end(destination);
+----
+
+==  sRFC有状态BAPI事务
+
+所有调用都使用同步RFC作为传输并共享相同的上下文，并在最后调用BAPI_TRANSACTION_COMMIT。
+
+=== 配置示例
+
+*Version 1.x*
+
+[source, xml, linenums]
+----
+<sap:outbound-endpoint
+    exchange-pattern="request-response"
+    type="function"
+    rfcType="srfc" ...>
+     
+    <sap:transaction action="NONE | ALWAYS_BEGIN | BEGIN_OR_JOIN | ALWAYS_JOIN | JOIN_IF_POSSIBLE" bapiTransaction="true"/>
+     
+</sap:outbound-endpoint>
+----
+
+*Version 2.x+*
+
+[source, xml, linenums]
+----
+<sap:outbound-endpoint
+    exchange-pattern="request-response"
+    type="function"
+    bapiTransaction="true"
+    rfcType="srfc" ...>
+     
+    <sap:transaction action="NONE | ALWAYS_BEGIN | BEGIN_OR_JOIN | ALWAYS_JOIN | JOIN_IF_POSSIBLE"/>
+     
+</sap:outbound-endpoint>
+----
+
+如果在SAP表中称为更改值的BAPI，则需要调用特殊的BAPI：BAPI_TRANSACTION_COMMIT或BAPI_TRANSACTION_ROLLBACK。为此，整个工作单元需要处于同一个线程中，并且这些调用需要是有状态的。 +
+ 执行此操作的JCo代码是：
+
+[source, java, linenums]
+----
+commitFunction = createJCoFunction("BAPI_TRANSACTION_COMMIT");
+rollbackFunction = createJCoFunction("BAPI_TRANSACTION_ROLLBACK");
+try
+{
+    JCoContext.begin(destination);
+    function1.execute(destination);
+    function2.execute(destination);
+    commitFunction.execute(destination);
+}
+catch(Exception ex)
+{
+    rollbackFunction.execute(destination);
+}
+finally
+{
+    JCoContext.end(destination);
+}
+----
+
+==  tRFC有状态
+
+所有调用都使用事务性RFC作为传输并共享相同的上下文。
+
+=== 配置示例
+
+*Version 1.x*
+
+[source, xml, linenums]
+----
+<sap:outbound-endpoint
+    exchange-pattern="request-response"
+    type="function"
+    rfcType="trfc" ...>
+     
+    <sap:transaction action="NONE | ALWAYS_BEGIN | BEGIN_OR_JOIN | ALWAYS_JOIN | JOIN_IF_POSSIBLE" bapiTransaction="false"/>
+     
+</sap:outbound-endpoint>
+----
+
+*Version 2.x+*
+
+[source, xml, linenums]
+----
+<sap:outbound-endpoint
+    exchange-pattern="request-response"
+    type="function"
+    bapiTransaction="false"
+    rfcType="trfc" ...>
+     
+    <sap:transaction action="NONE | ALWAYS_BEGIN | BEGIN_OR_JOIN | ALWAYS_JOIN | JOIN_IF_POSSIBLE"/>
+     
+</sap:outbound-endpoint>
+----
+
+通过tRFC调用BAPI的JCo代码如下所示：
+
+[source, java, linenums]
+----
+String tid = destination.creatTID();
+try
+{
+    JCoContext.begin(destination, tid);
+    function1.execute(destination, tid);
+    function2.execute(destination, tid);
+}
+finally
+{
+    JCoContext.end(destination);
+}
+----
+
+==  qRFC有状态
+
+所有调用都使用排队的RFC作为传输并共享相同的上下文。
+
+=== 配置
+
+[source, xml, linenums]
+----
+<sap:outbound-endpoint
+    exchange-pattern="request-response"
+    type="function"
+    rfcType="qrfc"
+    queueName="QUEUE_NAME" ...>
+     
+    <sap:transaction action="NONE | ALWAYS_BEGIN | BEGIN_OR_JOIN | ALWAYS_JOIN | JOIN_IF_POSSIBLE" bapiTransaction="false"/>
+     
+</sap:outbound-endpoint>
+----
+
+要通过qRFC调用BAPI，您需要提供属性*queueName*的值。执行此操作的JCo代码是：
+
+[source, java, linenums]
+----
+String tid = destination.creatTID();
+try
+{
+    JCoContext.begin(destination, tid);
+    function1.execute(destination, tid, queueName1);
+    function2.execute(destination, tid, queueName2);
+}
+finally
+{
+    JCoContext.end(destination);
+}
+----
+
+== 示例
+
+以下示例仅适用于Mule 3.3，SAP Connector版本2.1.0或更高版本。它显示了如何在有状态事务中执行2个BAPI。
+
+[source, xml, linenums]
+----
+<mule ...>
+ 
+    <flow>
+        ...
+        <sap:xml-to-object/>
+        <transactional>
+            <sap:outbound-endpoint exchange-pattern="request-response" type="function"
+                                   bapiTransaction="true" rfcType="srfc" functionName="BAPI-1" ...>
+                <sap:transaction action="ALWAYS_BEGIN"/>
+            </sap:outbound-endpoint>
+            ...
+            <sap:xml-to-object/>
+            <sap:outbound-endpoint exchange-pattern="request-response" type="function"
+                                   bapiTransaction="true" rfcType="srfc"  functionName="BAPI-2" ...>
+                <sap:transaction action="BEGIN_OR_JOIN"/>
+            </sap:outbound-endpoint>
+        </transactional>
+        ...
+    </flow>
+</mule>
+----

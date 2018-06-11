@@ -1,0 +1,178 @@
+=  BPM传输参考
+
+[NOTE]
+从Mule 3.0.1开始，与BPM系统交互的推荐方式是通过`<bpm:process>`组件和消息处理器。这种方法记录在这里[这里]。 3.0.x支持传统BPM传输的使用，但在3.1中被删除。
+
+BPM传输允许Mule事件在业务流程管理系统（BPMS）（也称为流程引擎）中启动和/或推进流程。它还允许执行进程生成Mule事件。有关Mule及其相关概念的高级业务流程管理介绍，请阅读 link:https://blogs.mulesoft.com/dev/mule-dev/why-use-jbpm-with-mule[博客条目]。
+
+要查看运行中的BPM连接器（使用JBoss jBPM），请查看 link:/mule-user-guide/v/3.2/loan-broker-bpm-example[贷款经纪人BPM示例]（在完整的Mule发行版中可用）。
+
+== 特点
+
+* 传入的Mule事件可以启动新进程，提前或终止正在运行的进程。
+* 正在运行的进程可以向任何Mule端点发送同步或异步消息。
+*  Mule的同步响应会自动反馈到正在运行的进程中，并可以存储到进程变量中。
+*  "bpm://MyProcess"类型的端点用于智能地路由Mule内的流程生成事件。
+*  Mule可以并行地与不同的正在运行的进程进行交互。
+
+[WARNING]
+*BPEL* +
+该连接器只能与提供Java API的BPM引擎集成。如果您需要与仅公开SOAP端点的BPEL引擎集成，则需要 link:/mule-user-guide/v/3.2/using-web-services[使用标准的Web服务]。
+
+== 用法
+
+[source, xml, linenums]
+----
+<model>
+    <service name="MessagesToProcess">
+        <inbound>
+            <jms:inbound-endpoint queue="queueA"/>
+        </inbound>
+        <outbound>
+            <pass-through-router>
+                <bpm:outbound-endpoint process="myProcess" />
+            </pass-through-router>
+        </outbound>
+    </service>
+
+    <service name="MessagesFromProcess">
+        <inbound>
+            <bpm:inbound-endpoint process="myProcess"/>
+        </inbound>
+        <outbound>
+            <bpm:outbound-router>
+                <jms:outbound-endpoint queue="queueC"/>
+                <jms:outbound-endpoint queue="queueD"/>
+            </bpm:outbound-router>
+        </outbound>
+    </service>
+</model>
+----
+
+* 传入的Mule消息和属性可以存储为流程变量，流程变量可以作为Mule消息发送。如何配置这取决于BPMS及其流程定义语言。
+
+* 从Mule到BPMS的传入消息根据消息属性MULE_BPM_PROCESS_ID进行关联。如果一个进程已经存在这个ID，这个消息将把现有进程推进一步。否则，新流程会创建并启动。该进程生成的任何传出消息都设置了MULE_BPM_PROCESS_ID。在异步响应的情况下，应用程序在响应消息中保留此属性以使其与正确的流程实例相关是非常重要的。
+
+* 端点上的`process`属性用于区分多个流程定义。例如，发送到端点<bpm:outbound-endpoint process="foo" />的消息启动或前进名为"foo"的进程。
+
+== 与BPM引擎集成
+
+Mule的基本设计原则之一是为用户提供最大的灵活性。基于此，用户理想情况下应该能够"plug in"任何BPM引擎与Mule一起使用。不幸的是，没有标准的JEE规范来实现这一点。因此，Mule BPM Transport只是定义了自己的简单界面。
+
+[source, java, linenums]
+----
+public interface BPMS
+{
+    public Object startProcess(Object processType, Object transition, Map processVariables) throws Exception;
+
+    public Object advanceProcess(Object processId, Object transition, Map processVariables) throws Exception;
+
+    // MessageService contains a callback method used to generate Mule messages from your process.
+    public void setMessageService(MessageService msgService);
+}
+----
+
+任何实现该接口的BPM引擎都可以通过BPM传输向Mule发送。"plug in"目前， http://www.jboss.com/products/jbpm[JBoss jBPM]引擎是Mule发行版中唯一包含的引擎。其他实现可以在https://www.anypoint.mulesoft.com/exchange/?search=bpm[Anypoint Exchange]上找到。
+
+==  JBoss jBPM
+
+JBoss jBPM是一个开源的BPMS，与Mule很好地集成。
+
+===  jBPM配置
+
+要使用jBPM和Mule，你需要在你的类路径中有两个重要的文件：
+
+*jbpm.cfg.xml*
+
+该文件包含jBPM配置。如果默认值没问题，那么它可以像下面这样简单。
+
+*NOTE*：在`<process-engine-context>`中定义MuleMessageService，否则jBPM不能"see" Mule。
+
+[source, xml, linenums]
+----
+<jbpm-configuration>
+    <import resource="jbpm.default.cfg.xml" />
+    <import resource="jbpm.jpdl.cfg.xml" />
+    <import resource="jbpm.tx.hibernate.cfg.xml" />
+
+    <process-engine-context>
+        <object class="org.mule.transport.jbpm.MuleMessageService" />
+    </process-engine-context>
+</jbpm-configuration>
+----
+
+*jbpm.hibernate.cfg.xml*
+
+该文件包含Hibernate配置。 jBPM使用Hibernate将其对象保存到RDBMS，因此您需要在此配置数据库设置。例如，一个简单的内存中的Derby数据库可能会使用这些设置：
+
+[source, xml, linenums]
+----
+<property name="hibernate.dialect">org.hibernate.dialect.DerbyDialect</property>
+<property name="hibernate.connection.driver_class">org.apache.derby.jdbc.EmbeddedDriver</property>
+<property name="hibernate.connection.url">jdbc:derby:muleEmbeddedDB</property>
+<property name="hibernate.hbm2ddl.auto">create-drop</property>
+----
+
+Oracle数据库使用这些设置：
+
+[source, xml, linenums]
+----
+<property name="hibernate.dialect">org.hibernate.dialect.OracleDialect</property>
+  <property name="hibernate.connection.driver_class">oracle.jdbc.driver.OracleDriver</property>
+  <property name="hibernate.connection.url">jdbc:oracle:thin:user/pass@server:1521:dbname</property>
+----
+
+===  Mule配置
+
+使用jBPM配置BPM连接器就像使用<bpm:jbpm-connector>元素并为其提供流程定义的位置一样简单。这些进程在连接器启动时加载到jBPM中。
+
+[source, xml, linenums]
+----
+<bpm:jbpm-connector name="bpmConnector">
+    <bpm:process name="processA" resource="processADef.jpdl.xml" />
+    <bpm:process name="processB" resource="processBDef.jpdl.xml" />
+</bpm:jbpm-connector>
+----
+
+=== 流程定义（jPDL）
+
+Mule为jBPM的流程定义语言（jPDL）提供了两个自定义元素。您可以将流程定义中的这些与其他标准jPDL元素（如`<state>, <java>, <script>, <decision>`）结合使用。
+
+====  <mule-send>
+
+_Usage：_ `<mule-send expr="" endpoint="" synchronous="" var="" type="">`
+
+向Mule *endpoint*发送带有有效载荷`*expr*`的消息的活动。如果*synchronous* = true（默认值），则发送块和响应消息存储到*var*中。如果消息不是*type*，则会引发异常。 *expr*可以是一个文字值或引用过程变量的 http://docs.oracle.com/javaee/5/tutorial/doc/bnahq.html[表达]。
+
+唯一必需的属性是*expr*和*endpoint*，其余是可选的。
+
+[%header,cols="1*a"]
+|===
+^ | <mule-send>示例
+|
+[source, xml, linenums]
+----
+<mule-send name="sendToMediumBank" expr="#{loanRequest}" endpoint="MediumBank" var="loanQuote" type="org.mule.example.loanbroker.messages.LoanQuote">
+----
+|===
+
+====  <mule-receive>
+
+_Usage：_ `<mule-receive var="" endpoint="" type="">`
+
+等待从Mule *endpoint*发送消息并将其存储到*var*中的状态。如果消息不是*type*，则会引发异常。
+
+这些属性都是可选的。
+
+`<mule-receive>`可以将`<start>`替换为进程的第一个状态，这样您可以将启动进程的消息存储到变量中。
+
+[%header,cols="1*a"]
+|===
+^ | <mule-receive>示例
+|
+[source, xml, linenums]
+----
+<mule-receive name="waitForCreditAgency" endpoint="CreditProfiles" var="creditProfile">
+----
+|===
+

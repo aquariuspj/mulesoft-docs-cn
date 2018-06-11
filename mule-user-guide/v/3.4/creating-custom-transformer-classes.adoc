@@ -1,0 +1,198 @@
+= 创建自定义转换器类
+
+自定义转换器是用户定义的转换器类，可实现`org.mule.api.transformer.Transformer.`您的类可以根据需要扩展 link:http://www.mulesoft.org/docs/site/current3/apidocs/org/mule/transformer/AbstractTransformer.html[`AbstractTransformer`]或 link:http://www.mulesoft.org/docs/site/current3/apidocs/org/mule/transformer/AbstractMessageTransformer.html[`AbstractMessageTransformer`]。本页面将更详细地介绍如何创建自定义转换器。
+
+如果您正在查找有关使用Transformer注释创建变压器的信息，请访问 link:/mule-user-guide/v/3.4/transformer-annotation[变压器注释]。
+
+== 变换器类
+
+`AbstractTransformer`允许您访问和转换源负载并指定要使用的编码（如果需要）。它定义了用于控制此转换器支持的对象类型的方法，并验证预期的返回类型，从而实现一个`doTransform()`方法。
+
+[source, java, linenums]
+----
+import org.mule.transformer.AbstractTransformer;
+  
+public class OrderToHtmlTransformer extends AbstractTransformer
+{
+    public Object doTransform(Object src, String encoding) throws TransformerException
+}
+----
+
+如果您需要转换邮件标头和附件，则可以使用`AbstractMessageTransformer `直接对传入的邮件进行更改。在这种情况下，您可以通过覆盖方法`transform(MuleMessage message, String encoding)`来返回转换的邮件有效内容。您可以使用`message.getProperty(Object key)`检索属性，或者使用`message.setProperty(Object key, Object value)`设置已转换邮件的属性。
+
+例如：
+
+[source, java, linenums]
+----
+import org.mule.transformer.AbstractMessageTransformer;
+  
+public class OrderToHtmlTransformer extends AbstractMessageTransformer
+{
+    public Object transform(MuleMessage message, String encoding) throws TransformerException
+}
+----
+
+== 注册源和返回类型
+
+您可以指定变压器可以接受哪些源类型以及可以返回哪种类型。这允许Mule在调用转换器之前验证传入消息并在发送消息之前验证输出。如果您创建了<<Creating Discoverable Transformers>>，则必须设置源和返回类型。
+
+例如，对于Order bean到HTML转换器，您可以在构造函数中指定转换器仅转换类型为Order的消息载荷：
+
+[source, java, linenums]
+----
+public class OrderToHtmlTransformer extends AbstractMessageTransformer
+{
+    public OrderToHtmlTransformer() {
+        registerSourceType(DataTypeFactory.create(Order.class));
+        setReturnDataType(DataTypeFactory.STRING);
+        setName("OrderToHTML");
+}
+----
+
+由于指定了源类型，因此您无需在`transform()`方法中进行任何类型检查。但是，如果添加多个源类型，则需要检查`transform()`方法中的每种类型。
+
+请注意，上面的代码设置了变压器的名称。通常，在声明变换器时，可以在XML配置中设置变换器名称。如果未设置名称，则Mule会根据第一个源类型和返回类生成名称，例如"OrderToString"，如果上面的示例没有指定名称。
+
+== 使用Transformer生命周期方法
+
+Mule中的所有对象都有与之相关的生命周期。对于变压器，有两种最有用的生命周期方法。
+
+默认情况下，`AbstractMessageTransformer`和`AbstractTransformer `都实现了`org.mule.api.lifecycle.Initialisable`界面。在变换器上设置了所有bean属性后（如果有），调用`doInitialise()`方法。这对变压器进行任何初始化或验证工作很有用。例如，如果变压器需要在变压器运行之前加载外部文件，则可以通过`doInitialise()`方法加载文件。
+
+如果您希望您的变压器在不再需要变压器时清除资源，则变压器必须实施`org.mule.api.lifecycle.Disposable `并实施`dispose()`方法。
+
+== 创建可发现的变形金刚
+
+骡可以执行自动转换。例如，当您在MuleMessage上调用`getPayload()`方法并传入所需的类型时，如下所示：
+
+[source]
+----
+Document doc = (Document)muleMessage.getPayload(org.dom4j.Document.class);
+----
+
+Mule查看当前的有效负载类型并尝试找到一个可将其转换为`org.dom4j.Document`对象的变换器。 Mule提供了几种标准转换器，用于在常见类型之间切换，如字符串，byte []，InputStream等。此外，传输通常具有特定消息类型的变换器，如JMSMessage或HttpRequest。创建自定义变压器时，可以将其优先级设置为高于标准变压器，以便优先考虑。
+
+为了使变压器可以发现，它必须实现：
+
+link:http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/transformer/DiscoverableTransformer.html[org.mule.api.transformer.DiscoverableTransformer]
+
+. 该界面引入了两种方法`getPriorityWeighting()`和`setPriorityWeighting(int weighting)`。当两个或更多变压器符合搜索标准时，加权解决冲突。权重是1到10之间的数字，其中10是最高优先级。通常，Mule变压器的优先级为1，并且应该总是比任何定制变压器的优先级低。
+
+例如，要使OrderToHtmlTransformer可发现，您可以如下定义它：
+
+[source, java, linenums]
+----
+public class OrderToHtmlTransformer
+extends AbstractMessageTransformer
+implements DiscoverableTransformer
+{
+    private int weighting = DiscoverableTransformer. DEFAULT_PRIORITY_WEIGHTING + 1;
+  
+    int getPriorityWeighting() {
+        return weighting;
+    }
+  
+    void setPriorityWeighting(int weighting) {
+        this.weighting = weighting;
+    }
+}
+----
+
+这个转换器从一个Order对象转换为一个String，这个标准的ObjectToString转换器也是这样做的，但是ObjectToHtml被使用，因为它具有更高的优先级权重。你可以测试如下：
+
+[source, code, linenums]
+----
+MuleMessage message = new DefaultMuleMessage(new Order(...));
+String html = (String)muleMessage.getPayload(java.lang.String);
+----
+
+== 注册变压器
+
+创建变压器后，您必须注册它，以便Mule能够在运行时发现它。您只需使用Mule配置文件中的`<custom-transformer>`元素进行配置即可注册变压器。
+
+或者，如果希望在模块（JAR）位于类路径上时由Mule自动加载转换器，则需要在`/META-INF/services/org/mule/config`目录下的JAR中添加一个`registry-bootstrap.properties`文件。 `registry-bootstrap.properties`的内容应该如下所示：
+
+[source]
+----
+orderToHtml=com.foo.OrderToHtml
+----
+
+当Mule启动时，它会在加载任何配置之前发现该引导文件，并将该文件中列出的任何对象安装到本地注册表中。有关更多信息，请参阅 link:/mule-user-guide/v/3.4/bootstrapping-the-registry[引导注册表]。
+
+== 示例
+
+要创建包含来自邮件标题的`transactionId`的HTML邮件，您需要扩展`AbstractMessageTransformer`并编写`transform()`方法，如下所示：
+
+[source, code, linenums]
+----
+public Object transform(MuleMessage message, String encoding) throws TransformerException
+{
+    Order order = (Order)message.getPayload();
+    StringBuffer html = new StringBuffer();
+    html.append("");
+    html.append("");
+    html.append("");
+    html.append("Dear ").append(order.getCustomer().getName()).append(" 
+");
+    html.append("Thank you for your order. Your transaction reference is: <strong>");
+    html.append(message.getProperty("transactionId").append("</strong>");
+    html.append("("");
+    return html.toString();
+}
+----
+
+link:/mule-user-guide/v/3.5/hello-world-example[Hello World示例]定义了一个名为`StringToNameString`的自定义转换器，它将Java字符串封装在名为`NameString`的自定义类中：
+
+[source, java, linenums]
+----
+package org.mule.example.hello;
+ 
+import org.mule.api.transformer.TransformerException;
+import org.mule.transformer.AbstractTransformer;
+import org.mule.transformer.types.DataTypeFactory;
+ 
+/**
+ * <code>StringToNameString</code> converts from a String to a NameString object.
+ */
+public class StringToNameString extends AbstractTransformer
+{
+ 
+    public StringToNameString()
+    {
+        super();
+        this.registerSourceType(DataTypeFactory.STRING);
+        this.setReturnDataType(DataTypeFactory.create(NameString.class));
+    }
+ 
+    @Override
+    public Object doTransform(Object src, String encoding) throws TransformerException
+    {
+        return new NameString((String) src);
+    }
+ 
+}
+----
+
+变压器配置如下：
+
+[source, xml, linenums]
+----
+<custom-transformer name="StringToNameString" class="org.mule.example.hello.StringToNameString"/>
+...
+<flow name="Hello World">
+...
+    <vm:inbound-endpoint path="greeter" transformer-refs="StringToNameString" exchange-pattern="request-response"/>
+...
+----
+
+或者，您可以直接在端点中配置变压器，如下所示：
+
+[source, xml, linenums]
+----
+<flow name="Hello World">
+    <vm:inbound-endpoint path="greeter" exchange-pattern="request-response">
+        <custom-transformer class="org.mule.example.hello.StringToNameString"/>
+    </vm:inbound-endpoint>
+...
+----
+

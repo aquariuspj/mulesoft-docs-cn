@@ -1,0 +1,106 @@
+//作者：Federico Balbi和Nahuel Dalla Vecchia（由Eva转让）
+= 迁移API策略
+
+//一般地解释Mule 3和Mule 4之间如何以及为什么会发生变化。
+在骡4中，政策发生了重大变化。有关它们的完整说明，请参阅 link:https://docs.mulesoft.com/api-manager/custom-policy-4-reference[自定义政策一般参考（2017年11月）]
+
+=== 定义策略行为
+
+在3.x中，特定策略中的逻辑分成两个块，一个在下一个策略或流之前执行，另一个在其之后执行。
+
+.Mule 3示例
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<policy online="false"
+        xmlns="http://www.mulesoft.org/schema/mule/policy"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:api-platform-gw="http://www.mulesoft.org/schema/mule/api-platform-gw"
+        xsi:schemaLocation="http://www.mulesoft.org/schema/mule/policy http://www.mulesoft.org/schema/mule/policy/current/mule-policy.xsd
+              http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+              http://www.mulesoft.org/schema/mule/api-platform-gw http://www.mulesoft.org/schema/mule/api-platform-gw/current/mule-api-platform-gw.xsd">
+
+    <before>
+        <mule:set-payload value="(pre)"/>
+    </before>
+
+    <after>
+        <mule:set-payload value="(post)"/>
+    </after>
+
+    <pointcut>
+        <api-platform-gw:api-pointcut apiName="sampleApi" apiVersion="1.0.0"/>
+    </pointcut>
+
+</policy>
+----
+
+在Mule 4中，策略不再分为`before`和`after`块。
+他们现在以流程的形式工作，明确跳转到下一个必须在其中定义的策略或流程。
+
+使用以下配置可以在Mule 4中实现相同的行为：
+
+.Mule 4示例
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http-policy="http://www.mulesoft.org/schema/mule/http-policy"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/http-policy http://www.mulesoft.org/schema/mule/http-policy/current/mule-http-policy.xsd">
+
+    <http-policy:proxy name="policy-deployment">
+        <http-policy:source propagateMessageTransformations="true">
+
+            <set-payload value="(pre)"/>
+
+            <http-policy:execute-next/>
+
+            <set-payload value="(post)"/>
+
+        </http-policy:source>
+    </http-policy:proxy>
+</mule>
+
+----
+
+有几件事要注意：
+
+* 逻辑放置在同一个块中。只需将逻辑放在`execute-next`元素之前就可以实现流之前的注入行为。为了在流之后注入行为，可以在该元素之后放置逻辑。
+
+`http-policy:source`中的*  `propagateMessageTransformations`属性
+元素：从Mule 4开始，在执行之前更改为Mule消息（有效内容或属性）
+该流程默认情况下不会传播给它。要启用此功能，必须将`propagateMessageTransformations`设置为`true`。
+
+*  `pointcut`元素不再在策略配置文件中定义。现在，它们由API网关解决
+当从API Manager获取策略时。
+
+端点和应用程序`pointcut`元素不再可用，并且不会替换它们。
+
+
+=== 将策略模板上传到Exchange
+
+在3.x中，一旦定义策略，结果就是必须上传到API Manager的XML文件。
+
+在Mule 4中，一旦定义了策略行为，就必须将策略打包到策略模板JAR中并上传
+交换，以使其在API管理器中可用。
+
+如何创建一个Maven项目来生成策略模板JAR在这里解释： link:https://docs.mulesoft.com/api-manager/develop-custom-policies-reference[自定义策略开发参考（2017年11月）]
+
+如何将JAR上传到Exchange的解释如下： link:https://docs.mulesoft.com/api-manager/upload-policy-exchange-task[将政策上传至交易所（2017年11月）]
+
+就像以前一样，一旦策略模板JAR在Exchange中，它将出现在属于API的API管理器中
+到JAR上传的同一组织。
+
+
+== 另请参阅
+
+link:migration-api-gateways[迁移API网关]
+
+link:migration-api-gateways-autodiscovery[迁移API网关：自动发现]
+
+link:migration-api-gateways-runtime-config[迁移API网关：Mule运行时配置]
+
+link:migration-core[迁移核心组件]

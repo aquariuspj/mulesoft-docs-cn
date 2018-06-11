@@ -1,0 +1,347 @@
+= 事件跟踪
+:keywords: agent, mule, esb, servers, monitor, notifications, external systems, third party, get status, metrics
+
+image:logo-cloud-disabled.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-active.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-active.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+== 概述
+
+通过事件跟踪，您可以查看有关特定流程正在处理的消息的实时信息。您可以在处理消息有效负载之前，之中和之后查看消息有效内容，以及消息处理器在消息流和消息元数据中的信息。
+
+事件跟踪使您能够查看Mule服务器上的业务事务和事件，使您能够跟踪和分析特定消息的流程和处置。例如，您可以使用这些数据对业务事务中的故障进行根本原因分析，或识别消息处理瓶颈。
+
+== 通知类型
+
+Mule提供了有关流程组件执行的通知，如下所示。
+
+image:event_tracking.png[event_tracking]
+
+可用的通知类型：
+
+* 管道消息通知
+* 端点消息通知
+* 组件消息通知
+* 事件通知（自定义事件）
+* 消息处理器通知
+* 异步消息通知
+* 交易通知
+* 例外通知
+* 例外策略通知
+
+== 推送活动信息
+
+对于每个通知，运行时管理器代理会将以下信息推送到事件跟踪服务：
+
+*  `timestamp`：事件的时间戳
+*  `notificationType`：事件类型（即消息处理器事件，入站端点事件）
+*  `action`：事件操作（即：开始，结束，完成，回滚）
+*  `resourceIdentifier` :(即：流名称）
+*  `muleMessage`：如果配置，则推送序列化的Mule消息;如果这不可行，它会推送一条错误消息
+
+以下是当前由运行时管理器代理发送的_ *not* _：
+
+*  *Mule Message ID*
+*  *Exception:*在发生异常时的消息和堆栈跟踪
+*  *Path:*组件Mule路径
+*  *Annotations:*组件注释，如果有的话
+*  *Application*
+
+== 配置事件跟踪级别和通知内容
+事件跟踪通知代表Mule应用程序存储在Runtime Manager Agent中，然后流式传输到事件跟踪服务。根据Mule应用程序的设计方式和网络拓扑结构，可能会对从运行时间管理器代理到在线事件跟踪服务的网络上的事件跟踪通知进行复制造成显着的性能影响。
+
+由于这些通知可能会影响性能，因此您可以控制各种粒度的跟踪级别。
+
+事件跟踪级别可以全局指定，然后由特定的Mule应用程序覆盖，然后在特定的Mule应用程序中通过特定命名流程进一步覆盖。
+
+除了事件跟踪级别之外，消息重放功能还可以存储每条消息以供以后重播。虽然这可能会导致消息的重复处理，但重播功能可能为Ops提供恢复和重播失败事务的机制。与跟踪级别一样，重播级别也可以全局配置，然后针对特定的Mule应用程序进行细粒度重写，然后进一步覆盖Mule应用程序中的特定流程。
+
+== 事件跟踪级别
+
+可用的事件跟踪级别是：
+
+* 无 - 无需调试。
+* 是 - 仅跟踪与商业活动相关的事件。
+* 跟踪 -  BE级别+端点，异常策略和与交易相关的通知。
+* 调试 - 跟踪级别+附加组件和消息处理器通知。
+
+下表列出了每个调试级别中活动的通知类型。 MULE TYPE是定义通知类型的`org.mule.api.context.notification.ServerNotification`子类（它们位于`org.mule.context.notification`包中）。
+
+[%header%autowidth.spread]
+|===
+|通知 |  MULE类型 | 无 | BE  |跟踪 | DEBUG
+|管道消息 |  PipelineMessageNotifications  |   |√ |√ |√
+|异步消息 |  AsyncMessageNotifications  |   |√ |√
+|异常 |  ExceptionStrategyNotifications  |   | {√{4}} {√{5}}√
+| {事件{1}} EventNotifications  |   | {√{4}} {√{5}}√
+|例外策略 | 例外策略通知 |   |   |√ |√
+| {事务{1}} TransactionNotifications  |   |   | {√{5}}√
+|端点消息 |  EndpointMessageNotifications  |   |   |√ |√
+|消息处理器 |  MessageProcessorNotification  |   |   |   |√
+|组件消息 |  ComponentMessageNotifications  |   |   |   |√
+|===
+
+ 
+== 配置事件跟踪
+
+您可以全局和/或每个应用程序和/或每个流程配置跟踪级别。可以在配置文件`mule-agent.yml`中配置跟踪级别，或者使用代理API实时配置跟踪级别。
+
+[NOTE]
+请记住，根据事件跟踪级别的不同，性能可能会受到影响。
+
+=== 通过`mule-agent.yml`进行配置
+
+您可以配置全局默认配置，以便在部署到Mule运行时时如何跟踪每个Mule应用。您还可以覆盖每个Mule应用程序的全局设置，甚至可以覆盖特定Mule应用程序中的每个流程。
+
+==== 为每个Mule应用程序配置全球跟踪
+
+跟踪配置级别在`mule-agent.yml`文件的`services/mule.agent.tracking.service`部分中设置。您可以手动编辑此部分以更改跟踪级别。
+
+全局配置影响Mule实例中的所有应用程序及其流程。
+
+以下是跟踪级别设置为`TRACKING`的配置示例。有关这些跟踪级别的更详细说明，请参阅上表。
+
+在`mule-agent.yml`：
+[source, yaml, linenums]
+----
+services:
+  mule.agent.tracking.service:
+    globalTrackingLevel: TRACKING
+----
+
+[NOTE]
+如果未指定`globalTrackingLevel`，则默认值为`NONE`。
+
+==== 配置每个穆勒应用程序的跟踪
+
+除了为每个应用程序设置默认全局跟踪级别之外，您还可以覆盖每个Mule应用程序的跟踪级别。
+
+有三个Mule应用程序级别跟踪区域：trackedLevel，replayLevel和trackedFlows。
+
+*trackingLevel*值指定了上表中描述的4个跟踪级别之一（NONE，BE，TRACKING，DEBUG）。此跟踪级别适用于Mule应用程序中的每个流程。
+
+*replayLevel*指定是否以及如何通过Mule应用程序的每个流程存储每条消息以便稍后重播。可能的值为：NONE，SOURCED或ALL。
+
+[%header%autowidth.spread]
+|===
+|重播关卡选项 | 说明
+|无 |  不存储与消息重播有关的任何数据，并禁用这些流的重播功能。
+| SOURCED  | 仅存储消息供以后重播，以供Mule应用程序中以消息源开头的每个流程重播。
+|全部 |  存储消息以便以后重播Mule应用程序中的每个流。
+|===
+
+在下面的示例中，应用程序`mule-flights`及其流程的跟踪级别设置为`TRACKING`，并且此Mule应用程序的消息重放功能被禁用。 `mule-flights`应用程序将向事件跟踪服务发送一些通知，但不会复制每个收到的消息，并且`mule-flights`应用程序中的任何流都不能从事件跟踪服务中重播。
+
+globalTrackingLevel也被设置为覆盖默认值NONE，所以其他Mule应用程序也将被跟踪，但仅在BE级别。
+
+在`mule-agent.yml`：
+[source, yaml, linenums]
+----
+mule.agent.tracking.service:
+  globalTrackingLevel: BE
+  trackedApplications:
+    - appName: mule-flights
+      trackingLevel: TRACKING
+      replayLevel: NONE
+----
+除了更改特定Mule应用程序的trackingLevel和replayLevel之外，您还可以通过添加`trackedFlows`值来更改列出的Mule应用程序内特定流程的这些设置。
+
+`trackedFlows`元素包含addtional元素，用于指定为特定流应跟踪的内容的粒度调整，以及任何消息重播的行为方式。配置流量时，这些设置会覆盖全局和Mule应用程序级别设置继承的设置。
+
+==== 为每个Mule应用程序的流程配置跟踪
+除了Mule应用程序级别trackingLevel和replayLevel设置，您还可以列出一个或多个流程并覆盖/自定义每个流程的全局和应用程序级别设置。
+
+跟踪流量选项在此表中描述：
+
+[%header%autowidth.spread]
+|===
+|追踪流量选项 | 描述
+|流名 |  流的名称，因为它在Mule应用程序的XML配置文件中编码。
+|跟踪级别 |  其中一个值为NONE，BE，TRACKING或DEBUG，如上表中所述。
+| replayLevel  |  其中一个值为NONE，SOURCED（如果流以消息源开始，则仅存储消息），ALL
+| payloadExcluded  |  如果replayLevel是SOURCED或ALL，则确定是否还存储消息有效负载以供以后重播，或仅存储消息元数据。
+|===
+
+以下是一个将一些流水平跟踪配置添加到以前的`mule-flights` Mule应用程序配置的示例。全局和Mule应用程序级别跟踪使用默认值（NONE）。
+
+在`mule-agent.yml`：
+[source, yaml, linenums]
+----
+services: 
+  mule.agent.tracking.service:
+    trackedApplications:
+      - appName: mule-flights
+        trackedFlows:
+          - flowName: purchaseFlight
+            trackingLevel: DEBUG
+            replayLevel: ALL
+----
+
+
+
+=== 设置复杂的跟踪配置
+
+在下面的示例中，跟踪级别和设置在所有3个级别被覆盖：全局，Mule应用程序和流量。
+
+globalTrackingLevel设置为`OFF`，这是默认值。您可以删除globalTrackingLevel行，并且不会更改Runtime Manager代理的配置。
+
+为`mule-flights`应用程序设置了 跟踪级别`TRACKING`，但为`purchaseFlight`设置了跟踪级别`DEBUG`，并且replayLevel设置为ALL。
+ 
+*  {应用{1}}：
+适用于应用程序的**  trackingLevel：`TRACKING`级别。
+应用的**  replayLevel：`OFF`  - 不要存储任何消息并禁用重播。
+*** 流`purchaseFlight`：
+****  trackingLevel：`DEBUG`级别（覆盖`TRACKING`级别）。
+****  replayLevel：`ALL`为此流程 - 保存每条消息以进行重播，即使流程没有消息源。
+*  {应用{1}}：
+**  trackingLevel：`BE `
+应用程序的**  replayLevel：`SOURCE`不会存储任何消息并禁用重播。
+*** 流`confirmReservation`：
+****  trackingLevel：`DEBUG`级别（覆盖`TRACKING`级别）。
+****  replayLevel：`ALL`为此流程 - 保存每条消息以进行重播，即使流程没有消息源。
+*  Mule实例中的所有其他应用程序及其流程：+
+**  trackingLevel：`OFF`（默认）
+
+在`mule-agent.yml`：
+[source, yaml, linenums]
+----
+services: 
+  mule.agent.tracking.service:
+    globalTrackingLevel: OFF
+    trackedApplications:     
+      - appName: mule-flights
+        trackingLevel: TRACKING
+        replayLevel: OFF
+        trackedFlows:
+          - flowName: purchaseFlight
+            trackingLevel: DEBUG
+            replayLevel: ALL
+      - flowName: help
+            trackingLevel: OFF
+            replayLevel: NONE
+     - appName: mule-ticketing
+        trackingLevel: BE
+        replayLevel: SOURCE
+        trackedFlows:
+          - flowName: confirmReservation
+            trackingLevel: DEBUG
+            replayLevel: ALL
+----
+
+=== 在运行时通过代理API进行配置
+
+代理API允许您在运行时更改代理跟踪配置。
+
+==== 检索当前配置
+
+下面的内容将检索有关跟踪服务的信息。检索到的信息包含可配置字段及其当前值。
+
+*Request:*
+----
+GET <Runtime Manager Agent URL>/mule/agent/mule.agent.tracking.service
+----
+
+*Response:*
+[source, json, linenums]
+----
+"configurableFields": [
+    {
+      "name": "globalTrackingLevel",
+      "valueType": "com.mulesoft.agent.services.tracking.TrackingLevel",
+      "value": "NONE",
+      "configurableType": "DYNAMIC",
+      "description": ""
+    },
+    {
+      "name": "trackedApplications",
+      "valueType": "[Lcom.mulesoft.agent.services.tracking.TrackedApplication;",
+      "value": [],
+      "configurableType": "DYNAMIC",
+      "description": ""
+    }
+  ],
+  "injectedHandlers": [
+    {
+      "name": "com.mulesoft.agent.handlers.internal.InternalTrackingNotificationHandler",
+      "path": "/mule/agent/tracking.notification.internal.message.handler/configuration",
+      "type": "class com.mulesoft.agent.domain.tracking.AgentTrackingNotification"
+    }
+  ],
+  "serviceHandlerTypes": [
+    "class com.mulesoft.agent.domain.tracking.AgentTrackingNotification"
+  ]
+}
+----
+
+==== 修改当前配置
+
+要在运行时修改当前配置，请发送具有所需配置的JSON表示的请求。该表示将覆盖当前配置。任何未包含在JSON表示中的字段都将保留其当前值。
+
+以下示例请求覆盖`globalTrackingLevel`和`trackedApplications`字段。所有其他字段保持不变。
+
+*Request:*
+[source, json, linenums]
+----
+PATCH <Runtime Manager Agent URL>/mule/agent/mule.agent.tracking.service HTTP/1.1
+
+{
+  "globalTrackingLevel": "BE",
+  "trackedApplications": [
+  {
+    "appName": "mule-flights",
+    "trackingLevel": "DEBUG",
+    "trackedFlows": [
+    {
+      "flowName": "purchaseFlight",
+      "trackingLevel": "TRACKING"
+    }
+    ]
+  }
+  ]
+}
+----
+
+*Response:*
+[source, json, linenums]
+----
+{
+  "configurableFields": [
+  {
+    "name": "globalTrackingLevel",
+    "valueType": "com.mulesoft.agent.services.tracking.TrackingLevel",
+    "value": "BE",
+    "configurableType": "DYNAMIC",
+    "description": ""
+    },
+    {
+      "name": "trackedApplications",
+      "valueType": "[Lcom.mulesoft.agent.services.tracking.TrackedApplication;",
+      "value": [
+      {
+        "appName": "mule-flights",
+        "trackingLevel": "DEBUG",
+        "trackedFlows": [
+        {
+          "flowName": "purchaseFlight",
+          "trackingLevel": "TRACKING"
+        }
+        ]
+      }
+      ],
+      "configurableType": "DYNAMIC",
+      "description": ""
+    }
+    ],
+    "injectedHandlers": [
+    {
+      "name": "com.mulesoft.agent.handlers.internal.InternalTrackingNotificationHandler",
+      "path": "/mule/agent/tracking.notification.internal.message.handler/configuration",
+      "type": "class com.mulesoft.agent.domain.tracking.AgentTrackingNotification"
+    }
+    ],
+    "serviceHandlerTypes": [
+    "class com.mulesoft.agent.domain.tracking.AgentTrackingNotification"
+    ]
+  }
+----

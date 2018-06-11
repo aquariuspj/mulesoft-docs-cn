@@ -1,0 +1,145 @@
+订单处理示例= 
+
+*_Enterprise Edition_*
+
+Mule Order Processing应用程序模拟电子商店的Web应用程序。客户可以通过Web界面下订单;应用程序会对这些订单进行分类，然后根据其分类进行处理。
+
+应用程序获取每个订单的价格，为订单的结果（成功或失败）设置状态，然后将结果合并到汇总回复中发回给客户。如果购买价格高于$ 5000，则应用程序在发送之前审核回复。
+
+== 假设
+
+本文档假定您熟悉Mule ESB。有关基本操作的概述，例如启动服务器和查找Mule文件，请参阅 link:/mule-management-console/v/3.3/quick-start-guide-to-mule-esb-server-and-the-management-console[Mule ESB服务器和管理控制台快速入门指南]。
+
+== 设置
+
+与此订单处理示例一样，您可以直接在*Mule Studio*或**Mule Standalone **（没有Studio的Mule ESB）中创建模板应用程序。您可以调整这些基于用例的模板的配置，以在Mule中创建您自己的自定义应用程序。
+
+按照以下步骤创建，然后在Mule ESB中运行Order Processing应用程序。
+
+. 完成示例和练习中的过程来创建，然后在Mule Studio中运行订单处理模板，或者在Mule Standalone（无Studio的Mule ESB）中执行订单处理示例。
+. 打开Web浏览器并导航到以下URL：http：// localhost：8090 / orders。请注意，有时AJAX服务器在启动时可能会延迟几秒钟。在浏览之前，请在控制台中检查以下输出：
++
+[source, code, linenums]
+----
+INFO  2012-06-12 22:33:01,285 [main] org.mule.lifecycle.AbstractLifecycleManager: Starting connector: ajaxServer
+INFO  2012-06-12 22:33:01,285 [main] org.mortbay.jetty: jetty-6.1.26
+INFO  2012-06-12 22:33:01,331 [main] org.mortbay.jetty: JSONCommented is deprecated
+INFO  2012-06-12 22:33:01,348 [main] org.mortbay.jetty: Started SelectChannelConnector@0.0.0.0:8090
+----
+
+浏览到应用程序的URL，您应该会看到以下页面：
+
+image:init.page.png[init.page]
+
+在您尝试下订单之前，请在Web浏览器中打开一个新窗口或选项卡，然后导航至以下URL：
+
+HTTP：//本地主机：8091 /填充/
+
+这会导致应用程序初始化本地数据库以存储您放置的订单。您的浏览器应显示一条消息：`db populated`。
+
+== 它是如何工作的
+
+Mule Order Processing应用程序公开了一个基于SOAP的Web服务，该服务接受订单请求并处理订单内请求的每个项目。如果请求的项目由三星制造，那么应用程序将该特定项目请求路由到由三星主持的基于外部SOAP的Web服务。应用程序将所有其他项目请求发送到<<inhouseOrder Flow>> link:/mule-user-guide/v/3.6/using-flows-for-service-orchestration[流]中定义的内部订单处理器。
+
+无论处理请求的人是谁，应用程序都会将请求的结果（成功或失败）与价格结合起来存储，该价格是从内部 link:/mule-user-guide/v/3.7/rest-component-reference[休息]完全Web服务中检索的。为了减少对此服务的调用并提高订单处理效率，应用程序会将订单的结果缓存一段时间。
+
+最后，订单处理应用程序将项目请求的结果合并为摘要回复，并发送回客户端。如果订单的总价格超过5000美元，“订单处理”在发送前审核回复。
+
+如果对三星Web服务的调用失败，应用程序不会重试调用服务，但会将订单的购买收据状态设置为`REJECTED`。
+
+应用程序将该网页的文件存储在`src/main/app/docroot/`中。此目录中的`index.html`文件包含使用 http://en.wikipedia.org/wiki/Remote_procedure_call[RPC]（通过`mule.rpc`）调用*orderService*流程的Submit按钮（`$(#submitButton)`）的点击处理程序。这是应用程序中的主要流程，在下一节中进行了解释。
+
+===  orderService流
+
+image:orderService.png[orderService]
+
+//查看XML
+
+订单服务流中的第一个构建块 link:/mule-user-guide/v/3.6/http-connector[HTTP入站端点]接收用户在应用程序所服务的网页中输入的订单。 link:/mule-user-guide/v/3.3/soap-component-reference[SOAP组件]将传入的XML转换为Web服务接口中引用的 http://en.wikipedia.org/wiki/JAXB[JAXB注释类]。流中的 link:/mule-user-guide/v/3.7/choice-flow-control-reference[选择流量控制]解析消息负载;如果负载将制造商定义为`Samsung`，则选择策略将消息路由到调用samsungOrder流的 link:/mule-user-guide/v/3.7/vm-transport-reference[VM出站端点]。如果有效负载将制造商定义为`Default`，则选择策略将消息路由到调用inhouseOrder流的VM出站端点。
+
+当samsungOrder流或inhouseOrder流回复时，orderService流将通过回复流提供的购买收据丰富项目。然后，orderService流程使用另一个VM出站端点异步地将丰富的消息分派到auditService流程。
+
+笔记：
+
+* 此流程使用 link:/mule-user-guide/v/3.3/session-variable-transformer-reference[会话变量变换器]以项目的价格初始化`totalValue`变量，以便auditService流程使用此值进行审计
+* 每次迭代用inhouseOrder或samsungOrder的结果替换有效负载变量。因此，为了在原始有效载荷进入循环之前获取原始有效载荷，我们使用特殊的for-each变量`rootMessage`：
++
+[source, code, linenums]
+----
+#[rootMessage.payload.orderItems[counter - 1].purchaseReceipt]
+----
+
+===  samsungOrder Flow
+
+image:samsungOrder_flow.png[samsungOrder_flow]
+
+//查看XML
+
+samsungOrder流将三星订单商品请求的处理委托给三星的基于SOAP的外部Web服务。
+
+第一个building block是一个 link:/mule-user-guide/v/3.7/vm-transport-reference[VM入站端点]，它为流提供来自orderService流的信息。第二个构建块 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[Anypoint DataMapper Transformer]将消息转换为适合samsungService流的消息。成功调用Samsung Web服务后， link:/mule-user-guide/v/3.3/session-variable-transformer-reference[会话变量变换器]会以三星返回的价格增加会话变量`totalValue`。然后，新的DataMapper构建块再次将响应转换为orderService流处理。如果发生错误，该流程将创建标记为`REJECTED`的购买收据。 VM出站端点将信息发送回orderService流。
+
+笔记：
+
+* 为了限制异常处理的范围，我们选择将此处理放在单独的流中而不是子流中（对于子流不可能有 link:/mule-user-guide/v/3.7/error-handling[例外策略]）
+* 如果HTTP响应代码不是200（成功），我们使用 link:/mule-user-guide/v/3.6/message-filter[消息过滤器]来引发异常。没有它，应用程序会认为任何HTTP响应都是成功的，包括诸如SOAP错误之类的错误
+
+===  inhouseOrder流程
+
+image:inhouseOrder_flow.png[inhouseOrder_flow]
+
+//查看XML
+
+inhouseOrder流程处理所有非三星物品的请求。
+
+此流程的消息来源是 link:/mule-user-guide/v/3.7/jms-transport-reference[JMS入站端点]。流程会立即初始化变量`Price`，然后为其分配由内部priceService流程返回的值。 inhouseOrder流然后将该值保存到公司数据库。会话变量`totalValue`保存此项目的总价格。流程中的最后一个构建块 link:/mule-user-guide/v/3.7/groovy-component-reference[Groovy组件]会创建一个包含相关信息的购买收据。
+
+笔记：
+
+* 这个流程是事务性的。如果在流程生命期间发生任何错误，它不能将数据保存在数据库中
+* 由于事务必须跨越JMS端点和JDBC端点，因此需要XA事务
+*  JMS端点配置为"ALWAYS-BEGIN"事务，JDBC端点配置为"ALWAYS-JOIN"
+* 回滚异常策略允许我们在发生错误时将消息重新插入JMS队列中
+*  `Redelivery exhausted`配置允许我们确定在重试次数达到 link:/mule-user-guide/v/3.7/rollback-exception-strategy[例外策略]的`maxRedeliveryAttempts`属性中指定的最大值时要执行的操作
+* 我们将priceService流返回的价格缓存在内存 link:/mule-user-guide/v/3.7/mule-object-stores[对象存储]中。商店的关键是要求的产品的ID。第一次出现给定产品ID时，`Enrich with price` link:/mule-user-guide/v/3.6/message-enricher[消息Enricher]调用priceService以获取产品的价格。之后，该流程使用产品的缓存值
+* 可以在缓存使用的对象存储上配置超时
+
+===  priceService流量
+
+image:priceService.png[priceService]
+
+//查看XML
+
+内部RESTful priceService流程返回非三星产品的价格。 HTTP入站端点消息源将请求传递给我们的Jersey后端REST消息处理器。
+
+需要注意的是 http://en.wikipedia.org/wiki/Java_API_for_RESTful_Web_Services[JAX-RS]注释的Java实现是实现您的Web服务的一种方式。整个流程可以用作Web服务的实现，无论它是RESTful还是基于SOAP。
+
+===  samsungService流
+
+image:samsungService.png[samsungService]
+
+//查看XML
+
+samsungService流程嘲笑所谓的外部三星Web服务。它来自HTTP入站端点，后面跟着一个配置为JAX-WS服务的SOAP组件。服务实施位于`Samsung Service Impl`， link:/mule-user-guide/v/3.6/java-transformer-reference[Java组件]。
+
+===  auditService流
+
+image:auditService.png[auditService]
+
+//查看XML
+
+auditService流程由orderService流程异步调用，用于审核项目请求，这些请求通过inhouseOrder流程和samsungOrder流程的响应进行了充实。由于VM入站端点和JDBC端点之间的不一致，auditService流的事务配置又是XA。
+
+笔记：
+
+* 流的来源是VM入站端点，与inhouseOrder流的JMS端点相反。原因是auditService流调用不需要是同步的，调用inhouseOrder的情况就是这样。所有事务流必须由Inbound Endpoint上的_one-way_交换模式启动，可以使用调用服务上的`request-response`交换模式进行定义
+* 为了确保可靠的消息传递（即，在处理由于错误而停止的情况下消息不会丢失），我们将我们的回滚异常策略与同级异常策略一起打包。这些都包含在一个选择异常策略中，该策略定义了要使用哪个策略（无论是回滚还是捕捉异常）。如果使用Catch Exception Strategy，则消息将丢失。在这种情况下，defaultErrorHandler子流将错误通过电子邮件发送给Operations
+
+
+===  databaseIntialisation流
+
+image:databaseInit.png[databaseInit]
+
+//查看XML
+
+databaseInitialisation流初始化本地数据库以存储您放置的任何订单。如设置和运行示例中所述，您可以通过将Web浏览器指向http：// localhost：8091 / populate /来调用此流程。第一次运行应用程序时调用此流程;在随后的运行中没有必要这样做。

@@ -1,0 +1,453 @@
+= 直到成功范围
+:keywords: anypoint studio, studio, mule, until successful, reattempts, retry
+
+*until-successful*作用域通过其处理器处理消息，直到过程成功。默认情况下，直到成功的处理与主流异步发生。在向成功范围传递消息后，主流立即重新获得线程的控制权。但是，您可以配置直到成功以相对于主流同步运行。
+
+直到成功反复重试以处理试图完成活动的消息，例如：
+
+* 例如，在调用可能存在可用性问题的远程Web服务时，调度到出站端点。
+* 执行组件方法，例如，在可能依赖不可靠资源的Spring bean上执行时。
+* 子流程执行，以保持重新执行多个动作，直到它们全部成功，
+* 任何其他消息处理器执行，以允许更复杂的情况。
+
+注：直到成功组件需要强制 link:/mule-user-guide/v/3.8/mule-object-stores[对象存储]才能工作。然而，Anypoint Studio不强制执行此操作。如果没有声明对象存储，Studio将引发InitialisationException。有关更多信息，请参阅<<Until-Successful and Object Store>>。对象存储需要是每个直到成功实例都是独占的。
+
+*See Also:*
+
+*  <<Example - Until-Successful Usage>>
+*  <<Example - Retry Sending to an HTTP-based Service>>
+*  <<Example - Retry Other Flows>>
+*  <<Example - Configure Object Stores>>
+
+== 成功与失败
+
+由于这个范围继续处理消息直到成功，因此理解Mule消息处理环境中的成功定义非常重要。
+
+[cols="30a,70a"]
+|===
+| FAILURE  |成功范围内的消息处理器将引发异常或包含异常有效内容。另外，如果在属性`failureExpression`中提供了一个表达式，并且它的计算结果为true。
+| SUCCESS  |成功范围内的任何消息处理器都不会抛出任何异常或包含异常有效负载，或者它们根本不返回任何消息（即流程以一个出站端点）。
+| _ conditional _  |在你配置了一个失败表达式的地方（见下面），Mule根据表达式计算返回消息，以动态确定动作是失败还是成功。
+|===
+
+=== 基本属性
+
+下表提供了该元素的主要可配置属性的说明：
+
+[%header,cols="30a,70a"]
+|===
+| {属性{1}}说明
+| `objectStore-ref`  |引用org.mule.api.store.ListableObjectStore，用于存储等待处理或重新处理的事件。
+| `maxRetries`  |指定尝试的最大重试次数。
+| `millisBetweenRetries`  |指定两次尝试处理之间的最小时间间隔，以毫秒为单位。实际时间间隔取决于以前的执行情况，但不应超过此数字的两倍。默认值是60000毫秒（一分钟）。
+| `failureExpression`  |指定一个表达式，当它评估为true时，确定一个路由的处理是失败的。如果没有提供表达式，则只有异常被视为处理失败。
+| `ackExpression`  |指定一个表达式，当其计算为true时，将确定until-successful的同步响应。
+| `deadLetterQueue-ref`  |在所有重试执行失败后，发送无法传送的消息的端点或消息处理器都将失败。有关更多信息，请参阅<<Configuring a Dead Letter Queue>>。
+|===
+
+=== 配置failureExpression
+
+如果范围失败，则创建`RetryPolicyExhaustedException`，并将其打包为`MessagingException`并传递给包含`until-successful`元素的流的异常处理程序。
+
+以下说明如何配置直到成功范围返回的`failureExpression`：
+
+[source, xml, linenums]
+----
+<until-successful objectStore-ref="objectStore"
+   failureExpression="#[message.inboundProperties['http.status'] != 202]"
+   maxRetries="6" secondsBetweenRetries="600">
+   <http:request config-ref="HTTP_Request_Configuration" path="flakey"
+     method="POST" doc:name="HTTP"/>
+</until-successful>
+----
+
+=== 当所有Else失败时
+
+如果消息处理失败并且超过最大重试次数，则直到成功的消息处理器的默认行为包括记录消息详细信息并将其删除。
+
+如果您希望对丢弃的消息执行特定的操作（例如，将其存储在文件或数据库中），则可以配置“死信队列”端点“丢弃消息的发送位置。
+
+有关更多信息，请参阅<<Configuring a Dead Letter Queue>>。
+
+=== 配置死信队列
+
+要管理在成功范围内已经用完`maxRetries`数量的消息，您可以定义Mule可以发送此类消息的DLQ（死信队列）端点。以下代码示例显示了如何使用VM端点接收已丢弃的消息。
+
+[source, xml, linenums]
+----
+<vm:endpoint name="dlqChannel" path="dlq" />
+
+<until-successful objectStore-ref="objectStore"
+                  dlqEndpoint-ref="dlqChannel"
+                  maxRetries="3"
+                  secondsBetweenRetries="10">
+...
+</until-successful>
+----
+
+配置DLQ的一个常见选项是做一个全局端点：
+
+[source,xml,linenums]
+----
+<vm:inbound-endpoint exchange-pattern="one-way" path="dlqChannel" name="dlqChannel" doc:name="dlqChannel"/>
+----
+
+然后有一个流程：
+
+[source,xml,linenums]
+----
+<flow name="dead-letter-queue-testFlow2" doc:name="dead-letter-queue-testFlow2">
+<vm:inbound-endpoint exchange-pattern="one-way" ref="dlqChannel" doc:name="VM"/>
+<logger level="WARN" doc:name="logger"/>
+</flow>
+----
+
+因此，直到成功的`deadLetterQueue-ref="dlqChannel"`指的是全局端点。
+
+== 异步直至成功
+
+默认情况下，直到成功进程相对于其所在的主流异步消息。以下部分描述了您可以在异步直到成功后自定义的配置。
+
+=== 直到成功和对象存储
+
+此消息处理器需要一个`ListableObjectStore`实例才能保留待处理（重新）处理的消息。有关`ListableObjectStore`的示例，请参见xref：xmlexample [XML示例]。
+
+Mule中有几种可用的实现方式，包括：
+
+*  `DefaultInMemoryObjectStore`  - 默认的内存中存储
+*  `DefaultPersistentObjectStore`  - 默认持久存储
+*  `FileObjectStore`  - 基于文件的商店
+*  `QueuePersistenceObjectStore`  - 全局队列存储
+*  `SimpleMemoryObjectStore`  - 内存中的商店
+
+有关Mule中对象商店的更多信息，请参阅 link:/mule-user-guide/v/3.8/mule-object-stores[骡子对象商店]。以下代码示例说明如何配置内存存储：
+
+[source, xml]
+----
+<spring:bean id="objectStore" class="org.mule.util.store.SimpleMemoryObjectStore" />
+----
+
+=== 定制异步直到成功的线程配置文件
+
+此功能使您可以自定义异步成功范围的线程配置文件。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+*Note*: For an example of using *Until-Successful* in Anypoint Studio see the xref:xmlexample[XML Example] and the canvas flow thereafter.
+
+To customize the threading profile:
+
+. In the *Properties Editor* of the *Until Successful Scope* in your flow, click to access the *Threading* tab.
+. Click to select the *Configure threading profile* radio button.
+. Enter values in the threading profile fields to customize the threading behavior. In this example, *Pool Exhausted Action* is set to WAIT and all other fields are left empty:
++
+image:configure_threading.png[Configure Threading Profile]
++
+[%header,cols="30a,70a"]
+|===
+|Attribute |Description
+|*Max Buffer Size* |Determines how many requests are queued when the pool is at maximum usage capacity and the pool exhausted action is WAIT. The buffer is used as an overflow.
+
+*Type*: Integer +
+*Required*: No
+|*Max Active Threads* |The maximum number of threads to use.
+
+*Type*: Integer +
+*Required*: No
+|*Max Idle Threads* |he maximum number of idle or inactive threads that can be in the pool before they are destroyed.
+
+*Type*: Integer +
+*Required*: No
+|*Pool Exhausted Action* |When the maximum pool size or queue size is bounded, this value determines how to handle incoming tasks.
+
+Possible values are:
+
+* WAIT - Wait until a thread becomes available; don't use this value if the minimum number of threads is zero, in which case a thread may never become available.
+* DISCARD - Throw away the current request and return.
+* DISCARD_OLDEST - Throw away the oldest request and return.
+* ABORT - Throw a RuntimeException.
+* RUN - (Default). The thread that makes an execute request runs the task itself, which helps guard against lockup.
+
+*Type*: String +
+*Required*: No
+|*Thread TTL* |Determines how long an inactive thread is kept in the pool before being discarded.
+
+*Type*: Integer +
+*Required*: No
+|*Thread Wait Timeout* |How long to wait in milliseconds when the pool exhausted action is WAIT. If the value is negative, it waits indefinitely.
+
+*Type*: Integer +
+*Required*: No
+|===
++
+*Notes:*
++
+* Any `BlockingQueue` may be used to transfer and hold submitted tasks. The use of this queue interacts with pool sizing:
+** If fewer than `corePoolSize` threads are running, the Executor always prefers adding a new thread rather than queuing.
+** If `corePoolSize` or more threads are running, the Executor always prefers queuing a request rather than adding a new thread.*
+** If a request cannot be queued, a new thread is created unless this would exceed `maximumPoolSize`, in which case, the task is rejected.
+* If you configure a threading profile with `poolExhaustedAction=WAIT` and a `maxBufferSize` of a positive value, the thread pool does not grow from `maxThreadsIdle (corePoolSize)` towards `maxThreadsActive (maxPoolSize)` _unless_ the queue is completely filled up.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+To the until-successful element, add child element `threading-profile`. Configure the attributes of the child element according to the table below.
+
+[source, xml, linenums]
+----
+<until-successful>
+     <threading-profile maxThreadsActive="1" maxThreadsIdle="1" poolExhaustedAction="RUN"/>
+     <set-payload/>
+<until-successful>
+----
+
+[%header,cols="30a,70a"]
+|===
+|Attribute |Description
+|*maxBufferSize* |Determines how many requests are queued when the pool is at maximum usage capacity and the pool exhausted action is WAIT. The buffer is used as an overflow.
+
+*Type*: Integer +
+*Required*: No
+|*maxThreadsActive* |The maximum number of threads to use.
+
+*Type*: Integer +
+*Required*: No
+|*maxThreadsIdle* |The maximum number of idle or inactive threads that can be in the pool before they are destroyed.
+
+*Type*: Integer +
+*Required*: No
+|*poolExhaustedAction* |When the maximum pool size or queue size is bounded, this value determines how to handle incoming tasks.
+
+Possible values are:
+
+* WAIT - Wait until a thread becomes available; don't use this value if the minimum number of threads is zero, in which case a thread may never become available.
+* DISCARD - Throw away the current request and return.
+* DISCARD_OLDEST - Throw away the oldest request and return.
+* ABORT - Throw a RuntimeException.
+* RUN - (Default). The thread making the execute request runs the task itself, which helps guard against lockup.
+
+*Type*: String +
+*Required*: No
+|*threadTTL* |Determines how long an inactive thread is kept in the pool before being discarded.
+
+*Type*: Integer +
+*Required*: No
+|*threadWaitTimeout* |How long to wait in milliseconds when the pool exhausted action is WAIT. If the value is negative, it waits indefinitely.
+
+*Type*: Integer +
+*Required*: No
+|===
++
+*Notes*:
+*
+* Any `BlockingQueue` may be used to transfer and hold submitted tasks. The use of this queue interacts with pool sizing:
+** If fewer than `corePoolSize` threads are running, the Executor always prefers adding a new thread rather than queuing.
+** *If `corePoolSize` or more threads are running, the Executor always prefers queuing a request rather than adding a new thread.*
+** If a request cannot be queued, a new thread is created unless this would exceed `maximumPoolSize`, in which case, the task is rejected.
+* If you configure a threading profile with `poolExhaustedAction=WAIT` and a `maxBufferSize` of a positive value, the thread pool does not grow from `maxThreadsIdle (corePoolSize)` towards `maxThreadsActive (maxPoolSize)` _unless_ the queue is completely filled up.
+
+....
+------
+
+== 同步直到成功
+
+开箱即用，Until-Successful Scope异步处理消息。在向成功范围传递消息后，主流会立即重新控制该线程，从而禁止从范围内发生的处理活动返回的任何响应。
+
+但是，在某些情况下，您可能需要等到成功才能同步处理消息，以便主流在继续处理之前等待范围内的处理完成。为了满足这些需求，Mule使您能够配置示波器同步处理消息。
+
+当设置为同步处理消息时，直到成功在主流的线程内执行，然后在同一个线程上返回结果作用域的处理。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+In the *Threading* tab of the Until Successful's *Properties Editor*, click to select *Synchronous*.
+
+image:until_successful.png[image]
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+To the until-successful element, add the `synchronous` attribute with the value set to `true`.
+
+[source, xml, linenums]
+----
+<until-successful synchronous="true">
+     <set-payload/>
+</until-successful>
+----
+
+....
+------
+
+设置为同步处理时，成功范围不会接受以下子元素和属性的配置：
+
+*  `threading-profile`  - 同步直到成功不需要ThreadPool。
+*  `objectStore-ref`  - 同步直到成功不需要在重试之间持续消息。
+*  `deadLetterQueue-ref`  - 当重试计数耗尽时，Mule执行异常策略。
+
+== 示例 - 直至成功使用
+
+[source, xml, linenums]
+----
+<until-successful objectStore-ref="objectStore" maxRetries="5" secondsBetweenRetries="60" doc:name="Until Successful">
+    <http:request config-ref="HTTP_Request_Configuration" path="submit" method="POST" doc:name="HTTP"/>
+</until-successful>
+----
+
+== 示例 - 重试发送到基于HTTP的服务
+
+此示例演示如何重试发送到基于HTTP的服务，直到成功：
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans
+	http://www.springframework.org/schema/beans/spring-beans-current.xsd
+	http://www.mulesoft.org/schema/mule/core
+	http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+	http://www.mulesoft.org/schema/mule/http
+	http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+	http://www.mulesoft.org/schema/mule/ee/tracking
+	http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+	http://www.mulesoft.org/schema/mule/vm
+	http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+    <http:request-config name="HTTP_Request_Configuration"
+    	host="http://acme.com/api/flakey" port="8082"
+    	doc:name="HTTP Request Configuration"/>
+    <spring:bean id="objectStore"
+    	class="org.mule.util.store.SimpleMemoryObjectStore" />
+    <flow name="retrying-http-bridge">
+        <vm:inbound-endpoint exchange-pattern="one-way"
+        	path="acme-bridge" doc:name="VM"/>
+        <until-successful objectStore-ref="objectStore" maxRetries="5"
+        	failureExpression="#[header:INBOUND:http.status != 202]"
+        	doc:name="Until Successful">
+            <http:request config-ref="HTTP_Request_Configuration"
+            	path="/" method="POST" doc:name="HTTP"/>
+        </until-successful>
+    </flow>
+</mule>
+----
+
+直到成功的消息处理器依赖Mule ObjectStore来保存它处理的事件。在本例中，我们使用内存中的实现：为了确保在重新启动或崩溃的情况下不会丢失任何东西，需要持久化实现。
+
+此示例每10分钟重试一个小时。之后，该消息被丢弃。
+
+本示例与出站HTTP端点同步交互（请求 - 响应），以确保远程Web服务正确接受POST消息（即它使用202状态码进行回复）。
+
+== 示例 - 重试其他流程
+
+以下示例显示可以以相同方式重试其他流：
+
+[source,xml,linenums]
+----
+<flow name="subflow-retrier">
+    <vm:inbound-endpoint path="signup"
+        exchange-pattern="request-response"/>
+    <until-successful objectStore-ref="objectStore"
+        ackExpression="#[message:correlationId]"
+        maxRetries="3"
+        secondsBetweenRetries="10">
+        <flow-ref name="signup-flow" />
+    </until-successful>
+</flow>
+----
+
+注意Until Successful消息处理器如何配置为通过返回当前消息关联ID来同步确认它已接受处理的入站事件。发送到“注册”VM端点因此返回消息的相关ID，其消息由名为“注册流程”的子流程进行尝试（并重试）。
+
+[[xmlexample]]
+== 示例 - 配置对象存储
+
+以下示例演示了如何在以下三种情况下配置对象存储：
+
+带有内存对象存储的.  link:/mule-user-guide/v/3.8/idempotent-filter[幂等过滤器]
+具有持久对象存储的. 幂等过滤器
+. 直到使用内存中的对象存储区成功执行作用域为止
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd"> 
+ 
+<!-- Global object store definition for a Listable Object Store, used in Flow 3 below. -->
+ 
+    <spring:beans>
+        <spring:bean id="myListableObjectStore" class="org.mule.util.store.SimpleMemoryObjectStore"/>
+    </spring:beans>
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+ 
+<!--  Idempotent Filter with In Memory Object Store -->
+ 
+    <flow name="Flow1_idempotentWithInMemoryStore" doc:name="Flow1_idempotentWithInMemoryStore">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="idempotentInMemory" doc:name="HTTP"/>
+        <idempotent-message-filter idExpression="#[message.payload]" throwOnUnaccepted="true" storePrefix="Idempotent_Message" doc:name="Idempotent Message">
+            <in-memory-store name="myInMemoryObjectStore" entryTTL="120" expirationInterval="3600" maxEntries="60000" />
+        </idempotent-message-filter>
+        <set-payload value="YAY!" doc:name="Set Payload" />
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload value="NAY!" doc:name="Set Payload" />
+        </catch-exception-strategy>
+    </flow>
+
+<!--  Idempotent Filter with Persistent File Store -->
+ 
+    <flow name="Flow2_idempotentWithTextFileStore" doc:name="Flow2_idempotentWithTextFileStore">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="idempotentTextFile" doc:name="HTTP"/>
+        <idempotent-message-filter idExpression="#[message.payload]" throwOnUnaccepted="true" storePrefix="Idempotent_Message" doc:name="Idempotent Message">
+            <simple-text-file-store name="mySimpleTextFileStore"                directory="#[server.tmpDir + '/objectstore']" entryTTL="120" expirationInterval="3600" maxEntries="60000" />
+        </idempotent-message-filter>
+        <set-payload value="YAY!" doc:name="Set Payload" />
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-payload value="NAY!" doc:name="Set Payload" />
+        </catch-exception-strategy>
+    </flow>
+
+<!--  Until Successful Scope with In Memory Object Store -->
+ 
+    <flow name="Flow3_UntilSuccessfulWithListableObjectStore" doc:name="UntilSuccessfulWithListableObjectStore">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="hey" doc:name="HTTP"/>
+        <until-successful objectStore-ref="myListableObjectStore" maxRetries="15" secondsBetweenRetries="1" doc:name="Until Successful">
+            <processor-chain doc:name="Processor Chain">
+                <message-filter throwOnUnaccepted="true">
+                    <expression-filter expression="return Math.random() &lt; 0.1" doc:name="Expression" />
+                </message-filter>
+                <logger message="This eventually happens." doc:name="Logger" />
+            </processor-chain>
+        </until-successful>
+        <set-payload value="Completed" doc:name="Set Payload" />
+    </flow>
+ 
+</mule>
+----
+
+此示例的Anypoint Studio画布流：
+
+image:until-successful-xml-example-pt1.png[直到成功的-XML的例子，PT1]
+
+image:until-successful-xml-example-pt2.png[直到成功的-XML的例子，PT2]
+
+== 另请参阅
+
+* 详细了解Mule中的 link:/mule-user-guide/v/3.8/tuning-performance[调整性能]。
+* 了解有关Mule中 link:/mule-user-guide/v/3.8/scopes[领域]的更多信息。
+* 详细了解 link:/mule-user-guide/v/3.8/flows-and-subflows[流量和子流量]
+
+
+
+

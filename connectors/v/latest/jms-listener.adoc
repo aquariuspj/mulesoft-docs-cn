@@ -1,0 +1,98 @@
+= 收听新消息
+:keywords: jms, connector, consume, message, source, listener
+：TOC：
+：TOC标题：
+
+JMS连接器中的侦听器源提供了在消息到达目标时使用消息的功能。
+
+== 收听新邮件
+侦听来自Queue的新消息的语法是：
+
+[source, xml, linenums]
+----
+<jms:listener config-ref="config" destination="#[vars.destination]"/>
+----
+
+上面的源代码将监听目标所标识的队列中的新消息，每当JMS消息在队列中可用时返回`MuleMessage`。
+
+_MuleMessage_将具有：
+
+* 邮件的内容为有效内容。
+* 消息的消息属性中的元数据。
+
+默认情况下，只有在接收消息的流的执行成功完成时才会确认消息消息。
+相反，如果在流程执行期间发生错误，则会话将被恢复并且消息将被重新递送。
+
+有关消息确认的更多信息，请查看 link:jms-ack[如何处理消息确认]。
+
+
+== 配置消息吞吐量
+
+当需要额外的处理能力时，JMS Listener允许您配置给定侦听器将用来同时使用消息的`numberOfConsumers`。
+默认情况下，每个侦听器将使用四个将同时产生消息的使用者。由于每个消费者都会等待消息被处理，这意味着您最多可以同时在飞行中拥有四条消息。
+如果您需要增加并发消息处理，只需增加监听器中的`numberOfConsumers`。
+
+== 过滤传入消息
+
+JMS连接器完全支持基于标准JMS `selector`语言筛选应消费哪些消息。
+
+例如，如果您的消息优先队列需要比其他消息更快处理，我们可以这样做：
+
+[source, xml, linenums]
+----
+<flow name="consumer">
+    <jms:listener config-ref="JMS_config" destination="openTickets" selector="JMSPriority=8"/>
+</flow>
+----
+
+如果配置了选择器，则只会接收与其匹配的消息，而忽略目标中是否有其他消息。
+
+==  MIME类型和编码
+
+JMS连接器尽力根据`MM_MESSAGE_CONTENT_TYPE`属性自动确定消息的MIME类型（`contentType`）。但是，有些情况下最好的猜测还不够，而且您需要第一手了解Message的内容。在这种情况下，您可以使用`inboundContentType`参数将该内容类型强制为特定值。
+
+相同的过程适用于编码。默认情况下，如果没有提供其他信息，连接器将假定运行时的默认编码与Message中的编码相匹配。您可以使用`inboundEncoding`参数进行设置。
+
+
+== 回复接收邮件
+
+当包含JMS消息的JMS消息声明REPLY_TO目标时，JMS Listener将自动生成响应*when the Message is processed successfully*，这意味着流执行期间不会发生错误。
+在这种情况下，当流程完成时，响应将发布到经过处理的Message头中指定的目的地。
+
+响应可以在Listener中使用以下语法进行配置：
+
+[source, xml, linenums]
+----
+<jms:listener config-ref="config" destination="#[vars.destination]">
+  <jms:response priority="8" persistentDelivery="true">
+      <jms:body>#['Message received was: ' ++ payload]</jms:body>
+      <jms:properties>#[{'processedAt': now}]</jms:properties>
+  </jms:response>
+</jms:listener>
+----
+
+通过此响应构建器，您不仅可以配置响应消息的`body`和`properties`，还可以指定任何标题，如`priority`和`persistentDelivery`。
+所有这些配置都会影响出站消息，并且可以在处理完成时使用流程中可用的所有信息进行构建。
+
+== 使用主题订阅收听消息
+
+监听来自Topic目标的消息与从Queue监听消息非常相似，但具有可以使用Topic预订在消费者之间共享状态的额外功能。
+订阅主题的语法是：
+
+[source, xml, linenums]
+----
+<jms:listener config-ref="JMS_config" destination="#[vars.destination]">
+    <jms:consumer-type>
+        <jms:topic-consumer/>
+    </jms:consumer-type>
+</jms:listener>
+----
+
+所有`listener`参数保持不变，但现在您可以在`topic-consumer`参数中处理订阅配置。
+
+有关如何配置主题订阅的详细信息，请转到 link:jms-topic-subscription[使用主题订阅]。
+
+== 另请参阅
+
+*  link:jms-consume[消费消息]
+*  link:jms-topic-subscription[使用主题订阅]

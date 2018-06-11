@@ -1,0 +1,218 @@
+= 输入元数据
+:keywords: mule, sdk, metadata, datasense, input, type
+
+我们将输入元数据称为组件参数的类型分辨率。
+每个参数都可以提供静态或动态元数据，从哪种类型的元数据中分离出来
+做相同的组件的其他参数公开。
+只有操作可以具有动态元数据的参数，
+而来源，配置和连接将始终具有其参数的静态元数据。
+
+== 声明一个InputTypeResolver
+
+`InputTypeResolver`实现处理解析基于`MetadataType`的请求
+关于`MetadataContext`提供的信息，最重要的是，使用`MetadataKey`
+以确定哪些是应用开发者所需的`MetadataType`。
+
+[source, java, linenums]
+----
+public class InputEntityResolver implements InputTypeResolver<String> {
+
+  @Override
+  public String getCategoryName() {
+    return "DocEntities";
+  }
+
+  @Override
+  public MetadataType getInputMetadata(MetadataContext context, String key)
+      throws MetadataResolvingException, ConnectionException {
+
+      final ObjectTypeBuilder objectBuilder = context.getTypeBuilder().objectType();
+
+      switch (key) {
+        case "Author_id":
+          objectBuilder.addField().key("name").value().numberType();
+          objectBuilder.addField().key("lastName").value().stringType();
+          break;
+        case "BookList_id":
+          objectBuilder.addField().key("genre").value().stringType();
+          objectBuilder.addField().key("bookIds").value().arrayType().of().stringType();
+          break;
+        case "Book_id":
+          objectBuilder.addField().key("title").value().stringType();
+          objectBuilder.addField().key("ISBN").value().numberType();
+          break;
+        default:
+          throw new MetadataResolvingException("Unknown key:" + key, INVALID_METADATA_KEY);
+      }
+
+      return objectBuilder.build();
+  }
+
+}
+----
+
+在上面的示例中，我们仅使用`MetadataContext`来获取`typeBuilder`，
+但我们也可以使用提供的配置和连接元素。
+例如，我们可以使用Connection从外部服务获取元数据，
+或像架构一样访问Configuration中存在的静态资源。
+
+== 使用InputTypeResolver
+
+既然我们有`TypesKeysResolver`和`InputTypeResolver`，我们可以添加输入
+DataSense支持我们的运营和资源。
+与`TypesKeysResolver`一起使用`InputTypeResolver`的主要限制是两者
+必须属于相同的`category`，因此我们可以保证由{}提供的`MetadataKey`
+`TypesKeysResolver`可以通过`InputTypeResolver`解析为`MetadataType`：
+
+[source, java, linenums]
+----
+public class DemoOperation {
+
+  public void create(@Connection MyConnection connection,
+                     @MetadataKeyId(EntityKeysResolver.class) String type,
+                     @TypeResolver(InputEntityResolver.class) Map<String, Object> entity){
+
+    // Code that handles the creation based on the "type" of the "entity"
+    if ("Account_id".equals(type)){
+      //...
+    } else {
+      //...
+    }
+  }
+
+}
+----
+
+每个参数可以有自己的`TypeResolver`，每个参数使用任何`InputEntityResolver`。这意味着
+两者都可以具有相同的解析器，从而为两个参数或使用描述相同的MetadataType
+相同的`MetadataKeyId`来描述两个不同的`MetadataType`，每个参数一个。
+
+例如，我们可以使用相同的解析器对两个参数进行实体合并：
+
+
+[source, java, linenums]
+----
+  public void merge(@MetadataKeyId(EntityKeysResolver.class) String type,
+                    @TypeResolver(InputEntityResolver.class) Map<String, Object> first,
+                    @TypeResolver(InputEntityResolver.class) Map<String, Object> second){
+
+    // Code that handles the merge based on the "type" of the "entity"
+    if ("BookList_id".equals(type)){
+      ((List)first.get("bookIds")).addAll((List) second.get("bookIds"));
+    } else {
+      //...
+    }
+  }
+----
+
+或者我们需要为每个实体定义两个不同的`MetadataType`，
+但始终绑定到相同的`MetadataKeyId`（仅解析一次），并且，
+再次，所有属于相同的`category`：
+
+[source, java, linenums]
+----
+  public void crete(@MetadataKeyId(EntityKeysResolver.class) String type,
+                    @TypeResolver(ItemTypeResolver.class) Map<String, Object> item,
+                    @TypeResolver(ContainerTypeResolver.class) Map<String, Object> container){
+
+    // Code that handles the item based on the "type" of the "entity"
+    if ("developer".equals(type)){
+      createDeveloperInTeam(item, container);
+    } else {
+      //...
+    }
+  }
+----
+
+== 用用户定义的MetadataKey输入元数据
+
+在上一节中，我们看到当`MetadataKeyId`参数未声明a时
+`TypeKeysResolver`，那么在配置该应用程序时，应用程序开发人员可以定义任何键
+操作。
+
+下面是如何在没有`TypeKeysResolver`的情况下使用`MetadataKeyId`的简化示例，
+并且为该参数配置的值用于解析输入MetadataType
+数据库连接器中的`queryParameters`：
+
+[source, java, linenums]
+----
+  public List<Map<String, Object>> select(@MetadataKeyId String sql,
+                                          @TypeResolver(DbInputMetadataResolver.class) Map<String, Object> queryParameters,
+                                          @Config DbConnector connector){
+    //...
+  }
+----
+
+[source, java, linenums]
+----
+public class DbInputMetadataResolver implements InputTypeResolver<String> {
+
+  @Override
+  public String getCategoryName() {
+    return "DbCategory";
+  }
+
+  @Override
+  public MetadataType getInputMetadata(MetadataContext context, String query)
+      throws MetadataResolvingException, ConnectionException {
+
+    // The MetadataKey is the `query` parameter, we have to parse it to resolve
+    // all the Metadata of its parameters
+    QueryTemplate queryTemplate = parseQuery(query);
+    List<InputQueryParam> inputParams = queryTemplate.getInputParams();
+
+    if (inputParams.size() == 0) {
+      // No input metadata when no input parameters
+      return context.getTypeBuilder().nullType().build();
+    }
+
+    PreparedStatement statement = getStatement(context, queryTemplate);
+    return getInputMetadataUsingStatementMetadata(statement, inputParams);
+  }
+}
+----
+
+== 解决没有MetadataKey的动态输入元数据
+
+很多时候，我们没有多个实体的结构是未知的，但只有一个，
+它具有动态的MetadataType，具体取决于应用程序的凭据
+开发人员正在使用它连接到它的沙箱。在这种情况下，不同的账户可能会有所不同
+相同`Organization`实体的属性。
+
+为了声明`KeyLess` InputMetadata分辨率，请跳过`MetadataKeyId`参数
+并使用`TypeResolver`而不依赖于`MetadataKey`：
+
+[source, java, linenums]
+----
+  public void createOrg(@TypeResolver(OrganizationTypeResolver.class) Map<String, Object> organization){
+    //...
+  }
+----
+
+[source, java, linenums]
+----
+public class OrganizationTypeResolver implements InputTypeResolver {
+
+  @Override
+  public String getCategoryName() {
+    return "Organization";
+  }
+
+  @Override
+  public MetadataType getInputMetadata(MetadataContext context, Object key)
+      throws MetadataResolvingException, ConnectionException {
+
+    // The `key` parameter will be `null` if the fetch is performed
+    // as a `KeyLess` Metadata resolution. We'll just ignore it.
+
+    DemoConnection connection = context.<DemoConnection>getConnection()
+        .orElseThrow(() -> new MetadataResolvingException("A connection is required to resolve Metadata but none was provided",
+                                                          FailureCode.INVALID_CONFIGURATION));
+
+    String schema = connection.getClient().describeOrganization();
+    return new JsonTypeLoader(schema).load("http://demo.org")
+            .orElseThrow(() -> new MetadataResolvingException("No Metadata is available for the Organization",
+                                                              FailureCode.NO_DYNAMIC_TYPE_AVAILABLE));
+  }
+}
+----

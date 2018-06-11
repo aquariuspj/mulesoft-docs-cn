@@ -1,0 +1,417 @@
+=  FTP传输参考
+
+== 介绍
+
+FTP传输允许将文件传输协议集成到Mule中。 Mule可以轮询远程FTP服务器目录，检索文件并将它们处理为Mule消息。消息也可以作为文件上传到远程FTP服务器上的目录。
+
+Mule还支持用于安全文件传输的SFTP协议。从Mule 3开始，[SFTP Transport]包含在Mule发行版中。
+
+== 命名空间和语法
+
+命名空间（社区版）：
+
+[source]
+----
+http://www.mulesoft.org/schema/mule/ftp
+----
+
+XML模式位置（社区版）
+
+[source]
+----
+http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd
+----
+
+命名空间（企业版）
+
+[source]
+----
+http://www.mulesoft.org/schema/mule/ee/ftp
+----
+
+XML模式位置（企业版）
+
+[source]
+----
+http://www.mulesoft.org/schema/mule/ee/ftp/3.2/mule-ftp-ee.xsd
+----
+
+句法
+
+直线URI示例：ftp：// theUser：secret @ theHost：port / path
+
+XML版本`<ftp:endpoint host="theHost" port="22" path="/path" user="theUser" password="secret"/>`
+
+
+[TIP]
+*Escape Your Credentials*
+ +
+如果您使用URI风格的端点并且包含用户名和密码，请转义任何对URI不合法的字符。只允许使用字母，数字，"-"，"_"，"."和"+"。例如，如果用户名是`user@myco.com`，则应将其输入为`user%40myco.com`。
+
+连接器和端点语法`<ftp:connector name="ftpConnector" passive="true" binary="true" streaming="true"/>`
+
+== 注意事项
+
+=== 特点
+
+* 轮询远程FTP服务器上的目录以查找新文件
+* 检索文件的FTP服务器
+* 传输二进制或文本文件
+* 根据文件名通配符过滤端点上的文件
+* 基于Mule表达式过滤端点上的文件
+* 将文件上传并存储在FTP服务器上
+* 根据Mule表达式重命名输出文件
+* 流式传输大文件
+* 支持 link:/mule-user-guide/v/3.2/configuring-reconnection-strategies[重新连接策略]
+
+Mule企业版包括几个额外的功能，允许过滤文件以按文件时间进行处理，并在处理后在源FTP服务器上移动和重命名文件。
+
+== 用法
+
+每个端点至少包含FTP连接的所有信息，即主机，端口，路径，用户名和密码。可以在连接器上指定其他属性（如二进制或被动），并在端点级别上进行覆盖。
+
+FTP传输器定期轮询FTP服务器。在每个轮询请求后，打开一个到FTP服务器的新连接，指定的用户登录并且所有文件都列在指定的路径下。这意味着如果FTP服务器停机，则不需要做特别的规定 - 当前轮询尝试失败，但轮询不会停止。
+
+如果配置了 link:/mule-user-guide/v/3.2/configuring-reconnection-strategies[重新连接策略]，则可以根据您配置的策略，由Mule自动重新建立FTP连接。
+
+FTP传输不支持事务，因为文件传输协议本身不是事务性的。相反，您应该使用Mule中的异常策略将补偿事务设计到您的架构中。
+
+== 示例配置
+
+[tabs]
+------
+[tab,title="Mule Flow"]
+....
+[%header,cols="1*a"]
+|===
+^|Downloading Files from FTP Using a Flow
+|
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+
+    <flow name="ftp2file">
+        <ftp:inbound-endpoint host="localhost" port="21" path="/" user="theUser" password="secret"/>
+        <file:outbound-endpoint path="/some/directory" outputPattern="#[header:originalFilename]"/>
+    </flow>
+</mule>
+----
+|===
+....
+[tab,title="Mule Service"]
+....
+[%header,cols="1*a"]
+|===
+^|Downloading Files from FTP Using a Service
+|
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+
+    <model name="example">
+        <service name="ftp2file">
+            <inbound>
+                <ftp:inbound-endpoint host="localhost" port="21" path="/" user="theUser" password="secret"/>
+            </inbound>
+            <outbound>
+                <pass-through-router>
+                    <file:outbound-endpoint path="/some/directory" outputPattern="#[header:originalFilename]"/>
+                </pass-through-router>
+            </outbound>
+        </service>
+    </model>
+</mule>
+----
+|===
+....
+------
+
+这个例子显示了一个简单的流程，用于获取FTP服务器上的所有可用文件（在其根目录中）并将它们存储到本地文件系统的目录中。
+
+[tabs]
+------
+[tab,title="Mule Flow"]
+....
+[%header,cols="1*a"]
+|===
+^|Filtering filenames using a Flow
+|
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+
+    <flow name="fileFilter">
+        <ftp:inbound-endpoint host="localhost" port="21" path="/" user="theUser" password="secret"/>
+            <file:filename-wildcard-filter pattern="*.txt,*.xml"/>
+        </ftp:endpoint>
+        <file:outbound-endpoint path="/some/directory" outputPattern="#[header:originalFilename]"/>
+    </flow>
+</mule>
+----
+|===
+....
+[tab,title="Mule Services"]
+....
+[%header,cols="1*a"]
+|===
+^|Filtering filenames using a Service
+|
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.2/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+
+    <model name="example">
+        <service>
+            <inbound>
+                <ftp:inbound-endpoint host="localhost" port="21" path="/" user="theUser" password="secret"/>
+                    <file:filename-wildcard-filter pattern="*.txt,*.xml"/>
+                </ftp:endpoint>
+            </inbound>
+            <outbound>
+                <pass-through-router>
+                    <file:outbound-endpoint path="/some/directory" outputPattern="#[header:originalFilename]"/>
+                </pass-through-router>
+            </outbound>
+        </service>
+    </model>
+</mule>
+----
+|===
+....
+------
+
+此示例显示如何仅选择FTP服务器上的某些文件。您可以通过配置文件名过滤器来控制端点接收哪些文件。过滤器用逗号分隔的列表表示。请注意，为了使用文件传输模式中的过滤器，它必须包含在内。
+
+[%header,cols="1*a"]
+|===
+^ |从FTP过滤文件
+|
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd">
+
+    <simple-service name="ftpProcessor"
+                address="ftp://theUser:secret@host:21/"
+                component-class="com.mycompany.mule.MyProcessingComponent"/>
+</mule>
+----
+|===
+
+本示例使用`simple-service`将从FTP服务器检索到的文件路由到`MyProcessingComponent`以供进一步处理。
+
+== 配置选项
+
+=== 流
+
+如果FTP连接器上未启用流式传输，则Mule会尝试将其从FTP服务器读取的文件读取到`byte[]`中，以用作`MuleMessage`的有效内容。如果需要处理大型文件，此行为可能会造成麻烦。
+
+在这种情况下，在连接器上启用流式传输：
+
+[source, xml]
+----
+<ftp:connector name="ftpConnector" streaming="true">
+----
+
+Mule现在发送一个 http://download.oracle.com/javase/6/docs/api/java/io/InputStream.html[的InputStream]作为MuleMessage的有效载荷，而不是将文件内容读入内存。该输入流表示的文件的名称存储为
+消息的_originalFilename_属性。如果在入站端点上使用流式传输，则用户有责任关闭输入流。如果流出用于出站端点Mule自动关闭流。
+
+== 配置参考
+
+===  FTP传输
+
+FTP传输提供到FTP服务器的连接，允许文件作为消息在Mule中读写。
+
+=== 连接器
+
+FTP连接器用于配置引用连接器的FTP端点的默认行为。如果只配置了一个FTP连接器，则所有FTP端点都将使用该连接器。
+
+。<connector...>的属性
+[%header,cols="20,10,10,10,50"]
+|===
+| {名称{1}}输入	|必	|缺省	|说明
+|流式传输 |布尔式	|否 |  |是否应将InputStream作为消息有效载荷（如果为true）或字节数组。默认为false。
+| connectionFactoryClass 	|类名	|否 |  |扩展FtpConnectionFactory的类。 FtpConnectionFactory负责使用端点提供的凭据创建到服务器的连接。 Mule提供的默认实现使用Apache的Commons Net项目。
+| pollingFrequency 	| long 	|否 |  |以毫秒为单位检查读取目录。请注意，读取目录由监听组件的端点指定。
+| outputPattern 	|字符串	|否 |  |将文件写入磁盘时使用的模式。这可以使用为此连接器配置的文件名解析器所支持的模式
+|二元	|布尔	|否 |  |选择/禁用二进制文件传输类型。默认值是true。
+|被动	|布尔	|否 |  |选择/禁用被动协议（更有可能通过防火墙）。默认值是true。
+|===
+
+。<connector...>的子元素
+[%header,cols="3*"]
+|===
+| {名称{1}}基数	|说明
+|文件：abstract-filenameParser 	| 0..1 	|将文件写入FTP服务器时使用filenameParser。解析器将使用解析器和当前消息将outputPattern属性转换为字符串。要将解析器添加到配置中，请将"file"名称空间导入到XML配置中。有关filenameParsers的更多信息，请参阅 link:/mule-user-guide/v/3.2/file-transport-reference[文件传输参考]。
+|===
+
+=== 入站端点
+
+。<inbound-endpoint...>的属性
+[%header,cols="20,10,10,10,50"]
+|===
+| {名称{1}}输入	|必	|缺省 |说明
+|路径	|字符串	|否 |  |远程服务器上的文件位置。
+|用户	|字符串	|否 |  |如果FTP已通过身份验证，则这是用于身份验证的用户名。
+|密码	|字符串	|否 |  |用户进行身份验证的密码。
+|主机	|字符串	|否 |  | IP地址（例如www.mulesoft.com，localhost或192.168.0.1）。
+|端口	|端口号 |否 |  |连接的端口号。
+|二元	|布尔	|否 |  |选择/禁用二进制文件传输类型。默认值是true。
+|被动 |布尔	|否 |  |选择/禁用被动协议（更有可能通过防火墙）。默认值是true。
+| pollingFrequency 	| long 	|否 |  |以毫秒为单位检查读取目录。请注意，读取目录由监听组件的端点指定。
+|===
+
+无<inbound-endpoint...>的子元素
+
+
+=== 出站端点
+
+。<outbound-endpoint...>的属性
+[%header,cols="20,10,10,10,50"]
+|===
+| {名称{1}}输入	|必	|缺省 |说明
+|路径	|字符串	|否 |  |远程服务器上的文件位置。
+|用户	|字符串	|否 |  |如果FTP已通过身份验证，则这是用于身份验证的用户名。
+|密码	|字符串	|否 |  |用户进行身份验证的密码。
+|主机	|字符串	|否 |  | IP地址（例如www.mulesoft.com，localhost或`192.168.0.1`）。
+|端口	|端口号 |否 |  |连接的端口号。
+|二元	|布尔	|否 |  |选择/禁用二进制文件传输类型。默认值是true。
+|被动 |布尔	|否 |  |选择/禁用被动协议（更有可能通过防火墙）。默认值是true。
+| otputPattern 	|字符串	|否 |  |将文件写入磁盘时使用的模式。这可以使用为此连接器配置的文件名解析器所支持的模式
+|===
+
+无<outbound-endpoint...>的子元素
+
+
+=== 端点
+
+。<endpoint...>的属性
+[%header,cols="20,10,10,10,50"]
+|===
+| {名称{1}}输入	|必	|缺省 |说明
+|路径	|字符串	|否 |  |远程服务器上的文件位置。
+|用户	|字符串	|否 |  |如果FTP已通过身份验证，则这是用于身份验证的用户名。
+|密码	|字符串	|否 |  |用户进行身份验证的密码。
+|主机	|字符串	|否 |  | IP地址（例如www.mulesoft.com，localhost或192.168.0.1）。
+|端口	|端口号 |否 |  |连接的端口号。
+|二元	|布尔	|否 |  |选择/禁用二进制文件传输类型。默认值是true。
+|被动 |布尔	|否 |  |选择/禁用被动协议（更有可能通过防火墙）。默认值是true。
+| pollingFrequency 	| long 	|否 |  |以毫秒为单位检查读取目录。请注意，读取目录由监听组件的端点指定
+| otputPattern 	|字符串	|否 |  |将文件写入磁盘时使用的模式。这可以使用为此连接器配置的文件名解析器所支持的模式
+|===
+
+无<endpoint...>的子元素
+
+
+===  Mule企业连接器属性
+
+以下附加属性仅适用于Mule Enterprise中的FTP连接器：
+
+[cols="10,90"]
+|===
+| moveToDirectory  |读取文件后应写入的目录路径。如果此属性未设置，则文件被删除。
+| moveToPattern  |将读取文件移动到指定位置的新位置时使用的模式
+| moveToDirectory属性。 |此属性可以使用为此连接器配置的filenameParser支持的模式。
+fileAge不处理该文件，除非它超过指定的年龄（以毫秒为单位）。
+|===
+
+== 架构
+
+* 社区版FTP架构：http：//www.mulesoft.org/schema/mule/ftp/3.2/mule-ftp.xsd
+* 企业版FTP架构：http：//www.mulesoft.org/schema/mule/ee/ftp/3.2/mule-ftp-ee.xsd
+*  FTP架构结构：http：//www.mulesoft.org/docs/site/3.3.0/schemadocs/schemas/mule-ftp_xsd/schema-overview.html
+
+== 的Maven
+
+FTP传输可以包含以下依赖项：
+
+社区版
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-ftp</artifactId>
+  <version>3.2.0</version>
+</dependency>
+----
+
+企业版 - 仅在Mule Enterprise中提供
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>com.mulesoft.muleesb.transports</groupId>
+  <artifactId>mule-transport-ftp-ee</artifactId>
+  <version>3.2.0</version>
+</dependency>
+----
+
+== 扩展此模块或传输
+
+=== 自定义FtpConnectionFactory
+
+`FtpConnectionFactory`建立Mule与FTP服务器的连接。在99％的情况下，默认的连接工厂应该足够了。如果您需要更改Mule连接到FTP服务器的方式，请使用连接器上的`connectionFactoryClass`属性：
+
+[source, xml]
+----
+<ftp:connector name="ftpConnector" connectionFactoryClass="com.mycompany.mule.MyFtpConnectionFactory"/>
+----
+
+使用您的`FtpConnectionFactory`子类的完全限定类名称。请注意，*must*是`FtpConnectionFactory`的子类，因为`FtpConnector`试图将工厂投射到该类。
+
+=== 文件名解析器
+
+将文件写入FTP服务器时使用`filenameParser`。解析器将端点上配置的输出模式转换为使用解析器和当前消息编写的文件的名称。
+
+在99％的情况下，FTP传输中使用的文件名解析器应该足够了。它是 link:/docs/site/current/apidocs/org/mule/transport/file/ExpressionFilenameParser.html[ExpressionFilenameParser]的一个实例，它允许使用 link:/mule-user-guide/v/3.2/expressions-configuration-reference[任意表达]来组合在FTP服务器上存储文件时使用的文件名。
+
+可以将自定义文件名解析器配置为连接器声明的子元素：
+
+[source, xml, linenums]
+----
+<ftp:connector name="ftpConnector" passive="true" binary="true" streaming="true">
+    <file:custom-filename-parser class="com.mycompany.mule.MyFilenameParser"/>
+</ftp:connector>
+----
+
+[NOTE]
+您在此处配置的类必须实现 link:/docs/site/current/apidocs/org/mule/transport/file/FilenameParser.html[FilenameParser]接口。
+
+== 最佳实践
+
+将您的登录凭证放入属性文件中，而不是在配置中进行硬编码。这也允许您在开发，测试和生产系统之间使用不同的设置。

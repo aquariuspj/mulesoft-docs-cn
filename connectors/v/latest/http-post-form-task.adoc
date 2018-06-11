@@ -1,0 +1,175 @@
+= 发布表单
+
+//未更新至今khahn 7.14.2017
+
+以下是通过提交表单生成的HTTP请求的示例：
+
+[source, code, linenums]
+----
+POST /submitform HTTP/1.1
+ 
+User-Agent: Mule/3.6
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 32
+ 
+firstname=Aaron&lastname=Aguilar+Acevedo&yearborn=1999
+----
+
+. 使用HTTP侦听器连接器创建流，将*Path*设置为`submitform`
+. 为连接器创建全局元素，将*Host*设置为`localhost`，并将*Port*保留为默认`8081`
+. 在HTTP连接器之后，添加一个*Choice router*。
+. 在路由器的第一个选项上，添加一个*Set Payload*元素。将其值字段设置为以下表达式：
++
+
+[source, code]
+----
+Sorry #[payload.'firstname'], you're too young to register.
+----
+
++
+请注意，此表达式引用请求中包含的一个表单参数：`firstname`。在被连接器接收后，它作为地图中的项目存在于骡子消息有效载荷中。
+. 在Choice路由器上，将该路径的条件配置为以下表达式：
++
+
+[source, code]
+----
+#[server.dateTime.year-18 < payload.'yearborn']
+----
+
++
+该表达式再一次涉及传入的表单参数之一`yearborn`。
+. 通过在Choice路由器的默认路径中添加另一个*Set Payload*元素来完成此流程。将其“值”字段设置为：
++
+
+[source, code, linenums]
+----
+Registration has been carried out successfully! Welcome #[payload.'firstname'] #[payload.'lastname']!
+----
+
++
+image:http-listener-connector-7f39f.png[设置负载]
+....
+[tab,title="XML Editor"]
+....
+例如：
+
+. 创建一个`<http:listener>`全局配置，将*host*设置为localhost，将*port*设置为8081
+. 使用`<http:listener>`连接器创建流程。将连接器引用到刚刚创建的全局元素，将路径设置为`submitform`。
++
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>  
+ 
+    <flow name="RegisterUser">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="submitform" doc:name="HTTP"/>
+ 
+    </flow>
+----
+
+. 在HTTP连接器之后，添加一个Choice范围和两个备用路径。当下面的MEL表达式为真时，设置第一个被执行：
++
+
+[source, code, linenums]
+----
+#[server.dateTime.year-18 &lt; payload.'yearborn']
+----
+
++
+请注意，`yearborn`是来自传入请求的预期形式参数之一。
++
+
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+            <when expression="#[server.dateTime.year-18 &lt; payload.'yearborn']">
+                
+            </when>
+            <otherwise>
+                 
+            </otherwise>
+        </choice>
+----
+
+. 在每个备用路径上添加一个set-payload元素，一个返回拒绝通知，另一个返回成功消息。在两者中，请参阅传入表单参数的字段来构造消息。
++
+
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+            <when expression="#[server.dateTime.year-18 &lt; payload.'yearborn']">
+                <set-payload value="Sorry #[payload.'firstname'], you're too young to register." doc:name="Too young"/>
+            </when>
+            <otherwise>
+                <set-payload value="Registration has been carried out successfully! Welcome #[payload.'firstname'] #[payload.'lastname']!" doc:name="Success"/>
+            </otherwise>
+        </choice>
+----
+....
+------
+
+=== Requests with a x-www-form-urlencoded Type Body - Full XML Code
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="RegisterUser">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="submitform" doc:name="HTTP"/>
+        <choice doc:name="Choice">
+            <when expression="#[server.dateTime.year-18 &lt; payload.'yearborn']">
+                <set-payload value="Sorry #[payload.'firstname'], you're too young to register." doc:name="Too young"/>
+            </when>
+            <otherwise>
+                <set-payload value="Registration has been carried out successfully! Welcome #[payload.'firstname'] #[payload.'lastname']!" doc:name="Success"/>
+            </otherwise>
+        </choice>
+    </flow>
+</mule>
+----
+
+// if you copy/paste the doc in the xml editor, change the left angle bracket to &lt;
+
+The above example expects to receive a POST request from http://localhost:8081/submitform with a body that contains the following form parameters: `firstname, lastname, yearborn`
+
+[source, code, linenums]
+----
+POST /submitform HTTP/1.1
+ 
+User-Agent: Mule/3.6
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 32
+ 
+firstname=Aaron&lastname=Aguilar+Acevedo&yearborn=1999
+----
+
+[TIP]
+====
+To send an HTTP request that contains form parameters, the easiest way is to use a browser extension such as Postman (Google Chrome), or the link:http://curl.haxx.se/[curl] command line utility. +
+If using Postman, make sure your form parameters are sent with the type `x-www-form-urlencoded`
+
+image:submit+form+aaron.png[submit+form+aaron]
+====
+
+When the request is received by the connector, it creates a Mule Message that contains a Map type payload with the following key/value pairs in it:
+
+`firstname: Aaron` +
+`lastname: Aguilar Acevedo` +
+`yearborn: 1999`
+
+[NOTE]
+Notice how, in the case of the `lastname` parameter, whilst the value is encoded on the HTTP request (`Aguilar+Acevedo)`, the connector automatically decodes it for you when placing it in the Mule Message.
+
+On any of the remaining blocks on the flow, you can easily access the value of the elements in the Map payload by using MEL expressions to refer to their corresponding keys.
+
+In the example above, the value matching the `yearborn` key is obtained via the expression `#[payload.'yearborn']`. Depending on its value, one of two different paths is followed. The first path sets the payload to a message that rejects the registration, referencing the value matching the `firstname` key through a similar MEL expression; the second path accepts the registration and welcomes the user by name, referencing the `firstname` and `lastname` values.

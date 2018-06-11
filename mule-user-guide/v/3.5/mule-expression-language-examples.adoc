@@ -1,0 +1,1154 @@
+=  Mule表达式语言示例
+
+本文介绍几个介绍Mule表达式语言（MEL）的大部分基本实现的例子。每个示例都包含一个分步指南，用于在Studio的Visual Editor或XML中创建流程。您也可以直接跳转到[所有六个示例的完整代码]，您可以在自己的应用程序中进一步复制和操作。
+
+== 假设
+
+本文档假定您熟悉Mule Expression Language的[基础语法]，并且使用[Mule Studio]或XML可以轻松构建和运行Mule应用程序。
+
+如果您还不熟悉如何访问通过应用程序传递的Mule消息的信息，请考虑遵循本教程，该教程将引导您检查Mule消息及其数据结构并编写简单的MEL表达式。
+
+== 示例1  - 访问属性
+
+本示例创建一个简单的Web服务，它接受包含`username`参数的HTTP请求，并使用该`username`返回问候语。
+
+在这个例子中，使用MEL来：
+
+*访问入站属性
+*动态设置有效负载
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. In a new flow, drag an HTTP endpoint and a Set Payload transformer.
++
+[image]
+
+. Open the HTTP endpoint's properties editor and give it the path `greet1`. In this way, the endpoint will be reached via the URI `http://localhost:8081/greet1`.
+
+. Open the Set Payload's properties editor and set the value field with the following MEL expression:
++
+[source, code, linenums]
+----
+Hello #[message.inboundProperties.username]
+----
++
+This expression will capture the inbound property `username`, which is passed as a query string parameter when calling the service.
+
+. Save and run the project.
+
+. Through a web browser, access the URL `http://localhost:8081/greet1?username=yourName`. The response prints the words `Hello yourName` in your browser.
++
+[TIP]
+====
+This method of accessing query string parameters does not escape URL encoded characters (such as spaces, which would be read as `%20`). If you want to access the escaped values of these parameters, you can do it through a special inbound property provided by Mule named `http.query.params` which contains a map, where keys are property names and values are escaped property values.
+
+In this example, you can get a user name with escaped characters through this expression:
+
+[source, code, linenums]
+----
+Hello #[message.inboundProperties.'http.query.params'.username]
+----
+====
+....
+[tab,title="XML Editor"]
+....
+. In a new flow, add an `http:inbound-endpoint` and configure it with path `greet1`.
++
+[source, xml, linenums]
+----
+<http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet1" doc:name="HTTP"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*exchange-pattern* |`request-response`
+|*host* |`localhost`
+|*port* |`8081`
+|*path* |`greet1`
+|*doc:name* |`HTTP`
+|===
++
+In this way, the endpoint will be reached via the URI `http://localhost:8081/greet1`.
+
+. After the endpoint, add a `set-payload` transformer, configured as shown:
++
+[source, xml, linenums]
+----
+<set-payload value="Hello #[message.inboundProperties.username]" doc:name="Set Payload"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*value* |`Hello #[message.inboundProperties.username]`
+|*doc:name* |`Set Payload`
+|===
++
+The MEL expression used in `value` will capture the inbound property `username`, which is passed as a query string parameter when calling the service.
+
+. The full code of your flow should look like this:
++
+[source, xml, linenums]
+----
+<flow name="greetingFlow1" doc:name="greetingFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet1" doc:name="HTTP"/>
+        <set-payload value="Hello #[message.inboundProperties.username]" doc:name="Set Payload"/>
+    </flow>
+----
+
+. Save and run project.
+
+. Through a browser, access the URL `http://localhost:8081/greet1?username=yourName`. This will print the words `Hello yourName` in your browser.
+....
+------
+
+== 示例2  - 通过评估条件进行动态路由
+
+在前面的示例中，如果您对该服务的调用不包含`username`参数，则会导致错误。您可以通过添加一些流量控制组件来防止发生这种情况。此示例包含一个选择路由器，用于验证是否传递了所需的参数。
+
+在这个例子中，你使用MEL来：
+
+* 评估选择组件中的条件
+* 访问入站媒体资源
+* 动态设置有效负载
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. In a new flow, drag an HTTP endpoint and a Choice Router. Inside this Choice Router, add a Set Payload component in the space provided for the Default action and another Set Payload as a separate branch, as shown below.
++
+[image]
+
+. Open the HTTP Endpoint's properties editor and give it the path `greet2`. In this way, the endpoint will be reached via the URI `http://localhost:8081/greet2`.
+
+. Open the properties editor of the Set Payload transformer that sits in the Default space and set the *Display Name* to `Set Payload for valid username` and configure the *Value* with the following MEL expression:
++
+[source, code, linenums]
+----
+Hello #[message.inboundProperties.username]
+----
++
+This expression captures the inbound property `username`, which is passed as a query string parameter when calling the service.
+
+. Open the properties editor of the other Set Payload transformer (the one that doesn't sit in the default space) and set the *Display Name* to Set Payload for individual username and configure the *Value* with the expression `#[No username provided]`.
+
+. Open the Choice Router's properties editor to configure the routing logic. Double-click on row for the non-default route to provide a conditional expression. In the window that opens up, write the following MEL expression:
++
+[source, code, linenums]
+----
+#[message.inboundProperties.username == empty]
+----
++
+This expression accesses the username inbound property and determines whether or not it is `null` or an empty string. This expression returns neither Boolean true or false.
++
+[TIP]
+====
+In MEL, the keyword `empty` tests the emptiness of a value, and returns boolean true for any of the following:
+
+* `null`
+* boolean false
+* empty strings or strings with only white space
+* 0 value numeric values
+* empty collections
+====
+
+. Save and run project.
+
+. Through a web browser, access the URL   `http://localhost:8081/greet2?username=yourName`. This prints the world `Hello yourName` in your browser.
+
+. Then, access the URL again, but this time do not include any parameters. Verify that the expected output is received.
+....
+[tab,title="XML Editor"]
+....
+. In a new flow, add an `http:inbound-endpoint`
++
+[source, xml, linenums]
+----
+<http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet2" doc:name="HTTP"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*exchange-pattern* |`request-response`
+|*host* |`localhost`
+|*port* |`8081`
+|*path* |`greet2`
+|*doc:name* |`HTTP`
+|===
++
+In this way, the endpoint will be reached via the URI `http://localhost:8081/greet2`.
+
+. After the endpoint, add a choice element with two possible outputs. One of these outputs will be the default, the other will evaluate a MEL expression:
++
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+            <when>
+ 
+            </when>
+            <otherwise>
+                
+            </otherwise>
+        </choice>
+----
++
+Inside the `when` tag, write the following MEL expression:
++
+[source, code, linenums]
+----
+expression="#[message.inboundProperties.username == empty]"
+----
++
+This expression accesses the username inbound property and determines whether or not it is `null` or an empty string. This expression returns either Boolean true or false.
++
+[TIP]
+====
+In MEL, the keyword `empty` tests the emptiness of a value, and return boolean true for any of the following:
+
+* `null`
+* boolean false
+* empty strings or strings with only white space
+* 0 value numeric values
+* empty collections
+====
+
+. On each of the two paths in the choice router, add a `set payload` transformer. In the first `set-payload` transformer, add the following attributes:
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*value* |`#[No username provided]`
+|*doc:name* |`Set Payload for invalid username`
+|===
++
+In the second set-payload transformer, use a MEL expression to access the inbound property:
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*value* |`Hello #[message.inboundProperties.username]`
+|*doc:name* |`Set Payload for valid username`
+|===
++
+The MEL expression in the second `set-property's value` attribute captures the inbound property `username`, which is passed as a query string parameter when calling the service.
++
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+            <when expression="#[message.inboundProperties.username == empty]">
+                <set-payload value="#['No username provided']" doc:name="Set Payload for invalid username"/>
+            </when>
+            <otherwise>
+                <set-payload value="Hello #[message.inboundProperties.username]" doc:name="Set Payload for valid username"/>
+            </otherwise>
+        </choice>
+----
+
+. The full code of your flow should look like this:
++
+[source, xml, linenums]
+----
+<flow name="greetingFlow2" doc:name="greetingFlow2">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet2" doc:name="HTTP"/>
+        <choice doc:name="Choice">
+            <when expression="#[message.inboundProperties.username == empty]">
+                <set-payload value="#['No username provided']" doc:name="Set Payload for invalid username"/>
+            </when>
+            <otherwise>
+                <set-payload value="Hello #[message.inboundProperties.username]" doc:name="Set Payload for valid username"/>
+            </otherwise>
+        </choice>
+    </flow>
+----
+
+. Save and run project.
+
+. Through a browser, access the URL `http://localhost:8081/greet1?username=yourName`. This prints the words `Hello yourName` in your browser.
+
+. Then, access the URL again, but this time do not include any parameters. Verify that the expected output is received.
+....
+------
+
+== 示例3-变量赋值和评估条件
+
+在此示例中，除了仅返回问候之外，该服务还会保存一个包含用户数据的CSV文件。该服务的调用现在将包含两个参数，即用户名和年龄。该服务存储这两个参数并添加第三个布尔参数，用于评估用户是否为未成年（如果`age`>> `18`）。
+
+在这个例子中，你将使用MEL来：
+
+* 在消息中设置流量变量
+* 根据评估输入生成输出
+* 访问入站媒体资源
+* 动态设置有效负载
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. In a new flow, drag an HTTP endpoint, followed by an Expression component, then a Set Payload component, a File Endpoint, and finally another Set Payload Component.
++
+[image]
+
+. Open the HTTP Endpoint's properties editor and give it the *Path* `greet3`. In this way, the endpoint will be reached via the URI `http://localhost:8081/greet3`.
+
+. In the expression component, set the following MEL expression:
++
+[source, code, linenums]
+----
+flowVars.username = message.inboundProperties.username
+----
++
+This expression takes the value of the inbound property `username` and sets it as the flow variable `username`.
++
+[TIP]
+Because this MEL expression is used an *expression component*, it doesn't need to be surrounded with `#[]`.
+
+. In the Set Payload transformer, set the *Value* to the following MEL expressions:
++
+[source, code, linenums]
+----
+#[message.inboundProperties.username], #[message.inboundProperties.age], #[message.inboundProperties.age > 18]
+----
++
+This will set the payload to a string that contains three comma separated values. The third of these values is evaluating a condition and returns `true` or `false` depending on the user's age.
+
+. In the properties editor of the File endpoint, set a path for the file to be saved.
+
+. Open the properties editor of the final Set Payload transformer and set the *Value* field with the following MEL expression:
++
+[source, code, linenums]
+----
+Hello #[flowVars.username]
+----
++
+This expression will capture the flow variable `username`, which was created by the Expression Component in your flow.
+
+. Save and run the project.
+
+. Through a web browser, access the URL `http://localhost:8081/greet3?username=yourName&age=22`. This will print the words `Hello yourName` in your browser and also save a csv file that contains this data, plus the value `true` for the boolean parameter.
+....
+[tab,title="XML Editor"]
+....
+. In a new flow, add an `http:inbound-endpoint`. Configure it as shown:
++
+[source, xml, linenums]
+----
+<http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet3" doc:name="HTTP"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*exchange-pattern* |`request-response`
+|*host* |`localhost`
+|*port* |`8081`
+|*path* |`greet3`
+|*doc:name* |`HTTP`
+|===
++
+In this way, the endpoint will be reached via the URI `http://localhost:8081/greet3`.
+
+. After the endpoint, add an expression component that will use a MEL expression to record the inbound property `username` into a flowVar.
++
+[source, xml, linenums]
+----
+<expression-component doc:name="Expression"><![CDATA[flowVars.username = message.inboundProperties.username]]>
+        </expression-component>
+----
++
+This expression takes the value of the inbound property `username` and sets it as flow variable `username`.
++
+[TIP]
+Since this MEL expression is used is an *expression component*, it doesn't need to be surrounded with brackets `#[]`.
+
+. Add a Set Payload transformer and set the `value` field to a MEL expression:
++
+[source, xml, linenums]
+----
+<set-payload value="#[message.inboundProperties.username], #[message.inboundProperties.age], #[message.inboundProperties.age &gt;18]" doc:name="Set Payload"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*value* |`#[message.inboundProperties.username], #[message.inboundProperties.age], #[message.inboundProperties.age &gt;18]`
+|*doc:name* |`Set Payload`
+|===
++
+This will set the payload to a string that contains three comma separated values. The third of these values is evaluating a condition and returns `true` or `false` depending on the user's age.
+
+. Below, add a `file:outbound-endpoint` to send this data to file:
++
+[source, xml, linenums]
+----
+<file:outbound-endpoint path="path_of_your_choice" responseTimeout="10000" doc:name="File"/> 
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|`path` a|_(Example)_
+
+`/Users/AaronMacbook/Downloads`
+
+|`responseTimeout` |`10000`
+|`doc:name` |`File`
+|===
+
+. Below, add another Set Payload transformer containing a MEL expression that references the flow variable that you set earliest in the flow:
++
+[source, xml, linenums]
+----
+<set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+----
++
+This expression will access the flow variable `username`, which was created by the Expression Component in your flow.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|`value` |`Hello #[flowVars.username]`
+|`doc:name` |`Set Payload`
+|===
+
+. The full code of your flow should look like this:
++
+[source, xml, linenums]
+----
+<flow name="greetingFlow3" doc:name="greetingFlow3">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet3" doc:name="HTTP"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.username = message.inboundProperties.username]]></expression-component>
+        <set-payload value="#[message.inboundProperties.username], #[message.inboundProperties.age], #[message.inboundProperties.age &gt;18]" doc:name="Set Payload"/>
+        <file:outbound-endpoint path="path_of_your_choice" responseTimeout="10000" doc:name="File"/>
+        <set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+    </flow>
+----
+
+. Save and run your project.
+
+. In a browser, access the URL `http://localhost:8081/greet3?username=yourNAme*age=22`. This will print the words `Hello yourName` in your browser and also save a csv file that contains this data, plus the value `True` for the boolean parameter.
+....
+------
+
+== 示例4  - 使用DataMapper _（Enterprise）创建地图和评估条件_
+
+在这个例子中，和上一个例子一样，Mule应用程序保存一个包含用户数据的CSV文件并返回问候语。对该服务的调用包括两个参数`username`和`age`。该服务存储这两个参数并添加第三个布尔参数，用于评估用户是否超过特定年龄if（`age > 18`）。但是，在这种情况下，输入和输出字段之间的映射以及第三个字段的生成由[DataMapper]组件执行。
+
+在这个例子中，你将使用MEL来：
+
+* 在消息中设置一个流
+* 将地图设置为您的邮件负载
+* 根据评估DataMapper中的输入生成输出
+* 访问入站媒体资源
+* 动态设置有效负载
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. In the new flow, drag an HTTP endpoint, followed by an Expression Component, then a Set Payload transformer, a DataMapper transformer, a File Endpoint, and finally another Set Payload transformer
++
+[image]
+
+. Open the HTTP endpoint's properties editor and give it the path `greet4`. In this way, the endpoint will be reached via the URI `http://localhost:8081/greet4`.
+
+. In the expression component, set the following MEL expression:
++
+[source, code, linenums]
+----
+flowVars.username = message.inboundProperties.username
+----
++
+[TIP]
+Since this MEL expression is used in an *expression component*, it doesn't need to be surrounded with `#[]`.
+
+. In the Set Payload transformer, set the *Value* field to the following MEL expression:
++
+[source, code, linenums]
+----
+#[['username' : message.inboundProperties.username, 'age' : message.inboundProperties.age]]
+----
++
+This will set the paylaod to a map that contains two key: value pairs.
+
+. In the DataMapper properties editor, configure the field as shown:
+
+* In the Input, select *Map<k.v>* type and *User defined* structure.
+
+* In the Output, select *CSV* type and *User defined* structure.
++
+[image]
+
+. For the input, click *Edit Fields* to open the Define the Map dialog.
+
+. Give your map a *Name* and *Type*, then create two fields by clicking the green plus sign:
++
+[%header%autowidth.spread]
+|===
+|Name |Type
+|*username* |String
+|*age* |Integer
+|===
++
+[image]
+
+. For the Output, click *Edit Fields*, then give the output a *Name*, select *Delimiter*, and create three fields as shown:
++
+[image]
+
+. Click *Create Mapping* to trigger DataMapper to generate the mappings.
+
+. DataMapper now displays the mapping between input and output fields. The third output field (of_age) needs a MEL expression to get its value. Select it and then write the following MEL expression in the input box below:
++
+[source, code, linenums]
+----
+input.age>18
+----
++
+The resulting mapping should look like this:
++
+[image]
+
+. In the File endpoint, set a path of your choice for the file to be saved.
+
+. Open the properties editor of the final Set Payload transformer and set *Value* field with the following:
++
+[source, code, linenums]
+----
+Hello #[flowVars.username]
+----
++
+This expression will access the flow variable `username`, which was created by the Expression Component in your flow.
+
+. Save and run project.
+
+. In a browser, access the URL `http://localhost:8081/greet4?username=yourName&age=22`. This will print the words `Hello yourName` in your browser and also save a csv file that contains this data, plus the value `true` for the boolean parameter.
+....
+[tab,title="XML Editor"]
+....
+. In a new flow, add an `http:inbound-endpoint` configured as shown.
++
+[source, xml, linenums]
+----
+<http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet4" doc:name="HTTP"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*exchange-pattern* |`request-response`
+|*host* |`localhost`
+|*port* |`8081`
+|*path* |`greet4`
+|*doc:name* |`HTTP`
+|===
++
+In this way, the endpoint is reached via the URI `http://localhost:8081/greet4`.
+
+. After the endpoint, add an expression component that will use a MEL expression to record the inbound property `username` into a flow variable of the same time
++
+[source, xml, linenums]
+----
+<expression-component doc:name="Expression"><![CDATA[flowVars.username = message.inboundProperties.username]]>
+        </expression-component>
+----
++
+[TIP]
+Since this MEL expression is used in an *expression component*, it doesn't need to be surrounded with `#[]`.
+
+. Add a set-payload transformer and set value attribute to a MEL expression:
++
+[source, xml, linenums]
+----
+<set-payload value="#[['username' : message.inboundProperties.username, 'age' : message.inboundProperties.age]]" doc:name="Set Payload"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*value* |`#[['username' : message.inboundProperties.username, 'age' : message.inboundProperties.age]]`
+|*doc:name* |Set Payload
+|===
++
+This will set the payload to a map of key: value pairs that contains username and age.
+
+. Next, add a data-mapper:transformer element.
++
+[source, xml, linenums]
+----
+<data-mapper:transform doc:name="Map To CSV"/>
+----
++
+In order to configure the DataMapper, transition to Studio's Visual Editor.
+
+. In the DataMapper properties editor, configure the following:
+
+* In the input, select *Map<k,v> type and *User Defined* structure.
+
+* In the output, select CSV type and *User Defined* structure.
++
+[image]
+
+. For the input, click *Edit Fields* to open the Define the Map dialog.
+
+. Give your map a *Name* and *Type*, then create two fields by clicking the green plus sign:
++
+[%header%autowidth.spread]
+|===
+|Name |Type
+|*username* |String
+|*age* |Integer
+|===
++
+[image]
+
+. For the Output, click *Edit Fields*, then give the output a *Name*, select a *Delimiter*, and create three fields, as shown:
++
+[image]
+
+. Click *Create Mapping* to trigger DataMapper to generate the mapping. DataMapper now displays the mapping between input and output fields. The third output field (of_age) needs a MEL expression to get its values. Select it and then write the following MEL expression in the input box below:
++
+[source, code, linenums]
+----
+input.age>18
+----
++
+The resulting mapping should look like this:
++
+[image]
+
+. Set Studio's view back to the XML editor. Below the last component, add a `file:outbound-endpoint` to send this data to a file:
++
+[source, xml, linenums]
+----
+<file:outbound-endpoint path="path_of_your_choice" responseTimeout="10000" doc:name="File"/> 
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*path* a|(Example)
+
+`Users/AaronMacBook/Desktop`
+|*responseTimeout* |`10000`
+|*doc:name* |`File`
+|===
+
+. Below, add another Set Payload transformer, configured as shown:
++
+[source, xml, linenums]
+----
+<set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+----
++
+This expression will access the flow variable `username`, which was created by the Expression Component in your flow.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*value* |`Hello #[flowVars.username]`
+|*doc:name* |`Set Payload`
+|===
+
+. The full code of your flow should look like this:
++
+[source, xml, linenums]
+----
+<flow name="greetingFlow4" doc:name="greetingFlow4">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet4" doc:name="HTTP"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.username = message.inboundProperties.username]]></expression-component>
+        <set-payload value="#[['username' : message.inboundProperties.username, 'age' : message.inboundProperties.age]]" doc:name="Set Payload"/>
+        <data-mapper:transform config-ref="map_to_csv" doc:name="Map To CSV"/>
+        <file:outbound-endpoint path="path_of_your_choice" responseTimeout="10000" doc:name="File"/>
+        <set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+    </flow>
+----
+
+. Save and run your project.
+
+. In a browser, access the URL `http://localhost:8081/greet4?username=yourName&age=22`. This will print the words `Hello yourName` in your browser and also save a csv file that contains this data, plus the value `true` for the boolean parameter.
+....
+------
+
+== 示例5  - 使用Xpath
+
+在之前的所有示例中，通过包含查询参数的GET请求来调用服务。在此示例中，您创建的服务是一个接受带有XML主体的POST请求的API。所需的XML包含两个参数`username`和`age`。该服务存储这两个参数并添加第三个布尔参数，用于评估用户是否超过特定年龄（`if age > 18`）。
+
+在这个例子中，你使用MEL来：
+
+* 在消息中设置流量变量
+* 根据评估输入生成输出
+* 通过xpath查询解析XML输入
+* 动态设置有效负载
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. In a new flow, drag an HTTP endpoint, followed by an Expression Component, a Set Payload transformer, a File endpoint, and another Set Payload transformer.
++
+[image]
+
+. Open the HTTP Endpoint's properties editor and give it the path `greet5`. In the way, the endpoint is be reached via the URI `http://localhost:8081/greet5`.
+
+. Open the Expression Component's properties editor and set the following MEL expressions:
++
+[source, code, linenums]
+----
+flowVars.username = xpath3('/user/username').text
+----
++
+This expression calculates the result of the xpath function and sets it as the value of the flow variable `username`.
++
+[TIP]
+Since this MEL expression is used in an *expression component*, it doesn't need to be surrounded with `#[]`.
++
+Since the payload is in XML, *xpath* is needed to parse it.
+
+. In the Set Payload transformer, set the *Value* field to the following:
++
+[source, code, linenums]
+----
+#[xpath3('/user/username').text],
+#[xpath3('/user/age').text],
+#[xpath3('/user/age').text > 18]
+----
++
+This will set the payload to a string that contains three comma separated values. The third of these values is evaluating a condition and returns `true` or `false` depending on the user's age. Once again, as the payload is in XML, *xpath* is needed to parse it.
+
+. In the File endpoint, set a path of your choice to determine where the .csv file should be saved.
+
+. Open the properties editor of the final Set Payload transformer and set the *Value* field with the following:
++
+[source, code, linenums]
+----
+Hello #[flowVars.username]
+----
++
+This expression will access the flow variable username, which was created by the Expression Component earlier in your flow.
+
+. Save and run your project.
+
+. You must now send the HTTP endpoint an HTTP request that includes a body with an attached XML file. Send a POST request to `http://localhost:8081/greet5` attaching an XML to the body of the message. A sample XML is provided below:
++
+[TIP]
+The easiest way to do this is to send a POST via a browser extension such a [Postman] (for Google Chrome) or the [curl] command line utility.
++
+[source, xml, linenums]
+----
+<user>
+  <username>test</username>
+  <age>21</age>
+</user>
+----
++
+This will print the words `Hello yourName` in your browser and also save a csv file that contains this data, plus the value `true` for the boolean parameter.
+....
+[tab,title="XML Editor"]
+....
+. In a new flow, add an `http:inbound-endpoint` configured as shown.
++
+[source, xml, linenums]
+----
+<http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet5" doc:name="HTTP"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*exchange-pattern* |`request-response`
+|*host* ||`localhost`
+|*port* |`8081`
+|*path* |`greet5`
+|*doc:name* |`HTTP`
+|===
++
+In this way, the endpoint is to be reached via the URI `http://localhost:8081/greet5`.
+
+. After the endpoint, add an Expression Component that will use a MEL expression to record the inbound property `username` into a flow variable. Because the payload XML file, it must be parsed with xpath.
++
+[source, xml, linenums]
+----
+<expression-component doc:name="Expression"><![CDATA[flowVars.username = xpath3('/user/username').text]]></expression-component>
+----
++
+The expression calculate the result of the xpath function and sets it as the value of the flow variable `username`.
++
+[TIP]
+Since this MEL expression is used in an *expression component*, it isn't surrounded with brackets `#[]`
+
+. Add a set-payload transformer and set the `value` attribute to a comma-separated list of MEL expressions:
++
+[source, xml, linenums]
+----
+<set-payload value="#[xpath('/user/username').text], #[xpath('/user/age').text], #[xpath('/user/age').text &gt; 18]" doc:name="Set Payload"/>
+----
++
+|===
+|Attribute |Value
+|*value* |`#[xpath('/user/username').text], #[xpath('/user/age').text], #[xpath('/user/age').text &gt; 18]`
+|*doc:name* |`Set Payload`
+|===
++
+This will set the payload to a string that contains three comma separated values. The third of these values is evaluating a condition and returns `true` or `false` depending on the user's age. Once again, as the payload is in XML, *xpath* is needed to parse it.
+
+. Add a `file:outbound-endpoint` to output the payload into a csv file.
++
+[source, xml, linenums]
+----
+<file:outbound-endpoint path="path_of_your_choice" responseTimeout="10000" doc:name="File"/> 
+----
++
+|===
+|Attribute |Value
+|*path* a|(Example)
+
+`Users/AaronMacBook/Downloads`
+|*responseTimeout* |`10000`
+|*doc:anme* |`File`
+|===
+
+. Below, add another set-payload transformer with a value containing a MEL expression that references the flow variable `username` that you set earlier in the flow:
++
+[source, xml, linenums]
+----
+<set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*value* |`Hello #[flowVars.username]`
+|*doc:name* |`Set Payload`
+|===
+
+. The full code of your flow should look like this:
+
+[source, xml, linenums]
+----
+<flow name="greetingFlow5" doc:name="greetingFlow5">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet5" doc:name="HTTP"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.username = xpath('/user/username').text]]></expression-component>
+        <set-payload value="#[xpath('/user/username').text], #[xpath('/user/age').text], #[xpath('/user/age').text &gt; 18]" doc:name="Set Payload"/>
+        <file:outbound-endpoint path="path_of_your_choice" responseTimeout="10000" doc:name="File"/>
+        <set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+    </flow>
+----
+
+. Save and run your project.
+
+. You must now sent the HTTP endpoint an HTTP request that includes a body with an attached XML file. Send a POST requeest to `http://localhost:8081/greet5`, attaching an XML to the body of the message. A sample XML is provided below.
++
+[TIP]
+The easiest way to do this is by sending a POST via browser extenstion such as [Postman] (for Google Chrome) or the [curl] command line utility.
++
+[source, xml, linenums]
+----
+<user>
+  <username>test</username>
+  <age>21</age>
+</user>
+----
++
+This will print the words `Hello yourName` in your browser and also save a csv file that contains this data, plus the value `true` for the boolean parameter.
+....
+------
+
+== 示例6  - 使用Java对象
+
+这个例子就像例5一样，除了服务现在接收JSON输入而不是XML。
+
+JSON输入包括两个参数，用户名和年龄。该服务存储这两个参数并添加第三个布尔参数，用于评估用户是否超过特定年龄（如果年龄> 18）。 Mule首先将JSON对象转换为Java对象，以便MEL表达式可以访问该对象的属性。
+
+在这个例子中，你将使用MEL来：
+
+* 在消息中设置流量变量
+* 根据评估输入生成输出
+* 访问Java对象的属性
+* 动态设置有效负载
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. In a new flow, drag an HTTP endpoint, followed by a JSON to Object transformer, an Expression Component, a Set Payload transformer, a File endpoint, and another Set Payload transformer.
++
+[image]
+
+. Open the HTTP Endpoint's properties editor and give it the path greet6. In this way, the endpoint is reached via the URI http://localhost:8081/greet6
+
+. Open the properties editor of the JSON to Object transformer and click the Advanced tab. Set the Return Class to java.lang.Object . With this configuration, the JSON input becomes a Java object with attributes that can be easily called by using object.attribute notation.
+
+. In the expression component, set the following MEL expression that accesses an attribute of the object and sets that as the value of a flow variable called username:
++
+[source, code, linenums]
+----
+flowVars.username = payload.username
+----
++
+[TIP]
+Since this MEL expression is used in an expression component, it doesn't need to be surrounded with #[].
+
+. In the Set Payload component, set the Value field to the following comma-separated list of MEL expressions:
++
+[source, code, linenums]
+----
+#[payload.username],
+#[payload.age],
+#[payload.age > 18]
+----
++
+This sets the payload to a string that contains three comma-separated values. The third of these values is evaluating a condition and returns true or false depending on the user's age.
+
+. In the File endpoint, set a Path of your choice to determine where the csv files should be saved.
+
+. Open the properties editor of the final Set Payload transformer and set the Value field with the following:
++
+[source, code, linenums]
+----
+Hello #[flowVars.username]
+----
++
+This expression accesses the flow variable username, which was created by the Expression Component earlier in your flow.
+
+. Save and run the project.
+
+. You must now send the HTTP endpoint an HTTP request that includes a body with an attached JSON file.
+Send a POST request to http://localhost:8081/greet6, attaching a JSON object the body of the message. A sample JSON is provided below
++
+[TIP]
+The easiest way to do this is by sending a POST via a browser extension such as Postman (for Google Chrome) or the curl command line utility.
++
+[source, code, linenums]
+----
+{ "username": "test", "age" : 21 }
+----
++
+This will print the words Hello yourName in your browser and also save a csv file that contains this data, plus the value true for the boolean parameter.
+....
+[tab,title="XML Editor"]
+....
+. In a new flow, add an http:inbound-endpoint configured as shown.
++
+[source, xml, linenums]
+----
+<http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet6" doc:name="HTTP"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|doc:name |HTTP
+|exchange-pattern |request-response
+|host |localhost
+|path |greet6
+|port |8081
+|===
++
+In this way, the endpoint is reached via the URI http://localhost:8081/greet6.
+
+. After the endpoint, add a json:json-to-object-transformer.
++
+[source, xml, linenums]
+----
+<json:json-to-object-transformer doc:name="JSON to Object" returnClass="java.lang.Object"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|returnClass |java.lang.Object
+|doc:name |JSON to Object
+|===
++
+With this configuration, the JSON input becomes a Java object with attributes that can be easily called by using object.attribute notation.
+
+. After the transformer, add an expression component that uses a MEL expression to access the Java object's username attribute and assign its value into a flow variable of the same name.
++
+[source, xml, linenums]
+----
+<expression-component doc:name="Expression"><![CDATA[flowVars.username = payload.username]]></expression-component>
+----
++
+[TIP]
+Since this MEL expression is used in an expression component, it doesn't need to be surrounded with #[].
+
+. Add a set-payload transformer and set the value attribute to a comma-separated list of MEL expressions:
++
+[source, xml, linenums]
+----
+<set-payload value="#[payload.username], #[payload.age], #[payload.age &gt; 18]" doc:name="Set Payload"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|`value` |`#[payload.username], #[payload.age], #[payload.age &gt; 18]`
+|`doc:name` |`Set Payload`
+|===
++
+This sets the payload to a string that contains three comma-separated values. The third of these values is evaluating a condition and returns true or false depending on the user's age.
+
+. Add a file:outbound-endpoint to output the payload into a csv file.
++
+[source, xml, linenums]
+----
+<file:outbound-endpoint path="path_of_your_choice" responseTimeout="10000" doc:name="File"/> 
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|path a|(Example)
+
+Users/AaronMacBook/Downloads
+|responseTimeout |10000
+|doc:name |File
+|===
+
+. Below, add another set-payload transformer, containing a MEL expression that references a flow variable:
++
+[source, xml, linenums]
+----
+<set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+----
++
+This expression accesses the flow variable username, which was created by the Expression Component earlier in your flow.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*value* |`Hello #[flowVars.username]`
+|*doc:name* |`Set Payload`
+|===
+
+. The full code of your flow should look like this:
++
+[source, xml, linenums]
+----
+<flow name="greetingFlow6" doc:name="greetingFlow6">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet6" doc:name="HTTP"/>
+        <json:json-to-object-transformer doc:name="JSON to Object" returnClass="java.lang.Object"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.username = payload.username]]></expression-component>
+        <set-payload value="#[payload.username], #[payload.age], #[payload.age &gt; 18]" doc:name="Set Payload"/>
+        <file:outbound-endpoint path="users" responseTimeout="10000" doc:name="File"/>
+        <set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+    </flow>
+----
+
+. Save and run the project. You must now send the HTTP endpoint an HTTP request that includes a body with an attached JSON file.
+
+. Send a POST request to http://localhost:8081/greet6, attaching a JSON object the body of the message. A sample JSON is provided below.
++
+[TIP]
+The easiest way to do this is to send a POST via a browser extension such as Postman (for Google Chrome) or the curl command line utility.
++
+[source, code, linenums]
+----
+{ "username": "test", "age" : 21 }
+----
++
+This will print the words Hello yourName in your browser and also save a csv file that contains this data, plus the value true for the boolean parameter.
+....
+------
+
+== 所有示例的完整代码
+
+[TIP]
+为了您的方便，您可以下载完整的项目。请注意，该项目是专门为Mule 3.5.0运行时配置的。有关3.4.X兼容版本，请参阅3.4.X文档。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json"
+    xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+ 
+<data-mapper:config name="new_mapping_grf" transformationGraphPath="new_mapping.grf" doc:name="DataMapper"/>
+    <data-mapper:config name="map_to_csv" transformationGraphPath="map_to_csv.grf" doc:name="map_to_csv"/>
+ 
+ 
+<!-- Example 1 Start  How to access properties using MEL, how to set a payload dynamically -->  
+    <flow name="greetingFlow1" doc:name="greetingFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet1" doc:name="HTTP"/>
+        <set-payload value="Hello #[message.inboundProperties.username]" doc:name="Set Payload"/>
+    </flow>
+ 
+<!-- Example 1 End -->
+ 
+<!-- Example 2 Start  How to dynamically route messages based on the results of a conditional expression -->  
+    <flow name="greetingFlow2" doc:name="greetingFlow2">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet2" doc:name="HTTP"/>
+        <choice doc:name="Choice">
+            <when expression="#[message.inboundProperties.username == empty]">
+                <set-payload value="#['No username provided']" doc:name="Set Payload for invalid username"/>
+            </when>
+            <otherwise>
+                <set-payload value="Hello #[message.inboundProperties.username]" doc:name="Set Payload for valid username"/>
+            </otherwise>
+        </choice>
+    </flow>
+<!-- Example 2 End -->
+ 
+<!-- Example 3 Start  How to assign variables, how to evaluate a condition -->
+    <flow name="docs-greetingFlow3" doc:name="greetingFlow3">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet3" doc:name="HTTP"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.username = message.inboundProperties.username]]></expression-component>
+        <set-payload value="#[message.inboundProperties.username], #[message.inboundProperties.age], #[message.inboundProperties.age &gt;18]" doc:name="Set Payload"/>
+        <file:outbound-endpoint path="Path_of_your_choice" responseTimeout="10000" doc:name="File"/>
+        <set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+    </flow>
+<!-- Example 3 End -->
+ 
+<!-- Example 4 Start  How to create a map, how to evaluate a condition with DataMapper -->
+    <flow name="docs-greetingFlow4" doc:name="greetingFlow4">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet4" doc:name="HTTP"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.username = message.inboundProperties.username]]></expression-component>
+        <set-payload value="#[['username' : message.inboundProperties.username, 'age' : message.inboundProperties.age]]" doc:name="Set Payload"/>
+        <data-mapper:transform config-ref="map_to_csv" doc:name="Map To CSV"/>
+        <file:outbound-endpoint path="Path_of_your_choice" responseTimeout="10000" doc:name="File"/>
+        <set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+    </flow>
+<!-- Example 4 End -->
+ 
+<!-- Example 5 Start  How to parse XML input with Xpath -->  
+    <flow name="docs-greetingFlow5" doc:name="greetingFlow5">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet5" doc:name="HTTP"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.username = xpath('/user/username').text]]></expression-component>
+        <set-payload value="#[xpath('/user/username').text], #[xpath('/user/age').text], #[xpath('/user/age').text &gt; 18]" doc:name="Set Payload"/>
+        <file:outbound-endpoint path="Path_of_your_choice" responseTimeout="10000" doc:name="File"/>
+        <set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+    </flow>
+<!-- Example 5 End -->
+ 
+<!-- Example 6 Start  How to parse Java objects -->
+    <flow name="greetingFlow6" doc:name="greetingFlow6">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="greet6" doc:name="HTTP"/>
+        <json:json-to-object-transformer doc:name="JSON to Object" returnClass="java.lang.Object"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.username = payload.username]]></expression-component>
+        <set-payload value="#[payload.username], #[payload.age], #[payload.age &gt; 18]" doc:name="Set Payload"/>
+        <file:outbound-endpoint path="Path_of_your_choice" responseTimeout="10000" doc:name="File"/>
+        <set-payload value="Hello #[flowVars.username]" doc:name="Set Payload"/>
+    </flow>
+<!-- Example 6 End -->
+ 
+</mule>
+----
+
+== 另请参阅
+
+* 访问Mule表达式语言[参考]和[提示]
+
+* 想要了解更多关于如何获取有关Mule消息的信息，以便您可以使用MEL进行处理？试试这个[教程]。

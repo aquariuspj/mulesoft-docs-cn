@@ -1,0 +1,97 @@
+= 对象流（分页）
+:keywords: mule, sdk, streaming, objects, pagination
+
+对象流与<<binary-streaming#, binary streaming>>类似，不同之处在于它流式传输Java对象，而不是原始字节流。
+
+请注意，如果您熟悉Devkit（对于Mule 3），则可以将此功能视为自动分页功能的演变。这和Devkit的主要区别在于Mule SDK支持可重复，随机和并发访问。
+
+以下是通过数据库连接器中的简化选择操作使用对象流的示例：
+
+[source, java, linenums]
+----
+public PagingProvider<DbConnection, Map<String, Object>> list(@Text String sql) { // <1>
+    return new PagingProvider<DbConnection, Map<String, Object>>() {
+
+      private ResultSet resultSet;
+
+      @Override
+      public List<Map<String, Object>> getPage(DbConnection connection) { // <2>
+        if (resultSet == null) {
+            resultSet = executeQuery(connection, sql); // <3>
+        }
+
+        return extractPageFrom(resultSet);
+      }
+
+      @Override
+      public java.util.Optional<Integer> getTotalResults(DbConnection connection) {
+        return java.util.Optional.empty(); // <4>
+      }
+
+      @Override
+      public void close(DbConnection connection) throws MuleException {
+        resultSet.close(); // <5>
+      }
+    }
+}
+----
+
+<1>有两件事要注意这个方法的签名：
+* 该方法返回一个`PagingDelegate`对象。 `PagingDelegate`需要两种通用类型。第一个是委托用来获取下一页的连接类型，第二个是页面中元素的类型。
+* 列表操作接收参数。但是，请注意，不会收到连接对象。分页操作无法接收连接。相反，他们必须始终使用运行时传递给`PagingProvider`的连接。
++
+因此，此签名意味着它将使用`DbConnection`对象返回页面查询的结果，并且流中的每个项目都是表示结果中每一行的`Map<String, Object>`。
++
+<2> `getPage()`获取下一页并返回。它接收到用于获取该页面的连接。当流结束时，这个方法需要
+// TODO："this method"上面看到"need to"做什么？
+<3>根据操作的逻辑，您可能需要逻辑来获取第一页与逻辑以获取下一页。
+<4>对象流的另一个特性是能够告诉流中实际存在多少个对象。要确定这一点，您需要实施`getTotalResults()`方法。问题是并非所有的API都支持这一点。例如，_Salesforce_ API支持该功能，但JDBC（为数据库连接器供电的API）不支持。这就是为什么这个方法返回一个Java `Optional`的原因
+这种情况是空的。分页操作的用户可以通过类似于`#[payload.size]`的表达式来获取此值。
+<5>最后，当流中不再有对象时，将调用`close()`方法。此方法*IS NOT*用于关闭连接。 SDK将自动执行此操作。该方法用于释放此分页代理可能持有的任何资源。例如，在这种情况下，分页委托有一个`ResultSet`，从中提取每个页面值。 `ResultSet`需要发布。
+
+== 粘滞连接
+
+默认情况下，不保证每次调用`getPage()`所接收的连接都是同一个连接。这很好。对于大多数API（特别是Rest API）来说，这不仅不是问题，而且在某些情况下，它是一个功能。但是，还有其他一些情况（如数据库），使用*SAME*连接获取所有页面*MUST*。这对于Devkit来说是不可能的。
+
+Mule SDK添加粘性连接，这表示运行时必须保证始终使用相同的事务调用`getPage()`方法，例如：
+
+[source, java, linenums]
+----
+public PagingProvider<DbConnection, Map<String, Object>> list(String sql) {
+    return new PagingProvider<DbConnection, Map<String, Object>>() {
+
+      private ResultSet resultSet;
+
+      @Override
+      public List<Map<String, Object>> getPage(DbConnection connection) {
+        ...
+      }
+
+      @Override
+      public java.util.Optional<Integer> getTotalResults(DbConnection connection) {
+        ...
+      }
+
+      @Override
+      public void close(DbConnection connection) throws MuleException {
+        ...
+      }
+
+      @Override
+      public boolean useStickyConnections() {
+        return true;
+      }
+    }
+}
+----
+
+== 配置流式传输
+
+就像二进制流媒体一样，自动分页操作会自动通过`<repeatable-in-memory-iterable />`，`<ee:repeatable-file-store-iterable />`和`<non-repeatable-iterable />`获取流媒体配置。有关这些元素的详细信息，请参阅<<binary-streaming#, binary streaming>>。以下是一个为上面的选择示例配置自定义文件存储流的示例：
+
+[source, xml, linenums]
+----
+<db:select sql="select * from REALLY_LARGE_TABLE">
+    <ee:repeatable-file-store-iterable inMemoryObjects="100"/>
+</db:select>
+----

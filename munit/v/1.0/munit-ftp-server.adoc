@@ -1,0 +1,193 @@
+=  MUnit FTP服务器
+：version-info：3.7.0及更高版本
+:keywords: munit, testing, unit testing
+
+== 概述
+
+测试生产代码的主要问题之一是外部系统连接。如果我们创建一个连接FTP服务器的代码的测试，我们需要在我们的本地环境中安装一个FTP服务器以运行测试。另一个选择是只有一个外部FTP服务器用于测试，但这种方法的主要问题是我们的Maven项目不能移植 - 我们无法将它发送给第三方，因为它们无法编译它不需要首先安装FTP服务器。
+
+为了使您避免此问题，MUnit允许您在本地环境中实施FTP服务器。
+
+==  Maven依赖关系
+
+注意：本页假定您在`pom.xml`中定义了以下属性：`<munit.version></munit.version>`。
+
+从Maven运行时，需要将以下工件添加到您的`.pom`：
+
+[source,console]
+.FTP服务器模块Maven依赖
+----
+<dependency>
+  <groupId>com.mulesoft.munit.utils</groupId>
+  <artifactId>ftpserver</artifactId>
+  <version>${munit.version}</version>
+  <scope>test</scope>
+</dependency>
+----
+
+== 定义MUnit FTP服务器
+
+为了本文件的目的，我们假设我们正在测试
+遵循Mule代码：
+
+[source, xml, linenums]
+。代码被测试
+----
+<flow name="exampleFlow">
+  <set-payload value="#['something_something_dark_side']"/>
+
+  <ftp:outbound-endpoint host="${host}" port="${ftp.port}" user="${ftp.user}" password="${ftp.password}" outputPattern="ftp-jsonResult.txt" path="/tmp">
+  </ftp:outbound-endpoint>
+</flow>
+----
+
+=== 定义FTP服务器
+
+我们首先定义FTP服务器参数：
+
+[source, xml, linenums]
+。定义FTP服务器
+----
+<munit:config mock-inbounds="false" mock-connectors="false"/>   //<1>
+
+<ftpserver:config port="${ftp.port}" name="ftpServer"/>         //<2>
+----
+<1>定义MUnit配置。请注意，`mock-connectors`设置为`false`。
+<2>定义FTP服务器配置。
+
+
+[%header%autowidth.spread]
+.FTP服务器配置参数
+|===
+|属性名称 |描述
+
+| `name`
+|定义此FTP服务器的配置名称。该值必须是唯一的。
+
+| `port`
+|定义FTP服务器应侦听的端口。
+
+| `secure`
+|（布尔值）定义FTP协议。接受的值是SFTP的`true`或FTP的`false`。默认值是`false`。
+
+|===
+
+=== 启动FTP服务器
+
+为了运行，FTP服务器必须在`before-suite`中启动。使用`start-server`消息处理器启动服务器。
+
+[source, xml, linenums]
+启动FTP服务器
+----
+<munit:before-suite name="before.suite" description="Starting FTP server">
+  <ftpserver:start-server config-ref="ftpServer"/>
+</munit:before-suite>
+----
+
+=== 运行测试
+
+一旦我们的FTP服务器启动并运行，我们就可以运行我们的测试。
+
+[source, xml, linenums]
+。测试FTP例子
+----
+<munit:test name="testFTPServer" description="Data must be stored in the ftp server">
+  <flow-ref name="exampleFlow" />
+  <ftpserver:contains-files file="ftp-jsonResult.txt" path="/tmp" config-ref="ftpServer"/>
+</munit:test>
+----
+
+注意：此FTP接受任何用户，因此不需要设置用户数据库或列表。
+
+正如您在测试中看到的，我们使用了`contains-file`消息处理器。
+
+该消息处理器尝试验证FTP服务器中是否存在文件。如果文件不存在，则消息处理器失败，从而导致测试失败。
+
+[%header%autowidth.spread]
+。包含参数
+|===
+|属性名称 |描述
+
+| `config-ref`
+|定义FTP服务器配置。
+
+| `path`
+|定义在哪个文件夹中进行搜索。
+
+| `file`
+|定义要查找的文件的名称。
+
+|===
+
+`remove`消息处理器提供另一个可能有用的操作。此操作指示FTP服务器从存储中删除文件。
+
+[source,xml,linenums]
+。从FTP服务器中删除文件示例
+----
+<ftpserver:remove config-ref="ftpServer" path="/tmp/ftp-jsonResult.txt"/>
+----
+
+[%header%autowidth.spread]
+。删除参数
+|===
+|属性名称 |描述
+
+| `config-ref`
+|定义FTP服务器配置。
+
+| `path`
+|要删除的文件的完整路径。
+
+|===
+
+提示：当我们多次创建相同的文件名时，此功能有用。例如，我们可以在`after-test`中使用它，以确保没有名称冲突导致测试失败。
+
+=== 停止FTP服务器
+
+要正常停止FTP服务器，需要使用`stop-server`消息处理器在`after-suite`中停止。
+
+[source, xml, linenums]
+.Stop FTP服务器
+----
+<munit:after-suite name="after.suite" description="Stoping FTP server">
+  <ftpserver:stop-server config-ref="ftpServer"/>
+</munit:after-suite>
+----
+
+== 执行环境
+
+您可能已经注意到，我们的产品代码示例在以下示例中广泛使用了某些参数的占位符，例如`host`，`port`等：
+
+[source, xml, linenums]
+。参数化生产代码
+----
+<ftp:outbound-endpoint host="${host}" port="${ftp.port}" user="${ftp.user}" password="${ftp.password}" outputPattern="ftp-jsonResult.txt" path="/tmp"/>
+----
+
+原因是属性允许我们创建更具可配置性的代码。比较上面的例子：
+
+[source, xml, linenums]
+。编码的生产代码
+----
+<ftp:outbound-endpoint host="some.host" port="myPort" user="myUser" password="myPassword" outputPattern="ftp-jsonResult.txt" path="/tmp"/>
+----
+
+第二个示例代码是无法测试的，即使没有MUnit也是如此。如果我们需要在投入生产之前测试这些代码，我们总是用真实的证书打印生产数据库服务器，这带来了风险。
+
+另一方面，第一个示例代码允许我们定义两个不同的属性文件：
+
+* 一个用于测试环境
+* 一个用于生产环境
+
+这与Mule属性占位符结合使用，如下面的`${env}`所示：
+
+[source, xml, linenums]
+。参数化生产代码
+----
+<global-property value="mule.${env}.property"/>
+----
+
+在上例中，使用`${env}`可以让我们利用执行环境。因此，例如，我们可以定义两个单独的属性文件`mule.test.properties`和`mule.prod.properties`，它们包含相同的属性，其值根据我们希望使用的环境而定。
+
+提示：要从Maven运行测试并从命令行发出env参数，可以运行：`mvn -DargLine="-Dmule.env=test" clean test`。
+

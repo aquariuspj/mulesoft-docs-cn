@@ -1,0 +1,91 @@
+= 安装疑难解答
+
+本页面涵盖各种故障排除主题，例如帮助解决有问题的安装问题。
+
+== 无法注册控制台代理
+
+在Tomcat环境中运行Mule ESB服务器和控制台时，可能会遇到注册Mule服务器实例和控制台代理的问题。当您尝试通过控制台屏幕注册服务器时，会发生此问题。输入服务器名称和Mule代理的URL后，控制台显示一条消息，指出控制台无法注册您指定的Mule服务器，并且服务器主机系统未发送有效的HTTP响应。如果您之前已注销同一个服务器实例，但由于某种原因未正确完成注销过程，则通常会出现此问题。 Mule服务器实例可能还会在内部注册，这可能还有其他一些原因。
+
+发生这种情况时，您需要执行以下操作来解决问题：
+
+* 从`.mule/mmc-agent-mule3-app-3.x.x`目录中删除truststore.jks文件。 `.mule/mmc-agent-mule3-app-3.x.x`目录位于您之前启动Mule ESB服务器的目录下，并注册该Mule实例。例如，如果您是从Mule安装`c:/muleinstalldir/bin`目录启动Mule ESB，则`.mule/mmc-agent-mule3-app-3.x.x`目录位于`/bin`中。没有必要停止Mule实例来删除truststore.jks文件。
+
+Tcat用户还应该注意上述说明仅适用于Tomcat。对于Tcat，truststore.jks文件的位置不同。如果您使用的是Tcat，那么您应该注意，使用Early Access版本时，Tcat服务器控制台和Mule管理控制台不能位于同一个Tomcat实例中。
+
+== 无法注册服务器
+
+尝试使用MMC +注册Mule Server时得到此异常
+  `Could not register server <serverName>: sun.security.validator.ValidatorException: PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to requested target`
+
+*Solution*：尝试从` .mule/.agent`文件夹中删除`truststore.jks`，或者完全删除`.mule/.agent`文件夹。删除`truststore.jks`后，您需要重新启动Mule服务器。
+
+== 使用自定义代理配置
+
+您可以从注册新服务器实例时显示的默认URL中更改代理配置。代理配置确定服务器实例的绑定端口。有更改代理URL的原因，例如，如果要在同一个框中启动Mule ESB的多个实例，并将控制台连接到这些不同的实例，或者如果要连接到远程服务器实例。
+
+控制台假定默认绑定端口为7777.当您从命令行启动Mule时，您可以更改服务器绑定的端口。您可以在命令设置中将新端口指定为交换机或选项，如下所示：-M-Dmule.mmc.bind.port = PORT_NUMBER。请注意，在命令中指定配置文件选项后指定端口号选项：-config YOUR_CONFIG_FILE.xml。
+
+另外，当您更改代理绑定端口以容纳多个Mule实例时，您还必须从安装了特定Mule实例的`bin`目录启动Mule。例如，您可以按如下方式运行第二个Mule实例，其中第二个实例安装在/ opt / second_mule：
+
+[source, code, linenums]
+----
+/opt/second_mule/bin/mule -config hello-config.xml -M-Dmule.mmc.bind.port=7773
+----
+
+您还可以将此属性添加到wrapper.conf中，并保留在$ MULE_HOME / conf /
+
+wrapper.java.additional <n> =  - 。Dmule.mmc.bind.port = 7781
+
+用适当的序列号替换<n>。
+
+有关更完整的信息，请参阅 link:/mule-user-guide/v/3.3/running-multiple-mule-instances[运行多个Mule实例]。
+
+== 启动多个Mule代理实例
+
+您可以启动多个Mule代理实例，但必须将每个代理绑定到其自己的端口，并为每个代理启动一个单独的侦听器。
+
+例如，如果启动两个Mule代理程序实例，则一个实例使用默认的绑定端口7777，如上一节中所述。对于第二个代理程序实例，您将代理程序绑定的端口设置为端口7778.您还必须为此第二个代理程序实例指定一个侦听器类。将以下代码添加到`web.xml`文件中：
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>mule.mmc.bind.port</param-name>
+<param-value>7778</param-value>
+        <description>MMC agent bind port</description>
+</context-param>
+ 
+<listener>
+   <listener-class>com.mulesoft.mmc.agent.web.MmcAwareContextListener</listener-class>
+</listener>
+----
+
+[WARNING]
+如果您使用MMC监听器类，请移除org.mule.config.builders.MuleXmlBuilderContextListener监听器类，因为这两个监听器都将尝试启动相同的mule实例。
+
+请注意，独立Mule ESB服务器和通过`web.xml`文件配置的服务器支持相同的两个属性，即绑定端口和侦听器类。
+
+== 与Tcat一起使用时支持Mule管理控制台
+
+要使管理控制台能够使用Tcat服务器，您需要将变量`PermGenSize`的值从128更改为256.在部署管理控制台WAR之前，您应该将`PermGenSize`的大小增加到256文件到Tcat。修改`PermGenSize`后，启动Tcat，然后部署管理控制台WAR文件。 Tcat和管理控制台现在应该可以一起工作，没有任何问题。
+
+如果更改`PermGenSize`并启动Tcat后，您在部署控制台WAR文件时收到`OutOfMemoryError`消息，则需要执行以下步骤。这些步骤将引导您注册Tcat本地代理，部署管理控制台WAR文件，登录到控制台并注册控制台代理。
+
+* 安装Tcat 6.2.1或更高版本。
+
+编辑启动Tcat的批处理文件`catalina.bat`。您想要将文件顶部的`JAVA_OPTS`行移至文件中的第126行。然后，将该行内的`PermGenSize`设置从126m更改为256m。完成后，第126行应如下所示：
+
+[source, code, linenums]
+----
+set JAVA_OPTS=%JAVA_OPTS% -Dgalaxy.data="%CATALINA_BASE%\galaxy-data" -XX:MaxPermSize=256m
+-XX:+HeapDumpOnOutOfMemoryError -Dcom.sun.management.jmxremote -Djava.net.preferIPv4Stack=true
+----
+
+* 启动Tcat。
+* 登录到Tcat并注册本地Tcat代理。为代理使用此URL（例如，http：// localhost：7777 / agent）。
+* 创建一个包含mmc war文件和Local Tcat Agent的新程序包。
+* 单击保存并部署按钮。
+* 单击本地Tcat代理服务器链接。
+* 单击应用程序选项卡。
+* 点击转到链接。
+* 登录Mule管理控制台并启动已部署控制台代理的本地Mule ESB实例。
+* 单击控制台中的“新建服务器”按钮，并使用其URL（例如http：// localhost：7777 / mmc-support）注册控制台代理。

@@ -1,0 +1,703 @@
+=  HL7 EDI连接器
+：imagesdir：./_images
+
+_Premium_
+
+HL7 EDI连接器可让您将HL7 ER7消息转换为和转换
+使用列表和地图的DataWeave兼容表示。
+
+== 先决条件
+
+本文档假定您熟悉HL7，Mule，Anypoint
+连接器，Anypoint Studio，Mule流和Mule全局元素。
+
+有关兼容性信息，请参阅发行说明。链接到
+发布说明列在本文档的另请参见部分。
+
+要在生产环境中使用HL7 EDI连接器，您必须
+已经为Anypoint B2B购买了MuleSoft许可证。
+
+== 此连接器的新增功能
+
+HL7 EDI连接器4.0.0使用的数据结构不同于
+那些与Mule 3.x一起使用的3.x版本。
+
+在连接器的3.x版本中，复合组件被有效地插入
+在使用点，以便每个单独的元素
+嵌套在复合组件内的是基于key的key
+包含段并直接从地图引用
+代表细分市场。
+
+在每个连接器的4.x版本中
+复合组件由一个子地图代替
+并且组合中的值具有基于组合标识符的键。
+
+这种结构变化允许使用一致的映射
+数据在复合组件中，而不管包含
+段或段内的位置。
+
+== 在Design Center中进行连接
+
+Design Center中不支持HL7 EDI Connector 4.0。
+
+== 在Anypoint Studio 7中安装此连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+您必须更改默认的Anypoint配置才能使用HL7 EDI连接器4.0.0。
+
+Anypoint Studio 7.1.0和更高版本需要比标准内存更多的内存
+配置使用HL7 EDI连接器4.0.0。改变记忆
+设置Studio，编辑Anypoint Studio中的Anypoint.ini文件
+安装目录并更改以`-Xms`和`-Xmx`开头的两行：
+
+[source,code,linenums]
+----
+-Xms4096m
+-Xmx4096m
+----
+
+这将Anypoint Studio内存设置为4GB，这已足够
+对于这个连接器的大部分用法。
+
+
+== 创建模式
+
+根据您的实施创建模式来描述您的消息。
+
+=== 关于EDI模式语言
+
+HL7 EDI使用名为ESL（用于EDI Schema Language）的YAML格式
+代表EDI模式。基本的ESL定义了ER7消息的结构
+就结构而言（HL7术语中的消息结构），组，
+细分，复合材料和元素。 ESL为HL7
+版本v2.1，v2.2，v2.3.1，v2.3，v2.4，v2.5，v2.5.1，v2.6,2.7，
+包括2.7.1,2.8和2.8.1两种不同的形式：
+
+* 标准HL7使用必需或可选状态，数据类型，
+字段长度和每个HL7版本列出的重复计数。
+* 宽松HL7，其中所有细分和价值项都是可选的，全部
+低级数据类型被视为简单的字符串，并且
+字段长度和重复次数不被执行。
+
+有关消息结构的详细信息，请参阅HL7架构列表
+与连接器一起提供的模式定义。
+
+//（列在本文档的另请参阅部分。）
+
+您可以自定义HL7模式定义以适合您的数据
+直接复制和编辑模式定义或使用a
+控制台工具以基于一个或多个生成简化的模式
+样本文件。也可以使用覆盖模式
+HL7，与其他EDI格式一样，但不推荐使用此选项
+由于HL7定义的复杂性。
+
+你也可以从头开始定义你自己的模式。
+有关更多详细信息，请参阅EDI架构语言参考。
+
+//（列在本文档的另请参阅部分。）
+
+[NOTE]
+====
+YAML使用列表和一组键值对。的顺序
+只要所需物品存在，价值并不重要。行情
+（单引号或双引号）用于可能包含的值
+的数字，但意味着被解释为字符串（因为否则的
+YAML解析器将这些值视为数字）。缩进用于显示列表的嵌套。
+
+为了便于阅读，这里显示的ESL结构定义了所有简单的键值
+在属于相同定义的任何列表之前配对。
+====
+
+=== 复制和编辑模式定义
+
+HL7模式定义分布在hl7-schemas-4.0.0.jar中，
+它嵌入在HL7 EDI连接器更新站点内，也可以
+可以在标准的MuleSoft企业Maven仓库中找到
+（在组ID com.mulesoft.connectors下）。您可以复制消息结构模式
+从此JAR中进行编辑并进行编辑以符合您的特定需求。如果你只需要
+要在段级别进行更改，您可以复制消息结构
+架构本身;如果您需要更改分段定义，则还必须复制
+自该文件包含的同一版本的basedefs.esl模式
+段，复合和元素定义。
+
+EDI模式语言参考概述了ESL模式
+结构用于所有EDI连接器，包括HL7 EDI连接器。
+您应该参考该文档以了解架构定义的结构。
+
+以下是HL7消息结构模式的示例
+标准v2.5.1 ADT_A05消息结构：
+
+[source,yaml, linenums]
+----
+form: HL7
+version: '2.5.1'
+imports: [ '/hl7/v2_5_1/basedefs.esl' ]
+id: 'ADT_A05'
+name: 'ADT_A05'
+data: 
+- { idRef: 'MSH', position: '01', usage: M }
+- { idRef: 'SFT', position: '02', usage: O, count: '>1' }
+- { idRef: 'EVN', position: '03', usage: M }
+- { idRef: 'PID', position: '04', usage: M }
+- { idRef: 'PD1', position: '05', usage: O }
+- { idRef: 'ROL', position: '06', usage: O, count: '>1' }
+- { idRef: 'NK1', position: '07', usage: O, count: '>1' }
+- { idRef: 'PV1', position: '08', usage: M }
+- { idRef: 'PV2', position: '09', usage: O }
+- { idRef: 'ROL', position: '10', usage: O, count: '>1' }
+- { idRef: 'DB1', position: '11', usage: O, count: '>1' }
+- { idRef: 'OBX', position: '12', usage: O, count: '>1' }
+- { idRef: 'AL1', position: '13', usage: O, count: '>1' }
+- { idRef: 'DG1', position: '14', usage: O, count: '>1' }
+- { idRef: 'DRG', position: '15', usage: O }
+- groupId: 'PROCEDURE'
+  count: '>1'
+  usage: O
+  items: 
+  - { idRef: 'PR1', position: '17', usage: M }
+  - { idRef: 'ROL', position: '18', usage: O, count: '>1' }
+- { idRef: 'GT1', position: '20', usage: O, count: '>1' }
+- groupId: 'INSURANCE'
+  count: '>1'
+  usage: O
+  items: 
+  - { idRef: 'IN1', position: '22', usage: M }
+  - { idRef: 'IN2', position: '23', usage: O }
+  - { idRef: 'IN3', position: '24', usage: O, count: '>1' }
+  - { idRef: 'ROL', position: '25', usage: O, count: '>1' }
+- { idRef: 'ACC', position: '27', usage: O }
+- { idRef: 'UB1', position: '28', usage: O }
+- { idRef: 'UB2', position: '29', usage: O }
+----
+
+这显示了组成ADT_A05消息结构的段的列表，
+包括段组PROCEDURE和INSURANCE。由于以上是
+标准的定义（不是宽松的版本），它包括强制性的
+分段（以用法：M表示）以及可选分段
+（用法用O表示）。用于HL7的全套使用代码是：
+
+* 用于条件（等同于可选）
+*  M为强制性
+*  O代表可选
+*  U代表未使用（阅读时未接受警告，但未提供
+在从读取传递的数据中;写时忽略）
+
+一个段或组的出现次数可能由下式给出
+计数值。默认值为1。
+
+如果你只是想从消息结构中删除段或者
+将分部要求从强制变为可选（或反之亦然），
+您可以轻松地在您的模式副本中进行更改并使用
+在你的应用程序中修改版本
+
+您还可以添加原始邮件中不存在的片段
+结构定义。为此，我们建议您先删除该位置
+来自架构中所有现有段和组定义行的值，
+否则你需要重新编号添加段后面的所有内容。
+如果您删除显式位置编号。段和组被分配
+位置编号顺序，而大多数情况下这些编号不是
+通过HL7 EDI Connector 3.1.0应用程序可见。
+
+如果你想将一个标准的HL7段添加到消息结构中，你可以
+在适当的地方用idRef行引用它，并获得HL7
+来自basedefs.esl文件的定义引用为导入。
+
+以下部分示例显示了添加到ADT_A05消息结构中的CON段：
+
+[source,yaml, linenums]
+----
+form: HL7
+version: '2.5.1'
+imports: [ '/hl7/v2_5_1/basedefs.esl' ]
+id: 'ADT_A05'
+name: 'ADT_A05'
+data: 
+- { idRef: 'MSH', usage: M }
+- { idRef: 'SFT', usage: O, count: '>1' }
+- { idRef: 'EVN', usage: M }
+- { idRef: 'PID', usage: M }
+- { idRef: 'PD1', usage: O }
+- { idRef: 'CON', usage: O, count: '>1' }
+- { idRef: 'NTE', usage: O }
+- { idRef: 'ROL', usage: O, count: '>1' }
+- { idRef: 'NK1', usage: O, count: '>1' }
+- { idRef: 'PV1', usage: M }
+- { idRef: 'PV2', usage: O }
+- { idRef: 'CON', usage: O, count: '>1' }
+- { idRef: 'ROL', usage: O, count: '>1' }
+...
+----
+
+如果你想为你的消息结构定义一个非标准段，
+将分段定义添加到模式。这比刚才更复杂
+修改段结构，因为您需要列出所有组件
+在细分市场中。最简单的起点是找到一个类似的
+标准HL7段并复制用于该标准的定义
+来自basedefs.esl文件的段。然后您可以添加分段键
+遵循您的消息结构定义，后跟一个或多个
+段定义。
+
+有关组合a的模式示例，请参阅以下部分
+消息结构和段定义。
+
+=== 使用示例消息简化模式
+
+HL7标准定义非常复杂，通常有细分市场
+具有二十种或更多种组分和许多组分复合物
+它们本身被分解成许多子组件。这个可以
+由于消息的DataSense视图，难以绘制HL7地图
+必须包含所有这些子组件。
+
+实际上，HL7的大多数用户只填充了一小部分
+总HL7标准定义。为了利用这一点，HL7
+EDI连接器提供了一个您可以使用的基于控制台的Java工具
+通过消除组件来简化您的模式定义
+通常不会在您的消息中使用。
+
+模式简化工具分布为
+hl7-simplification-4.0.0.jar，它在标准中找到
+MuleSoft企业Maven存储库（组ID为com.mulesoft.connectors）。
+它需要消息结构模式和一个或多个示例消息
+（作为单独的文件）作为输入，并生成减少的输出模式
+一直到仅存在于一个或多个中的段和组件
+示例消息。
+
+要使用此工具，请下载JAR并打开命令行控制台，然后键入：
+
+[source,bash]
+----
+java -jar hl7-simplify-4.0.0.jar {input-schema} {output-schema} {sample1} {sample2} ...
+----
+
+哪里：
+
+* 输入模式是用于读取消息的消息结构模式，
+它可以是对提供的模式的文件或类路径引用
+如`/hl7/v2_5_1/ADT_A05.esl`路径。
+*  output-schema是简化模式输出的文件路径。
+*  sample1 ... n是示例消息的文件路径。
+
+*Note:*确保使用回车（CR）保存示例消息文件
+行结尾，因为这是所需的HL7段分隔符 - 文本编辑器
+通常使用操作系统的默认行结束符，这可能不正确。
+
+以下是使用此工具生成的简化模式的部分示例：
+
+[source,yaml, linenums]
+----
+form: HL7
+version: '2.5.1'
+structures: 
+- id: 'SIU_S12'
+  name: 'SIU_S12'
+  data: 
+  - { idRef: 'MSH', position: '01', usage: O }
+  - { idRef: 'SCH', position: '02', usage: O }
+  - groupId: 'PATIENT'
+    count: '>1'
+    usage: O
+    items: 
+    - { idRef: 'PID', position: '06', usage: O }
+    - { idRef: 'PV1', position: '08', usage: O }
+  - groupId: 'RESOURCES'
+    count: '>1'
+    usage: O
+    items: 
+    - { idRef: 'RGS', position: '14', usage: O }
+    - groupId: 'SERVICE'
+      count: '>1'
+      usage: O
+      items: 
+      - { idRef: 'AIS', position: '16', usage: O }
+    - groupId: 'GENERAL_RESOURCE'
+      count: '>1'
+      usage: O
+      items: 
+      - { idRef: 'AIG', position: '20', usage: O }
+    - groupId: 'LOCATION_RESOURCE'
+      count: '>1'
+      usage: O
+      items: 
+      - { idRef: 'AIL', position: '24', usage: O }
+    - groupId: 'PERSONNEL_RESOURCE'
+      count: '>1'
+      usage: O
+      items: 
+      - { idRef: 'AIP', position: '28', usage: O }
+segments: 
+- id: 'AIG'
+  name: 'Appointment Information - General Resource'
+  varTag: 'AIG'
+  values: 
+  - { idRef: 'SI', name: 'Set ID - AIG', usage: O }
+  - { idRef: 'varies', name: 'Segment Action Code', usage: U, count: '>1' }
+  - { idRef: 'CE_2', name: 'Resource ID', usage: O }
+  - { idRef: 'varies', name: 'Resource Type', usage: U, count: '>1' }
+  - { idRef: 'varies', name: 'Resource Group', usage: U, count: '>1' }
+  - { idRef: 'varies', name: 'Resource Quantity', usage: U, count: '>1' }
+  - { idRef: 'varies', name: 'Resource Quantity Units', usage: U, count: '>1' }
+  - { idRef: 'TS', name: 'Start Date/Time', usage: O }
+- id: 'AIL'
+  name: 'Appointment Information - Location Resource'
+  varTag: 'AIL'
+  values: 
+  - { idRef: 'SI', name: 'Set ID - AIL', usage: O }
+  - { idRef: 'varies', name: 'Segment Action Code', usage: U, count: '>1' }
+  - { idRef: 'PL', name: 'Location Resource ID', usage: O, count: '>1' }
+  - { idRef: 'CE', name: 'Location Type-AIL', usage: O }
+  - { idRef: 'varies', name: 'Location Group', usage: U, count: '>1' }
+  - { idRef: 'TS', name: 'Start Date/Time', usage: O }
+- id: 'AIP'
+  name: 'Appointment Information - Personnel Resource'
+  varTag: 'AIP'
+  values: 
+  - { idRef: 'SI', name: 'Set ID - AIP', usage: O }
+  - { idRef: 'varies', name: 'Segment Action Code', usage: U, count: '>1' }
+  - { idRef: 'XCN_2', name: 'Personnel Resource ID', usage: O, count: '>1' }
+  - { idRef: 'CE_1', name: 'Resource Type', usage: O }
+  - { idRef: 'varies', name: 'Resource Group', usage: U, count: '>1' }
+  - { idRef: 'TS', name: 'Start Date/Time', usage: O }
+...
+composites: 
+- id: 'CE'
+  name: 'Coded Element'
+  values: 
+  - { idRef: 'ST', name: 'Identifier', usage: O }
+  - { idRef: 'ST', name: 'Text', usage: O }
+- id: 'CE_1'
+  name: 'Coded Element'
+  values: 
+  - { idRef: 'ST', name: 'Identifier', usage: O }
+- id: 'CE_2'
+  name: 'Coded Element'
+  values: 
+  - { idRef: 'ST', name: 'Identifier', usage: O }
+  - { idRef: 'ST', name: 'Text', usage: O }
+  - { idRef: 'ID', name: 'Name of Coding System', usage: O }
+...
+----
+
+段中未使用的组件不能从段中删除
+定义（除非它们在段的末尾），所以简化
+工具只是将组件的`varies`数据类型替换为标记
+用法：U代表未使用。 `varies`的重复次数仍然是
+与此例中的原始组件相同，但不显示
+在DataWeave中看到的数据的DataSense视图中。
+
+当架构简化工具检查哪些数据存在于
+消息，它在上下文中处理每个复合事件。不同
+样品中存在相同复合物的用法可能有不同的值。当这个
+发生这种情况时，复合材料会使用不同的标识符定义多次。
+上例中的CE组合显示了这一点。
+
+简化模式保留原始模式中的段位置。
+如果需要，您可以从简化模式中删除这些位置值，
+因为除非您使用位置，否则它们不会被HL7 EDI连接器使用
+段密钥上的前缀（连接器配置选项之一）。
+
+=== 确定HL7架构位置
+
+要使用连接器，您需要知道模式的位置
+在你的项目中。如果您使用开箱即用的HL7模式和
+没有定制任何东西，标准的模式位置遵循
+`/hl7/{version}/{message structure}.esl`模式和宽松的模式
+位置遵循`/hl7lax/{version}/{message structure}.esl`模式。
+例如，如果您使用的是2.5.1版本和ADT_A01消息
+结构，您的模式位置为`/hl7/v2_5_1/ADT_A01.esl`
+标准版本（包括必需的值，数据类型和
+长度/重复次数）或`/hl7lax/v2_5_1/ADT_A01.esl`。
+
+如果您使用一个或多个自定义模式，则应将其置于下方
+`src/main/app`中的目录，并使用`${app.home}`引用该位置。
+例如，如果您将ADT_A01架构放在src / main / app / mypartner / ADT_A01.esl下，
+您的架构位置是`${app.home}/mypartner/ADT_A01.esl`。
+
+Mule Runtime自动检查任何位置的`src/main/app`
+包含`${app.home}`值。
+
+=== 关于事件和消息到消息结构图
+
+如果您使用多个消息结构模式来配置连接器
+（无论是在单独的模式定义文件中，与提供的模式一样，
+或在单个文件中），您可能需要定义来自HL7事件的映射
+和消息结构的消息类型。
+
+HL7在组合值MSH-09的组件值中定义消息类型
+MSG型结构。 HL7
+EDI连接器使用这些组件值来查找结构模式
+根据以下规则用于处理接收消息：
+
+* 如果MSG-01消息代码值为ACK，则始终使用预定义的ACK模式。
+* 否则，如果MSG-03消息结构值存在（例如一个值
+作为ADT_A01），使用具有该ID的模式结构。
+* 否则，使用配置的事件和消息到消息结构图来确定
+来自指定触发事件（MSG-02）和消息代码（MSG-01）值的消息结构。
+
+事件和消息到消息结构映射是一个可选的配置参数。
+它必须是一个YAML文件，其中包含从每个事件类型到每个映射的映射
+支持的消息代码到实际的消息结构。
+
+下面是这个样子的一个例子：
+
+[source,yaml, linenums]
+----
+A01: { XYZ: ADT_A01, ACK: ACK }
+A02: { XYZ: ADT_A02, ACK: ACK }
+A03: { XYZ: ADT_A03, ACK: ACK }
+A04: { XYZ: ADT_A01, ACK: ACK }
+A05: { XYZ: ADT_A05, ACK: ACK }
+A06: { XYZ: ADT_A06, ACK: ACK }
+A07: { XYZ: ADT_A06, ACK: ACK }
+A08: { XYZ: ADT_A01, ACK: ACK }
+----
+
+每个版本的HL7都定义了一组不同的来自事件类型和映射的映射
+消息代码到消息结构。默认映射在。中提供
+与名为event-message.yaml的文件中的标准HL7模式定义相同的JAR。
+您对这些映射定义使用与实际消息结构模式相同类型的路径。
+
+== 在Anypoint Studio 7中创建一个Mule项目
+
+在安装连接器并自定义模式（如果需要）后，可以开始使用连接器。为每个实施约定创建单独的配置。
+
+. 单击画布底部的全局元素选项卡，然后单击创建。
+. 在选择全局类型向导中，使用过滤器定位并选择HL7 EDI：Configuration，然后单击OK。
+. 单击确定以保存全局连接器配置。
+. 返回到Studio中的消息流选项卡。
+
+=== 关于常规选项
+
+在常规选项中，您可以配置适用于读取和写入HL7消息的设置：
+
+*  HL7字符编码，始终用于写入消息并使用
+当读取消息时，除非MSH-18（字符集）指定了不同的编码。
+* 为数据键禁用数字前缀 - 此选项为true
+默认，这将关闭分段数据的数字前缀;该
+只有关闭此选项的原因是为了与映射兼容
+为HL7 EDI连接器3.0.0定义。
+* 手动创建或编辑模式列表。
+
+=== 在可视化编辑器中设置您的HL7标识
+
+您可以配置消息标题（MSH）应用程序和设施
+在您的HL7 EDI连接器配置上识别您和您的贸易伙伴。
+
+写入HL7消息来提供设置的值
+名称空间ID，通用ID和通用ID类型，并进行验证
+在接收消息。如果你不想限制传入的消息
+您可以将其留空，并设置传出消息的值
+在写入操作或实际的传出消息上。值设置
+写操作将覆盖连接器配置和值
+直接在消息上设置覆盖连接器配置
+以及在写入操作中设置的任何值。
+
+在Studio中，这些值在这些全局元素属性中设置。
+
+* 自我识别参数可识别您的贸易伙伴关系。
++
+自我识别设置：
++
+[source,code,linenums]
+----
+Mule Application Namespace ID (MSH-03/HD-01 when sending, MSH-05/HD-01 when receiving)
+Mule Application Universal ID (MSH-03/HD-02 when sending, MSH-05/HD-02 when receiving)
+Mule Application Universal ID Type (MSH-03/HD-03 when sending, MSH-05/HD-03 when receiving)
+----
++
+* 合作伙伴标识参数可识别您的贸易伙伴。
++
+合作伙伴标识设置
++
+[source,code,linenums]
+----
+Partner Application Namespace ID (MSH-03/HD-01 when receiving, MSH-05/HD-01 when sending)
+Partner Application Universal ID (MSH-03/HD-02 when receiving, MSH-05/HD-02 when sending)
+Partner Application Universal ID Type (MSH-03/HD-03 when receiving, MSH-05/HD-03 when sending)
+----
+
+=== 设置解析器选项
+
+如果需要，您可以设置以下选项：
+
+* 验证HL7消息版本。
+* 事件和消息到消息结构映射路径（如果使用多个消息结构，除非MSH-09和MSG-03消息结构值始终存在于接收到的消息中，否则是必需的）。
+* 所需的处理ID（用于指定接收消息所需的特定处理ID，例如生产中的`P`）。
+* 通用扩展段名称的模式（以允许将扩展段作为字段值映射进行处理）。
+* 缺少必需的值时失败。
+* 当值长度超出允许范围时失败。
+* 无效字符在值时失败。
+* 当一个值的重复次数过多时失败。
+* 消息中出现未知段时失败。
+* 当消息中的段出现故障时失败。
+* 未使用的段包含在消息中时失败。
+* 当段的重复次数太多时失败。
+
+=== 示例：HL7 Studio
+
+以下流程可以从随后的XML中加载。
+
+image:hl7-connector-flow-in-studio.png[Studio中的示例流程]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" 
+xmlns:hl7="http://www.mulesoft.org/schema/mule/hl7"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" 
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" 
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core 
+  http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http 
+http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/hl7 
+http://www.mulesoft.org/schema/mule/hl7/current/mule-hl7.xsd
+http://www.mulesoft.org/schema/mule/ee/core 
+http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" 
+  doc:name="HTTP Listener config" >
+		<http:listener-connection host="localhost" port="8081" />
+	</http:listener-config>
+	<hl7:config name="HL7_Extension_Config" doc:name="HL7 Extension Config" identKeys="true">
+		<hl7:schemas >
+			<hl7:schema value="/hl7/v2_5_1/ADT_A05.esl" />
+			<hl7:schema value="/hl7/v2_5_1/ADT_A01.esl" />
+		</hl7:schemas>
+	</hl7:config>
+	<flow name="hl7testFlow" >
+		<http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/hl7"/>
+		<hl7:read doc:name="Read" config-ref="HL7_Extension_Config"/>
+		<ee:transform doc:name="Transform Message" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	Delimiters: payload.Delimiters,
+	Id: payload.Id
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<hl7:write doc:name="Write" config-ref="HL7_Extension_Config"/>
+	</flow>
+</mule>
+----
+
+=== 以XML格式设置您的HL7标识
+
+您可以在HL7 EDI连接器配置上为您和贸易伙伴配置消息标题（MSH）应用程序和设施标识。
+
+在编写HL7消息以提供名称空间ID，通用ID和通用ID类型并在接收消息中验证时使用您设置的值。如果您不想限制传入消息，可以将其留空，并在写操作或实际传出消息上设置传出消息的值。在写入操作上设置的值会覆盖连接器配置，并且直接在消息上设置的值会覆盖连接器配置和写入操作中设置的任何值。
+
+* 自我识别参数可识别您的贸易伙伴关系。
++
+自我识别参数：
++
+[source,xml,linenums]
+----
+appNamespaceIdSelf="<value>"
+appUniversalIdSelf="<value>"
+appUniversalIdTypeSelf="<value>"
+----
++
+* 合作伙伴标识参数可识别您的贸易伙伴。
++
+伙伴识别参数：
++
+[source,xml,linenums]
+----
+appNamespaceIdPartner="<value>"
+appUniversalIdPartner="<value>"
+appUniversalIdTypePartner="<value>"
+----
+
+=== 设置解析器选项
+
+如果需要，您可以设置以下选项：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| eventMessageMap = "/hl7/v2_5_1/event-message.yaml"  |事件和消息到消息结构映射路径（如果使用多个消息结构，则除外MSH-09和MSG-03消息结构值总是存在于收到的消息）。
+| genericExtensionPattern = "Z.."  |通用扩展段名称的Java常规模式（允许将扩展段作为字段值映射进行处理）。
+| invalidCharacterInValueFail = "true"  |无效字符在值时失败。
+| missingRequiredValueFail = "true"  |缺少所需值时失败。
+| processingId = "PRODUCTION"  |所需的处理ID（用于指定接收消息所需的特定处理ID，例如Production `P`）。
+| segmentOutOfOrderFail = "true"  |消息中的段出现故障时失败。
+| unknownSegmentFail = "true"  |未知段在消息中时失败。
+| unusedSegmentPresentFail = "true"  |未使用的段包含在消息中时失败。
+| validateHL7Version = "true"  |验证HL7消息版本。
+| valueLengthErrorFail = "true"  |当值长度超出允许范围时失败。
+| wrongSegmentsRepeatsFail = "true"  |段的重复次数太多时失败。
+| wrongValuesRepeatsFail = "true"  |当一个值的重复次数过多时失败。
+|===
+
+=== 设置您的架构位置
+
+您可以在Anypoint Studio XML视图中配置架构位置。
+
+在Anypoint Studio中，通过单击配置XML切换到XML视图，并修改您的HL7 EDI配置，以包含您希望包含的每个文档类型的`+<{{0}}>+`元素的所有模式的列表：
+
+[source, xml, linenums]
+----
+<hl7-edi:config name="HL7_EDI__Configuration" identKeys="true" doc:name="HL7 EDI: Configuration">
+  <hl7-edi:schemas>
+    <hl7-edi:schema>hl7/v2_6/ADT_A01.esl</hl7-edi:schema>
+  </hl7-edi:schemas>
+</hl7-edi:config>
+----
+
+为HL7 EDI创建全局元素后，配置消息结构，操作和确认。
+
+== 关于HL7消息结构
+
+HL7连接器将HL7文档读入或写入规范的ER7消息结构。此结构表示为Java地图和列表的层次结构，可以使用DataWeave或代码进行操作。每个事务都有自己的架构，在架构中定义。
+
+HL7消息包含以下键：
+
+[%header%autowidth.spread]
+|===
+|密钥名称 |说明
+| ACK（只读） |响应于输入数据而生成的ACK消息。 MSA-01确认码值基于解析器配置设置。要发送确认，请参阅下面的发送确认部分。
+|数据（读取或写入） |消息数据的封装器，其中的密钥与链接到实际数据的消息结构ID值匹配。这允许将不同的消息包含在元数据中并在DataWeave映射中进行处理。
+|分隔符（读取或写入） |用于消息的分隔符。字符串中的字符根据位置进行解释，顺序如下：（分隔符），（重复分隔符），（转义字符），（子分隔符）。
+|错误（只读） |与输入消息关联的错误列表。请参阅下面阅读和验证HL7消息部分中的HL7Error结构说明。
+| Id  |消息结构ID。
+| MSH（只读） |链接到接收到的MSH分段数据。
+|名称（只读） |消息结构名称。
+|===
+
+个别消息具有自己的地图，密钥与消息的段相匹配。例如，ACK消息将使用消息结构ID ACK，并且发送或接收的ACK消息的数据将作为数据映射中的ACK值出现。 ACK消息本身就是一张地图，消息的片段和群组用地图（在单例实例的情况下）或地图列表（用于重复实例）用位置关键字表示。
+
+有两种特殊情况，其中通用处理用于未包含在模式定义中的数据。第一种是针对`varies`类型的HL7值。由于这些值可能由组件和子组件的任何结构组成，并且可能会重复，因此解析器会为每个`varies`类型使用一系列映射表示。每个映射中的键都是在解析值时生成的，并将标准HL7值名称与每个嵌套级别使用的两位数字匹配。
+因此，例如OBX-05 Observation Value字段的简单文本值只会在地图中使用键OBX-05。如果存在两个组件，则它们使用按键OBX-05-01和OBX-05-02。
+
+具有与在解析器选项下配置的模式匹配的标记的扩展段使用与“变化”值相似的结构，但仅限于整个段的单个映射中。扩展段解析和编写代码不支持重复值。
+
+包含扩展段数据的映射将添加到具有关键ExtensionSegs的列表中的基本消息映射。除了实际的扩展段数据之外，扩展段的映射还包含两个其他键：
+
+[%header%autowidth.spread]
+|===
+|键 |说明
+| Ident  |扩展段标识符（标记）。
+|位置 |消息结构中段的位置，为两位数字符串。这与在模式中定义的紧接在前面定义的段的位置相同。如果在ADT_A01消息结构中的EVN段之后使用ZVN扩展段，则ZVN位于位置03）。
+|===
+
+如果在嵌套组中使用扩展段，则包含这些段的列表将包含在表示该组的映射中。扩展段在解析器创建的列表中按位置排序，写入时还必须按位置排序。
+
+== 另请参阅
+
+*  link:/connectors/hl7-schemas[HL7提供的模式]。
+*  link:/release-notes/hl7-connector-release-notes[HL7 EDI连接器发行说明]。
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。
+*  link:/anypoint-b2b/edi-schema-language-reference[EDI模式语言]。
+

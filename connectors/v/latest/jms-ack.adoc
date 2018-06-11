@@ -1,0 +1,72 @@
+= 处理消息确认
+:keywords: jms, connector, consume, message, ack
+：TOC：
+：TOC标题：
+
+JMS连接器提供了不同的确认配置。
+
+== 自动确认成功
+
+可以在`jms:listener`组件中使用`AUTO` `ackMode`，导致接收到的消息*if and only if the flow execution completes successfully*的自动确认。
+如果在流程执行过程中发生错误导致它过早终止，那么消息将不会被确认并重新传送。
+
+与`AUTO`类似的另一个`ackMode`是`DUPS_OK`。有了`DUPS_OK`，流程执行成功后，消息被自动确认，但是可能会导致重复，因为可能会在执行ACK之前重新传送消息。
+
+== 立即确认
+
+在`jms:listener`或`jms:consume`操作中将`ackMode`设置为`IMMEDIATE`将导致消息被消费后自动应答，并且在消息由应用。
+如果在处理消息期间发生任何错误，那么在接收到消息后自动确认消息意味着消息不会被重新发送，因此必须创建像死信队列这样的应用程序逻辑来处理错误而不会丢失消息。
+
+== 手动确认
+
+正如您所期望的那样，`MANUAL` `ackMode`将对消息执行ACK的所有责任委托给应用程序逻辑。
+
+通过这种配置，`listener`或`consume`操作接收到的每条消息都会在MuleMessage `attributes`中有一个`ackId`可用，该标识符为给定连接唯一标识此消息。
+
+标识消息的`ackId`将被传递给`jms:ack`操作：
+
+[source, xml, linenums]
+----
+<flow name="consumerWithManualAck">
+    <jms:consume config-ref="JMS_config" destination="openTickets" ackMode="MANUAL"/>
+
+    <!--Do message processing-->
+    <logger message="#[payload]">
+
+    <jms:ack ackId="#[attributes.ackId]"/>
+</flow>
+----
+
+
+=== 手动会话恢复
+
+当使用`MANUAL` `ackMode`时，所有收到但未确认的消息都不会被代理人重新发送。
+如果在消息处理过程中发生错误以防止它被确认，则用户负责手动恢复会话中必须使用`recover-session`操作重新递送的所有消息：
+
+[source, xml, linenums]
+----
+<flow name="consumerWithManualAck">
+    <jms:consume config-ref="JMS_config" destination="${destination}"
+                 ackMode="MANUAL" target="consumedMessage" targetValue="#[message]"/>
+
+    <!--Do message processing-->
+    <logger message="#[payload]">
+
+    <jms:ack ackId="#[vars.consumedMessage.attributes.ackId]"/>
+
+    <error-handler>
+        <on-error-propagate>
+            <!--In case of error, recover the session-->
+            <jms:recover-session ackId="#[vars.consumedMessage.attributes.ackId]"/>
+        </on-error-continue>
+    </error-handler>
+</flow>
+----
+
+与以前一样，用于恢复会话的连接必须与用于接收消息的连接相同。
+
+
+== 另请参阅
+
+*  link:jms-topic-subscription[使用主题订阅]
+*  link:jms-listener[如何听新消息]

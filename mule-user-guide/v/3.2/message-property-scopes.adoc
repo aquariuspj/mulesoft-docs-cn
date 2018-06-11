@@ -1,0 +1,61 @@
+= 消息属性范围
+
+== 背景
+
+骡有以下范围：
+
+*  *Inbound*  - 来自客户请求的属性/头文件
+*  *Invocation*  - 在此服务的调用期间，Mule大部分内部使用，通常不会使用，也不适用于最终用户
+*  *Outbound*  - 被视为从此服务发出的值。它们成为下一个服务的请求属性，或者在同步调用的情况下成为响应属性
+*  *Session*  - 从调用传递到调用的值（请注意，Mule 3.x中的会话范围处理已得到很大改进）
+
+为了更好地理解示波器，消息在通过入站时从左向右流动，命中组件并转至出站。 Mule属性可以在范围之间移动，或者隐式（由Mule内部处理的'魔术'相关属性集合），或者当由用户强制和配置时（使用`message-properties-transformer`）显式地移动。
+
+Mule 2.x一直拥有属性范围，尽管它们大多在内部使用，而不是在面向用户的代码中强制执行。例如。在2.x中的呼叫如：
+
+[source, code, linenums]
+----
+message.getProperty("Content-Type")
+----
+
+导致在每个范围内查找属性。另一个副作用是属性集合最终具有比想要更多的值，有时会干扰流（要求用户明确地从消息中删除这些消息）。
+
+Mule 3.x引入了一个更严格的概念，导致了下面所述的变化。
+
+===  API
+
+.  `message.getProperty()`已被弃用，以支持范围特定的变体，例如`message.getInboundProperty()`。有关更多详细信息，请参阅`MuleMessage` javadoc。现在不推荐使用的调用只能在出站作用域中查看，因为这是最常见的用例。
+已将.  `message.getPropertyNames()`作为返回的所有范围属性的展开集合弃用。替换为特定于范围的方法，例如`message.getInboundPropertyNames()`
+.  `message.setProperty()`已被弃用，以支持范围特定的变体，例如`message.getOutboundProperty()`。有关更多详细信息，请参阅`MuleMessage` javadoc。不建议使用的调用现在只在出站范围内设置属性，因为这是最常见的用例。
+已引入.  `message.get/setSessionProperty()`个便捷方法来处理会话范围的属性。
+
+=== 配置更改
+
+由于这些更改，.  `message-properties-transformer`现在更加强调范围属性。默认情况下，使用*outbound*作用域，通过变换器上的`scope`属性进行自定义
+.  `message-property-filter`现在支持可选的作用域属性
+. 表达式语法已得到增强以支持范围。范围部分是可选的，并且是**case-insensitive**。默认范围是*outbound*。一般语法是：
+
+[source, xml, linenums]
+----
+<evaluator>:<scope>:<expression>
+----
+
+
+例如：
+
+[source, code, linenums]
+----
+header:INBOUND:foo
+----
+
+=== 内部行为
+
+. 会话处理程序序列化会话内容并将其保存在*outbound*范围内。接收端查找并反序列化来自*inbound*范围的会话。
+. 入站属性不再自动传播。默认情况下，没有任何入站用户属性被复制到出站范围。用户可以在需要时显式传播一个属性。请注意，在此示例中，默认出站范围用作目标范围，可以通过变换器的`scope`属性进行自定义：
+
+[source, xml, linenums]
+----
+<outbound>    <pass-through-router>        <vm:outbound-endpoint path="middle" exchange-pattern="request-response">            <message-properties-transformer scope="outbound">                <!-- Propagate 'myFooProperty' from the inbound to outbound -->                <add-message-property key="myFooProperty" value="#[header:INBOUND:myFooProperty]"/>            </message-properties-transformer>        </vm:outbound-endpoint>    </pass-through-router></outbound>
+----
+
+.  VM到VM调用的行为与其他传输的预期相同，即出站属性最终位于接收VM端点的入站范围中。

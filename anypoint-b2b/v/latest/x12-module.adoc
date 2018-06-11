@@ -1,0 +1,402 @@
+=  X12模块
+:keywords: b2b, x12, schema, module, edi
+
+_Premium_
+
+X12模块为您提供了使用X12 EDI（电子数据交换）与贸易伙伴进行交流的能力。
+
+注意：本文档描述了X12的Mule 3版本。对于Mule 4版本，请参阅 link:/connectors/x12-edi-connector[X12 EDI连接器]。
+
+X12模块包括：
+
+*  X12 EDI消息读取，消息验证和消息写入
+* 与DataSense和DataWeave集成
+来自0030xx，0040xx和0050xx以及006020的所有版本的*  X12消息包
+* 定义自己的模式或自定义基本X12模式的能力
+
+要开始使用连接器，请按照下列步骤操作：
+
+. 安装X12连接器。
+. 根据您的实施情况创建模式来描述您的EDI消息。
+. 根据您的实施惯例为您的贸易伙伴配置EDI模块。
+. 使用Mule流程中的EDI模块。
+
+本页有助于为每个步骤提供指导。
+
+== 安装
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+== 通过Maven使用X12模块
+
+如果您想将X12模块与Maven结合使用，请按照 link:http://mulesoft.github.io/edi-module/x12/guide/install.html[Mule EDI Anypoint X12连接器页面]上*Install*选项卡的*As a Maven Dependency*部分中的说明操作。
+
+==  EDI模式语言
+
+X12模块使用名为ESL（用于EDI模式语言）的YAML格式来表示EDI模式。基本ESL根据_structures_（X12术语中的事务集），_groups_（X12中的循环），_segments_，_composites_和_elements_定义EDI消息的结构。包括X12 004010和005010版本的ESL。
+
+要根据您的实施惯例配置X12模块，请定义_overlay schema_。覆盖模式是一种特殊的ESL形式，允许您使用特定的约定修改基本模式，如X12 4010 850模式。 （如果您使用标准定义的结构，则不需要覆盖模式，但大多数EDI交换都会修改实现约定中的基础定义）。
+
+你也可以从头开始定义你自己的模式。
+有关更多详情，请参阅 link:/anypoint-b2b/edi-schema-language-reference[EDI模式语言参考]。
+
+[NOTE]
+====
+YAML使用列表和一组键值对。只要需要的项目存在，值的顺序并不重要。引号（单引号或双引号）用于可能由数字组成但是被解释为字符串的值（因为否则YAML解析器会将值视为数字）。缩进用于显示列表的嵌套。
+
+为了便于阅读，这里显示的ESL结构定义了属于相同定义一部分的任何列表之前的所有简单键 - 值对。
+====
+
+=== 使用覆盖架构定义您的实施公约
+
+要根据您的实现惯例指定模式，您可以按照以下过程进行操作：
+
+* 创建一个导入您要自定义的基本模式的"overlay"模式 - 例如，X12 005010 850
+* 自定义总体结构 - 细分使用情况，职位，组和计数
+* 自定义细分 - 包括使用情况和计数
+
+覆盖架构在结构上与 link:/anypoint-b2b/edi-schema-language-reference[完整的模式定义]非常相似，但不提供架构结构的所有细节，而只是列出更改。覆盖模式指定如何使用与特定贸易伙伴的实施约定来扩展和自定义标准。
+
+举例来说，以下是修改基本X12 005010 850事务集定义的示例覆盖模式的开始。此示例自定义`CUR`段并指定它未使用 - 从而确保它不会显示在Studio的映射结构中。
+
+[source,yaml, linenums]
+----
+form: X12
+version: '005010'
+imports: [ '/x12/005010/850.esl' ]
+structures:
+- idRef: '850'
+  name: Purchase Order
+  class: PO
+  heading:
+  - { idRef: 'CUR', position: '0400', usage: U }
+----
+
+=== 结构覆盖
+
+结构覆盖详细说明对X12事务集的基本模式定义的修改。大多数情况下，这些修改采用将基本定义中的片段或组标记为未使用的形式，但允许使用或重复计数更改。以下是结构覆盖图所采用的表单：
+
+[source,yaml, linenums]
+----
+- idRef: '850'
+  heading:
+  - { idRef: 'CUR', position: '0400', usage: U }
+  - { idRef: 'PER', position: '0600', usage: U }
+  - groupIdRef: 'N9_Loop'
+    position: '2950'
+    items:
+    - { idRef: 'DTM', position: '2970', usage: U }
+    - { idRef: 'PWK', position: '3050', usage: U }
+    - { idRef: 'EFI', position: '3080', usage: U }
+----
+
+此示例中的修改指定不使用标准850标题的CUR和PER段，以及N9组中的段（或X12术语，循环）。
+
+结构级别的键值对是：
+
+[%header,cols="3s,7a"]
+|===
+|键 |说明
+| idRef  |正在修改的事务集的ID。
+|名称 |事务集名称（可选）。
+|标题，详细信息，摘要 |结构每个部分中的部分和组修改列表（可选，每个部分仅在修改该部分时使用）。
+|===
+
+结构不同部分（标题，细节，摘要）的分段修改列表都使用相同的结构。列表中的每个项目都是段引用或组定义。段引用使用紧凑的YAML语法显示，其中每个引用的值都以逗号分隔的键值对的形式给出，并用大括号括起来。这些值是：
+
+[%header,cols="3s,7a"]
+|===
+|键 |说明
+| idRef  |引用的段ID（可选，如果提供，则验证，否则将忽略 - 位置值用于唯一标识段中的段）。
+|位置 |事务集部分中的段位置。
+|用法 |使用代码，可能是M表示强制，O表示可选，C表示条件，或者U表示未使用（可选，基本定义值如果未指定，则使用）。
+| count  |最大重复计数值，可能是一个数字或特殊值`>1`，表示任意数量的重复（如果未指定，则使用可选的基本定义值）。
+|===
+
+组覆盖图以展开的形式显示，键值对位于不同的行上。组定义中的值是：
+
+[%header,cols="3s,7a"]
+|===
+|键 |说明
+| groupIdRef  |引用的组ID（可选，如果提供，则会进行验证，否则将被忽略 - 位置值用于唯一标识节中的组）。
+|位置 |事务集部分中的段位置。
+|用法 |使用代码，可能是M代表强制性，O代表可选，C代表条件或U代表未使用。
+| count  |最大重复计数值，可能是一个数字或特殊值`>1`，表示任意数量的重复（如果未指定，则使用可选的基本定义值）。
+|项目 |构成循环的分段列表（以及潜在的嵌套循环）。
+|===
+
+=== 分段覆盖图
+
+段重叠再次详述对基本模式定义的修改。大多数情况下，这些修改的形式是将基本定义中的元素或组合标记为未使用，但允许使用或重复计数更改。以下是一些示例分段覆盖图：
+
+[source,yaml, linenums]
+----
+segments:
+- { idRef: AMT, trim: 3 }
+- idRef: BEG
+  items:
+  - { position: 4, usage: U }
+- { idRef: DTM, trim: 3 }
+- idRef: ITD
+  items:
+  - { position: 4, usage: U }
+  - { position: 6, usage: U }
+----
+
+上面的示例使用紧凑形式进行只涉及截断的段修改，而对各个值进行更改的修改则以展开形式表示。与所有其他YAML示例一样，这两种形式实际上是等效的，可以互换使用。
+
+段叠加中的键值对是：
+
+[%header,cols="3s,7a"]
+|===
+|键 |说明
+| idRef  |分段标识符。
+| trim  |修剪段中的位置，表示此时所有值都被标记为未使用（可选）。
+|项目 |个别值修改列表。
+|===
+
+项目列表按照位置引用段中的值。这些参考值是：
+
+[%header,cols="3s,7a"]
+|===
+|键 |说明
+|位置 |段中的值位置。
+| name  |段中值的名称（如果未指定，则使用可选的基本定义值）
+|用法 |使用代码，可能是M表示强制，O表示可选，C表示条件，或者U表示未使用（可选，基本定义值如果未指定，则使用）。
+| count  |最大重复计数值，可以是任意数字或特殊值`>1`，表示任意数量的重复（如果未指定，则使用可选的基本定义值）。
+|===
+
+=== 确定X12架构位置
+
+要使用连接器，您需要知道项目中模式的位置。如果您使用的是开箱即​​用的X12架构，而不是自定义任何内容，架构位置将遵循`/x12/{version}/{transaction-set}.esl`模式。例如，如果您使用的是`005010`版本和850事务集，那么您的架构位置是`/x12/005010/850.esl`。
+
+如果您要创建自定义实现约定，则应该将模式放在src / main / app目录下，并使用`${app.home}`引用该位置。例如，如果您已将850架构置于src / main / app / mypartner / 850.esl之下，那么您的架构位置为`${app.home}/mypartner/850.esl`。
+
+== 配置X12模块
+
+在安装连接器并配置架构自定义（如果有）后，可以开始使用连接器。为每个实施约定创建单独的配置。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+Follow these steps to create a global X12 module configuration in a Mule application:
+
+. Click the *Global Elements* tab at the base of the canvas, then click *Create*.
+. In the *Choose Global Type* wizard, use the filter to locate and select, *X12 Module*, then click *OK*.
++
+image:x12-module-3.png[x12-module-3]
++
+. Configure the parameters according to the connector reference.
+. Click *OK* to save the global connector configurations.
+. Return to the *Message Flow* tab in Studio.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Ensure that you have included the EDI namespaces in your configuration file.
+
+[source, code, linenums]
+----
+segments:
+- { idRef: AMT, trim: 3 }
+- idRef: BEG
+  items:
+  - { position: 4, usage: U }
+- { idRef: DTM, trim: 3 }
+- idRef: ITD
+  items:
+  - { position: 4, usage: U }
+  - { position: 6, usage: U }
+----
+
+Follow these steps to configure a EDI module in your application.
+
+. Create a global ServiceNow configuration outside and above your flows, using the following global configuration code.
++
+[source, xml, linenums]
+----
+<x12-edi:config name="MyTradingPartner" doc:name="EDI" interchangeIdQualifierSelf="01" interchangeIdSelf="ABCDEFG" groupIdSelf="ABC123" interchangeIdQualifierPartner="01" interchangeIdPartner="HIJKLMN" groupIdPartner="DEF456">
+    <x12-edi:schemas>
+        <x12-edi:schema>/x12/005010/850.esl</x12-edi:schema>
+        <x12-edi:schema>/x12/005010/855.esl</x12-edi:schema>
+    </x12-edi:schemas>
+</x12-edi:config>
+----
++
+. Configure the connector according to your implementation convention using the guide below.
+....
+------
+
+在为X12模块设置全局元素后，配置模式，确认，ID和解析器选项。这些选项的参考位于 link:http://mulesoft.github.com/edi-module[EDI模块参考]中。
+
+=== 设置您的架构位置
+
+您只能在Anypoint Studio XML视图中配置模式位置。模式文件在连接器初始化时加载，因此运行时表达式（如流变量）不受支持。
+
+使用上面确定的架构位置，通过单击Studio中的*Configuration XML*切换到XML视图，并修改您的X12模块配置，以包含您希望包含的所有架构的列表，方法是为每个架构添加一个`edi:schema`元素文件类型：
+
+[source, xml, linenums]
+----
+<x12-edi:config name="MyTradingPartner" doc:name="EDI" interchangeIdQualifierSelf="01" interchangeIdSelf="ABCDEFG" groupIdSelf="ABC123" interchangeIdQualifierPartner="01" interchangeIdPartner="HIJKLMN" groupIdPartner="DEF456">
+    <x12-edi:schemas>
+        <x12-edi:schema>/x12/005010/850.esl</x12-edi:schema>
+        <x12-edi:schema>/x12/005010/855.esl</x12-edi:schema>
+    </x12-edi:schemas>
+</x12-edi:config>
+----
+
+=== 设置您的X12交换ID
+
+您可以在X12模块连接器配置上为您和贸易伙伴配置交换ID，交换ID限定符和组应用程序ID。
+
+"Self identification"参数标识您的贸易伙伴关系方，而"Partner identification"参数标识您的贸易伙伴。在编写EDI消息以提供交换ID，交换ID限定符或组应用程序ID时使用您设置的值，并在接收消息中进行验证。如果您不想限制传入消息，可以将其留空，并在写操作或实际传出消息上设置传出消息的值。在写入操作上设置的值将覆盖连接器配置，并且直接在消息上设置的值将覆盖连接器配置和写入操作上设置的任何值。
+
+== 了解X12消息结构
+
+该连接器可以将X12文档读入或写入规范的EDI消息结构。此结构表示为Java地图和列表的层次结构，可以使用DataWeave或代码进行操作。如上所述，每个事务都有自己的架构，如架构中所定义的。
+
+该消息本身包含以下键（其中一些仅适用于读操作或写操作，如所示）：
+
+[%header,cols="3a,7a"]
+|===
+|密钥名称 |说明
+|分隔符（可选） |用于消息的分隔符（基于读取操作处理的最后一个交换进行设置）。如果设置为写入操作，则会覆盖模块配置中的值。字符串中的字符根据位置进行解释，顺序如下：（数据分隔符），（子元素分隔符），（重复分隔符或'U'，如果没有），（段终止符）。
+|错误（只读） |与整个输入关联的错误列表，或与没有有效事务集的交换关联的错误列表。 （请参阅下面的阅读和验证EDI消息部分中的X12Error结构描述。）
+| FunctionalAcksGenerated（只读） |读取操作期间由模块生成的997或999个确认（如配置）的列表。要发送确认，请参阅下面的发送确认部分。
+|组（仅写入） |编写组时，GS组页眉段值的映射用作默认值。
+|交换（只写） |编写交换时用作默认值的ISA交换标题段值的映射。
+| InterchangeAcksGenerated（只读） |模块在​​读取操作期间生成的TA1确认列表。
+| InterchangeAcksReceived（只读） |读取操作期间模块接收到的TA1确认的列表。
+| InterchangeAcksToSend（只写） |模块在​​写操作期间发送的TA1确认列表。
+| Transactions  |事务集的层次结构，在读取操作期间由模块读取，或者在写入操作期间由模块发送。此顶级密钥的值是以标准版本为密钥的映射，格式为"v005010"（例如）。例如，如果您使用的是版本号为005010 850和855的交易集，交易将包含一个带有密钥"v005010"的地图。这个键的值将是另一个映射，这个映射有两个键"850"和"855"。其中每一个都会包含您可以处理的单个850和855个事务集的列表。如果您使用997个功能确认"997"是997个事务集列表的关键。
+|===
+
+个人交易集有他们自己的地图，具有以下关键字：
+
+[%header,cols="3a,7a"]
+|===
+|密钥名称 |说明
+|详细信息 |事务集的详细信息部分中的段或循环的映射。值是针对最多发生一次的段或循环的映射，可以重复的值的映射列表。
+|错误（只读） |与事务集关联的错误列表。 （请参阅下面<<Reading and Validating EDI Messages>>部分中的X12Error类描述。）
+|组 | GS组标题段值的映射。读取消息时，此映射是封闭组中的实际数据（从该组中的所有事务集链接的单个映射）。编写消息时，这些值用于创建封闭组此值不在此映射中填充的值默认为消息级别的组映射中的值。
+|标题 |事务集标题部分中的段或循环的映射。值是针对最多发生一次的段或循环的映射，可以重复的值的映射列表。
+| Id  |交易ID，它必须与包含交易列表的密钥相匹配。
+|交换 | ISA交换标题段值的映射。读取消息时，此地图是封闭交换中的实际数据（从交换中的所有交易集链接的单个地图）。编写消息时，这些值用于创建封闭交换（将具有相同交换值的交易收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值默认为消息级别的交换映射中的值。
+|名称 |交易集名称。
+| SetHeader  | ST事务设置标题段值的映射。这给出了读取操作的实际标题数据，并允许您为写入操作提供配置设置的覆盖。
+|摘要 |事务集摘要部分中的段或循环的映射。值是针对最多发生一次的段或循环的映射，可以重复的值的映射列表。
+|===
+
+生成的997/999功能确认事务与处理交换信息时收到的消息不同：
+
+[%header,cols="3a,7a"]
+|===
+|密钥名称 |说明
+|交换 | ISA交换标题段值的映射。对于由接收处理生成的功能性确认，此映射是与发送方和接收方标识组件（ISA05 / ISA06和ISA07 / ISA08）互换的包含交换数据的副本。编写消息时，这些值用于创建封闭交换（将具有相同交换值的交易收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值默认为消息级别的交换映射中的值。
+|===
+
+TA1交换确认以表示TA1分段数据的地图形式出现，并与相应交换处的数据相关联：
+
+[%header,cols="3a,7a"]
+|===
+|密钥名称 |说明
+|交换 | ISA交换标题段值的映射。对于由接收处理生成的TA1确认，此映射是交换数据的副本，它将TA1与发送方和接收方标识组件（ISA05 / ISA06和ISA07 / ISA08）互换。编写消息时，这些值用于创建封闭交换（将具有相同交换值的交易收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值默认为消息级别的交换映射中的值。
+|===
+
+== 时间字段
+
+所有X12时间字段均以毫秒为单位的整数值表示。
+例如，如果消息的值为`024020`，则为其Dataweave映射
+显示为`9620000`毫秒。
+
+值`024020`的格式为"HHMMSS"，因此如果我们将其转换为毫秒，则需要执行以下操作：
+
+[source]
+----
+(02*3600000) + (40*60000) + (20*1000) = 9620000
+----
+
+
+== 读取和验证X12 EDI消息
+
+要读取X12消息，请在面板中搜索"X12 EDI"，然后将X12模块拖入流中。然后，转到属性视图，选择您在上面创建的连接器配置，然后选择"Read"操作。该操作将任何字节流读入由X12架构描述的结构。
+
+消息验证包括检查信封段ISA，GS，GE和IEA的语法和内容以及消息中的实际事务集。在TA1技术确认段或997确认事务集中，通常会记录并累计和报告错误，并将所有接受的事务集（无错误或非致命错误）作为输出消息Map的一部分传递进行处理。读取输入数据时出错导致抛出异常。
+
+image:x12-module-4.png[X12模块-4-]
+
+在接收数据映射中输入的错误数据使用X12Error类，它是具有以下属性的只读JavaBean：
+
+[%header,cols="3a,7a"]
+|===
+|属性 |说明
+|段 |导致错误的段的输入内的从零开始的索引。
+| segTag  |导致错误的段的标记。
+|致命 |标记致命错误，意味着相关联的事务集，组或交换被错误拒绝。
+| errorType  |列举由X12标准定义的不同类型的错误：INTERCHANGE_NOTE，GROUP_SYNTAX，TRANSACTION_SYNTAX，SEGMENT_SYNTAX或ELEMENT_SYNTAX。
+| errorCode  |错误代码，由X12标准针对指定类型的错误定义。
+| errorText  |错误的文本描述。
+| errorLevel  |枚举不同级别的错误：ROOT_LEVEL，INTERCHANGE_LEVEL，GROUP_LEVEL或TRANSACTION_LEVEL。
+| interchangeId  |交换标识符，如果errorLevel为INTERCHANGE_LEVEL或更高。
+| groupId  |组标识符，如果errorLevel为GROUP_LEVEL或TRANSACTION_LEVEL。
+| transactionId  |交换标识符，如果errorLevel为TRANSACTION_LEVEL。
+|===
+
+读操作将错误数据作为可选列表在数据结构的每个级别使用"Errors"键返回。在事务集级别，此列表包含解析该事务集期间遇到的非致命错误。在交换级别，此列表包含具有致命错误的事务集的错误（包括致命错误和非致命错误）。在读取的根级别，此列表包含交换错误和任何嵌套级别报告的所有其他错误。
+
+== 编写X12 EDI消息
+
+要编写外发消息，请按照上面定义的结构构建外发X12 EDI消息。例如，此示例创建一个写入文件的传出EDI消息。
+
+[source, xml, linenums]
+----
+  ...
+<x12-edi:write config-ref="Walmart" doc:name="Send 855"/>
+<file:outbound-endpoint responseTimeout="10000" doc:name="File" path="output" outputPattern="ack.edi"/>
+----
+
+== 发送功能确认
+
+发送生成的功能确认（997或999个事务集）与编写任何其他EDI消息相同，只是您将事务设置为在读取操作期间生成的确认。例如：
+
+[source, xml, linenums]
+----
+<x12-edi:read config-ref="Walmart" doc:name="Read EDI Doc"/>
+  ...
+<dw:transform-message doc:name="Create Outgoing Message">
+            <dw:input-payload doc:sample="InMessage.dwl"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	TransactionSets: {
+		v005010: {
+			'997' : payload.FunctionalAcksGenerated
+		}
+	}
+}]]></dw:set-payload>
+</dw:transform-message>
+<x12-edi:write config-ref="Walmart" doc:name="Send 997"/>
+<file:outbound-endpoint responseTimeout="10000" doc:name="File" path="output" outputPattern="ack.edi"/>
+----
+
+生成的功能确认具有交换数据，用于发回原始消息的发件人，因此您无需在交易中更改任何内容即可完成发送。
+
+如果您使用999个确认，则将自己所需的CTX段自己添加到由X12模块生成的基本结构（目前它不会跟踪对基本事务集结构的实施约定更改）。
+
+== 发送交换确认
+
+要发送交换确认（TA1段），只需将消息映射中的InterchangeAcksToSend键的值设置为要发送的TA1段映射的列表。生成的TA1段具有交换数据，用于发送回原始消息的发送者，因此您无需更改段数据中的任何内容即可进行发送。
+
+== 另请参阅
+
+*  http://www.x12.org/x12-work-products/x12-transaction-sets.cfm[ASC X12事务集]
+*  https://en.wikipedia.org/wiki/X12_Document_List [X12文档列表]。

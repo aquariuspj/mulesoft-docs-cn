@@ -1,0 +1,540 @@
+=  SSL和TLS传输参考
+:keywords: anypoint studio
+
+[WARNING]
+此页面指的是将SSL和TLS与基于旧的端点 link:/mule-user-guide/v/3.7/http-connector[HTTP连接器]一起使用。要在新的HTTP连接器和Web服务使用者连接器中使用TLS，请参阅 link:/mule-user-guide/v/3.7/tls-configuration[TLS配置]。
+
+
+以下Mule传输提供对TCP连接的访问​​：
+
+* 使用基本TCP传输的 link:/mule-user-guide/v/3.7/tcp-transport-reference[TCP传输]。
+* 安全套接字层（SSL）和传输层安全性（TLS）传输使用带有套接字级安全性的TCP。
+
+除了使用的套接字类型之外，这些传输的行为都非常相似。
+
+[NOTE]
+SSL和TLS是同一传输的替代名称。为了简单起见，该页面将传输仅称为SSL，但这里的所有内容也适用于TLS。
+
+SSL传输允许通过SSL连接发送或接收消息。 SSL是一个基于IP的层，并实现了许多其他可靠的协议，如HTTPS和SMTPS。但是，如果您需要特定的协议来读取这些更高级别协议之一不支持的消息负载，则可能需要直接使用SSL传输。在与不支持Web服务的传统或本机系统应用程序进行通信时，通常会出现这种情况。
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source, xml, linenums]
+----
+xmlns:ssl="http://www.mulesoft.org/schema/mule/ssl"
+xmlns:tls="http://www.mulesoft.org/schema/mule/tls"
+----
+
+XML模式位置：
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/ssl http://www.mulesoft.org/schema/mule/ssl/3.7/mule-ssl.xsd
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/3.7/mule-tls.xsd
+----
+
+连接器语法：
+
+[source,xml, linenums]
+----
+<ssl:connector name="tcpConnector" receiveBufferSize="1024" receiveBacklog="50" sendTcpNoDelay="false"
+                reuseAddress="true" clientSoTimeout="0" serverSoTimeout="0" socketSoLinger="0"
+                keepSendSocketOpen="false" keepAlive="true" dispatcherFactory-ref="dispatcherBean">
+    <tcp:PROTOCOL-TYPE/>
+    <ssl:client path="clientKeystore" storePassword="swordfish" class="JKS"/>
+    <ssl:key-store path="keystore" class="JKS" keyPassword="swordfish" storePassword="sturgeon" algorithm="SHA"/>
+    <ssl:server class="JKS" algorithm="SHA" explicitOnly="false" requireClientAuthentication = "false" />
+    <ssl:protocol-handler type="com.mycompany.protocols"/>
+</ssl:connector>
+----
+
+=== 协议类型
+
+PROTOCOL-TYPE定义了如何从数据包中重构Mule中的消息。协议类型是：
+
+[source,xml, linenums]
+----
+<tcp:direct-protocol payloadOnly="true" rethrowExceptionOnRead="true"/> 
+<tcp:eof-protocol payloadOnly="true" rethrowExceptionOnRead="true"/> 
+<tcp:length-protocol payloadOnly="true" maxMessageLength="1024" rethrowExceptionOnRead="true"/> 
+<tcp:xml-protocol rethrowExceptionOnRead="true"/> 
+<tcp:xml-eof-protocol rethrowExceptionOnRead="true"/> 
+<tcp:streaming-protocol rethrowExceptionOnRead="true"/> 
+<tcp:safe-protocol payloadOnly="true" maxMessageLength="1024" rethrowExceptionOnRead="true"/> 
+<tcp:custom-class-loading-protocol classLoader-ref="classLoaderBean" payloadOnly="true" maxMessageLength="1024" rethrowExceptionOnRead="true"/> 
+<tcp:custom-protocol class="com.mycompany.MyProtocol" rethrowExceptionOnRead="true"/>
+----
+
+端点语法：+
+你可以用两种不同的方式定义你的端点：
+
+. 前缀端点：
++
+[source,xml]
+----
+<ssl:inbound-endpoint host="localhost" port="65433"/>
+----
++
+. 没有前缀的URI：
++
+[source,xml]
+----
+<inbound-endpoint address="ssl://localhost:65433"/>
+----
+
+有关更多信息，请参阅下面的部分。
+
+== 注意事项
+
+SSL是互联网上使用的标准通信协议之一，支持互联网和局域网内的安全通信。 Mule SSL传输使用本机Java套接字支持，不会增加java.net中的类的通信开销，同时允许在Mule配置中指定许多SSL编程的高级功能，而不是使用Java编码。
+
+使用低级别SSL连接进行通信时使用此传输。要确定这是否合适，可以使用以下决策树：
+
+* 与使用低级别不安全TCP连接的外部服务通信？如果是这样，请使用 link:/mule-user-guide/v/3.7/tcp-transport-reference[TCP]协议。
+
+* 您是否与始终位于相同Mule应用程序实例中的流进行通信？如果是这样，请考虑使用 link:/mule-user-guide/v/3.7/vm-transport-reference[VM传输]。
+
+* 消息在被处理之前是否被保留是重要的？如果是这样，请考虑使用持久性传输，如 link:/mule-user-guide/v/3.7/jms-transport-reference[JMS]或 link:/mule-user-guide/v/3.7/file-transport-reference[文件]。
+
+* 建立在TCP之上的更高级协议是否有优势，例如 link:/mule-user-guide/v/3.7/deprecated-http-transport-reference[HTTP]的请求响应功能或 link:/mule-user-guide/v/3.7/email-transport-reference[电子邮件]的存储转发功能？如果是这样，请使用该协议的传输。
+
+* 性能是主要关注的问题，消息是否以正确的顺序传递并不重要，或者如果丢失了消息，通知发件人？如果是这样，请改用轻量级的 link:/mule-user-guide/v/3.7/udp-transport-reference[UDP传输]。
+
+* 应该保护消息吗？如果是这样，请使用SSL传输。
+
+如以下示例所示，可以使用SSL传输
+
+*  <<Create an SSL Server>> SSL服务器
+*  <<Send Messages to an SSL Server>>消息到SSL服务器
+
+在 link:http://download.oracle.com/javase/1.5.0/docs/guide/security/jsse/JSSERefGuide.html[JSSE参考指南]中详细描述了SSL与Java的使用。特别是，它描述了SSL使用的密钥库，它们包含的证书如何使用以及如何创建和维护它们。
+
+== 特点
+
+SSL模块允许Mule应用程序通过SSL连接发送和接收消息，并声明性地自定义SSL的以下功能（在适用的情况下使用每个功能的标准名称）：
+
+* 阻止套接字操作的超时。这可以针对客户端和服务器操作单独声明。 （SO_TIMEOUT）
+* 打开套接字以等待发送完成多久。 （SO_LINGER）
+* 是否立即发送可用数据而不是缓冲它。 （TCP_NODELAY）
+* 是否立即重用套接字地址（SO_REUSEADDR）
+* 是否使用保持活动来检测何时不再可以访问远程系统（SO_KEEPALIVE）。
+* 网络缓冲区的大小（以字节为单位）（SO_SNDBUF）。
+* 允许的挂起连接请求的数量。
+* 是否在发送消息后关闭客户端套接字。
+
+协议表。== 协议表
+
+另外，由于TCP和SSL是面向流的，而Mule是面向消息的，因此需要一些应用协议来定义每条消息在流中的开始和结束位置。下表列出了内置协议，描述如下：
+
+* 用于指定它们的XML标记
+* 任何XML属性
+* 阅读时如何定义消息
+* 写入消息时执行的任何处理
+
+[%header,cols="30a,70a"]
+|===
+| XML标记 |注释
+| <tcp:custom-class-loading-protocol>  |像长度协议一样，但指定用于反序列化对象的类加载器。
+
+*Options*：`rethrowExceptionOnRead`，`payloadOnly`，`maxMessageLength`，`classLoader-ref` +
+*Read*：预期消息以4字节长度开始（以DataOutput.writeInt（）格式）。 +
+*Write*：以4个字节的长度（以DataOutput.writeInt（）格式）之前的消息。
+| <tcp:custom-protocol>  |允许用户编写的协议与现有的TCP服务相匹配。
+
+*Options*：`rethrowExceptionOnRead`，`class`，`ref` +
+*Read*：变化+
+*Write*：变化
+| <tcp:direct-protocol>  |没有明确的消息边界。
+
+*Options*：`rethrowExceptionOnRead`，`payloadOnly` +
+*Read*：所有当前可用的字节数+
+*Write*：无
+| <tcp:eof-protocol>  | EOF协议
+
+*Options*：`rethrowExceptionOnRead`，`payloadOnly` +
+*Read*：在套接字关闭之前发送的所有字节。 +
+*Write*：无
+| <tcp:length-protocol>  |长度协议
+
+*Options*：`rethrowExceptionOnRead`，`payloadOnly`，`maxMessageLength` +
+*Read*：预期消息以4字节长度开始（以DataOutput.writeInt（）格式）+
+*Write*：以4字节长度的格式（DataOutput.writeInt（）格式）
+| <tcp:safe-protocol>  |由于额外的检查，比长度协议更安全。如果没有指定协议，这是默认值。期望消息以字符串"You are using SafeProtocol"开头，后跟4字节长度（以DataOutput.writeInt（）格式）。
+
+*Options*：`rethrowExceptionOnRead`，`payloadOnly`，`maxMessageLength` +
+*Read*：预计消息的前面是字符串"You are using SafeProtocol"，后面跟着4个字节的长度（DataOutput.writeInt（）格式）。 +
+*Write*：在字符串"You are using SafeProtocol"之后加上一个4字节的长度（以DataOutput.writeInt（）格式）。
+| <tcp：streaming-protocol  |流协议
+
+*Options*：`rethrowExceptionOnRead` +
+*Read*：在套接字关闭之前发送的所有字节+
+*Write*：无
+| <tcp:xml-protocol>  | XML声明必须出现在所有消息中。
+
+*Options*：`rethrowExceptionOnRead` +
+*Read*：消息是一个以XML声明开头的XML文档。 +
+*Write*：无
+| <tcp:xml-eof-protocol>  | XML声明必须出现在所有消息中。
+
+*Options*：`rethrowExceptionOnRead` +
+*Read*：消息是一个以XML声明开头的XML文档，或者保留在EOF中的任何东西。 +
+*Write*：无
+|===
+
+。协议属性
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}注意
+| class  |有关编写自定义协议的示例，请参阅 link:/mule-user-guide/v/3.7/tcp-transport-reference[TCP传输参考]
+
+*Values*：实现自定义协议的类的名称。 +
+*Default Value*：无
+| classLoader-ref  |长度超过最大值的消息将引发异常。
+
+*Values*：对包含自定义类加载器的Spring bean的引用。 +
+*Default Value*：maxMessageLength
+| payloadOnly  |不支持此属性的协议始终处理有效内容。
+
+*Values*：true +
+*Default Value*：如果为true，则只发送或接收Mule消息有效载荷。如果为false，则发送或接收整个Mule消息。
+| ref  |对实现自定义协议的Spring bean的引用。
+
+*Values*：无+
+*Default Value*：无
+| rethrowExceptionOnRead  |将此设置为"false"可避免远程套接字意外关闭时记录堆栈跟踪。
+
+*Values*：是否重新抛出尝试从套接字+读取的异常
+*Default Value*：false
+|===
+
+== 用法
+
+可以通过以下两种方式之一使用SSL端点：
+
+* 要创建接受传入连接的SSL服务器，请使用ssl：连接器声明入站ssl端点。这将创建一个SSL服务器套接字，用于从客户套接字读取请求并可选地将响应写入客户端套接
+* 要写入SSL服务器，请使用ssl：连接器创建出站端点。这将创建一个SSL客户端套接字，用于向服务器套接字写入请求并可以选择读取响应。
+
+要使用SSL端点，请按照以下步骤操作：
+
+. 将MULE SSL命名空间添加到您的配置中：+
+* 使用`xmlns:ssl="http://www.mulesoft.org/schema/mule/ssl"`定义SSL前缀
+* 使用http://www.mulesoft.org/schema/mule/ssl定义架构位置
+  http：// www.mulesoft.org / schema / mule / ssl / current / mule-ssl.xsd` +
+. 为SSL端点定义一个或多个连接器。
+
+=== 创建一个SSL服务器
+
+要充当侦听并接受来自客户端的SSL连接的服务器，请创建入站端点使用的SSL连接器：
+
+[source,xml]
+----
+<ssl:connector name="sslConnector"/>
+----
+
+=== 将消息发送到SSL服务器
+
+要通过SSL连接发送消息，请创建出站端点使用的简单TCP连接器：
+
+[source,xml]
+----
+<tcp:connector name="sslConnector"/>
+----
+
+. 配置每个创建的连接器的功能。
+* 首先选择要发送或接收的每封邮件的协议。
+* 对于每个轮询连接器，请选择轮询的频率以及等待连接完成的时间。
+* 考虑其他连接器选项。例如，如果检测远程系统何时无法访问很重要，请将`keepAlive`设置为`true`。
+. 创建SSL端点。
+* 邮件在入站端点上收到。
+* 邮件被发送到出站端点。
+* 这两种端点均由主机名和端口标识。
+
+默认情况下，SSL端点使用请求 - 响应交换模式，但它们可以显式配置为单向。这个决定应该是直截了当的：
+
+[%header,cols="4*"]
+|===
+|消息流 |连接器类型 |端点类型 | Exchange模式
+| Mule接收来自客户端的消息，但未发送任何响应 | ssl：连接器 |入站 |单向
+| Mule接收来自客户端的消息并发送响应 | ssl：connector  |入站 |请求响应
+| Mule将消息发送到服务器，但没有收到响应 | ssl：connector  |出站 |单向
+| Mule将消息发送到服务器并接收响应 | ssl：connector  |出站 |请求响应
+|===
+
+== 示例配置
+
+[%header%autowidth.spread]
+|===
+^ | *SSL Connector in a Flow*
+
+一个| [source，xml，linenums]
+----
+<ssl:connector name="serverConnector" payloadOnly="false">
+    <tcp:eof-protocol /> ❹
+    <ssl:client path="clientKeystore"/>
+    <ssl:key-store path="serverKeystore"/>
+</tcp:connector> ❶
+ 
+ 
+<flow name="echo">
+    <ssl:inbound-endpoint host="localhost" port="4444" > ❷
+    <ssl:outbound-endpoint host="remote" port="5555" /> ❸
+</flow>
+----
+|===
+
+这显示了如何在Mule中创建SSL服务器。 ❶处的连接器定义了创建一个服务器套接字来接受来自客户端的连接。从连接读取完整的mule消息（直接协议）成为Mule消息的有效载荷（因为有效载荷仅为false）。 endpoint处的端点应用这些定义在本地主机的端口4444上创建服务器。然后从那里读取的消息被发送到❸的远程ssl端点。 +
+ 流版本使用eof协议（❹），以便在连接上发送的每个字节都是同一个Mule消息的一部分。请注意，这两个连接器都指定要由客户端（出站）和服务器（入站）端点使用的单独密钥库。
+
+== 配置选项
+
+.SSL连接器属性
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}说明 |缺省
+| *clientSoTimeout*  |从TCP服务器套接字读取时等待数据可用的时间量（以毫秒为单位） |系统默认
+| *keepAlive*  |是否发送保持活动消息以检测远程套接字何时无法访问 | false
+| *keepSendSocketOpen*  |是否在发送邮件后保持套接字打开 | false
+| *receiveBacklog*  |未完成的连接尝试次数 |系统默认
+| *receiveBufferSize*  |这是用于接收消息的网络缓冲区的大小。在大多数情况下，不需要设置它，因为系统默认是足够的 |系统默认值
+| *reuseAddress*  |是否重用当前处于TIMED_WAIT状态的套接字地址。这可以避免触发套接字不可用的错误 | true
+| *sendBufferSize*  |网络发送缓冲区的大小 |系统默认值
+| *sendTcpNoDelay*  |是否尽快发送数据，而不是等待更多时间来节省发送的数据包数 | false
+| *socketSoLinger*  |等待套接字关闭以等待所有待处理数据流逝的时间（毫秒） |系统默认值
+| *serverSoTimeout*  |从客户端套接字读取时等待数据可用的时间量（以毫秒为单位） |系统默认值
+|===
+
+.SSL连接器子元素及其属性：
+[%header,cols="2*"]
+|===
+| {名称{1}}说明
+| *client*  |配置客户端密钥库
+|===
+
+。`Client`的属性：
+[%header,cols="2*"]
+|====
+| {名称{1}}说明
+| *path*  |客户端密钥库的位置
+| *storePassword*  |客户端密钥库的密码
+| *class*  |使用的密钥库类型
+|====
+
+[%header,cols="2*"]
+|====
+| {名称{1}}说明
+| *key-store*  |配置服务器密钥库
+|====
+
+。`key-store`的属性：
+[%header,cols="2*"]
+|=====
+| {名称{1}}说明
+| *path*  |服务器密钥库的位置
+| *storePassword*  |服务器密钥库的密码
+| *class*  |使用的服务器密钥库类型
+| *keyPassword*  |私钥的密码
+| *algorithm*  |服务器密钥库使用的算法
+|=====
+
+[%header,cols="2*"]
+|====
+| {名称{1}}说明
+| *server*  |配置服务器信任库
+|====
+
+。`server`的属性：
+[%header,cols="2*"]
+|=====
+| {名称{1}}说明
+| *class*  |用于信任存储的密钥库类型
+| *algorithm*  |信任存储使用的算法
+| *factory-ref*  |将TrustManagerFactory配置为Spring bean
+| *explicitOnly*  |如果为true，则在信任库不可用时不要使用服务器密钥库。默认为false。
+| *requireClientAuthentication*  |如果为true，则所有客户端必须在与Mule SSL服务器端点进行通信时进行身份验证。默认为false。
+|=====
+
+[%header,cols="2*"]
+|===
+| {名称{1}}说明
+| *protocol-handler*  |定义在其中找到协议处理程序的Java包的列表
+|===
+
+。`protocol-handler`的属性：
+[%header,cols="2*"]
+|===
+| {名称{1}}说明
+| *property*  |包列表。
+|===
+
+有关在Java中创建协议处理程序的更多详细信息，请参阅http://java.sun.com/developer/onlineTraining/protocolhandlers。
+
+== 配置参考
+
+=== 元素列表
+
+===  SSL传输
+
+SSL传输可用于使用SSL或TLS的安全套接字通信。可以找到此传输的Javadoc link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/ssl/package-summary.html[这里]。
+
+=== 连接器
+
+将Mule连接到SSL套接字以通过网络发送或接收数据。
+
+=== 入站端点
+
+。<inbound-endpoint...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省
+| {主机{1}}串 | {无{3}}
+|端口 |端口号 |否 |
+|===
+
+无<inbound-endpoint...>的子元素
+
+
+=== 出站端点
+
+。<outbound-endpoint...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省
+| {主机{1}}串 | {无{3}}
+|端口 |端口号 |否 |
+|===
+
+无<outbound-endpoint...>的子元素
+
+
+=== 端点
+
+。<endpoint...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省
+| {主机{1}}串 | {无{3}}
+|端口 |端口号 |否 |
+|===
+
+无<endpoint...>的子元素
+
+=== 架构
+
+SSL模块的模式显示为 link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/namespace-overview.html[这里]。
+
+===  Javadoc API参考
+
+引用此模块的 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/[SSL Javadoc]。
+
+=== 的Maven
+
+SSLModule可以包含以下依赖项：
+
+[source,xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-ssl</artifactId>
+  <version>3.7.0</version>
+</dependency>
+----
+
+== 扩展此传输
+
+当使用TCP与外部程序进行通信时，可能需要编写一个自定义的Mule协议。第一步是获得外部程序如何在TCP流内分隔消息的完整描述。接下来是将协议实现为Java类。
+
+* 所有协议都必须实现接口`org.mule.transport.tcp.TcpProtocol`，其中包含三种方法：
+**  `Object read(InputStream is)`从TCP套接字读取消息
+**  `write(OutputStream os, Object data)`将消息写入TCP套接字
+**  `ResponseOutputStream createResponse(Socket socket)`创建一个可以写入响应的流。
+
+* 处理字节流而不是序列化Mule消息的协议可以通过继承`org.mule.transport.tcp.protocols.AbstractByteProtocol`继承许多有用的基础结构此类
+** 实现`createResponse`
+** 处理将消息转换为字节数组，允许子类仅实现更简单的方法`writeByteArray(OutputStream os, byte[] data)`
+** 提供了方法`safeRead(InputStream is, byte[] buffer)`和`safeRead(InputStream is, byte[] buffer, int size)`，用于处理当从TCP套接字进行非阻塞读取时数据当前不可用的情况
+
+假设我们要与具有简单协议的服务器进行通信：所有消息都由**>>>**终止。协议类看起来像这样：
+
+[source, java, linenums]
+----
+package org.mule.transport.tcp.integration;
+ 
+import org.mule.transport.tcp.protocols.AbstractByteProtocol;
+ 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+ 
+public class CustomByteProtocol extends AbstractByteProtocol
+{
+ 
+    /**
+     * Create a CustomByteProtocol object.
+     */
+    public CustomByteProtocol()
+    {
+        super(false); // This protocol does not support streaming.
+    }
+ 
+    /**
+     * Write the message's bytes to the socket,
+     * then terminate each message with '>>>'.
+     */
+    @Override
+    protected void writeByteArray(OutputStream os, byte[] data) throws IOException
+    {
+        super.writeByteArray(os, data);
+        os.write('>');
+        os.write('>');
+        os.write('>');
+    }
+ 
+    /**
+     * Read bytes until we see '>>>', which ends the message
+     */
+    public Object read(InputStream is) throws IOException
+    {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        int count = 0;
+        byte read[] = new byte[1];
+ 
+        while (true)
+        {
+            // If no bytes are currently available, safeRead()
+            //  waits until bytes arrive
+            if (safeRead(is, read) < 0)
+            {
+                // We've reached EOF.  Return null, so that our
+                // caller knows there are no
+                // remaining messages
+                return null;
+            }
+            byte b = read[0];
+            if (b == '>')
+            {
+                count++;
+                if (count == 3)
+                {
+                    return baos.toByteArray();
+                }
+            }
+            else
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    baos.write('>');
+                }
+                count = 0;
+                baos.write(b);
+            }
+        }
+    }
+}
+----
+
+== 注意事项
+
+TCP和SSL是非常低级的传输，因此通常用于调试它们的工具（例如，在它们到达时记录消息）可能是不够的。一旦消息成功发送和接收，事情就会在很大程度上起作用。可能需要使用软件（或硬件），而不是在数据包级别跟踪消息，特别是在使用自定义协议时。或者，您可以通过在所有入站端点上临时使用直接协议进行调试，因为它在接收时接受（然后您可以记录）字节。

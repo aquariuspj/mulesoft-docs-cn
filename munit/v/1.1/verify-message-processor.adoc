@@ -1,0 +1,131 @@
+= 验证消息处理器
+：版本信息：3.7.0和更新
+:keywords: munit, testing, unit testing
+
+== 概述
+
+MUnit提供的验证功能允许您定义_verifications_以验证消息处理器的调用。
+
+例如，您可以验证特定的消息处理器是否已使用特定的一组属性特定的次数进行调用。
+
+== 定义验证
+
+在定义验证时，如果验证不成功，我们告诉MUnit未通过测试。
+
+提示：即使您尚未为其创建模拟，也可以通过任何消息处理器定义验证。
+
+就本文件而言，我们假设我们正在测试以下Mule代码：
+
+[source, xml, linenums]
+。测试代码
+----
+<flow name="exampleFlow">
+  <set-payload value="#['real_payload']" doc:name="Real Set Payload"/>
+</flow>
+----
+
+=== 定义消息处理器进行验证
+
+定义验证时，我们使用`verify-call`消息处理器。
+
+[source,xml,linenums]
+----
+<mock:verify-call messageProcessor="mule:set-payload" times="1"/>
+----
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `messageProcessor`
+|描述我们想要模拟的消息处理器。描述采用`{name-space}:{message-processor-name}`的形式。它支持正则表达式。
+
+| `times`
+| *(Default = 1.)*如果消息处理器被称为_N_且仅_N_次，则将验证定义为成功。
+
+| `atLeast`
+|如果消息处理器至少被调用_N_次，则将验证定义为成功。
+
+| `atMost`
+|如果消息处理器被称为_N_次的最大值，则将验证定义为成功。
+
+|===
+
+注：默认情况下，如果未指定值，则`verify-call`消息处理器将假设_times = 1_。
+
+注：属性`times`，`atLeast`，`atMost`是互斥的。只能使用一个。
+
+`messageProcessor`属性接受正则表达式。您可以创建如下所示的相同验证：
+
+[source,xml,linenums]
+使用正则表达式进行验证
+----
+<mock:verify-call messageProcessor=".*:set-payload" times="1"/>
+----
+
+在上面的示例中，我们为名为`set-payload`的消息处理器定义验证，忽略消息处理器属于哪个名称空间。
+
+提示：正则表达式语言与Java相同。
+
+=== 使用消息处理器属性定义验证
+
+验证的定义基于匹配器，即与期望的消息处理器的特征相匹配的参数。仅根据消息处理器的名称定义验证很大程度上限制了您的范围和操作。出于这个原因，MUnit允许您通过定义符合消息处理器属性值的匹配器进行验证。
+
+[source, xml, linenums]
+----
+<mock:verify-call messageProcessor="mule:set-payload">
+  <mock:with-attributes>
+    <mock:with-attribute whereValue="#['Real Set Payload']" name="doc:name"/>
+  </mock:with-attributes>
+</mock:verify-call>
+----
+
+您可以根据需要定义许多属性，以使验证尽可能具有代表性。定义一个属性时，通过定义：
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `name`
+|属性的名称。该值是文字，不支持正则表达式。
+
+| `whereValue`
+|真实消息处理器的属性应包含的值。它接受MEL表达式。如果保留为文字，它会假设一个字符串值。
+
+|===
+
+提示：如果希望验证消息处理器匹配的属性与`config-ref`类似并解析为实际bean，则可以使用MUnit MEL函数`getBeanFromMuleContext('bean_name')`。此函数检查Mule注册表，并返回具有匹配名称的bean（如果存在）。有关详细信息，请参阅 link:/munit/v/1.1/assertion-message-processor[断言]。
+
+使用Java代码定义验证== 
+
+下面的示例显示了如何使用MUnit Java API重现上述相同的行为。
+
+[source,java,linenums]
+----
+import org.junit.Test;
+import org.mule.munit.common.mocking.Attribute;
+import org.mule.munit.runner.functional.FunctionalMunitSuite;
+
+public class TheTest extends FunctionalMunitSuite {
+
+  @Test
+  public void test() {
+    Attribute attribute = Attribute.attribute("name").
+      ofNamespace("doc").withValue("Real Set Payload"); //<1>
+
+    verifyCallOfMessageProcessor("set-payload") //<2>
+    .ofNamespace("mule")                        //<3>
+    .withAttributes(attribute)                  //<4>
+    .times(1);                                  //<5>
+
+  }
+}
+----
+<1>定义要匹配的真实消息处理器属性。
+<2>定义消息处理器的名称以验证（接受正则表达式）。
+<3>定义消息处理器的名称空间以验证（接受正则表达式）。
+<4>设置注释＃1中定义的消息处理器的属性。
+<5>定义次数（也可以是`atLeast(1)`或`atMost(1)`）。
+
+信息：Java不为参数`times`，`atLeast`或`atMost`提供默认值，因此您需要提供您使用的参数的值。
+

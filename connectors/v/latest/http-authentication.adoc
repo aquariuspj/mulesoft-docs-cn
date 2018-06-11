@@ -1,0 +1,891 @@
+= 验证HTTP请求
+:keywords: http, authentication, security, users, connectors, anypoint, studio, oauth, basic auth, digest
+
+当您的Mule应用向需要身份验证的服务（如<<OAuth2 - Authorization Code>>中描述的Github OAuth2服务器）发送请求时，请使用您在HTTP请求中配置的身份验证。在这种情况下，您的Mule应用程序是客户端。另一方面，当您希望保护您的API或应用免受未经授权的访问时，请使用API​​管理器策略，例如 link:/api-manager/external-oauth-2.0-token-validation-policy[使用外部提供者的OAuth 2.0访问令牌实施]策略。
+
+HTTP请求连接器支持将Mule客户端应用程序连接到需要以下任何类型身份验证的服务：
+
+*  <<Basic Authentication>>
+*  <<NTLM Authentication>>
+*  <<Digest Authentication>>
+*  <<OAuth2 - Authorization Code>>
+*  <<OAuth2 - Client Credentials>>
+
+如果请求的目标HTTP服务要求您进行身份验证，请在全局HTTP请求配置元素中提供必要的凭据。 Mule使用您在请求的授权标头中配置的凭证。
+
+您还可以配置传输层安全性（TLS）来加密OAuth凭证。
+
+== 基本认证
+
+此示例在Studio中构建并运行一个应用程序，该应用程序向用户信息向 link:https://developer.github.com/v3[Github API]发送请求。 Github API通过https://api.github.com/user接受端口443上的用户信息请求。
+
+为了符合基本认证要求，该应用程序提供了Github用户名和密码。您配置HTTP请求连接器以提供这些凭据。
+
+这个例子要求你有一个Github账户。
+
+*To call the Github API, first set up an HTTP listen connector:*
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. In Studio, create a new Mule project: *File* > *New* > *Mule Project*.
+The New Mule Project dialog appears.
+. In Project Settings, set the following options for the HTTP Listen Connector:
++
+* *Project Name*: `myproject`
+* *Runtime*: Select or accept the default `Mule Server 3.8.0 EE` or later.
+. Drag an HTTP component from the palette to the Source section of the flow.
+. In the properties editor, accept the default *Path* `/` and set *Allowed Methods* to GET.
+. In Connector Configuration, click image:Add-16x16.png[Add-16x16].
++
+The HTTP Listen Configuration dialog appears.
+. Click OK to accept the following options:
++
+* Name: HTTP_Listen_Configuration
+* Protocol: HTTP
+* Host: 0.0.0.0
+* Port: 8081
++
+. Click OK.
+. Save changes.
++
+The error indicator disappears.
+
+*Next, set up an HTTP Request connector:*
+
+. Drag another HTTP connector from the palette, and drop it in the Process area of the flow.
+. In the properties editor, in Connector Configuration, click image:Add-16x16.png[Add-16x16].
++
+The HTTP Request Configuration dialog appears.
++
+. Set the following HTTP Request Configuration options:
++
+* Name: Accept `HTTP_Request_Configuration`.
+* Protocol: *HTTPS*
+* Host: `api.github.com`
+* Port: `443`
++
+. On the *Authentication* tab, select *Basic* protocol.
+. In Username, type your Github user name.
+. In Password, type either your Github password or a link:https://github.com/settings/tokens[personal access token].
+. Check the *Preemptive* check box, and click OK.
++
+The pre-emptive option passes the user name and password without waiting for a prompt from the server.
++
+. In the properties editor, set the following options for the HTTP Request connector:
+* *Path*: `/user`
++
+* *Method*: Select GET from the drop-down.
++
+. Save changes.
+
+*Format the output in JSON:*
+
+. Drag a Transform Message component from the palette to the right of the HTTP request component.
+. In the properties editor, change the output of the payload as follows:
++
+----
+%dw 1.0
+%output application/json
+---
+  payload
+----
+
+*Finally, run the app:*
+
+. Right-click the project name in project explorer, and choose *Run as* > *Mule Application*.
++
+The console shows that the app is deployed.
+. Call the app using the following URL in a browser: `+http://localhost:8081/+`
++
+The Github API returns your user information.
++
+----
+{
+    "login":"kahn",
+    "id":16xxx343,"avatar_url":"https://avatars.githubusercontent.com/u/16xxx343?v=3"`
+    ...
+}
+----
+
+....
+[tab,title="XML Editor"]
+....
+
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+...
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <http:request-config name="HTTP_Request_Configuration" protocol="HTTPS" host="api.github.com" port="443" doc:name="HTTP Request Configuration">
+        <http:basic-authentication username="kahn" password="7e5....921" preemptive="true"/>
+    </http:request-config>
+    <flow name="myprojectFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <http:request config-ref="HTTP_Request_Configuration" path="/user" method="GET" doc:name="HTTP"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+  payload]]></dw:set-payload>
+        </dw:transform-message>
+    </flow>
+</mule>
+
+----
+
+....
+------
+
+==  NTLM身份验证
+
+NT LAN管理器（NTLM）身份验证取代Microsoft LAN Manager（LANMAN）（一种较旧的Microsoft产品）中的身份验证协议。 NTLM在Mule 3.7及更高版本中可用。
+
+在此示例中，GET请求会发送到++ http：//www.example.com/test++，并使用提供的用户名和密码添加"Authorization"标头。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+. Select the *Authentication* tab
+. In the Protocol dropdown menu, pick *NTLM*
+. Provide your Username and Password (or references to properties that contain them), also optionally your Domain and Workstation
+....
+[tab,title="XML Editor"]
+....
+NTML authentication is configured in the same way as Basic Authentication, just provide username and password in the attributes of the child element. The only difference is that the child element is differently named: "ntml-authentication" and that you can optionally add domain and workstation attributes.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP Request Configuration">
+        <http:ntlm-authentication username="myuser" password="mypass" domain="mydomain"/>
+</http:request-config>
+
+<flow name="digest_flow">
+    ...
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET" />
+
+</flow>
+----
+
+....
+------
+
+== 摘要式身份验证
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+. Select the *Authentication* tab
+. In the Protocol dropdown menu, pick *Digest*
+. Provide your Username and Password (or references to properties that contain them)
+....
+[tab,title="XML Editor"]
+....
+Digest authentication is configured in the same way as Basic Authentication, just provide username and password in the attributes of the child element. The only difference is that the child element is differently named: "digest-authentication".
+
+[source, code, linenums]
+----
+
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP Request Configuration">
+        <http:digest-authentication username="myuser" password="mypass"/>
+    </http:request-config>
+
+<flow name="digest_flow">
+    ...
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET" />
+
+</flow>
+----
+
+....
+------
+
+在此示例中，GET请求会发送到++ http：//www.example.com/test++，并使用提供的用户名和密码添加"Authorization"标头。
+
+==  OAuth2  - 授权码
+
+OAuth2  - 授权码配置OAuth 2.0授权码授权类型。 OAuth认证服务器保存受OAuth保护的资源。例如，对Github API的调用可以通过 link:https://developer.github.com/v3/oauth/[Github服务器使用OAuth]进行认证。本节中的示例向您展示了如何创建Mule客户端应用程序来访问Github OAuth身份验证服务器上的受保护资源（Github用户数据）。该示例涵盖以下内容：
+
+* 安装
+* 创建Mule客户端应用程序
+* 运行Mule客户端应用程序
+
+这个例子要求你有一个Github账户。
+
+=== 安装
+
+首先，您在认证服务器上注册客户端应用程序。认证服务器为Mule客户端应用分配客户端ID和客户端密钥。该应用程序稍后使用这些凭据向身份验证服务器标识自己。在注册过程中，您还可以将URL提供给Mule应用程序主页和应用程序回调URL。
+
+image::authentication-in-http-requests-75e03.png[认证功能于HTTP的请求，75e03]
+
+
+*To set up the example Mule client application:*
+
+. 登录到Github。
+您的Github个人设置中的.  link:https://github.com/settings/applications/new[注册应用程序]。在*Register a new OAuth application*页面上，填写以下文本框：
++
+* 应用程序名称：键入任意应用程序名称。在这个例子中，使用`oauth-grant-code`。
+* 首页网址：对于此示例，请使用`+http://localhost:8082+`。
+* 授权回调网址：对于此示例，请使用`+http://localhost:8082/callback+`。
+* 点击*Register application*。
++
+Github为`+https://github.com/settings/applications/<app number>+`上的注册应用程序创建一个页面，其中包含Github分配的客户端ID和客户端密钥。
+
+=== 创建Mule客户端应用程序
+
+在本节中，您将创建使用Github分配的客户端ID和客户端密钥访问Github OAuth2身份验证服务器上的用户数据的Mule客户端应用程序。该示例由一个HTTP侦听连接器，一个HTTP请求连接器和一个用于将纯文本转换为JSON的DataWeave（转换）组件组成。在HTTP请求者中，您配置对认证服务器的访问。
+
+在以下过程中，您可以配置多个选项，包括这些选项：
+
+*   *localauthorizationUrl*
++
+在应用程序中定义一个用于侦听传入请求的URL。
++
+*  *Authorization URL*
++
+link:https://developer.github.com/v3/oauth/#web-application-flow[由Github提供]，此URL将用户请求从Mule客户端应用程序重定向到Github身份验证服务器的授权URL。
++
+*  *Token URL*
++
+Mule客户端应用程序将令牌发送到您在Mule客户端应用程序中配置的*Token URL*。
+
+*To configure the Mule client app for accessing the Github authentication server:*
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. In Studio, create a new Mule project: *File* > *New* > *Mule Project*.
++
+The New Mule Project dialog appears.
++
+. In Project Settings, set the following options for the HTTP Listen Connector:
++
+* *Project Name*: `oauth-grant-code`
+* *Runtime*: Select or accept the default `Mule Server 3.8.0 EE` or later.
+. Drag an HTTP component from the palette to the Source section of the flow.
+. In the properties editor, accept the default *Path* `/`.
+. In Connector Configuration, click image:Add-16x16.png[Add-16x16].
++
+The HTTP Request Configuration dialog appears.
+. Click OK to accept the following options:
++
+* Name: HTTP_Request_Configuration
+* Protocol: HTTP
+* Host: 0.0.0.0
+* Port: 8081
+* Base Path: /github
++
+. Click OK.
+. Save changes.
++
+The error indicator disappears.
+
+*Next, set up an HTTP request connector:*
+
+. Drag another HTTP connector from the palette, and drop it in the Process area of the flow.
+. In the properties editor, in Connector Configuration, click image:Add-16x16.png[Add-16x16].
++
+The HTTP Request Configuration dialog appears.
++
+. Set the following HTTP Request Configuration options:
++
+* Name: Accept `HTTP_Request_Configuration`.
+* Protocol: *HTTPS*
+* Host: `api.github.com`
+* Port: `443`
++
+. On the *Authentication* tab, select `OAuth2 - Authorization Code`.
+. Set the following options:
++
+* Client Id: Type the client Id that Github provided when you registered the app.
+* Client Secret: Type the client secret that Github provided when you registered the app.
+* Redirection URL: `+http://localhost:8082/callback+`
++
+This value matches the value you configured for *Authorization callback URL* when registering the app in Github.
+* Authorization Url: `+https://github.com/login/oauth/authorize+`
+* Local Authorization Url: `+https://localhost:8082/login+`
+* Token Url: `+https://github.com/login/oauth/access_token+`
+* Access Token: `#[payload.'access_token']`
++
+This MEL expression link:/mule-user-guide/v/3.8/authentication-in-http-requests#extracting-parameters-from-the-token-url-response[extracts an access token].
++
+* Refresh Token: `#[payload.'access_token']`
++
+You can use the same MEL expression for the refresh token; however, Github doesn't actually use a refresh token.
++
+image::authentication-in-http-requests-c2070.png[authentication-in-http-requests-c2070]
++
+. Click OK.
+. Save changes.
+. Drag a Transform Message component from the palette to the right of the HTTP request component.
+. In the properties editor, change the output of the payload as follows:
++
+----
+%dw 1.0
+%output application/json
+---
+  payload
+----
++
+This formats the output of the user data in Github.
+
+....
+[tab,title="XML Editor"]
+....
+Within the global configuration of the connector, add an `oauth2:authorization-code-grant-type` child element, include the following values in it:
+
+* The *clientId* and *clientSecret*.
++
+Use the client ID and client secret you received from Github when registering your application.
+* The *redirectionUrl* to which the Github authentication server will send the access token once the RO grants you access.
+
+If you were required to provide a redirect URL when registering your application with Github, this value must match what you provided there.
+
+Inside this element, add a `oauth2:authorization-request` child element with the following attributes:
+
+* The *authorizationUrl* that the Github authentication server exposes
+* The *localauthorizationUrl*
+
+Also, at the same level, add a `oauth2:token-request` child element with the following attribute:
+
+* The *tokenUrl* that the Github authentication server exposes
+
+[source, xml, linenums]
+----
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration" basePath="/github"/>
+    <http:request-config name="HTTP_Request_Configuration" protocol="HTTPS" host="api.github.com" port="443" doc:name="HTTP Request Configuration">
+        <oauth2:authorization-code-grant-type clientId="27...df" clientSecret="ae...6" redirectionUrl="http://localhost:8082/callback">
+            <oauth2:authorization-request authorizationUrl="https://github.com/login/oauth/authorize" localAuthorizationUrl="http://localhost:8082/login" />
+            <oauth2:token-request tokenUrl="https://github.com/login/oauth/access_token">
+                <oauth2:token-response accessToken="#[payload.'access_token']" refreshToken="#[payload.'access_token']"/>
+            </oauth2:token-request>
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+    <flow name="oauth-grant-codeFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <http:request config-ref="HTTP_Request_Configuration" path="/user" method="GET" doc:name="HTTP">
+            <http:request-builder>
+                <http:header headerName="Accept" value="application/vnd.github.v3+json"/>
+            </http:request-builder>
+        </http:request>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+  payload]]></dw:set-payload>
+        </dw:transform-message>
+    </flow>
+----
+....
+------
+
+=== 运行Mule客户端应用程序
+
+部署Mule客户端应用程序后，请按照本节中的过程运行该应用程序。该程序涵盖以下行动：
+
+* 提交Github访问Mule客户端应用程序的HTTP请求（下图中的＃1）
++
+客户端应用程序将请求重定向到Github身份验证服务器（图中＃2）。 Github提示您登录并授权您注册的客户端应用程序。
+* 使用您的Github登录帐户凭据登录并授权应用程序（图中＃3-4）
++
+作为响应，Github认证服务器返回一个*access token*（图中的＃5）。
++
+image::authentication-in-http-requests-42011.png[认证功能于HTTP的请求-42011]
++
+* 使用访问令牌请求安全的用户数据（下图中的＃1-2）
++
+客户端应用程序从Github认证服务器获取用户数据（图中＃3）。
++
+image::authentication-in-http-requests-278ae.png[认证功能于HTTP的请求，278ae]
+
+*To run the Mule client app to get Github user data:*
+
+在访问令牌过期之前执行以下步骤：
+
+. 在项目浏览器中右键单击项目名称，然后选择*Run as*> *Mule Application*。
++
+控制台显示应用程序已部署。
++
+. 在浏览器中输入本地授权网址“+ http://localhost:8082/login+` to initiate the link:https://tools.ietf.org/html/rfc6749#section-4.1[OAuth2舞蹈]”。
++
+Github提示你登录。
++
+. 使用您的Github用户名和密码登录。
++
+Github提示您授权您注册的应用程序运行。
++
+image::authentication-in-http-requests-96a5d.png[认证功能于HTTP的请求，96a5d]
++
+. 点击*Authorize application*。
++
+`Successfully retrieved access token`在用于启动OAuth2舞蹈的浏览器中显示为正文文本。
++
+要返回令牌以获取数据，请在浏览器中输入以下网址：`+http://localhost:8081/github+`
++
+Github API返回您的用户信息。
++
+----
+{
+    "login":"kahn",
+    "id":16xxx343,"avatar_url":"https://avatars.githubusercontent.com/u/16xxx343?v=3"`
+    ...
+}
+----
+
+=== 使用范围
+
+在Mule客户端应用程序中配置*scopes*属性是可选的，并且不需要Github示例。要配置范围，请定义认证服务器中可用的OAuth范围的逗号分隔列表。 OAuth中的范围就像安全角色。
+
+=== 将自定义参数发送到授权URL
+
+有些OAuth实现需要或允许在调用OAS的认证URL时发送额外的查询参数。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it.
+. Select the *Authentication* tab.
+. In the Protocol dropdown menu, pick *OAuth2 - Authorization Code*.
+. Fill in the same fields as in the previous example.
+. Click the *Add Custom Parameter* as many times as you need and define a name and value for each custom parameter.
+....
+[tab,title="XML Editor"]
+....
+This example includes two `Oauth2:custom-parameter` child elements that define parameters that are specific to this API.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration" >
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="http://localhost:8082/redirectUrl">
+            <oauth2:authorization-request authorizationUrl="http://www.box.com/api/oauth2/authorize" localAuthorizationUrl="http://localhost:8082/authorization">
+                <oauth2:custom-parameters>
+                    <oauth2:custom-parameter paramName="box_device_id" value="123142"/>
+                    <oauth2:custom-parameter paramName="box_device_name" value="my-phone"/>
+                </oauth2:custom-parameters>
+            </oauth2:authorization-request>
+            <oauth2:token-request tokenUrl="http://www.box.com/api/oauth2/token"/>
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+----
+
+....
+------
+
+=== 覆盖重定向URI（外部redirect_uri）
+
+link:https://tools.ietf.org/html/rfc6749[OAuth 2.0规范]描述了从重定向的目标站点检查重定向URI。 OAuth认证服务器使用URL向Mule服务器提供认证码以检索访问令牌。如果您提供此URL，Mule会在用于存储验证代码的URL处创建一个端点，除非已经注册了一个端点来手动提取授权代码。
+
+您可以通过设置系统属性`mule.oauth2.externalRedirectUrl`来配置外部重定向URI。
+
+例如，使用`mule.oauth2.externalRedirectUrl`对于将应用程序部署到CloudHub特别有用。在认证配置中，您需要使用以下格式指定redirectionURL：
+
+例如，重定向URL是 http://localhost:8082/callback in the link:/mule-user-guide/v/3.8/authentication-in-http-requests#creating-the-mule-client-app[前面的例子]：
+
+要为CloudHub创建端点，Mule必须以不同的格式为CloudHub创建端点。例如：
+
+`+https://<app>.cloudhub.io/<redirect Uri>+`
+
+要指示Mule以正确的格式为CloudHub创建端点，请在您的Mule属性文件中包含`mule.oauth2.externalRedirectUrl`系统属性。例如：
+
+----
+mule.env=dev
+mule.oauth2.externalRedirectUrl=http://<app>.cloudhub.io/callback
+...
+----
+
+=== 从令牌URL响应中提取参数
+
+从认证服务器获得授权码后，您向服务器的令牌URL发送请求以接收*access token*。
+
+OAuth规范中未定义对令牌URL请求的响应格式。每个实现可能因此返回不同的响应格式。默认情况下，Mule希望响应采用JSON格式。在这种情况下，HTTP响应连接器知道如何提取所需的信息，只要其元素的名称如下所示：
+
+*  *access token*：JSON字段必须命名为`access_token`
+*  *refresh token*：JSON字段必须命名为`refresh_token`
+*  *expires*：JSON字段必须命名为`expires_in`
+
+当响应采用JSON格式时，会自动提取参数，并且您可以使用 link:/mule-user-guide/v/3.8/mule-expression-language-mel[MEL表达式]在Mule消息中引用这些值，这些值是对对令牌URL的请求的响应生成的，如前面的Github例。
+
+当响应不是JSON格式时，您必须先配置连接器，以便知道如何提取这些值。在以下示例中，连接器期望响应具有`application/x-www-form-urlencoded`的{​​{0}}，因此响应的主体将转换为有效内容中的映射。通过MEL表达式提取地图中的值，例如`#[payload.'access_token']`。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+On the *Authentication* tab, configure the options as follows for the *OAuth2 - Authorization Code*:
+
+** Access Token: `#[payload.'access_token']`
+** Expires In `#[payload.'expires_in']`
+** Refresh Token `#[payload.'refresh_token']`
+....
+[tab,title="XML Editor"]
+....
+This example includes two `Oauth2:custom-parameter` child elements that define parameters specific to this API.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration">
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="http://localhost:8082/redirectUrl">
+            <oauth2:authorization-request authorizationUrl="http://www.box.com/api/oauth2/authorize" localAuthorizationUrl="http://localhost:8082/authorization"/>
+            <oauth2:token-request tokenUrl="http://www.box.com/api/oauth2/token">
+                <oauth2:token-response accessToken="#[payload.'access_token']" expiresIn="#[payload.'expires_in']" refreshToken="#[payload.'refresh_token']"/>
+            </oauth2:token-request>
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+----
+
+....
+------
+
+=== 刷新访问令牌自定义
+
+您从令牌URL获取的访问令牌最终会过期。令牌有效的时间长度取决于验证服务器的实现。访问令牌到期后，您可以通过使用令牌URL响应提供的*refresh access token*来检索新的访问令牌，而不是再次浏览整个过程。
+
+Mule自动处理这个用例。因此，默认情况下，当执行HTTP请求连接器时，如果响应的状态码为403，mule将调用令牌URL并获取新的访问令牌。
+
+您可以自定义Mule执行其中一个请求以使用 link:/mule-user-guide/v/3.8/mule-expression-language-mel[MEL表达]获取新的访问令牌。该表达式针对从HTTP请求连接器调用的响应生成的Mule消息进行评估。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+On the *Authentication* tab, configure the *Request Token When* field with the following MEL expression:
+#`[xpath3('/response/status/text()', payload, 'STRING') == ‘unauthorized’]`
+....
+[tab,title="XML Editor"]
+....
+To set when to perform a call to obtain a new access token, set a MEL expression for the attribute `refreshTokenwhen` in the `oauth2:token-request` element.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration">
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="http://localhost:8082/redirectUrl">
+            <oauth2:authorization-request authorizationUrl="http://www.box.com/api/oauth2/authorize" localAuthorizationUrl="http://localhost:8082/authorization"/>
+            <oauth2:token-request tokenUrl="{{0}}"/>
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+----
+
+....
+------
+
+请求授权失败时，响应包含名为*status*的值为`‘unauthorized’`的XML节点。在前面的例子中，MEL表达式评估该条件。当它评估为真时，Mule向令牌URL发送请求以检索新的访问令牌。
+
+代表多个用户访问资源=== 
+
+在前面的例子中，你认证了一个用户。您可以通过定义在授权期间识别每个用户的方式，为单个应用程序中的多个用户处理访问令牌。在此期间，您向令牌URL发送请求以检索访问令牌，并使用获取的访问令牌对API执行操作。
+
+要确定哪个用户授予访问Mule客户端应用程序的权限，请定义一个MEL表达式，以针对对本地授权URL的调用检索*Resource Owner ID*。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+On the *Authentication* tab, configure the options as follows for the *OAuth2 - Authorization Code*: In the Advanced section of the Authentication tab, set:
+
+* *Resource Owner ID* to `#[flowVars.'userId']`
+* *Local Authorization URI*
+#[message.inboundProperties.'http.query.params'.userId]
+
+The field *Resource Owner ID* must be set with a MEL expression that allows each execution of the HTTP Request Connector to retrieve the RO identifier from the Mule Message. So on this example, whenever the HTTP Request Connector is executed, there must be a flow variable named ‘userId’ with the RO identifier to use. To create this variable, you can add a Variable transformer to your flow, positioned before the HTTP Request Connector, and configure the transformer to create the userId variable in the Mule Message.
+
+The *Local Authorization* *URI* field (the one in the Advanced section), defines that in order to get the RO identifier, the `userId` query parameter must be parsed from the call done to the local authorization URL.
+
+So if you hit `http://localhost:8082/authorization?userId=john`, then the RO john can grant access to the CA on his behalf. If you hit `http://localhost:8082/authorization?userId=peter` then the RO peter can grant access to the CA on his behalf.
+....
+[tab,title="XML Editor"]
+....
+Set `resourceOwnerId` to `#[flowVars.'userId']` and `localAuthorizationUrlResourceOwnerId` to  `#[message.inboundProperties.'http.query.params'.userId]`
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration" tlsContext-ref="TLS_Context">
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="{{0}}"
+resourceOwnerId="#[flowVars.'userId']">
+            <oauth2:authorization-request authorizationUrl="http://www.box.com/api/oauth2/authorize" localAuthorizationUrl="http://localhost:8082/authorization" scopes="access_user_details, read_user_files"/>
+            <oauth2:token-request tokenUrl="{{0}}" />
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+----
+
+The attribute `resourceOwnerId` must be set with a MEL expression that allows each `http:request` execution to retrieve the RO identifier from the Mule Message. So on this example, whenever the `http:request` is executed, there must be a flow variable named ‘userId’ with the RO identifier to use.
+
+[source, xml, linenums]
+----
+<flow name="accessROFolders">
+        <set-variable variableName="userId" value="#['Peter']" doc:name="Variable"/>
+        <http:request config-ref="HTTP_Request_Configuration" path="/folders" method="GET" doc:name="HTTP"/>
+    </flow>
+----
+
+The attribute localAuthorizationUrlResourceOwnerId defines that, in order to get the RO identifier, the `userId` query parameter must be parsed from the call done to the local authorization URL.
+
+So if you hit `http://localhost:8082/authorization?userId=john`, then the RO john can grant access to the CA on his behalf. If you hit `http://localhost:8082/authorization?userId=peter` then the RO peter can grant access to the CA on his behalf.
+
+....
+------
+
+=== 为OAuth授权码使用HTTPS
+
+当您需要使用HTTPS与生产环境中典型的身份验证服务器进行通信时，请将HTTPS编码应用于所有请求中的OAuth凭据，包括为以下操作执行的操作：
+
+本地授权网址* 
+* 授权网址
+重定向网址* 
+* 令牌网址
+
+通过在HTTP请求连接器身份验证设置中指定TLS上下文，将在所有这些请求中处理这个问题。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+On the *Authentication* tab, configure the options as follows for the *OAuth2 - Authorization Code*:
+
+. In the TLS configuration section, select *Use Global TLS Config*
+. Click the green plus sign next to the field to create a new TLS Context
+. Set up the trust store and key store configuration and click OK to save
+
+The TLS settings in the Authentication tab encode your OAuth credentials. The TLS/SSL tab of the HTTP Request Configuration encode the request body.
+====
+
+....
+[tab,title="XML Editor"]
+....
+Set `tlsContext-ref` to reference a TLS context element, provide your trust store and key store credentials in this element.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration_HTTPS" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration" tlsContext-ref="TLS_Context" protocol="HTTPS">
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="http://localhost:8082/redirectUrl" tlsContext-ref="TLS_Context">
+            <oauth2:authorization-request authorizationUrl="https://www.box.com/api/oauth2/authorize" localAuthorizationUrl="https://localhost:8082/authorization" scopes="access_user_details, read_user_files"/>
+            <oauth2:token-request tokenUrl="https://www.box.com/api/oauth2/token" />
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+
+    <tls:context name="TLS_Context" doc:name="TLS Context">
+        <tls:trust-store path="your_trust_store" password="your_password"/>
+        <tls:key-store path="your_keystore_path" password="your_password" keyPassword="your_key_password"/>
+    </tls:context>
+----
+
+
+The `tlsContext-ref` attribute of the `oauth2:authorization-code-grant-type` element is for encoding your OAuth credentials. The `tls:context` child element of the `http:request-config` is for encoding your request's body.
+
+....
+------
+
+==  OAuth2  - 客户端凭证
+
+在OAuth身份验证 - 客户端凭据选项卡上，配置客户端凭据授权类型。
+
+OAuth身份验证服务器（*OAS*）是一个用于保存受OAuth保护的资源的服务器。例如：Box服务器提供了一个包含OAuth认证的API。
+
+客户端应用程序（*CA*）是尝试访问属于资源所有者且保存在OAuth身份验证服务器中的受保护资源的服务器。例如：一个Mule服务器试图访问属于Box用户的资源并保存在Box服务器中。
+
+在这种情况下，资源所有者（RO）也是CA.这意味着认证机构被认可机构授权，这使得整个程序变得更加简单。
+
+image:oauth+danceposta+simple.png[oauth舞蹈发布简单]
+
+.  CA必须向OAS服务器注册应用程序。发生这种情况时，OAS会将证书分配给CA，以便以后使用该证书来识别自身：*client ID*和*client secret*。 OAS还必须提供*Token URL*，CA可以在稍后发送HTTP请求以检索访问受保护资源时所需的*access token*。
+.  CA向OAS的*Token URL*发出请求，其中包含其客户ID以证明其身份。作为回应，美洲国家组织授予它*access token*。
+. 使用此访问令牌，CA现在可以自由访问OAS中的受保护资源，只要它包含在其请求中即可。根据OAS定义的策略，此令牌最终可能会过期。
+
+=== 配置
+
+客户端凭据授权类型旨在由CA用来代表自己授予对应用程序的访问权限，而不是代表OAS中的RO（资源所有者）。要获取访问令牌，您需要的只是应用程序凭据。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+. Select the *Authentication* tab
+. In the Protocol dropdown menu, pick *OAuth2 - Client Credentials*
+. Fill in the following fields:
+
+** The *Client Id* and *Client Secret* the OAS gave you when registering your application.
+** The *Scopes* field is optional, it allows you to define a comma separated list of OAuth scopes available in the OAS. Scopes in OAuth are very much like security roles.
+** The *Token URI* that the OAS exposes
+....
+[tab,title="XML Editor"]
+....
+You must include the following information:
+
+* The *clientId* and *clientSecret* the OAS gave you when registering your application.
+* The  *scopes* attribute is optional, it allows you to define a comma separated list of OAuth scopes available in the OAS. Scopes in OAuth are very much like security roles.
+* The *tokenUrl* that the OAS exposes
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="some.api.com" port="80" basePath="/api/1.0" doc:name="HTTP Request Configuration">
+        <oauth2:client-credentials-grant-type clientId="your_client_id" clientSecret="your_client_secret">
+            <oauth2:token-request tokenUrl="http://some.api.com/api/1.0/oauth/token" scopes="access_user_details, read_user_files"/>
+</oauth2:client-credentials-grant-type>
+    </http:request-config>
+----
+
+....
+------
+
+当部署mule应用程序时，它将尝试检索访问令牌。如果应用程序无法检索访问令牌，则会在部署中失败。
+
+=== 从令牌URL响应中提取参数
+
+适用于授权码的相同行为可以应用于客户端凭据授权类型。
+
+=== 刷新访问令牌自定义
+
+适用于授权码的相同行为可以应用于客户端凭据授权类型。
+
+== 令牌管理器配置
+
+通过使用令牌管理器配置，可以访问客户端凭证和授权代码的授权信息。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+. Select the *Authentication* tab
+. In the Protocol dropdown menu, pick *OAuth2 - Client Credentials*
+. In the Advanced section of the form, click the *green plus sign* next to *Token Manager* to create a new token manager
+. Assign it a reference to an object store
+....
+[tab,title="XML Editor"]
+....
+The tokenManager-ref attribute need to reference a token-manager-config element in the configuration.
+
+[source, xml, linenums]
+----
+<oauth2:token-manager-config name="Token_Manager_Config"  doc:name="Token Manager Config"/>
+
+    <http:request-config name="HTTP_Request_Configuration" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration">
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="{{0}}" resourceOwnerId="#[flowVars.'userId']">
+            <oauth2:authorization-request authorizationUrl="https://www.box.com/api/oauth2/authorize" localAuthorizationUrl="https://localhost:8082/authorization" scopes="access_user_details, read_user_files"/>
+            <oauth2:token-request tokenUrl="https://www.box.com/api/oauth2/token"/>
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+----
+....
+------
+
+=== 通过令牌管理器访问授权信息
+
+一旦令牌管理器与授权授权类型相关联（在下面的示例中，使用授权码），我们可以使用流中任何位置的MEL表达式中的`oauthContext`函数来访问来自OAuth授权的信息。
+
+如果您使用带有*single RO*的{​​{0}}或授权码，请使用以下功能：
+
+[source, code]
+----
+oauthContext(tokenManagerConfigName)
+----
+
+此功能提供从令牌管理器访问OAuth授权信息的权限。
+
+*  `tokenManagerConfigName`：配置中的令牌管理器的名称
+
+如果您通过**multiple RO **使用授权码，请使用以下功能：
+
+[source, code]
+----
+oauthContext(tokenManagerConfigName, resourceOwnerId)
+----
+
+该功能可以访问来自令牌管理器的OAuth授权信息。
+
+*  `tokenManagerConfigName`：配置中的令牌管理器的名称
+*  `resourceOwnerId`：RO的标识符。
+
+==== 示例
+
+此表包含如何从令牌管理器检索信息的示例。在您处理您的OAuth身份验证的HTTP请求连接器之后的流中的任何构建块中使用这些表达式。
+
+[%header,cols="2*a"]
+|===
+|功能 |结果
+|  `oauthContext(‘Token_Manager_Config’).accessToken`  | accessToken值
+使用ID“Peter”标识的RO的|  `oauthContext(‘Token_Manager_Config’, ‘Peter’).accessToken`  | accessToken值
+| `oauthContext(‘Token_Manager_Config’).refreshToken`  | refreshToken值
+|  `oauthContext(‘Token_Manager_Config’).expiresIn`  |在值中过期
+用于授权URL的|  `oauthContext(‘Token_Manager_Config’).state`  |状态
+|  `oauthContext(‘Token_Manager_Config’).`
+`tokenResponseParameters.‘a_custom_param_name’`
+从令牌URL响应中提取的|自定义参数
+|  `oauthContext(‘Token_Manager_Config’, ‘Peter’).`
+`tokenResponseParameters.‘a_custom_param_name’`
+从RO'Peter'的令牌URL响应中提取的|自定义参数。
+|===
+
+=== 访问令牌无效
+
+使用令牌管理器时，您可以阻止特定的RO。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an *Invalidate OAuth Context* element to your canvas.
+. In its properties editor, set up the *Token Manager Configuration* so that it points to the same *Token Manager* that your HTTP Request Connector references when handling OAuth authentication.
+....
+[tab,title="XML Editor"]
+....
+
+[source, xml, linenums]
+----
+<flow name="invalidateOauthContext">
+    <oauth2:invalidate-oauth-context config-ref="tokenManagerConfig"/>
+</flow>
+----
+
+....
+------
+
+*Invalidate OAuth Context*元素清除存储在令牌管理器中的所有OAuth信息。
+
+当使用单个令牌管理器使用多个RO时，如果只想清除一个RO的OAuth信息，则必须在Invalidate OAuth Context元素中指定资源所有者ID。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an *Invalidate OAuth Context* element to your canvas.
+. In its properties editor, set up the *Token Manager Configuration* so that it points to the same *Token Manager* that your HTTP Request Connector references when handling OAuth authentication.
+. Set the *Resource Owner Id* to an expression that points to the RO you want to clear. For example
+#`[flowVars.'resourceOwnerId']`
+....
+[tab,title="XML Editor"]
+....
+
+[source, xml, linenums]
+----
+<flow name="invalidateOauthContextWithResourceOwnerId">
+    <oauth2:invalidate-oauth-context config-ref="tokenManagerConfig" resourceOwnerId="#[flowVars.'resourceOwnerId']"/>
+</flow>
+----
+
+....
+------
+
+=== 自定义令牌管理器对象存储
+
+默认情况下，令牌管理器使用内存中对象存储来存储凭据。您可以使用objectStore-ref属性自定义令牌管理器对象库。 link:/mule-user-guide/v/3.8/mule-object-stores[了解如何配置自定义对象库]。
+
+== 另请参阅
+
+*  HTTP请求连接器
+*  HTTP侦听器连接器
+* 查看此连接器中可用XML配置选项的 link:/mule-user-guide/v/3.8/http-connector-reference[参考]
+*  link:/mule-user-guide/v/3.8/migrating-to-the-new-http-connector[迁移到新的HTTP连接器]
+*  link:/mule-user-guide/v/3.8/object-store-module-reference[对象存储模块参考]

@@ -1,0 +1,475 @@
+= 将MMC数据保存到MS SQL Server
+
+*_MMC Version 3.4.1_*
+
+本页介绍如何设置和配置Mule管理控制台，以将环境和交易数据保存到 http://technet.microsoft.com/en-us/sqlserver/default[Microsoft SQL Server]。
+
+*Notes:*
+
+* 在MMC 3.4.1中，不完全支持在MS SQL Server上保留管理控制台数据。该页面描述了已经过测试并且已知可以正常工作的配置。
++
+本页面上的说明仅适用于MMC 3.4.1。 MMC 3.4.2和更高版本使用更简单的配置，在该配置中完全支持MS SQL服务器上的数据持久性。如果在MS SQL Server上保存数据，建议使用MMC 3.4.2或更高版本。有关详细信息，请参阅本文档的最新版本 link:/mule-management-console/v/3.6/persisting-mmc-data-to-ms-sql-server[在MS SQL Server上保留数据]。
++
+* 本文档介绍了如何使用Apache Tomcat将生产环境部署到管理控制台。所有说明也应与其他 link:/mule-user-guide/v/3.4/hardware-and-software-requirements[支持的应用服务器]一起使用，但尚未经过测试。
+
+== 假设
+
+本文档假定您已经安装：
+
+*  **Mule Enterprise 3.4.1**。如果您需要升级到此版本，请从 http://www.mulesoft.com/support-login[客户门户]下载。
+*  **MMC Version 3.4.1**。如果您需要升级到此版本，请从 http://www.mulesoft.com/support-login[客户门户]下载。
+*  *a* **Web application server such as Tcat, Tomcat, or JBoss**。有关硬件要求和支持的应用程序服务器，Java运行时环境和浏览器的最新信息，请参阅 link:/mule-user-guide/v/3.4/hardware-and-software-requirements[硬件和软件要求]。
+
+为了实际的目的，本文提到Tomcat作为servlet容器;但是，这里包含的说明也适用于Tcat或JBoss。如果使用Tcat或JBoss，请确保将Management Console .war文件解压到相应的目录中。有关其他信息，请参阅 link:/mule-management-console/v/3.4/installing-the-production-version-of-mmc[安装MMC的生产版本]。
+
+*Note:* MS SQL和Java 6，更新29的已知问题：
+
+关于SSL配置，有一个 http://bugs.java.com/bugdatabase/view_bug.do?bug_id=7105007[已知问题]，其中涉及SSL配置，导致数据库连接尝试无限期地挂起，没有超时，从而阻止MMC启动。 MS SQL不能用于此Java版本。请升级到更高版本的JVM。
+
+
+== 先决条件
+
+在配置管理控制台将数据保存到MS SQL Server之前，您需要：
+
+. 为您的管理控制台安装安装补丁。
+. 确保MS SQL Server和登录已正确配置并可用。
+
+=== 补丁
+
+为了在MS SQL Server中使用管理控制台，您需要将修补程序应用到Management Console .war文件。要获得修补程序，请通过 http://www.mulesoft.com/support-login[MuleSoft客户门户]打开支持案例。
+
+===  MS SQL Server配置
+
+本文假定以下MS SQL Server配置：
+
+对于环境数据==== 
+
+[%header,cols="2*"]
+|===
+|项 |说明
+|环境数据数据库a |
+* 名称：`MMC_STATUS`
+* 拥有者：`MMC_USER`
+|登录环境数据库a |
+* 名称：`MMC_USER`
+* 默认数据库：`MMC_STATUS`
+* 密码到期日期：否
+* 密码政策：未设置
+* 密码：任何
+|===
+
+==== 用于跟踪数据
+
+[%header,cols="2*"]
+|===
+|项 |说明
+|用于跟踪数据a |
+的数据库
+* 名称：`MMC_PERSISTENCY`
+* 拥有者：`MMC_TRACKER`
+|登录以跟踪数据库a |
+* 名称：`MMC_TRACKER`
+* 默认数据库：`MMC_PERSISTENCY`
+* 密码到期日期：否
+* 密码政策：未设置
+* 密码：任何
+|===
+
+==== 数据库连接
+
+MS SQL Server必须配置为允许使用用户名和密码进行日志记录，而不是仅使用集成身份验证（即安全选项需要指定SQL Server和Windows身份验证模式）。
+
+数据库必须可以从管理控制台驻留的主机访问。如有疑问，请确认使用管理控制台主机中的标准客户端可以使用该连接。
+
+*Tip:*使用telnet命令进行连接测试：
+
+如果由于连接问题（而不是身份验证问题）导致使用标准客户端连接失败，请使用`telnet`命令确认连接（如果系统上可用）。
+
+从Management Console主机运行：
+
+[source, xml]
+----
+telnet <database_host> <database_port>
+----
+
+如果连接成功，则应输出与以下类似的内容：
+
+[source, code, linenums]
+----
+telnet 192.168.56.2 1433
+Trying 192.168.56.2...
+Connected to 192.168.56.2.
+Escape character is '^]'.
+----
+
+以上输出表明连接成功。 "connection refused"错误通常表示没有任何内容正在侦听指定的主机和端口。任何其他输出或缺少输出都表示连接问题，如管理控制台主机和数据库主机之间的路由问题或防火墙阻止请求。
+
+telnet命令仅测试网络连接，而不是对数据库进行身份验证。
+
+
+=== 为环境数据设置数据库表
+
+在第一次运行时，JCR自动创建存储持久MMC信息所需的所有表。但是，如果您计划将环境数据保存到外部数据库，则必须手动创建存储Quartz作业信息的表，否则将发生类似于以下内容的错误：
+
+[source]
+----
+ERROR: relation “qrtz_locks” does not exist.
+----
+
+要创建和插入表，请按照下列步骤操作：
+
+. 导航到`<MMC_HOME>/` WEB-INF / classes / quartz。
+. 找到SQL脚本`tables_sqlServer.sql`。
+. 作为数据库所有者，在目标数据库（`MMC_STATUS`）上执行`tables_sqlServer.sql`。
+
+此时，数据库已完全定义。
+
+==  MMC配置
+
+配置管理控制台以使用MS SQL Server要求您将文件复制到管理控制台目录结构中，并修改其中包含的文件。此目录结构包含在用于将管理控制台部署到Tomcat的.war文件中。
+
+建议您将控制台.war文件的内容解压缩到Tomcat安装的`webapps`目录，并将配置应用于提取的内容。完整的步骤顺序是：
+
+. 确保Tomcat servlet容器未在运行。
+. 将管理控制台.war文件解压缩到Tomcat根目录下的`webapps`目录。提取后，.war文件的内容应位于`<TOMCAT_HOME>/webapps/mmc-3.4.1`中。例如，如果Tomcat根目录为`/var/lib/tomcat6`，则管理控制台的根目录应为`/var/lib/tomcat6/webapps/mmc-3.4.1`。
+. 执行此页面中描述的修改：复制`sqljdbc4.jar`文件并修改相应的配置文件。
+. 确保Tomcat目录树中的任何位置都没有名为`mmc-data`的目录。
+. 启动Tomcat，首次启动您的自定义管理控制台。
+
+以下各节介绍如何配置MS SQL Server的管理控制台，使用从原始Management Console .war文件中提取的文件。
+
+===  `sqljdbc4.jar`驱动程序库
+
+要在MS SQL Server中使用管理控制台，您需要将`sqljdbc4.jar`库添加到管理控制台。
+
+从 http://www.microsoft.com/en-us/download/details.aspx?displaylang=en&id=11774[Microsoft下载中心]下载库。您可以选择下载多个文件，包括Windows操作系统的可执行文件和Unix或基于Unix系统的gzipped tar归档文件。
+
+如果使用Windows：
+
+* 查找并运行`qljdbc_<version>_enu.exe`文件，然后按照安装向导进行操作
+
+如果使用Unix或基于Unix的系统：
+
+* 解压缩并解压文件`qljdbc_<version>_enu.tar.gz`文件
+在新创建的目录树中* ，找到`sqljdbc4.jar`文件
+
+在这两种操作系统上：
+
+将文件`sqljdbc4.jar`复制到以下目录：` <MMC_HOME>/WEB-INF/lib`。例如，`/var/lib/tomcat6/webapps/mmc-console-3.4.1/WEB-INF/lib`。
+
+*Tip:*解压缩压缩的tar文件：
+
+要解压缩和解压缩.tar.gz文件，请打开终端并使用`cd`命令导航到包含该文件的目录。然后，运行以下命令：
+
+[source, xml]
+----
+gunzip <file>
+----
+
+这会解压缩文件，其文件扩展名从`.tar.gz`变为`.tar`。使用`tar`命令解压文件，如下所示。
+
+[source, xml]
+----
+tar xvf <file>
+----
+
+例如：
+
+[source, code, linenums]
+----
+cd Downloads
+gunzip sqljdbc_4.0.2206.100_enu.tar.gz
+tar xvf sqljdbc_4.0.2206.100_enu.tar
+----
+
+某些版本的`tar`实用程序允许您使用单个命令对文件进行解压缩和解压缩，如下所示。
+
+[source, xml]
+----
+tar zxvf <file>
+----
+
+例如：
+
+[source, code, linenums]
+----
+cd Downloads
+tar zxvf sqljdbc_4.0.2206.100_enu.tar.gz
+----
+
+这将解压缩并解压缩当前目录中文件的内容。
+
+
+环境数据的=== 配置
+
+要在MS SQL Server上存储环境数据，您需要修改以下文件：
+
+*  link:/mule-management-console/v/3.4/persisting-mmc-data-to-ms-sql-server#configuration-file-code-mmc-properties-code[mmc.properties]
+*  link:/mule-management-console/v/3.4/persisting-mmc-data-to-ms-sql-server#configuration-file-code-applicationcontext-xml-code[applicationContext.xml中]
+*  link:/mule-management-console/v/3.4/persisting-mmc-data-to-ms-sql-server#configuration-file-code-jackrabbit-repo-xml-code[兔崽子，repo.xml]
+*  link:/mule-management-console/v/3.4/persisting-mmc-data-to-ms-sql-server#configuration-file-code-scheduler-properties-code[scheduler.properties]
+
+所有这些文件都驻留在`<TOMCAT_ROOT>/webapps/mmc-console-3.4.1/WEB-INF/classes/META-INF`中。
+
+按照此处所述修改文件时，请确保将`<MMC_USER_password>`替换为MS SQL Server中配置的真实密码以及您可能已修改的任何其他值，例如数据库主机和端口。
+
+如果要使用的MS SQL Server实例不是默认值，请在配置文件中指定的URL中的`databaseName`之后追加`instanceName=<SQLServerInstanceName>`，如下例所示。
+
+[source, code, linenums]
+----
+...
+datasource.url=jdbc\:sqlserver\://172.16.0.12\:1433;databaseName=MMC_STATUS;instanceName=SQLEXPRESS
+...
+----
+
+==== 配置文件：`mmc.properties`
+
+打开文件进行编辑，然后按如下所示进行编辑。
+
+[source, code, linenums]
+----
+datasource.driver=com.microsoft.sqlserver.jdbc.SQLServerDriver
+datasource.url=jdbc\:sqlserver\://<db_host_ip>\:1433;databaseName=MMC_STATUS
+datasource.username=MMC_USER
+datasource.password=<MMC_USER_password>
+script=sqlServer
+mmc.data=./mmc-data
+plugin.directory=WEB-INF/plugins
+console.inactivityTimeout=60
+----
+
+[NOTE]
+此文件要求您使用反斜杠转义冒号。
+
+==== 配置文件：`applicationContext.xml`
+
+打开文件进行编辑，然后查找名为`internalDataSource`的bean。如下所示编辑它。
+
+[source, xml, linenums]
+----
+...
+<bean name="internalDataSource" class="org.springframework.jdbc.datasource.SimpleDriverDataSource">
+        <property name="driverClass" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>
+        <property name="url" value="jdbc:sqlserver://<db_host_ip>:1433;databaseName=MMC_STATUS"/>
+       <property name="username" value="MMC_USER"/>
+       <property name="password" value="<MMC_USER_password>"/>
+</bean>
+...
+----
+
+==== 配置文件：`jackrabbit.repo.xml`
+
+打开文件进行编辑，然后找到`Workspaces`配置。确保工作区名称与`defaultWorkspace`属性指示的内容相符。在下面的例子中，工作区名称是`default`。
+
+[source, xml, linenums]
+----
+...
+<!--        location of workspaces root directory and name of default workspace    -->
+    <Workspaces rootPath="${rep.home}/workspaces" defaultWorkspace="default"/>
+    <!--        workspace configuration template:
+        used to create the initial workspace if there's no workspace yet    -->
+    <Workspace name="default">
+...
+----
+
+另外，编辑下面列出的部分。
+
+*笔记：
+
+*Explanation of snippets displayed below*
+
+列出的文件`jackrabbit.repo.xml`的片段定义了`FileSystem`和`PersistenceManager`的配置，如下所述。
+
+对于`FileSystem`，所有引用都应该：
+
+*  `use org.apache.jackrabbit.core.fs.db.MSSqlFileSystem`
+* 不要使用`shutdownOnClose`参数
+* 使用正确指向`MMC_STATUS`数据库的`driver`，`url`，`databaseName`，`user`和`password`的值
+* 将架构设为`mssql`和`schemaCheckEnabled`为`true`
+
+对于`PersistenceManager`，所有引用都应该：
+
+* 使用`org.apache.jackrabbit.core.persistence.pool.MSSqlPersistenceManager`，而不是`org.apache.jackrabbit.core.persistence.pool.DerbyPersistenceManager`
+* 不要使用`shutdownOnClose`参数
+* 使用正确指向`MMC_STATUS`数据库的`driver`，`url`，`databaseName`，`user`和`password`的值
+* 将架构设为`mssql`，`schemaCheckEnabled`为`true`，`externalBLOBs`为`false`
+
+
+
+[source, xml, linenums]
+----
+...
+<FileSystem class="org.apache.jackrabbit.core.fs.db.MSSqlFileSystem">
+             <param name="driver" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>
+              <param name="url" value="jdbc:sqlserver://<db_host_ip>:1433;databaseName=MMC_STATUS"/>
+              <param name="schemaObjectPrefix" value="repo_"/>
+              <param name="user" value="MMC_USER"/>
+              <param name="password" value="<MMC_USER_password>"/>
+              <param name="schema" value="mssql"/>
+              <param name="schemaCheckEnabled" value="true"/>
+<FileSystem>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<FileSystem class="org.apache.jackrabbit.core.fs.db.MSSqlFileSystem">
+              <param name="driver" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>
+              <param name="url" value="jdbc:sqlserver://<db_host_ip>:1433;databaseName=MMC_STATUS"/>
+              <param name="schemaObjectPrefix" value="workspace_"/>
+              <param name="user" value="MMC_USER"/>
+              <param name="password" value="<MMC_USER_password>"/>
+              <param name="schema" value="mssql"/>
+              <param name="schemaCheckEnabled" value="true"/>
+ 
+</FileSystem>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<PersistenceManager class="org.apache.jackrabbit.core.persistence.pool.MSSqlPersistenceManager">
+             <param name="schemaObjectPrefix" value="Jackrabbit Core_"/>
+              <param name="driver" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>
+              <param name="url" value="jdbc:sqlserver://<db_host_ip>:1433;databaseName=MMC_STATUS"/>
+              <param name="externalBLOBs" value="false"/>
+              <param name="schemaCheckEnabled" value="true"/>
+              <param name="user" value="MMC_USER"/>
+              <param name="password" value="<MMC_USER_password>"/>
+              <param name="schema" value="mssql"/>
+</PersistenceManager>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<FileSystem class="org.apache.jackrabbit.core.fs.db.MSSqlFileSystem">
+               <param name="driver" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>
+               <param name="url" value="jdbc:sqlserver://<db_host_ip>;databaseName=MMC_STATUS_NEW"/>
+               <param name="schemaObjectPrefix" value="search_index_w_"/>
+               <param name="user" value="MMC_USER"/>
+               <param name="password" value="<MMC_USER_password>"/>
+               <param name="schema" value="mssql"/>
+               <param name="schemaCheckEnabled" value="true"/>
+</FileSystem>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<FileSystem class="org.apache.jackrabbit.core.fs.db.MSSqlFileSystem">
+             <param name="driver" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>
+             <param name="url" value="jdbc:sqlserver://<db_host_ip>:1433;databaseName=MMC_STATUS"/>
+             <param name="schemaObjectPrefix" value="filesystem_version_"/>
+             <param name="user" value="MMC_USER"/>
+             <param name="password" value="<MMC_USER_password>"/>
+             <param name="schema" value="mssql"/>
+             <param name="schemaCheckEnabled" value="true"/>
+</FileSystem>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<PersistenceManager class="org.apache.jackrabbit.core.persistence.pool.MSSqlPersistenceManager">
+ <param name="schemaObjectPrefix" value="version_"/>
+ 
+ <param name="driver" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>
+ <param name="url" value="jdbc:sqlserver://<db_host_ip>:1433;databaseName=MMC_STATUS"/>
+ <param name="schemaCheckEnabled" value="true"/>
+ 
+ <param name="user" value="MMC_USER"/>
+ 
+ <param name="password" value="<MMC_USER_password>"/>
+ <param name="schema" value="mssql"/>
+ <param name="externalBLOBs" value="false"/>
+</PersistenceManager>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<FileSystem class="org.apache.jackrabbit.core.fs.db.MSSqlFileSystem">
+              <param name="driver" value="com.microsoft.sqlserver.jdbc.SQLServerDriver"/>                          
+              <param name="url" value="jdbc:sqlserver://<db_host_ip>:1433;databaseName=MMC_STATUS_NEW"/>
+              <param name="schemaObjectPrefix" value="search_index_"/>
+              <param name="user" value="MMC_USER"/>
+              <param name="password" value="<MMC_USER_password>"/>
+              <param name="schema" value="mssql"/>
+              <param name="schemaCheckEnabled" value="true"/>
+</FileSystem>
+...
+----
+
+==== 配置文件：`scheduler.properties`
+
+打开文件进行编辑，并按如下所示进行修改。
+
+[source, code, linenums]
+----
+org.quartz.jobStore.isClustered=false
+org.quartz.jobStore.driverDelegateClass=org.quartz.impl.jdbcjobstore.MSSQLDelegate
+org.quartz.jobStore.useProperties=true
+org.quartz.scheduler.instanceId=AUTO
+----
+
+跟踪数据的=== 配置
+
+要在MS SQL Server上存储跟踪数据，您需要修改以下文件：
+
+*  `persistence.xml`
+*  `applicationContextTracking.xml`
+
+这两个文件都驻留在`<TOMCAT_ROOT>/webapps/mmc-console-3.4.1/WEB-INF/classes/META-INF`中。
+
+==== 配置文件：`persistence.xml`
+
+打开文件进行编辑，然后找到以下参数：
+
+*  `openjpa.jdbc.SynchronizeMappings`
+*  `openjpa.jdbc.DBDictionary`
+
+修改参数，如下所示。
+
+[source, xml, linenums]
+----
+...
+<property name="openjpa.jdbc.SynchronizeMappings" value="buildSchema(SchemaAction='refresh')" />
+<property name="openjpa.jdbc.DBDictionary" value="org.apache.openjpa.jdbc.sql.SQLServerDictionary" />
+...
+----
+
+==== 配置文件：`applicationContext-tracking.xml`
+
+打开文件进行编辑，然后找到`jpaAdapter`和`dataSource`个bean。修改它们，如下面的摘录所示。
+
+[source, xml, linenums]
+----
+...
+<bean id="jpaAdapter" class="org.springframework.orm.jpa.vendor.OpenJpaVendorAdapter">
+        <property name="databasePlatform" value="org.apache.openjpa.jdbc.sql.SQLServerDictionary" />
+</bean>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<bean id="dataSource" class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+        <property name="driverClassName" value="com.microsoft.sqlserver.jdbc.SQLServerDriver" />
+        <property name="url" value="jdbc:sqlserver://<db_host_ip>:1433;databaseName=MMC_PERSISTENCY" />
+        <property name="username" value="MMC_TRACKER" />
+        <property name="password" value="<MMC_TRACKER_password>" />
+...
+----
+
+== 另请参阅
+
+* 详细了解 link:/mule-management-console/v/3.4/setting-up-mmc[MMC设置]。
+* 查看 link:/mule-management-console/v/3.4/architecture-of-the-mule-management-console[Mule管理控制台的架构]。

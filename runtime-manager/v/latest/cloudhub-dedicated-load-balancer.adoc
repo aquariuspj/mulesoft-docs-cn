@@ -1,0 +1,361 @@
+= 关于Cloudhub专用负载均衡器
+:keywords: cloudhub, runtime manager, arm, load balancing, vanity url, ssl, two way tls,
+
+CloudHub具有后端负载均衡服务，旨在自动执行基础架构组件的供应。您可以使用此服务在 link:/runtime-manager/virtual-private-cloud[VPC]内部署一个或多个自定义负载均衡器。
+
+[NOTE]
+您必须至少在组织中定义一个VPC，然后才能配置专用负载平衡器。
+
+每个专用负载均衡器都允许您：
+
+. 处理运行Mule应用程序的不同CloudHub工作人员之间的负载平衡。
+. 定义<<SSL Endpoints,SSL configurations>>提供自定义证书，并可选择实施双向SSL客户端身份验证。
+. 轻松配置将应用映射到自定义域的<<Mapping Rules,proxy rules>>，使您能够将所有内容托管在单个虚拟域下。
+
+[NOTE]
+--
+这是所有Anypoint平台计划中默认不包含的Anypoint基础架构的可选附加功能。在创建专用负载均衡器之前，您必须首先为您的组织创建一个Anypoint link:/runtime-manager/virtual-private-cloud[虚拟私有云]。
+您可以将多个环境关联到同一个VPC，这意味着您可以为不同的环境使用相同的专用负载平衡器。
+--
+
+查看<<Creating and Configuring a Dedicated Load Balancer>>部分了解更多信息。
+
+
+== 负载平衡器体系结构
+
+CloudHub专用负载均衡器可用于路由内部和外部流量，并可为多个部署的Mule应用程序路由请求。
+
+CloudHub专用负载均衡器分配给特定的虚拟私有云（VPC）。专用负载均衡器然后将流量路由到VPC的特定服务区域内的特定VPC。
+
+[NOTE]
+对于由专用负载平衡器管理的Mule应用程序，必须将Mule应用程序部署到专用负载平衡器的VPC中。
+
+
+您的CloudHub专用负载均衡器具有内部域名，供VPC内的应用程序和客户端使用。
+结构为`internal-<lb-name>.lb.anypointdns.net`，其中`<lb-name>`是您在创建负载均衡器时所使用的名称。
+此外，您的专用负载平衡器还公开了一个外部域名，该域名解析为可从CloudHub VPC网络外部访问的2个公共IP地址：`<lb-name>.lb.anypointdns.net`，其中，`<lb-name>`是您在负载平衡器时给予您的名称创建它。
+
+每个专用负载均衡器都有一个解析为其两个实例的2个公有IP地址的DNS A Record `<lb-name>.lb.anypointdns.net`。 +
+通过您的DNS提供商，您可以添加指向此A记录的CNAME记录并使用您自己的域名进行访问。
+
+如果您希望负载平衡器处理与应用程序的所有连接，并且不希望公开公开您应用程序的默认域名，则每个应用程序需要通过端口*8091*或{{1} }，或者您可以创建自定义映射策略，将外部请求从您的负载均衡器重定向到您的特定应用程序。
+
+[NOTE]
+--
+您的负载均衡器通过HTTPS侦听外部请求，默认情况下，通过HTTP与您的工作人员进行内部通信。如果您在VPC内配置Mule应用程序以侦听HTTPS，请确保在使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-mappings-add[负载平衡器映射添加]命令创建映射列表时将`upstreamProtocol`设置为`HTTPS`。
+--
+
+==  SSL端点
+
+通过提供证书和私钥对，您可以为负载均衡器配置一个*SSL endpoint*以供客户端使用。 +
+每个负载均衡器可以有多个独立的SSL端点。它们中的每一个都由它们的服务器证书通用名来标识。
+
+[NOTE]
+专用负载均衡器需要至少有一个与之关联的证书，这意味着在创建负载均衡器时至少需要配置一个SSL端点。
+
+=== 要求
+
+要关联您需要提供的SSL端点：
+
+. 一个包含pem编码和未加密证书文件的文件。
+. 第二个包含您的`.pem`证书私钥的文件。
++
+[CAUTION]
+私钥文件需要_passphraseless_
+
+每个SSL端点可以有多个CA证书和CRL。这些证书中的每一个都需要在单个未加密的_pem_编码文件中提供。订购独立CA证书并不重要，但信任链中的证书必须连接在一起。
+
+=== 上传证书
+
+您上传到Load Balancer的证书必须包含在一个_pem_编码和未加密的文件中。
+该文件可能包含整个证书链，它们依次排列，与以下示例部分类似：
+
+[%header,cols="30a,70a"]
+|===
+|  {证书{1}}示例
+| 初级证书 |  ----- BEGIN CERTIFICATE ----- +
+（您的主要SSL证书：your_domain_name.crt）+
+-----END CERTIFICATE-----
+| The Intermediate Certificate | -----BEGIN CERTIFICATE----- +
+(Your Intermediate certificate: DigiCertCA.crt) +
+-----END CERTIFICATE-----
+|===
+
+[NOTE]
+--
+没有必要在证书链中包含根证书。但是，请确保在每个证书中包含ASCII护甲。
+--
+
+[NOTE]
+使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-create[cloudhub负载平衡器创建]创建SSL端点时，您可以使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-ssl-endpoint-add[cloudhub load-balancer ssl-endpoint add]命令将SSL端点上载到负载均衡器，或者将新的SSL端点上载到现有的负载均衡器。
+
+=== 证书验证
+
+如果为SSL端点提供了至少一个CA证书，则负载均衡器使用以下HTTP标头将客户端证书数据传递给API：
+
+====  X-​​SSL-客户验证
+
+此标题返回`SUCCESS`，`FAILED`或`NONE`
+只有在`SUCCESS`之后，客户端才会被验证。 +
+它在证书不存在时返回`NONE`，当发生其他验证问题时返回`FAILED`。
+
+====  X-​​SSL的客户端-DN
+
+包含客户端证书的完整专有名称。
+
+====  X-​​SSL-发行人
+
+包含颁发证书的完整专有名称。
+
+====  X-​​SSL-客户串行
+
+包含CA用于识别客户端的序列号。
+
+=== 添加吊销列表
+
+CloudHub负载平衡器可以根据证书吊销列表（CRL）选择性地验证客户端请求。所有的CRL文件需要连接成一个_pem_编码的文件进行上传。订购并不重要。
+
+您可以在 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-create[负载平衡器创建]命令中使用' -  crl'选项创建负载平衡器时添加吊销列表。
+
+此外，如果您的负载平衡器已经创建，您可以使用 link:https://anypoint.mulesoft.com/apiplatform/anypoint-platform/#/portals/organizations/68ef9520-24e9-4cf2-b2f5-620025690913/apis/8617/versions/85955[REST API]进行更新。 +
+您可以向添加了`revocationList`元素的`/organizations/{orgid}/vpcs/{vpcId}/loadbalancers/{lbId}`端点发送`PATCH`请求：
+
+[source,json,linenums]
+----
+[
+  {
+    "op": "replace",
+    "path": "/sslEndpoints/0/revocationList",
+    "value": "-----BEGIN X509 CRL-----\nMIIBTTCBtwIBATANBgkqhkiG9w0BAQUFADBXMQswCQYDVQQGEwJBVTETMBEGA1UE\nCBMKU29tZS1TdGF0ZTEhMB8GA1UEChMYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRk\nMRAwDgYDVQQDEwdvcmcuY29tFw0xNjAzMTUwOTI2MThaFw0xODAzMTUwOTI2MTha\nMBwwGgIJAIBvvO4dJHjhFw0xNjAzMTUwODUwMTZaoA4wDDAKBgNVHRQEAwIBBjAN\nBgkqhkiG9w0BAQUFAAOBgQCCAbGXW+Hnzmd1bXqWsFXfogOsJScoxkJOhhmjui3I\nhTUyO5plGHUBLjBnDkypM+iLfn0W4wPcNj7FZdz4Hu/WLntxwrTtR5YOcfIhEGcq\nwvJq/1+WKUPC6eqGwx0iKOOBIWsaf5CNOOUQMo6RaeTeu8Uba2EGFk1Vu/SoZYAK\nsw==\n-----END X509 CRL-----\n"
+  }
+]
+----
+
+[NOTE]
+--
+建议使用CloudHub REST API以编程方式更新撤销列表。 +
+为了从CLI获取必要的vpcId和loadbalancerId，可以分别使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-vpc-describe-json[vpc JSON描述]和 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-describe-json[负载平衡器JSON描述]命令。
+--
+
+您可以向您的负载平衡器的端点发送PATCH请求以更新任何其他属性。
+
+
+=== 证书密码
+
+下面是一个推荐的密码套件列表，其中您的SSL端点的兼容性和安全性之间具有良好的平衡
+除了支持Internet Explorer 8的RC4-SHA之外，它们都提供前向保密。
+
+----
+ECDHE-RSA-AES256-GCM-SHA384
+ECDHE-RSA-AES128-GCM-SHA256
+DHE-RSA-AES256-GCM-SHA384
+DHE-RSA-AES128-GCM-SHA256
+ECDHE-RSA-AES256-SHA384
+ECDHE-RSA-AES128-SHA256
+ECDHE-RSA-AES256-SHA
+ECDHE-RSA-AES128-SHA
+DHE-RSA-AES256-SHA256
+DHE-RSA-AES128-SHA256
+DHE-RSA-AES256-SHA
+DHE-RSA-AES128-SHA
+AES256-GCM-SHA384
+AES128-GCM-SHA256
+AES256-SHA256
+AES128-SHA256
+AES256-SHA
+AES128-SHA
+----
+
+ClourHub的专用负载均衡器支持TLSv1.1和TLSv1.2。另外，您可以配置TLS v1.0，但请记住，由于其严重的漏洞，此类协议不再被PCi合规伙伴接受。
+
+
+== 映射规则
+
+负载平衡器配置由*Mapping Rules*列表定义，该列表描述了如何将输入URL转换为对不同CloudHub应用程序的调用。 +
+映射规则是负载均衡器的SSL端点的属性。 +
+当您创建映射规则时，您需要指定一个证书CN。省略`[certificateName]`参数会将映射添加到默认端点。
+
+当创建一个简单的匹配规则时，一个输入地址与定义的输出字面上相匹配：一个应用程序的端点。 +
+您也可以使用*Pattern*将类似变量的输入文本与端点进行匹配，而不是使用文字匹配。
+
+通过使用代理规则，您可以将域或子域映射到在CloudHub中运行的其中一个Mule应用程序
+
+=== 在映射规则中使用模式
+
+模式是一个字符串，它定义了用于匹配输入文本的模板。无论放入大括号（`{   }`）如何被视为变量。
+这些变量只能包含字母（a-z），不能包含任何其他字符，如数字，斜杠等。变量值可以包含以下字符'a-z0-1。＆？-_'，但不包含斜杠。
+
+假设您已经从`example.com`到`<lb-name>.lb.anypointdns.net`设置了DNS CNAME记录。然后，您可以将`app.example.com`映射到不同的已部署CloudHub Mule应用程序名称。
+
+例如，您可以从字面上绑定两个主机名进行重定向：
+
+[source,Example,linenums]
+----
+‘app.example.com’ ->  application: `app` URI: `/example’
+----
+
+或者你可以定义一个模式来保存输入值：
+
+[source,Example,linenums]
+----
+‘example.com/{mypattern}’ -> application: `app-{mypattern}` URI: /data
+----
+
+上述示例确保'example.com/bookings'和'example.com/sales'分别与`app-bookings/data`和`app-sales/data`匹配，因为变量`mypattern`拥有这些值。 +
+
+对于input =“bookings.example.com”，可通过分配`_mypattern_=”bookings” and for input=` sales.example.com `, the pattern is resolved to assign ` _ mypattern _ =“sales”来解决该模式。
+
+根据您的设计，您可以选择利用模式或简单文字映射来将内部重定向用于端点。
+
+[CAUTION]
+当前应用程序URI中的模式不受支持。
+
+=== 创建映射规则
+
+映射规则是一组定义*Input URL*的字段，以及一组描述*Output URL*的字段。
+
+*  _input URL_使用可由用户指定的URI参数进行描述：
+.  *URI*  - 描述输入URI的字符串或模式。
++
+[NOTE]
+--
+输入URL位于主负载均衡器的域之后（对于相同的负载均衡器，此值应保持不变）
+--
++
+*  _Output URL_由两个字段指定。
+.  *appName*  - 输出将请求转发到的应用程序名称。
+.  *appURI*  - 传递给已解析应用程序的URI字符串。
+
+输入和输出URL都可以使用模式或字符串来定义。
+
+映射规则是负载平衡器SSL端点的属性，由证书名称标识。 +
+当您创建映射规则时，您需要指定一个证书CN。省略`[certificateName]`参数会将映射添加到默认端点。
+
+如果您的SSL端点设置了 link:https://en.wikipedia.org/wiki/Wildcard_certificate[通配符证书]，并且您希望在映射规则中使用子域部分，则可以使用预定义的`{subdomain}`变量。
+
+首先定义的规则相对于之后定义的其他规则具有高优先级。这意味着将应用第一个匹配的规则。 +
+您可以分别使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-mappings-add[映射添加]， link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-mappings-describe[映射描述]和 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-mappings-remove[映射删除]命令创建，查看和删除现有规则。
+
+=== 映射规则示例
+
+对于这些示例，假设您已经配置了DNS CNAME记录以将`example.com`路由到`lb-name.lb.anypointdns.net`。
+
+下表包含一些映射规则示例：
+
+[NOTE]
+假定外部负载均衡器域名取决于您为其指定的唯一名称，则假定这些示例中的负载均衡器为`lb-demo`。
+
+[CAUTION]
+--
+默认情况下，您的负载均衡器通过HTTPS侦听外部请求，并通过HTTP与您的工作人员进行内部通信。如果您在VPC内配置Mule应用程序以侦听HTTPS，请确保在使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-mappings-add[负载平衡器映射添加]命令创建映射列表时将`upstreamProtocol`设置为`HTTPS`。
+--
+
+==== 网址映射
+
+您可以将应用名称作为输入URI传递，并将其直接映射到CloudHub中的应用名称：
+
+[%header,cols="10a,20a,20a,10a"]
+|===
+|规则＃ |输入URL 2 + ^ | 输出URL
+|    |     *URI*    |        *appName*    |    *appURI*
+|  {0 {1}} / {应用} /     |  {应用}              |  /
+|===
+
+此规则将`lb-demo.lb.anypointdns.net/{app}`映射到`{app}.cloudhub.io`。 +
+{app}是您选择通过的应用程序名称的模式。
+
+
+==== 主机映射
+
+如果您有通配符证书（如`*.example.com`），则可以使用'subdomain'变量映射任何子域：
+
+[%header,cols="10a,20a,20a,10a"]
+|===
+|规则＃ |输入URL 2 + ^ | 输出URL
+|    |   *URI*    |        *appName*     |   *appURI*
+|  {0 {1}} /         |  {子域}    |  /
+|===
+此规则自动将任何传递给example.com子域的请求映射到相应的appName。例如：
+
+* 传递`api.example.com`将重定向到`api.cloudhub.io` +
+* 传递`application.example.com`映射到`application.cloudhub.io`。
+
+这同样适用于您的SSL端点的 link:https://en.wikipedia.org/wiki/Subject_Alternative_Name[使用替代名称]（SAN）。 +
+如果您为证书的通用名称配置了不同的SAN，则可以使用“子域名”变量将域名的子域部分映射到您的应用程序。然而，为了这个工作，你的应用程序需要与你的域名的公共部分具有相同的名称。
+
+例如，具有：
+
+* 两个已部署的应用程序：
+**  dev的应用内
+**  QA-应用
+* 以及一个带有主题备选名称的SSL端点：
+**  dev.example.com
+**  qa.example.com
+* 映射规则：
++
+[%header,cols="10a,20a,20a,10a"]
+|===
+|规则＃ |输入URL 2 + ^ | 输出URL
+|    |   *URI*    |        *appName*     |   *appURI*
+|  {0 {1}} /         |  {子域} -app    |  /
+|===
+
+然后，这个规则会将您域名的子域部分映射到应用程序名称：
+
+* 将`dev.example.com`重定向到`dev-app.cloudhub.io`。
+* 将`qa.example.com`重定向到`qa-app.cloudhub.io`。
+
+
+====  1：1映射
+
+如果您只有一个应用程序，则可以映射文字应用程序名称。
+
+[%header,cols="10a,20a,20a,10a"]
+|===
+|规则＃ |输入URL 2 + ^ | 输出URL
+|    |   *URI*   |    *appName*  |    *appURI*
+|  {0 {1}} /        |    对myApp     |  /
+|===
+这会将您的默认负载平衡器`lb-demo.lb.anypointdns.net`直接映射到Cloudhub `myApp.cloudhub.io`中的应用。
+
+=== 索引规则的优先级
+
+创建_mapping规则_时，您需要为其指定一个索引来定义规则的优先顺序。 +
+首先在索引`0`中定义的规则相对于其后定义的其他规则具有更高的优先级。分配的索引越高，映射规则的优先级越低。
+
+每个规则都必须定义一个优先级。强烈建议在创建它们时注意每个规则的顺序，并且多条规则可能会相互覆盖。
+
+==== 订购和优先规则
+
+您可以通过指定索引值，在Anypoint-CLI中使用 link:https://docs.mulesoft.com/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-mappings-add[cloudhub负载平衡器映射添加]命令创建映射规则时设置映射规则的顺序。
+
+使用API​​创建规则时，您无法指定优先级顺序，但可以稍后向负载平衡器端点`anypoint.mulesoft.com/cloudhub/api/organizations/{orgid}/loadbalancers/{loadbalancerId}`发送`PATCH`请求，并使用顺序索引将您的规则表达式更新为根据上面解释的顺序逻辑匹配您的需求。
+
+[NOTE]
+--
+负载均衡器ID在您创建时提供给您。 +
+您还可以对您的端点/组织/ {orgid}} /负载平衡器执行`GET`请求以获取该ID。
+--
+
+== 白名单
+
+为了将IP地址列入白名单到您的负载均衡器，您需要使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-whitelist-add[负载平衡器白名单添加]命令以CIDR表示法传递这些IP地址。
+
+白名单适用于负载平衡器级别的入站连接，而不适用于CN证书级别。确保你只传递IP地址。
+
+== 创建和配置专用负载均衡器
+
+[TIP]
+为了能够创建和配置负载平衡器，您的配置文件需要是负载平衡器所关联组织的管理员。
+
+有三种为VPC创建和配置专用负载均衡器的方法：
+
+. 使用*Anypoint Platform Command Line Interface*中的 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-create[cloudhub负载平衡器创建]命令
+. 通过端点`anypoint.mulesoft.com/cloudhub/api/organizations/{orgid}/loadbalancers`和`anypoint.mulesoft.com/cloudhub/api/organizations/{orgid}/vpcs`使用 link:/runtime-manager/runtime-manager-api[Cloudhub API]。
+. 使用*Anypoint Platform UI*中的{{0}
+
+[NOTE]
+--
+`loadbalancers`和`vpcs`端点的完整说明可用于访问您的 link:https://anypoint.mulesoft.com/apiplatform/anypoint-platform/#/portals[API门户]。 +
+在上面的链接中，搜索"CloudHub" API的其他Mule API并输入其最新版本。
+--

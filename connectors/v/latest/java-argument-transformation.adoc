@@ -1,0 +1,187 @@
+=  Java模块参数转换
+:keywords: Java, custom code, transformation, arguments
+
+*Available since version 1.1*
+
+当Java模块不完全的时候，Java模块将给出的参数转换为Java调用
+匹配java方法期望的类型，但有一种方法可以推断出如何转换
+给出了该方法所期望的参数。
+
+== 参数何时会被转换？
+
+对于给定的每个参数，模块将检查其类型是否与类型匹配
+该参数的方法预期与否。如果这不是该方法所期望的，那么
+模块会尝试将其转换为预期的结果。
+
+== 参数转换的简单示例
+
+这是一个简单的例子，其中一个参数被转换：
+
+“Math”类的静态方法'min'将被调用，它期望的
+要接收两个`int`参数，将使用数字和字符串进行调用
+
+[source, xml, linenums]
+----
+<flow name="calculateMinimum">
+  <java:invoke-static class="java.lang.Math" method="min(int,int)" >
+    <java:args>#[{
+        'arg0': 5,
+        'arg1' : "3"
+      }]
+    </java:args>
+  </java:invoke-static>
+</flow>
+----
+
+在这种情况下，'arg1'将作为一个字符串传递，但它被转换为一个int
+在调用java方法之前。
+
+== 自定义POJO作为地图传递到模块
+
+以前，在使用自定义POJO时，用户必须在DataWeave中显式声明
+表达式到数据应该被转换的类型。现在，Java模块自动
+识别给定参数的预期类型，并尝试转换给定的参数
+数据转换为预期的类型。以下是Map参数转换的示例
+到模块的一个自定义POJO中。
+
+这是POJO的课程：
+
+[source, java, linenums]
+----
+public class Car {
+  private String doors;
+  private String wheels;
+  private String engine;
+
+  public String getDoors() {
+    return doors;
+  }
+
+  public String getWheels() {
+    return wheels;
+  }
+
+  public String getEngine() {
+    return engine;
+  }
+}
+----
+
+Java类声明一个静态方法，该方法接收上面定义的POJO的一个实例：
+
+[source, java, linenums]
+----
+public class CarUtils {
+  public static String describeCar(Car car) {
+    return "This are the car has: " + car.getEngine() + "," + car.getWheels() + "," + car.getDoors();
+  }
+}
+----
+
+在调用静态方法的地方使用Mule流：
+
+[source, xml, linenums]
+----
+<flow name="describeCarFlow">
+    <java:invoke-static class="CarUtils" method="describeCar(Car)" >
+        <java:args>
+            #[{
+            'car': {
+                'doors' : "Four doors",
+                'engine' : "120 Horse power engine",
+                'wheels' : "17 Inch chromed rims"
+            }
+            }]
+        </java:args>
+    </java:invoke-static>
+</flow>
+----
+
+mule操作正在接收一个名为car的Map，其键和值可以映射到a
+汽车实例。该映射将在调用之前转换为此类实例
+java方法。如果没有这种改进，调用将会失败，说明参数
+传递给java的方法与其签名不匹配。
+
+== 收藏和地图
+
+模块将检查集合的每个元素和地图的每个条目
+由方法签名声明的Java通用。如果有任何元素没有通过这个检查，整个
+集合或地图将不得不使用转换的元素创建和重新填充。
+[WARNING]
+Java方法将与Collection或者另一个实例一起调用
+如果需要转换，则映射（不同于Mule流中传递的转换）。这个
+如果所调用的方法预计会添加或删除元素，这一点尤其重要
+Collection或Map以及在需要调用之后引用此Collection或Map的能力。
+
+== 列表已转换的示例
+
+这是一个例子，其中赋予该操作的列表需要被转换，并且
+带有转换项的新List将被传递给java方法。
+
+这是声明静态方法的java类：
+
+[source, java, linenums]
+----
+public class IntegerUtils {
+  public static Integer sumNumbers(List<Integer> numbers) {
+    return numbers.stream().mapToInt(i -> i.intValue()).sum();
+  }
+}
+----
+
+这是如何在骡子流中调用的：
+
+[source, xml, linenums]
+----
+<flow name="sumListOfNumbers">
+  <java:invoke-static class="IntegerUtils" method="sumNumbers(List)">
+    <java:args>
+      #[{
+        'numbers' : [1, "5", 4, "8", 3]
+      }]
+    </java:args>
+  </java:invoke-static>
+</flow>
+----
+
+注意流中给出的列表有两个String对象
+被转换为Integer。
+
+映射转换的示例== 
+
+这是一个例子，其中赋予该操作的Map需要被转换，并且
+带有转换键和值的新Map将被传递给java方法。
+
+这是声明静态方法的java类：
+
+[source, java, linenums]
+----
+public class MapUtils {
+  public static Integer sumMapValues(Map<String, Integer> map) {
+    return map.keySet().stream().mapToInt(i -> i.intValue()).sum();
+  }
+}
+----
+
+这是如何在骡子流中调用的：
+
+[source, xml, linenums]
+----
+<flow name="sumValuesOnMap">
+  <java:invoke-static class="MapUtils" method="sumMapValues(Map)">
+    <java:args>
+      #[{
+        'map' :{
+          'books': "22",
+          'pencils': 33,
+          'pens': 12
+        }
+      }]
+    </java:args>
+  </java:invoke-static>
+</flow>
+----
+
+该地图包含的值不符合Java中的泛型
+方法。因此，使用转换的键和值的新实例将会是
+用于调用该方法。

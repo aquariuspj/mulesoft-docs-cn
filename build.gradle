@@ -1,0 +1,249 @@
+import com.eriwen.gradle.css.tasks.CombineCssTask
+import com.eriwen.gradle.css.tasks.MinifyCssTask
+import java.nio.file.Files
+import java.nio.file.Paths
+
+// .TODO
+// * add mode to run jetty in background
+// * set outputs.dir for custom tasks
+
+buildscript {
+  configurations.create('builder')
+  configurations.create('singlePageBuilder')
+
+  repositories {
+    if (project.hasProperty('useMavenLocal')) {
+      mavenLocal()
+    }
+    jcenter()
+    maven {
+      url 'https://repository-master.mulesoft.org/nexus/content/repositories/public'
+    }
+  }
+
+  dependencies {
+    classpath 'com.eriwen:gradle-css-plugin:2.12.0'
+    builder 'com.mulesoft.documentation.builder:mule-docs-builder:1.0.8'
+    singlePageBuilder 'com.mulesoft.documentation.builder:mule-docs-single-page-builder:1.0.8'
+  }
+
+  configurations.all {
+    resolutionStrategy {
+      // NOTE override JRuby version required by AsciidoctorJ to work around hang in CodeRay
+      // TODO Gradle does not honor JRuby version declared by docs builder since AsciidoctorJ specifies newer version
+      force 'org.jruby:jruby:9.0.5.0'
+    }
+  }
+}
+
+defaultTasks 'build'
+group = 'com.mulesoft.documentation'
+
+apply plugin: 'css'
+apply from: 'gradle/git-helper.gradle'
+
+ext {
+  dryRun = project.hasProperty('dryRun')
+  assetsDir = '_assets'
+  // TIP to test a remote branch, set assetsRepoBranchName = 'name' and assetsRepoCommit = "origin/$assetsRepoBranchName"
+  assetsRepoBranchName = 'dev-tag'
+  assetsRepoCommit = '7337c1988283b0685b714e374d94410170d32f77'
+  // assetsRepoUri = 'https://github.com/mulesoft/mulesoft-docs-site-assets'
+  assetsRepoUri = 'git@github.com:mulesoft/mulesoft-docs-site-assets'
+  builderMaxHeapSize = project.hasProperty('maxHeapSize') ? project.property('maxHeapSize') : '2500m'
+  builderJvmArgs = ['-Xverify:none', '-XX:+OptimizeStringConcat', '-XX:+UseFastAccessorMethods', '-Djava.net.preferIPv4Stack=true', '-Djava.awt.headless=true']
+  docsRepoBranchName = System.env.GIT_BRANCH ?
+      System.env.GIT_BRANCH.replaceFirst(/^origin\//, '') :
+      git('rev-parse --abbrev-ref HEAD', '.', true)
+  // NOTE we assume here that all branches reside in the upstream repository
+  docsRepoUri = 'https://github.com/mulesoft/mulesoft-docs'
+  profile = project.hasProperty('profile') ? project.property('profile') : 'dev'
+  profileBuildScript = "gradle/$profile-profile.gradle"
+  siteDir = '_site'
+  siteUri = 'http://localhost:8000'
+  tempDir = '_tmp'
+  templatesDir = '_templates'
+  srcTemplatesDir = "$assetsDir/_templates"
+}
+
+apply from: 'gradle/git-helper.gradle'
+if (file(profileBuildScript).exists()) apply from: profileBuildScript
+
+task cloneAssetsRepo {
+  outputs.dir(assetsDir).upToDateWhen { false }
+  onlyIf { !Files.isSymbolicLink(Paths.get(assetsDir)) && !file("$assetsDir/.gitkeep").file }
+  doLast {
+    if (file("$assetsDir/.git").directory) {
+      git "fetch -q origin", assetsDir
+    }
+    else {
+      git "clone -q -n $assetsRepoUri $assetsDir", file(assetsDir).parent
+    }
+    git "checkout -q -B $assetsRepoBranchName $assetsRepoCommit", assetsDir
+  }
+}
+
+task setup(group: 'Build', description: 'Prepares the build.') {
+  dependsOn cloneAssetsRepo
+}
+
+task cleanAssets(type: Delete) {
+  onlyIf { !Files.isSymbolicLink(Paths.get(assetsDir)) && !file("$assetsDir/.gitkeep").file }
+  delete assetsDir
+}
+
+task clean(type: Delete, group: 'Build', description: 'Deletes assets and site directories.') {
+  dependsOn cleanAssets
+  delete buildDir, siteDir, tempDir
+}
+
+// TODO site builder should accept a custom templates directory
+task copyTemplates(type: Copy) {
+  dependsOn setup
+  onlyIf { file(srcTemplatesDir).directory }
+  from srcTemplatesDir
+  into templatesDir
+}
+
+task buildHtml(type: JavaExec, group: 'Build', description: 'Builds HTML pages.') {
+  dependsOn copyTemplates
+  mustRunAfter setup
+  classpath = buildscript.configurations.builder
+  main = 'com.mulesoft.documentation.builder.Client'
+  args = ['-s', projectDir.absolutePath, '-d', siteDir, '-ghr', docsRepoUri, '-ghb', docsRepoBranchName, '-url', siteUri]
+  maxHeapSize = builderMaxHeapSize
+  jvmArgs = builderJvmArgs
+  //outputs.dir siteDir
+  doFirst {
+    // NOTE revert residual changes to template(s), which may or may not be managed by git
+    if (!file(srcTemplatesDir).directory) {
+      if (git("status --porcelain $templatesDir", '.', true).startsWith('?? ')) {
+        file(templatesDir).deleteDir()
+      }
+      else {
+        git "checkout -- $templatesDir"
+      }
+    }
+  }
+  doLast {
+    // NOTE revert local changes to template(s), which may or may not be managed by git
+    if (file(srcTemplatesDir).directory) {
+      if (git("status --porcelain $templatesDir", '.', true).startsWith('?? ')) {
+        file(templatesDir).deleteDir()
+      }
+      else {
+        git "checkout -- $templatesDir"
+      }
+    }
+  }
+}
+
+// pass file to build using -Pfile=path/to/file.adoc
+task buildHtmlSingle(type: JavaExec, group: 'Build', description: 'Builds a single HTML page.') {
+  classpath = buildscript.configurations.singlePageBuilder
+  main = 'com.mulesoft.documentation.builder.previewer.Client'
+  args = ['-s', file(project.hasProperty('file') ? project.property('file') : 'index.adoc').absolutePath, '-d', tempDir]
+}
+
+task copyAssets(type: Copy) {
+  dependsOn setup
+  mustRunAfter buildHtml
+  from(assetsDir) {
+    exclude 'README.md'
+    exclude '_*/**'
+    exclude 'css'
+  }
+  into siteDir
+  //outputs.dir siteDir
+
+  // preserve last modified times (futile since git clone doesn't preserve last modification times)
+  //def fileCopyDetails = []
+  //eachFile { fileCopyDetails << it }
+  //doLast {
+  //  fileCopyDetails.each { new File(destinationDir, it.path).setLastModified(it.lastModified) }
+  //}
+}
+
+[csslint, combineCss, gzipCss, minifyCss].each { tasks.remove(it) }
+
+css {
+  source {
+    standard {
+      css {
+        srcDir "$assetsDir/css"
+        include '*.css'
+      }
+    }
+    less {
+      css {
+        srcDir "$assetsDir/css"
+        include '*.less'
+      }
+    }
+  }
+}
+
+lesscss {
+  dependsOn setup
+  mustRunAfter copyAssets
+  // IMPORTANT must use asFileTree to delay resolution until after assets repo is cloned
+  source = css.source.less.css.asFileTree
+  dest = "${buildDir}/generated-css/mulesoft"
+}
+
+task combineMuleSoftCss(type: CombineCssTask) {
+  source = lesscss
+  dest = "${buildDir}/css/mulesoft.css"
+  doFirst {
+    source = source.files.sort()
+  }
+}
+
+task combineVendorCss(type: CombineCssTask) {
+  dependsOn setup
+  mustRunAfter copyAssets
+  // IMPORTANT must use asFileTree to delay resolution until after assets repo is cloned
+  source = css.source.standard.css.asFileTree
+  dest = "${buildDir}/css/vendor.css"
+  doFirst {
+    source = source.files.sort()
+  }
+}
+
+task minifyMuleSoftCss(type: MinifyCssTask) {
+  source = combineMuleSoftCss
+  dest = "${buildDir}/css/mulesoft.min.css"
+  yuicompressor {
+    lineBreakPos = 500
+  }
+}
+
+task minifyVendorCss(type: MinifyCssTask) {
+  source = combineVendorCss
+  dest = "${buildDir}/css/vendor.min.css"
+  yuicompressor {
+    lineBreakPos = 500
+  }
+}
+
+task combineAndMinifyCss(type: Copy, group: 'Build', description: 'Combined and minifies CSS files after compiling LESS files to CSS.') {
+  dependsOn minifyMuleSoftCss, minifyVendorCss
+  from("${buildDir}/css") {
+    include '*.min.css'
+  }
+  into "${siteDir}/css"
+}
+
+task build(group: 'Build', description: 'Builds site.') {
+  dependsOn setup, buildHtml, copyAssets, combineAndMinifyCss
+  mustRunAfter clean
+}
+
+task serve(type: JettyRun, group: 'Tools', description: 'Runs site in a local preview server.') {
+  mustRunAfter build
+  classpath = files()
+  contextPath ''
+  httpPort 8000
+  reload 'automatic'
+  webAppSourceDirectory file(siteDir)
+}

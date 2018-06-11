@@ -1,0 +1,466 @@
+= 功能测试
+:keywords: testing, functional
+
+由于Mule是轻量级且可嵌入的，因此在测试案例中运行Mule Server很容易。 Mule提供了一个名为 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/tck/junit4/FunctionalTestCase.html[org.mule.tck.junit4.FunctionalTestCase]的抽象 link:http://junit.sourceforge.net/index.html[JUnit的]测试用例，它在测试用例中运行Mule并管理服务器的生命周期。 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/tck/functional/package-summary.html[org.mule.tck.functional]包中包含许多用于功能测试Mule代码的支持类，其中包括 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/tck/functional/FunctionalTestComponent.html[FunctionalTestComponent]。这些类在下面的章节中有更详细的描述。
+
+==  FunctionalTestCase
+
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/tck/FunctionalTestCase.html[FunctionalTestCase]是Mule功能测试的基本测试用例。您的测试用例可以扩展`FunctionalTestCase`以使用其功能。
+
+FunctionalTestCase使用通过重写getConfigResources（）指定的配置启动Mule服务器：
+
+[source, code, linenums]
+----
+protected String getConfigResources()
+{
+	return "mule-conf.xml";
+}
+----
+
+[TIP]
+您可以使用方法`getConfigResources`指定要使用的配置文件或逗号分隔的配置文件列表。所有配置文件都必须存在于你的类路径中。
+
+然后创建与Mule服务器交互的测试。 `FunctionalTestCase`扩展了`junit.framework.TestCase`，因此JUnit是创建和运行测试用例的框架。例如，这个简单的测试会向vm端点发送消息。
+
+[source, java, linenums]
+----
+public void testSend() throws Exception {
+	MuleClient client = new MuleClient(muleContext);
+	String payload = "foo";
+	Map<String, Object> properties = null;
+	MuleMessage result = client.send("vm://test", payload, properties);
+	assertEquals("foo Received", result.getPayloadAsString());
+}
+----
+
+请注意使用`MuleClient`与正在运行的Mule服务器进行交互。 `MuleClient`用于将消息发送到您在Mule配置文件（本例中为mule-conf.xml）中指定的端点并从其接收消息。本例中使用的示例`mule-conf.xml`文件如下所示：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?><mule xmlns="http://www.mulesoft.org/schema/mule/core"    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xmlns:spring="http://www.springframework.org/schema/beans"
+ xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+ xmlns:test="http://www.mulesoft.org/schema/mule/test"
+ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ http://www.mulesoft.org/schema/mule/core
+ http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ http://www.mulesoft.org/schema/mule/vm
+ http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+ http://www.mulesoft.org/schema/mule/test
+ http://www.mulesoft.org/schema/mule/test/current/mule-test.xsd">
+ <model name="TestComponentModel">
+<service name="TestComponentService">
+<inbound><inbound-endpoint address="vm://test"/></inbound>
+<test:component appendString=" Received"/>
+</service>
+</model>
+</mule>
+----
+
+=== 看门狗超时
+
+基本测试用例类包含一个看门狗超时功能，可在60秒后超时进行功能测试。要更改此设置，请将`-Dmule.test.timeoutSecs=XX`添加到用于运行Mule的命令`mvn`或IDE中的JUnit测试运行器。从Mule 3.0-M2开始，您还可以设置环境变量`MULE_TEST_TIMEOUTSECS`。如果同时设置了系统属性和环境变量，则系统属性优先。
+
+==  FunctionalTestComponent
+
+前面的 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/tck/functional/FunctionalTestComponent.html[FunctionalTestCase]示例涵盖了许多常见的（同步）测试场景，其中服务直接响应调用者。 `FunctionalTestComponent`可以帮助支持更丰富的测试，例如：
+
+. 模拟异步通信
+. 将模拟数据返回给调用者
+. 常见场景，如强制异常，存储邮件历史记录，将文本附加到回复以及延迟回复。
+
+该组件包括两种方法：`onCall`方法和`onReceive`方法基本上做同样的事情。
+
+*  *onCall*：接收MuleEventContext作为输入并返回一个Object。
+*  *onReceive*：接收一个Object作为输入并返回一个Object。
+
+在这两种方法中，`FunctionalTestComponent`都将传递给它的消息（来自`MuleEventContext`或来自Object）并将其转换为String。然后它会创建一条消息并将其发回给调用者。它还检查是否有任何属性被设置并相应地执行。
+
+=== 使用`FunctionalTestComponent`进行异步测试
+
+`FunctionalTestComponent`支持两种异步响应调用者的事件机制：事件回调和通知。事件回调和通知都会触发由注册侦听器处理的事件。在功能测试过程中，监听器通常是`FunctionalTestCase`中可访问的类。
+
+==== 事件回调
+
+用户定义的事件回调在测试组件被调用时被调用。以下是使用回调的测试用例和Mule配置的示例：
+
+[source, java, linenums]
+----
+public void testEventCallback() throws Exception {
+	EventCallback callback = new EventCallback() {
+		public void eventReceived(MuleEventContext context, Object component) throws Exception {
+			System.out.println("Thanks for calling me back");
+		}
+	};
+	getFunctionalTestComponent("TestComponentService").setEventCallback(callback);
+	MuleClient client = new MuleClient();
+	client.send("vm://test", new DefaultMuleMessage("foo"));
+}
+----
+
+在本例中，`FunctionalTestComponent`收到消息后立即调用`eventReceived`回调方法，并将消息打印到控制台。测试断言可以用这种方法进行。
+
+本例中使用的对应Mule配置如下：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?><mule xmlns="http://www.mulesoft.org/schema/mule/core"   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:spring="http://www.springframework.org/schema/beans"
+xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+xmlns:test="http://www.mulesoft.org/schema/mule/test"
+xsi:schemaLocation="http://www.springframework.org/schema/beans
+ http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ http://www.mulesoft.org/schema/mule/core
+ http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ http://www.mulesoft.org/schema/mule/vm
+ http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+ http://www.mulesoft.org/schema/mule/test
+ http://www.mulesoft.org/schema/mule/test/current/mule-test.xsd">
+ <model name="TestComponentModel">
+ <service name="TestComponentService">
+ <inbound><inbound-endpoint address="vm://test"/></inbound>
+ <component><singleton-object class="org.mule.tck.functional.FunctionalTestComponent"/></component>
+ </service>
+ </model>
+ </mule>
+----
+
+请注意，在此配置中，我们没有使用"<test:component>"元素，因为我们需要`FunctionalTestComponent`作为单例才能使回调正常工作。
+
+有关Spring组件上的事件回调的示例，请参见下面的附加示例。
+
+==== 通知
+
+通知是事件回调的替代方法。收到活动时，`FunctionalTestComponent`发出通知，通知我们已收到活动。我们需要在我们的测试中设置一个侦听器（`FunctionalTestNotificationListener`）来捕获此通知。
+
+要做到这一点，我们必须首先让我们的测试用例实现`FunctionalTestNotificationListener`接口。然后，我们必须实现此侦听器公开的方法`onNotification`。在下面的示例中，我们检查`notification.getAction`以查看它是否是由`FunctionalTestComponent`触发的`FunctionalTestNotification`。如果是，我们将其打印到控制台。
+
+[source, java, linenums]
+----
+public void onNotification(ServerNotification notification) {
+	if (notification.getAction() == FunctionalTestNotification.EVENT_RECEIVED) {
+	System.out.println("Event Received");
+	}
+}
+----
+
+对于我们的听众开始收听通知，我们必须注册它：
+
+[source]
+----
+muleContext.registerListener(this,"myComponent");
+----
+
+=== 从`FunctionalTestComponent`返回模拟数据
+
+`FunctionalTestComponent`可以返回指定在文件中或嵌入到Mule配置中的模拟数据。例如，要让`FunctionalTestComponent`返回消息"donkey"，您可以按如下方式配置组件：
+
+[source, xml]
+----
+<test:component><test:return-data>donkey</test:return-data></test:component>
+----
+
+要从文件返回内容，可以使用：
+
+[source,xml]
+----
+<test:component><test:return-data file="abc.txt"/></test:component>
+----
+
+引用的文件应该存在于Mule类路径中。
+
+===  FunctionalTestComponent的其他有用功能
+
+==== 强制例外
+
+您可以使用`throwException`始终返回由`exceptionToThrow`指定的异常，如下所示：
+
+[source,xml]
+----
+<test:component  throwException="true"  exceptionToThrow="your.service.exception"/>
+----
+
+==== 存储消息历史记录
+
+默认情况下，`FunctionalTestComponent`接收到的每条消息均已存储并可以检索。如果您不希望存储此信息，则可以将`enableMessageHistory`设置为false。例如，如果您通过组件运行数百万条消息，那么如果启用此功能，最终可能会发生内存不足错误。
+
+启用：
+
+[source,xml]
+----
+<test:component enableMessageHistory="true" />
+----
+
+消息存储在ArrayList中。要检索存储的邮件，请使用`getReceivedMessage`方法按号码检索它（例如，`getReceivedMessage(1)`检索存储的第一条邮件），或者使用`getLastReceivedMessage`检索最后一条邮件收到了。您可以使用`getReceivedMessages`返回存储的消息总数。
+
+==== 将文本附加到回复
+
+您可以使用`appendString`将文本附加到响应消息中，如下所示：
+
+[source,xml]
+----
+<test:component appendString="Received" />
+----
+
+==== 延迟响应
+
+您可以设置`waitTime`延迟此`FunctionalTestComponent`的回复。在这个例子中，响应延迟了五秒钟：
+
+[source,xml]
+----
+<test:component waitTime="5000" />
+----
+
+==== 禁用入站转换器
+
+您可以将doInboundTransform设置为false以禁用入站转换器。例如：
+
+[source,xml]
+----
+<test:component doInboundTransform="false" />
+----
+
+== 其他功能
+
+`functional`包中包含几个附加类，例如`CounterCallback`，这是一个测试回调，用于统计收到的消息数量。有关完整信息，请参阅 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/tck/functional/package-summary.html[org.mule.tck.functional] JavaDoc。
+
+== 附加示例：使用Spring组件进行事件回调
+
+此示例与上面的"Event Callbacks"示例类似，只是此处使用的组件是Spring组件。在这种情况下，我们可以使用Spring注册表查找组件。
+
+[source, java, linenums]
+----
+public void testEventCallback() throws Exception {
+	EventCallback callback = new EventCallback()    {
+			public void eventReceived(MuleEventContext context, Object component)
+			throws Exception {
+			System.out.println("Thanks for calling me back");
+			}
+	};
+	ApplicationContext ac = (ApplicationContext)muleContext.getRegistry().lookupObject(SpringRegistry.SPRING_APPLICATION_CONTEXT);
+	FunctionalTestComponent testComponent = (FunctionalTestComponent) ac.getBean("FTC");
+	testComponent.setEventCallback(callback);
+	MuleClient client = new MuleClient();
+	client.send("vm://test", new DefaultMuleMessage("foo"));
+}
+----
+
+相应的Mule配置如下：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xmlns:spring="http://www.springframework.org/schema/beans"
+xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+xmlns:test="http://www.mulesoft.org/schema/mule/test"
+xsi:schemaLocation="http://www.springframework.org/schema/beans
+http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core
+http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm
+http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/test
+http://www.mulesoft.org/schema/mule/test/current/mule-test.xsd">
+<spring:bean id="FTC" class="org.mule.tck.functional.FunctionalTestComponent" />
+<model name="TestComponentModel">
+<service name="TestComponentService">
+<inbound><inbound-endpoint address="vm://test" /></inbound>
+<component>
+<spring-object bean="FTC" />
+</component>
+</service>
+</model>
+</mule>
+----
+
+== 测试组件配置参考
+
+以下是关于测试框架（mule-test.xsd）中提供的测试组件的详细信息。
+
+=== 元器件
+
+可用于测试消息流的组件。它是一个可配置的组件。可以设置组件的返回数据，以便用户可以模拟对真实服务的呼叫。该组件还可以在收到消息时跟踪调用历史记录和触发通知。
+
+<component...>的{​​{0}}属性
+
+[%header,cols="30s,70a"]
+|===
+| {属性{1}}说明
+| throwException  |在进行任何处理之前组件是否应该抛出异常。
+
+*Type:*布尔+
+*Required:*否+
+*Default:*无
+
+| logMessageDetails
+|是否将所有消息详细信息输出到日志。这包括所有标题和完整的有效载荷。这些信息将在INFO级别上被锁定。
+
+*Type:*布尔+
+*Required:*否+
+*Default:*无
+
+| doInboundTransform
+|消息是否使用入站端点上设置的变换器进行转换，然后才能处理。默认值是`true`。
+
+*Type:*布尔+
+*Required:*否+
+*Default:* `true`
+
+| exceptionToThrow
+|抛出的异常对象的完全限定类名。与throwException一起使用。如果未指定，则默认情况下会引发{{0}​​}。
+
+*Type:*名称（不含空格）+
+*Required:*否+
+*Default:*无
+
+| exceptionText
+|抛出异常的文本。与throwException一起使用。如果没有指定，则使用空的消息。
+
+*Type:*字符串+
+*Required:*否+
+*Default:*无
+
+| enableMessageHistory
+|测试组件收到的每条消息都存储并可以检索。如果您不希望保存这些信息，例如通过组件运行数百万条消息，则可以禁用此功能以避免可能发生的内存不足错误。
+
+*Type:*布尔+
+*Required:*否+
+*Default:*无
+
+| enableNotifications
+|是否在组件接收到消息时触发FunctionalTestNotification。测试用例可以注册接收这些通知，并对当前消息进行断言。
+
+*Type:*布尔+
+*Required:*否+
+*Default:*无
+
+| appendString
+|附加到每个通过组件的消息负载的字符串值。请注意，通过设置此属性，您隐式指示消息有效内容被转换为字符串，并返回字符串有效内容。入站变换器（如果有）首先被应用，但是如果没有返回字符串，则`MuleEventContext.getMessageAsString()`将在此后直接调用。
+
+*Type:*字符串+
+*Required:*否+
+*Default:*无
+
+| WAITTIME
+|返回结果之前等待的时间（以毫秒为单位）。在等待开始之前，所有处理都发生在组件中。
+
+*Type:*长+
+*Required:*否+
+*Default:*无
+
+| ID
+|此组件的名称。
+
+*Type:*字符串+
+*Required:*否+
+*Default:*无
+|===
+
+<component...>的{​​{0}}子元素
+
+[%header,cols="30s,10a,60a"]
+|===
+| {名称{1}}基数 |说明
+|返回数据 | 0..1
+|定义在调用服务后从服务返回的数据。返回数据可以位于文件中，您可以使用file属性（在类路径或磁盘上指定资源）指定文件，也可以将返回数据直接嵌入到XML中。
+
+| {回调{1}} 0..1
+|调用测试组件时调用的用户定义的回调。这对于捕获消息计数等信息非常有用。使用class属性指定回调类名称，该名称必须是实现`org.mule.tck.functional.EventCallback`的对象。
+|===
+
+===  Web服务组件
+
+可用于测试Web服务的组件。此组件具有与组件元素相同的属性，但除了实现`org.mule.api.lifecycle.Callable`外，它还实现`org.mule.api.component.simple.EchoService`，`org.mule.tck.testmodels.services.DateService`和`org.mule.tck.testmodels.services.PeopleService`。将此端点与CXF等WS端点一起使用时，请务必将端点的`serviceClass`属性设置为您正在使用的服务类型。
+
+<web-service-component...>的{​​{0}}属性
+
+[%header,cols="30s,70a"]
+|===
+| {属性{1}}说明
+| throwException  |在进行任何处理之前组件是否应该抛出异常。
+
+*Type:*布尔+
+*Required:*否+
+*Default:*无
+
+| logMessageDetails
+|是否将所有消息详细信息输出到日志。这包括所有标题和完整的有效载荷。这些信息将在INFO级别上被锁定。
+
+*Type:*布尔+
+*Required:*否+
+*Default:*无
+
+| doInboundTransform
+|消息是否使用入站端点上设置的变换器进行转换，然后才能处理。默认值是`true`。
+
+*Type:*布尔+
+*Required:*否+
+*Default:* `true`
+
+| exceptionToThrow
+|抛出的异常对象的完全限定类名。与throwException一起使用。如果未指定，则默认情况下会引发{{0}​​}。
+
+*Type:*名称（不含空格）+
+*Required:*否+
+*Default:*无
+
+| exceptionText
+|抛出异常的文本。与throwException一起使用。如果没有指定，则使用空的消息。
+
+*Type:*字符串+
+*Required:*否+
+*Default:*无
+
+| enableMessageHistory
+|测试组件收到的每条消息都存储并可以检索。如果您不希望保存这些信息，例如通过组件运行数百万条消息，则可以禁用此功能以避免可能发生的内存不足错误。
+
+*Type:*布尔+
+*Required:*否+
+*Default:*无
+
+| enableNotifications
+|是否在组件接收到消息时触发FunctionalTestNotification。测试用例可以注册接收这些通知，并对当前消息进行断言。
+
+*Type:*布尔+
+*Required:*否+
+*Default:*无
+
+| appendString
+|附加到每个通过组件的消息负载的字符串值。请注意，通过设置此属性，您隐式指示消息有效内容被转换为字符串，并返回字符串有效内容。入站变换器（如果有）首先被应用，但是如果没有返回字符串，则`MuleEventContext.getMessageAsString()`将在此后直接调用。
+
+*Type:*字符串+
+*Required:*否+
+*Default:*无
+
+| WAITTIME
+|返回结果之前等待的时间（以毫秒为单位）。在等待开始之前，所有处理都发生在组件中。
+
+*Type:*长+
+*Required:*否+
+*Default:*无
+
+| ID
+|此组件的名称。
+
+*Type:*字符串+
+*Required:*否+
+*Default:*无
+|===
+
+ 
+<web-service-component...>的{​​{0}}子元素
+
+[%header,cols="30s,10a,60a"]
+|===
+| {名称{1}}基数 |说明
+|返回数据
+| 0..1
+|定义在调用服务后从服务返回的数据。返回数据可以位于文件中，您可以使用file属性（在类路径或磁盘上指定资源）指定文件，也可以将返回数据直接嵌入到XML中。
+
+|回调
+| 0..1
+|调用测试组件时调用的用户定义的回调。这对于捕获消息计数等信息非常有用。使用class属性指定回调类名称，该名称必须是实现`org.mule.tck.functional.EventCallback`的对象。
+|===
+
+

@@ -1,0 +1,203 @@
+= 属性变换器参考
+
+使用*property tranformer*设置，删除或复制出站邮件范围的属性。这个变压器只有_outbound_属性。请注意，您无法操作入站范围属性，因为这些属性是由消息源自动生成的。要了解有关消息范围的更多信息，请参阅[Mule Concepts]。
+
+属性变换器与变量变量和会话变量变量不同。请参阅下表以比较这三个变压器。
+
+[%header%autowidth.spread]
+|===
+|  |属性转换器 |变量转换器 |会话变量转换器
+| *Use*  |用于设置，删除或复制消息出站范围的属性。 |用于设置或删除消息上的变量，与当前流程。 |用于设置或删除与多个流，应用程序甚至服务器之间的整个生命周期内的当前消息绑定的变量。
+| *Persistence*  |一旦消息遇到出站连接器，出站作用域中的所有属性都将与消息一起以特定于传输的元数据的形式发送（HTTP的HTTP标头用于HTTP例如，出站连接器） |使用变量变量设置的变量仅对当前流持续存在，并且不能跨越传输障碍 |使用会话变量变量设置的会话变量持续存在于整个消息中生命周期，不管运输障碍。
+|===
+
+要访问您在流中的早期消息中设置的属性或应用程序中的其他流中的消息，请使用MEL表达式。例如，如果您想根据您在处理之前添加到标题中的`timeStamp`属性来路由消息，则可以在选择路由器中使用表达式来访问`outboundProperties`属性并进行相应的路由。请参阅下面的示例，表达式`#[message.outboundProperties=timeStamp]`访问`timeStamp`属性并计算属性的值。
+
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+    <when expression="#[message.outboundProperties['timeStamp']]">
+        <logger level="INFO" doc:name="Logger"/>
+    </when>
+    <otherwise>
+    ...
+    </otherwise>
+</choice>
+----
+
+== 配置
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:property_trans.png[property_trans]
+
+[%header%autowidth.spread]
+|===
+|Field |Value |Description |XML
+|*Display Name* |Property |Customize to display a unique name for the transformer application. |`doc:name="Property"`
+.3+|*Operation* |Set Property |Select to set a new property on the outbound scope of your message (as shown in the example above). |`<set-property>`
+|Remove Property |Select to delete an existing property from the inbound scope onto the outbound scope of your message |`<remove-property>`
+|Copy Properties |Select to copy an existing property from the inbound scope onto the outbound scope of your message |`<copy-properties>`
+|*Name* |String of Mule Expression |Specify the name for the property that you are copying or removing. If you are copying or removing properties, this field accepts a wildcard "^" character. |`propertyName="MyNewPropertyName"`
+|*Value* |String of Mule Expression |This field displays only if you are setting a new property. Specify the value using either a string or a Mule Expression, as shown in the example screenshot above. |`value="MyNewPropertyValue"`
+|===
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, code, linenums]
+----
+#Set property
+     
+<set-property propertyName="Authorization"  doc:name="Set Authentication Header" value="#[&quot;Basic &quot; + Base64.encodeBase64String(&quot;username:password&quot;)]"/>
+     
+     
+# Remove property
+ 
+<remove-property propertyName="PropertyForRemoval" doc:name="Delete Property"/>
+     
+   
+# Copy property
+    
+<copy-properties propertyName="http.*" doc:name="Copy All HTTP Headers"/>
+----
+
+[%header%autowidth.spread]
+|===
+|Element |Description
+|*set-property* |Set a new property on the outbound scope of your message (as shown in example below).
+|*remove-property* |Delete an existing property from your message to remove it from the outbound scope.
+|*copy-properties* |Copy an existing property from the inbound scope onto the outbound scope of your message.
+|===
+
+[%header%autowidth.spread]
+|===
+|Element Attribute |Description
+|*doc:name* a|Customize to display a unique name for the transformer in your application, as shown in the example below.
+
+[NOTE]
+Attribute not required in Mule Standalone configuration.
+
+|*propertyName* a|The name of the property that you are setting, copying, or removing. Can be string or a Mule expression.
+
+[NOTE]
+If you are using the remove=property or copy-properties element, you may use a wildcard "^" character. For example, a copy-properties transformer with a property name "http" will copy all properties whose names begin with "http" from the inbound scope to the outbound scope.
+
+|*value* |The value of the property that you are setting. This attribute is only relevant for the set-property element. Can be a string or Mule expression.
+|===
+....
+------
+
+== 示例
+
+在下面的例子中，我们想连接到受[HTTP基本认证]机制保护的Web服务。为了做到这一点，我们的HTTP请求需要包含一个头部Authorization，它包含允许请求通过的用户名和密码。下面显示的属性转换器设置名为授权的出站属性，并应用验证消息所需的值。 HTTP传输将此出站属性转换为HTTP标头。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:property_trans_example.png[property_trans_example]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<flow name="PropertyTransformingFlow" doc:name="PropertyTransformingFlow">
+   <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+      <set-property propertyName="Authorization"  doc:name="Set Authentication Header" value="#[&quot;Basic &quot; + Base64.encodeBase64String(&quot;username:password&quot;)]"/>
+   <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" method="POST" doc:name="HTTP"/>
+</flow>
+----
+....
+------
+
+== 完整的代码示例
+
+*Namespace*：
+
+[source, xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.4.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+ 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+----
+*Body*：
+
+[source, xml, linenums]
+----
+<flow name="PropertyTransformingFlow" doc:name="PropertyTransformingFlow">
+   <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+      <set-property propertyName="Authorization"  doc:name="Set Authentication Header" value="#[&quot;Basic &quot; + Base64.encodeBase64String(&quot;username:password&quot;)]"/>
+      <remove-property propertyName="PropertyForRemoval" doc:name="Delete Property"/>
+      <copy-properties propertyName="http.*" doc:name="Copy All HTTP Headers"/>
+   <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" method="POST" doc:name="HTTP"/>
+</flow>
+----
+
+== 在其他地方引用属性
+
+在你设置了一个新的属性之后，你怎么称呼它并在流程的其他地方使用它？
+
+* 如果您在创建属性之前选择流中的任何组件，则会在*Outbound Properties*部分下的Metadata Explorer中看到它。
++
+image:properties+metadata+explorer.jpeg[属性+元数据+资源管理器]
+
+* 您可以在任何接受[Mule Expression Language（MEL）]的组件中的任何字段中引用它，并通过以下表达式调用它：
+
+[source, code, linenums]
+----
+#[message.outboundProperties.propertyName]
+----
+
+[TIP]
+====
+在Studio中，自动完成功能可以通过在该流的特定部分显示可用属性列表来帮助您。
+
+image:properties+autocomplete.jpeg[性能+自动完成]
+====
+
+* 您可以引用任何自定义Java类，通过以下方式调用它：
++
+[source, code, linenums]
+----
+message.getOutboundProperty("propertyName");
+----
++
+
+[INFO]
+====
+*See a basic Java Class that implements this*
+
+[source, java, linenums]
+----
+package org.mule.transformers;
+import org.mule.api.MuleMessage;
+import org.mule.api.transformer.TransformerException;
+import org.mule.transformer.AbstractMessageTransformer;
+ 
+public class setPropertyAsPayload extends AbstractMessageTransformer{
+    /**
+     * @param args
+     */
+    public Object transformMessage(MuleMessage message, String outputEncoding) throws TransformerException {
+ 
+        String newPayload = message.getOutboundProperty("myProperty");
+        return newPayload;
+    }
+} 
+----
+
+此Java类使用名为`myProperty`的现有属性并将其放入消息负载中。
+====
+
+== 另请参阅
+
+* 请参阅[Mule Concepts]了解更多关于消息范围的信息。
+
+* 阅读相关转换器，[变量转换器]和[会话变量转换器]，您可以使用它来为不同范围设置变量。
+
+* 了解如何使用Mule表达式语言（MEL）阅读并允许使用[`inboundProperties`和`outboundProperties` maps]操作属性。

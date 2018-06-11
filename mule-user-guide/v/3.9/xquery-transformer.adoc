@@ -1,0 +1,243 @@
+=  XQuery Transformer
+:keywords: anypoint studio, esb, transformers
+
+XQuery模块使用户能够在Mule中对XML消息执行XQuery转换。这与Mule附带的 link:/mule-user-guide/v/3.9/xslt-transformer[XSLT变压器]非常类似。
+
+
+== 支持的XQuery版本
+
+Mule 3.6.0及更高版本包含对{X}转换器的 link:http://www.w3.org/TR/xquery-30/[XQuery 3.0]支持。转换器的行为和语法与以前的版本保持不变，您可以声明XQuery脚本本身使用的版本（参见下文）。
+
+有关使用XQuery转换器的示例，请参阅 link:/mule-user-guide/v/3.9/xquery-support[XQuery支持]，其中包括使用3.0版中的功能和改进。
+
+== 配置
+
+要使用XQuery转换器，您需要将其添加到Mule XML配置中。
+
+[source,xml,linenums]
+----
+<mxml:xquery-transformer name="xquery">
+   <mxml:xquery-text>
+      <![CDATA[
+           declare variable $document external;
+           declare variable $title external;
+           declare variable $rating external;
+
+           <cd-listings title='{$title}' rating='{$rating}'> {
+               for $cd in $document/catalog/cd
+               return <cd-title>{data($cd/title)}</cd-title>
+           } </cd-listings>
+       ]]>
+   </mxml:xquery-text>
+
+   <mxml:context-property key="title" value="#[header:ListingTitle]"/>
+   <mxml:context-property key="rating" value="#[header:ListingRating]"/>
+
+</mxml:xquery-transformer>
+----
+
+在这里，我们使用内联XQuery表达式来配​​置转换器。
+
+我们还定义了两个`<context-property>`元素：
+
+[source,xml,linenums]
+----
+<mxml:context-property key="title" value="#[header:ListingTitle]"/>
+<mxml:context-property key="rating" value="#[header:ListingRating]"/>
+----
+
+这些属性从当前消息中提取并在XQuery上下文中可用，以便它们可以在XQuery语句中引用。这些可以是对象引用，也可以使用 link:/mule-user-guide/v/3.9/mule-expression-language-mel[Mule表达式]从当前消息中获取信息。
+
+== 声明XQuery版本
+
+如果未声明XQuery版本，则转换器默认为1.0版。 3.0版是向后兼容的，根据规范，1.0中的所有查询在3.0中都是有效的，并且必须返回相同的结果。
+
+要选择要使用的XQuery版本，可以将其包含在XQuery脚本中，如下所示：
+
+== 配置选项
+
+XQuery使用xquery-transformer来转换消息负载。转换对象汇集在一起​​以获得更好的性能。您可以在转换器上设置转换上下文属性，并使用Expression Evaluators从消息中提取这些属性。
+
+<xquery-transformer...>的{​​{0}}属性
+
+[%header,cols="20a,80a"]
+|===
+| {名称{1}}说明
+| outputEncoding  |用于生成XML / Text的编码。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| acceptExternalEntities  |是否接受引用了外部文件的XML文档。默认值为false。将此值设置为true会使您的应用程序容易受到XXE攻击。谨慎使用。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：false
+| expandInternalEntities  |是否扩展XML主体中的内部实体引用。默认值为false。将此值设置为true会使您的应用程序容易受到十亿笑拒绝服务攻击。谨慎使用。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：false
+| maxIdleTransformers  |由于执行和XQuery转换可能会很昂贵，因此将变形金额合并为更高的吞吐量。该属性控制变压器池中有多少实例保持空闲状态。
+
+*Type*：整数+
+*Required*：否+
+*Default*：无
+| maxActiveTransformers  |在任何给定时间汇总的XQuery转换器总数。
+
+*Type*：整数+
+*Required*：否+
+*Default*：无
+| xquery-file  |执行转换时使用的XQuery模板文件的完整路径。这可以是本地文件系统或类路径上的路径。如果<xquery-text>元素已被设置，则此属性不是必需的。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| configuration-ref  |对Saxon配置对象的引用，用于配置变换器（配置为Spring bean）。如果未设置，则使用默认的Saxon配置。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|===
+
+<xquery-transformer...>的{​​{0}}子元素
+
+[%header,cols="20a,15a,65a"]
+|===
+| {名称{1}}基数 |说明
+|上下文属性 | 0 .. *  |可用于XQuery转换上下文的属性。表达式评估器可用于在运行时从消息中获取这些属性。
+| xquery-text  | 0..1  |嵌入式XQuery脚本定义。如果<xquery-file>属性被设置，这不是必需的。
+|===
+
+== 示例
+
+现在，您配置的XQuery转换器可以被端点引用。在以下示例中，您可以将XML文件拖放到本地计算机的目录中（请参阅入站文件端点），并将结果写入`System.out`。
+
+测试数据如下所示：
+
+[source,xml,linenums]
+----
+<catalog>
+    <cd>
+        <title>Empire Burlesque</title>
+        <artist>Bob Dylan</artist>
+        <country>USA</country>
+        <company>Columbia</company>
+        <price>10.90</price>
+        <year>1985</year>
+    </cd>
+    <cd>
+        <title>Hide your heart</title>
+        <artist>Bonnie Tyler</artist>
+        <country>UK</country>
+        <company>CBS Records</company>
+        <price>9.90</price>
+        <year>1988</year>
+    </cd>
+     ...
+</catalog>
+----
+
+写入`System.out`的结果如下所示：
+
+[source,xml,linenums]
+----
+<cd-listings title="MyList" rating="6">
+    <cd-title>Empire Burlesque</cd-title>
+    <cd-title>Hide your heart</cd-title>
+     ...
+</cd-listings>
+----
+
+这个例子的完整配置如下所示：
+
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:mxml="http://www.mulesoft.org/schema/mule/xml"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:stdio="http://www.mulesoft.org/schema/mule/stdio"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/stdio http://www.mulesoft.org/schema/mule/stdio/current/mule-stdio.xsd
+      http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+      http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <mxml:xquery-transformer name="xquery">
+        <mxml:xquery-text>
+           <![CDATA[
+                declare variable $document external;
+                declare variable $title external;
+                declare variable $rating external;
+
+                <cd-listings title='{$title}' rating='{$rating}'> {
+                    for $cd in $document/catalog/cd
+                    return <cd-title>{data($cd/title)}</cd-title>
+                } </cd-listings>
+            ]]>
+        </mxml:xquery-text>
+
+        <mxml:context-property key="title" value="#[header:ListingTitle]"/>
+        <mxml:context-property key="rating" value="#[header:ListingRating]"/>
+
+    </mxml:xquery-transformer>
+
+    <flow name="testingFlow1" doc:name="testingFlow1">
+        <vm:inbound-endpoint exchange-pattern="one-way" path="test.in" transformer-refs="xquery"/>
+        <echo-component/>
+        <all>
+            <processor-chain>
+                <vm:outbound-endpoint exchange-pattern="one-way"/>
+            </processor-chain>
+            <processor-chain>
+                <outbound-endpoint doc:name="Generic"/>
+            </processor-chain>
+        </all>
+    </flow>
+</mule>
+----
+
+=== 测试
+
+这可以使用以下功能测试进行测试。
+
+[source,xml,linenums]
+----
+public class XQueryFunctionalTestCase extends FunctionalTestCase
+{
+    protected String getConfigResources()
+    {
+        //Our Mule configuration file
+        return "org/mule/test/integration/xml/xquery-functional-test.xml";
+    }
+ 
+    public void testMessageTransform() throws Exception
+    {
+        //We're using Xml Unit to compare results
+        //Ignore whitespace and comments
+        XMLUnit.setIgnoreWhitespace(true);
+        XMLUnit.setIgnoreComments(true);
+ 
+        //Read in src and result data
+        String srcData = IOUtils.getResourceAsString("cd-catalog.xml", getClass());
+        String resultData = IOUtils.getResourceAsString("cd-catalog-result-with-params.xml", getClass());
+ 
+        //Create a new Mule Client
+        MuleClient client = new MuleClient(muleContext);
+ 
+        //These are the message properties that pass into the XQuery context
+        Map props = new HashMap();
+        props.put("ListTitle", "MyList");
+        props.put("ListRating", new Integer(6));
+ 
+        //Invoke the flow
+        MuleMessage message = client.send("vm://test.in", srcData, props);
+        assertNotNull(message);
+        assertNull(message.getExceptionPayload());
+        //Compare results
+        assertTrue(XMLUnit.compareXML(message.getPayloadAsString(), resultData).similar());
+    }
+}
+----
+

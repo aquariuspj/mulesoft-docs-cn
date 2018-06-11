@@ -1,0 +1,40 @@
+= 流程架构高级用例
+:keywords: studio, server, components, connectors, elements, palette, flow
+
+通过明智地结合Mule中提供的架构选项和产品特性，您可以以最少的开发工作量来设计和创建功能强大，功能强大的应用程序，以满足您的需求。
+
+下图所示的应用程序利用多个流，两种类型的队列，集群和负载平衡来创建一个Mule应用程序，该应用程序有助于以下所有方面：
+
+* 高吞吐量
+* 高可用性
+* 高可靠性（事务性）
++
+image:adv_mule_app.png[adv_mule_app]
+
+== 它是如何工作的
+
+该应用程序建立在请求 - 响应交换模式之上，Web模式中Web客户端提交消息（请求），然后等待来自应用程序的响应。
+
+在此特定拓扑中，Java消息服务器（JMS）位于客户端和应用程序之间，在提交消息时接收消息并使用Active MQ进行管理，消息队列执行以下操作：
+
+* 记录每一次提交
+* 将消息按照提交顺序转发给应用程序
+* 确保应用程序在指定的超时期限内提供对每条消息的响应
+* 将每个响应转发给相应的发件人
+
+由于JMS位于应用程序之外，因此与在Mule节点集群中的多个线程上运行的应用程序相比，它相对较慢。此外，它不能直接查看我们应用程序中单个消息处理事件的成败。尽管如此，JMS通过确保收到每条消息的响应，提供了一种“高级事务性”形式。
+
+在应用程序中，设置为请求 - 响应交换模式的HTTP端点既充当应用程序的消息源（即入站端点），也充当其出站端点，并通过JMS调度每个发件人的响应。
+
+应用程序内的消息处理器被分成四个流程。每个异步流程都在单独的线程上运行，并以VM端点开始和结束。这些VM端点通过VM队列共享内存。如果任何异步流程未能成功执行，VM队列会报告此情况，从而确保一种称为*high reliability*的流级别事务性。
+
+该应用程序已通过Mule管理控制台进行配置，以便在四节点群集上进行部署和运行。如果任何节点发生故障，则其中一个节点负责处理负载，从而确保*high availability*。如下图所示，即使没有任何节点发生故障，也可以在下一个可用节点上处理异步流。这种自动*load balancing*促进*high throughput*。
+
+image:load_balancing.png[负载均衡]
+
+== 另请参阅
+
+* 阅读有关使用 link:/mule-user-guide/v/3.6/routers[路由消息处理器]控制流中消息处理的一些替代方法。
+* 请参阅 link:/mule-user-guide/v/3.6/flow-reference-component-reference[流参考组件参考]和 link:/mule-user-guide/v/3.6/async-scope-reference[异步范围]。
+* 详细了解 link:/mule-user-guide/v/3.6/flow-processing-strategies[流程处理策略]。
+* 详细了解如何在Mule应用程序中设置 link:/mule-user-guide/v/3.6/transactional[交易单位]。

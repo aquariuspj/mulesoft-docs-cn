@@ -1,0 +1,155 @@
+= 授权您的连接器使用OAuth 1.0a
+
+OAuth（开放授权）是一种授权的开放标准，它使网站或应用程序（消费者）能够通过API从Web服务（服务提供商）访问受保护的资源，而不要求用户向消费者披露其服务提供商证书。换句话说，OAuth允许用户与另一个站点共享存储在一个站点上的私人资源（例如照片，视频，联系人列表），而不必交出他们的凭证，通常是用户名和密码。
+
+有关OAuth 1工作方式的详细说明，请参阅 link:http://oauth.net/core/1.0/[OAuth 1规范]。
+
+从Mule运行时访问受保护的资源需要大量的开发工作来处理OAuth 1的所有需求。因此，支持来自Mule的OAuth 1的想法是促进开发与使用OAuth进行身份验证的API交互的扩展。
+
+== 先决条件
+
+为了使用OAuth支持，请确保以下依赖项包含在`pom.xml`文件中。
+
+[source, xml, linenums]
+----
+<dependency>
+       <groupId>oauth.signpost</groupId>
+       <artifactId>signpost-core</artifactId>
+       <version>1.2.1.1</version>
+  </dependency>
+----
+
+==  `@OAuth`注释
+
+如果云连接器或模块要利用DevKit提供的OAuth功能，则需要存在类级别注释`@OAuth`。有些参数是必需的，其他参数是可选的，可能不需要使用，因为它们采用适用于大多数场景的默认值。
+
+下表介绍了所有@OAuth参数：
+
+[%header%autowidth.spread]
+|===
+|参数+  |                     描述+  |必需/可选+  |默认值
+| messageSigner +  |在+中使用的签名方法
+OAuth 1.0a流程。这个方法会+
+包含在auth_signature_method参数中。 +  |可选 | HMAC_SHA1 +
+| signingStrategy +  |定义应包含OAuth 1.0a参数的位置+  |可选+  | AUTHORIZATION_HEADER +
+| requestTokenUrl +  |服务提供商定义的URL用于获取未经授权的请求令牌+  |必需的 | 
+| accessTokenUrl +  |服务提供商为获取访问令牌+  |而定义的网址需要的 | 
+| authorizationUrl  |由服务提供商定义的URL，其中资源所有者将被重定向以授权给消费者 |所需的 | 
+| verifierRegex  |用于从资源所有者授权使用者 |可选 | oauth_verifier =（[ ^＆] +）
+| callbackPath  |如果服务提供商仅接受已知的重定向URL，请将此参数分配给域中的路径（由'fullDomain'环境变量表示），该路径将在服务提供商处注册为重定向网址。如果留空（表示服务提供商接受任何URL作为重定向URL），将使用随机路径 |可选 | _随机路径_
+|===
+
+== 添加OAuth 1支持的步骤
+
+. 添加`@OAuth`类级别注释：
++
+
+[source, java, linenums]
+----
+@Module(name = "linkedin")
+@OAuth(requestTokenUrl = "https://api.linkedin.com/uas/oauth/requestToken",
+        accessTokenUrl = "https://api.linkedin.com/uas/oauth/accessToken",
+        authorizationUrl = "https://api.linkedin.com/uas/oauth/authorize")
+public class LinkedInConnector {
+----
++
+
+`requestTokenUrl`，`accessTokenUrl`和`authorizationUrl`的值可以从服务提供商文档中获得。
+
+. 创建两个字符串实例字段来保存您的使用者密钥和使用者密钥，并分别用`@OAuthConsumerKey`和`@OAuthConsumerecret`对其进行注释。还用`@Configurable`对它们进行注释，以便任何使用它的人都可以传入自己的凭据。
++
+
+[source, java, linenums]
+----
+@Module(name = "linkedin")
+@OAuth(requestTokenUrl = "https://api.linkedin.com/uas/oauth/requestToken",
+        accessTokenUrl = "https://api.linkedin.com/uas/oauth/accessToken",
+        authorizationUrl = "https://api.linkedin.com/uas/oauth/authorize")
+public class LinkedInConnector {
+        @Configurable
+        @OAuthConsumerKey
+        private String apiKey;
+        @Configurable
+        @OAuthConsumerSecret
+        private String apiSecret;
+----
++
+
+确保这些实例变量具有公共getter和setter。
+
+. 在使用`@Processor`注释的访问受保护资源的方法中，添加两个`java.lang.String`参数并使用`@OAuthAccessToken`和`@OAuthAccessTokenSecret`对其进行注释。
+
+[source, java, linenums]
+----
+@Processor
+        public Person getProfileForCurrentUser(@OAuthAccessToken String accessToken,
+                                               @OAuthAccessTokenSecret String accessTokenSecret,
+                                               @Optional List<ProfileField> profileFields) {
+----
+
+当调用包含带`@OAuthAccessToken`和`@OAuthAccessTokenSecret`注解参数的方法时，可能发生两件事：
+
+* 首次访​​问受保护资源时，用户将被重定向到服务提供商的授权网址，以授予/拒绝消费者访问受保护资源。
+
+* 随后访问保护资源时，使用`@OAuthAccessToken`和`@OAuthAccessTokenSecret`注释的参数将包含访问令牌和令牌密钥，以便它们可以包含在对服务提供商的请求中由[ http://oauth.net/core/1.0/[OAuth 1规范]定义。
+
+== 授权连接器
+
+在任何需要授权的操作可以执行之前，资源所有者必须授予访问连接器访问受保护资源的权限。在调用授权后，Mule会将资源所有者的浏览器重定向到服务提供者授权页面。之后，任何后续访问受保护资源的尝试都将使用访问令牌和令牌密钥来填充由`@OAuthAccessToken`和`@OAuthAccessTokenSecret`注释的参数，以便它们可以包含在对服务提供商的请求中，如OAuth 1规范。
+
+[source, xml, linenums]
+----
+<linkedin:config apiKey="${api.key}" apiSecret="${api.secret}"/>
+
+        <flow name="authorize">
+            <http:inbound-endpoint host="localhost" port="8080" path="/authorize"/>
+            <linkedin:authorize/>
+        </flow>
+----
+
+==  Mule配置
+
+这是一个Mule配置文件示例：
+
+[source, xml, linenums]
+----
+<linkedin:config apiKey="${api.key}" apiSecret="${api.secret}"/>
+
+        <flow name="sampleFlow">
+            <linkedin:get-profile-for-current-user />
+        </flow>
+----
+
+首先，我们通过为服务提供商提供的应用程序传递使用者密钥和使用者密钥来配置扩展。
+
+然后有一个访问受保护资源的简单流程。如果连接器未被OAuth授权，则操作将抛出NotAuthorizedException。
+
+== 自定义回拨
+
+当用户被重定向到服务提供商授权页面并授予对受保护资源的访问权时，服务提供商将进行HTTP回调，传递授权码，Mule稍后将使用该授权码来获取访问令牌。没有必要设置任何东西来处理HTTP回调，因为Mule会动态地创建一个HTTP入站端点来处理它，并且这个端点的URL将被传递给服务提供者。默认情况下，Mule将使用由环境变量`fullDomain`和`http.port`确定的主机和端口构造一个URL以发送给服务提供者。如果需要为主机和端口使用不同的值，可以添加以下配置：
+
+[source, xml, linenums]
+----
+<linkedin:config apiKey="${api.key}" apiSecret="${api.secret}">
+       <linkedin:oauth-callback-config domain="SOME_DOMAIN" remotePort="SOME_PORT" />
+   </linkedin:config>
+----
+
+===  SSL
+
+如前所述，Mule会自动启动一个入站端点来处理OAuth回调。端点将默认使用HTTP连接器。如果服务提供商要求使用HTTPS，则可以通过引用传入自己的连接器。
+
+[source, xml, linenums]
+----
+<https:connector name="httpsConnector">
+    <https:tls-key-store path="keystore.jks" keyPassword="mule2012" storePassword="mule2012"/>
+</https:connector>
+
+<linkedin:config apiKey="${api.key}" apiSecret="${api.secret}">
+    <linkedin:oauth-callback-config domain="localhost" localPort="${http.port}"
+                                        remotePort="${http.port}" async="true"
+                                        connector-ref="httpsConnector"/>
+</linkedin:config>
+----
+
+有关如何配置HTTPS连接器的更多信息，请单击 link:/mule-user-guide/v/3.2/http-transport-reference[这里]。

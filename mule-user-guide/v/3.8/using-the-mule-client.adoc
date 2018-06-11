@@ -1,0 +1,327 @@
+= 使用Mule客户端
+:keywords: anypoint studio, studio, mule client
+
+在大多数Mule Runtime应用程序中，消息是由外部事件触发的，例如队列中正在接收的消息或正在复制到目录的文件。但是，如果要以编程方式发送和接收消息，则可以创建一个Mule客户端。
+
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/module/client/MuleClient.html[MuleClient]是Java客户端发送和接收来自Mule服务器和其他应用程序的消息的简单接口。您可以使用Mule客户端进行以下操作：
+
+* 发送和接收来自本地或远程Mule服务器的消息
+* 使用任何Mule传输与其他应用程序通信
+* 使用`RemoteDispatcher`向防火墙后面的Mule服务器发出请求
+
+Mule客户端可以用作Web服务客户端，使用流行的SOAP实现（如Apache CXF）发出SOAP请求。它还可以将消息直接发送到流组件，并完全绕过传输层，这对测试流组件或从脚本或JSP页面触发事件时非常有用。
+
+Mule客户端可以与任何Mule传输一起使用，使其成为许多类型的传输（例如JDBC，JMS，FILE，POP3，XMPP，HTTP等）的通用客户端。
+
+以下各节介绍如何在各种场景下使用MuleClient。
+
+== 使用发送和发送
+
+Mule客户端允许用户以编程方式发送和接收消息。例如，要将JMS消息发送到在`my.queue`上侦听的任何应用程序或Mule组件，可以使用`dispatch()`方法。 `dispatch()`方法提供了将消息异步发送到端点的能力（也称为"fire and forget"）。
+
+[source, code, linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+client.dispatch("jms://my.queue", "Message Payload", null);
+----
+
+要定期对服务进行同步调用并接收结果，可以使用`send()`方法：
+
+[source, code, linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+MuleMessage result = client.send("tcp://localhost:3456", "Message Payload", null);
+----
+
+客户端`send()`和`dispatch()`方法期望以下参数：
+
+.  Mule URL端点：用于确定有关传递消息的传输，端点和其他信息的任何有效的 link:/mule-user-guide/v/3.8/mule-endpoint-uris[骡子端点]。这也可以是存储在配置中的端点名称。
+. 消息有效载荷：消息携带的任何对象。
+. 属性：与要发送的消息关联的任何属性或元数据。
+
+[TIP]
+====
+*Don't use physical endpoints in your code*
+
+为了清楚起见，本页面上的示例使用物理端点URI，例如`jms://myQueue`。但是，使用`<endpoint>`元素在Mule配置文件内定义所有端点并在代码中引用这些端点名称更好。
+====
+
+== 配置Mule客户端
+
+如果您在同一个类加载器中使用Mule客户端（例如，Web App或Mule独立版），则客户端将有权访问服务器配置。例如，如果您在服务器配置文件中定义了一些端点：
+
+[source,xml]
+----
+<http:endpoint host="192.168.0.1" port="80" path="/services" name="serviceEndpoint"/>
+----
+
+这个端点可以被Mule客户端访问：
+
+[source, code, linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+client.dispatch("serviceEndpoint", dataObject, null);
+----
+
+本质上，Mule客户端具有与Mule服务器相同的配置信息，因为他们都可以访问相同的注册表。
+
+如果您以独立模式运行Mule客户端，您仍然可以使用其自己的Mule XML配置文件进行配置。在创建客户端时传入这些文件：
+
+[source, code, linenums]
+----
+MuleClient client = new MuleClient("http-client-config.xml, shared-client-config.xml");
+client.getMuleContext().start();
+----
+
+请注意，您必须启动客户端使用的本地Mule上下文。您也可以创建自己的Mule上下文并将其传递到客户端：
+
+[source, code, linenums]
+----
+//Create a MuleContextFactory
+MuleContextFactory muleContextFactory = new DefaultMuleContextFactory();
+ 
+//create the configuration builder and optionally pass in one or more of these
+ConfigurationBuilder builder =
+    new SpringXmlConfigurationBuilder("http-client-config.xml, shared-client-config.xml");
+//The actual context builder to use
+MuleContextBuilder contextBuilder = new DefaultMuleContextBuilder();
+ 
+//Create the context
+MuleContext context = muleContextFactory.createMuleContext(builder, contextBuilder);
+ 
+//Start the context
+context.start();
+ 
+//Create the client with the context
+MuleClient client = new MuleClient(context);
+----
+
+作为Web服务客户端的MuleClient。== 
+
+Mule客户端可用作Web服务客户端，使用流行的SOAP实现（如 link:http://cxf.apache.org/[Apache CXF]或 link:http://ws.apache.org/axis[轴]）进行SOAP请求。
+
+[source, code, linenums]
+----
+MuleClient client = new MuleClient();
+ 
+//Arguments for the addPerson WS method
+String[] args = new String[]{"Ross", "Mason"};
+ 
+//Call the web service
+client.dispatch("axis:http://localhost:38004/PersonService?method=addPerson", args, null);
+ 
+//Call another method to look up the newly added person
+MuleMessage result = client.send
+        ("axis:http://localhost:38004/PersonService?method=getPerson", "Ross", null);
+ 
+//A person object is returned, and all type mapping is handled for you
+Person person (Person)result.getPayload();
+ 
+System.out.println(person));
+----
+
+对于SOAP支持，您可以使用Mule link:/mule-user-guide/v/3.8/cxf-module-reference[CXF模块参考]。
+
+== 执行事件请求调用
+
+在使用具有您希望请求的事件库的传输时，向端点发出请求非常有用，而不是在资源上拥有侦听器。
+
+要请求消息，请使用`request()`方法：
+
+[source, code, linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+MuleMessage result = client.request("pop3://ross:blah@mail.my.org", 5000);
+----
+
+此代码从`mail.my.org`上的名为`ross`的邮箱接收邮件，如果未收到邮件，则会在五秒后返回。调用`request()`适用于所有Mule支持的传输，但更常见的情况是在需要查询存储区的地方进行事件请求调用，例如队列，文件目录或其他存储库。
+
+== 将属性与消息关联
+
+前面的示例将properties参数设置为`null`。属性可以是任意的，例如用消息传递自定义元数据，或者它们可以是传输特定的。以下示例演示了使用JMS和特定于JMS的`JMSReplyTo`属性的异步请求/响应。当设置`JMSReplyTo`时，在JMS规范中声明，该消息的接收方应该将任何结果发送回`JMSReplyTo`标头中定义的目标。骡子为你做这件事。
+
+[source, code, linenums]
+----
+//create the client instance
+MuleClient client = new MuleClient(muleContext);
+ 
+//create properties to associate with the message
+Map props = new HashMap();
+ 
+//Set the JMSReplyTo property, which is where the response message will be sent
+props.put("JMSReplyTo", "replyTo.queue");
+ 
+//dispatch the message asynchronously
+client.dispatch("jms://test.queue", "Test Client Dispatch message", props);
+ 
+//Receive the return message on the replyTo.queue
+MuleMessage message = client.request("jms://replyTo.queue", 5000);
+ 
+//This is the message sent back from the first component to process our message
+System.out.println(message.getPayload());
+----
+
+== 不使用Mule客户端时
+
+从你的流程对象或Mule扩展中使用Mule客户端（如路由器或变压器）进行呼叫通常不是好习惯。
+
+当你需要派遣或请求骡子的事件时，你应该使用当前
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/MuleEventContext.html[org.mule.api.MuleEventContext]
+而是在上下文上调用send / dispatch / request方法。
+
+要访问流内的`MuleEventContext`，您可以实施
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/lifecycle/Callable.html[org.mule.api.lifecycle.Callable]
+接口。
+
+如果您需要从变压器，过滤器或拦截器发出事件请求，则应重新考虑针对该事件流的设计策略。
+
+== 处理消息集合
+
+为了处理发生多个结果的情况，Mule引入了一种新的消息类型
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/MuleMessageCollection.html[org.mule.api.MuleMessageCollection]
+
+* 这种类型的消息按收到的顺序包含所有消息结果。注意
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/MuleMessageCollection.html[org.mule.api.MuleMessageCollection]扩展 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/MuleMessage.html[org.mule.api.MuleMessage]，因此界面相似。如果有多个结果，则`MuleMessage.getPayload()`方法返回包含每个返回消息的有效内容的`java.util.List`。
+
+使用Mule客户端时，可以将消息返回类型转换为可以访问所有`MuleMessage`对象。
+
+[source, java, linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+MuleMessage result = client.send("myEndpoint", "some data", null);
+ 
+if (result instanceof MuleMessageCollection)
+{
+    MuleMessageCollection resultsCollection = (MuleMessageCollection) result;
+    System.out.println("Number of messages: " + resultsCollection.size());
+    MuleMessage[] messages = resultsCollection.getMessagesAsArray();
+}
+----
+
+== 未来结果
+
+Mule客户端允许您通过使用返回a的`sendAsync()`方法进行同步调用而不会阻塞
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/FutureMessageResult.html[FutureMessageResult]
+稍后可以查询。
+
+[source, java, linenums]
+----
+MuleClient client = new MuleClient();
+FutureMessageResult result = client.sendAsync("http://localhost:8881",
+                                              "Message Payload", null);
+//Do some more stuff here
+ 
+Object payload = result.getMessage().getPayload();
+----
+
+返回的FutureMessageResult是呼叫返回时真实结果消息的占位符。通过使用未来的结果，您可以在远程呼叫执行时继续执行其他任务。调用`getMessage()`块直到调用返回。或者，您可以指定等待多久的超时时间。您还可以使用`result.isReady()`检查电话是否已返回。
+
+== 使用远程分派器
+
+Mule客户端可以使用远程调度程序通过防火墙连接，发送和接收来自远程Mule服务器的消息。只有在被调用的远程服务没有公开Mule客户端可以访问的端点时，才应该使用它。请注意，使用远程调度程序时会产生性能开销，因为所有请求和响应都将被序列化，发送到服务器，并在从防火墙内进行实际调用之前进行反序列化。
+
+要使用远程调度程序，可以通过配置远程调度程序代理程序在服务器实例上启用它。您可以通过将`synchronous`属性设置为true来确保服务器可以处理异步和同步呼叫。您还可以设置`responseTimeout`设置，但通常最好在MuleClient呼叫级别进行控制，因为每个呼叫可能有不同的超时要求。
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:client="http://www.mulesoft.org/schema/mule/client"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/client 
+          http://www.mulesoft.org/schema/mule/client/current/mule-client.xsd
+          http://www.mulesoft.org/schema/mule/core/current 
+          http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+  ...
+  <client:remote-dispatcher-agent>
+    <client:remote-endpoint address="http://localhost:81" 
+      exchange-pattern="request-response" responseTimeout="10000"/>
+  </client:remote-dispatcher-agent>
+  ...
+</mule>
+----
+
+在客户端，您现在可以通过远程调度程序代理与远程服务器进行通信。例如：
+
+[source, java, linenums]
+----
+// Start an empty context for client side
+MuleClient client = new MuleClient(true);
+RemoteDispatcher dispatcher = client.getRemoteDispatcher("http://localhost:81");
+
+MuleMessage result = dispatcher.sendToRemoteComponent("StockManager", "give me the price of XXX", null);
+ 
+StockQuote sq = (StockQuote) result.getPayload();
+----
+
+Mule客户端在远程Mule服务器上执行StockManager组件，并将结果返回给客户端。骡处理所有呼叫编组。第一个null参数是用于结果消息的可选字符串，由逗号分隔变换器。第二个null参数包含与请求关联的属性。
+
+如果您不想等待从远程服务器返回结果，则可以使用返回`FutureMessageResult`的{​​{0}}方法：
+
+[source, java, linenums]
+----
+// Start an empty context for client side
+MuleClient client = new MuleClient(true);
+RemoteDispatcher dispatcher = client.getRemoteDispatcher("tcp://localhost:60504");
+FutureMessageResult result = dispatcher.sendAsyncToRemoteComponent("StockManager", null, "give me the price of XXX", null);
+ 
+//do some other stuff
+ 
+StockQuote sq = (StockQuote) result.getMessage(1000).getPayload();
+----
+
+=== 指定Wire格式
+
+您可以通过配置下列其中一项来指定用于分派消息的连线格式：
+
+*  `<xml-wire-format>`：使用XML-Object转换器
+*  `<serialization-wire-format>`：使用ByteArray-Serializable转换器
+*  `<custom-wire-format>`：将`class`属性设置为要使用的变换器的类文件。
+
+[WARNING]
+====
+*About Serialization*
+
+Mule客户端使用Java序列化。确保消息中的所有对象都是可串行化的。
+====
+
+如果不设置连线格式，则使用序列化格式。有关变形金刚的更多信息，请参阅 link:/mule-user-guide/v/3.8/using-transformers[使用变形金刚]。
+
+例如：
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:client="http://www.mulesoft.org/schema/mule/client/current"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/client 
+          http://www.mulesoft.org/schema/mule/client/current/mule-client.xsd
+          http://www.mulesoft.org/schema/mule/core 
+          http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+  ...
+  <client:remote-dispatcher-agent>
+    <client:remote-endpoint address="http://localhost:81" 
+      exchange-pattern="request-response" responseTimeout="10000"/>
+    <client:xml-wire-format/>
+  </client:remote-dispatcher-agent>
+  ...
+</mule>
+----
+
+== 直接向组件发送消息
+
+当Mule服务器与客户端在同一个类加载器中运行时，Mule客户端提供了一种直接向组件发送消息而不需要使用传输的便捷方式。这种方法在测试以及从JSP页面或JavaScript触发消息时非常有用。例如，要将消息直接发送到名为StockManager的股票报价组件，您可以执行以下操作：
+
+[source, java, linenums]
+----
+MuleClient client = new MuleClient(muleContext);
+MuleMessage result = client.sendDirect("StockManager", null, "give me the price of XXX", null);
+ 
+StockQuote sq = (StockQuote) result.getPayload();
+----
+
+请注意，该呼叫是`sendDirect`，它告诉Mule客户端直接转到组件，而不是通过传输。您可以指定在此调用的第二个参数中使用的逗号分隔的变换器列表。
+

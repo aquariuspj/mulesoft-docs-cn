@@ -1,0 +1,203 @@
+= 使用Spring模块
+
+Spring模块允许Mule应用程序使用Spring框架。
+
+== 配置Spring模块
+
+. 添加以下配置：
++
+[source, xml, linenum]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:spring="http://www.mulesoft.org/schema/mule/spring"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core
+        http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/spring
+        http://www.mulesoft.org/schema/mule/spring/current/mule-spring.xsd">
+
+    <spring:config name="springConfig" files="beans.xml" doc:id="8623553f-16f6-45d9-acef-e23764e05bf8" />
+
+</mule>
+----
++
+. 将`beans.xml`文件放入`src/main/resources`中。
++
+请注意，Spring配置必须有效。这里是一个例子：
++
+[source, xml, linenum]
+----
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:context="http://www.springframework.org/schema/context"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:jdbc="http://www.springframework.org/schema/jdbc"
+
+    xsi:schemaLocation="http://www.springframework.org/schema/beans
+        http://www.springframework.org/schema/beans/spring-beans-4.1.xsd
+        http://www.springframework.org/schema/jdbc
+        http://www.springframework.org/schema/jdbc/spring-jdbc-4.1.xsd
+        http://www.springframework.org/schema/context
+        http://www.springframework.org/schema/context/spring-context-4.1.xsd">
+
+    <jdbc:embedded-database id="dataSource" type="DERBY">
+        <jdbc:script location="classpath:db/sql/create-db.sql" />
+        <jdbc:script location="classpath:db/sql/insert-data.sql" />
+    </jdbc:embedded-database>
+
+</beans>
+----
+
+重要提示：Spring模块使用的bean文件必须导出，否则应用程序无法启动。请参阅 link:/mule4-user-guide/v/4.1/how-to-export-resources[如何导出资源]。
+
+== 在Mule组件中使用Spring对象
+
+例如，您可以在Mule配置组件中使用Spring对象来指向使用Spring bean创建的Derby数据源：
+
+[source, xml, linenum]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:spring="http://www.mulesoft.org/schema/mule/spring"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core
+        http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/spring
+        http://www.mulesoft.org/schema/mule/spring/current/mule-spring.xsd
+        http://www.mulesoft.org/schema/mule/db
+        http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+
+    <spring:config name="springConfig" files="beans.xml" doc:id="8623553f-16f6-45d9-acef-e23764e05bf8" />
+
+    <db:config name="derbyConfig" doc:name="Database Config" doc:id="06993a86-2062-4c9a-b9a9-a663ff6b2eed" >
+        <db:derby-connection database="datasource" create="true" />
+    </db:config>
+</mule>
+----
+
+== 使用弹簧属性占位符
+
+Spring属性占位符定义的属性不能在Mule应用配置中使用，只能在Spring配置文件中使用。但是，通过`<configuration-properties/>`在Mule中定义的属性可以在Spring配置文件中使用。
+
+== 对弹簧对象的限制
+
+*  Spring对象不能实现Mule API生命周期方法。
+*  Spring对象不能使用Mule API服务注入。唯一可以使用的服务是`org.mule.runtime.api.artifact.Registry`，它可以用来访问Mule API中的任何其他服务。这可以通过在方法上使用`@PostConstruct`来初始化对象并检索Mule API服务来完成。
+
+== 使用Spring Security作为安全管理器
+
+Spring模块支持使用Spring安全性作为Mule应用程序中的安全管理器。
+
+在Spring配置文件中，必须定义一个认证管理器，例如：
+
+[source, xml, linenum]
+----
+<beans xmlns="http://www.springframework.org/schema/beans"
+  xmlns:context="http://www.springframework.org/schema/context"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:jdbc="http://www.springframework.org/schema/jdbc"
+  xmlns:ss="http://www.springframework.org/schema/security"
+
+  xsi:schemaLocation="http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans-4.1.xsd
+    http://www.springframework.org/schema/jdbc
+    http://www.springframework.org/schema/jdbc/spring-jdbc-4.1.xsd
+    http://www.springframework.org/schema/context
+    http://www.springframework.org/schema/context/spring-context-4.1.xsd
+    http://www.springframework.org/schema/security
+    http://www.springframework.org/schema/security/spring-security-4.1.xsd">
+
+  <ss:authentication-manager alias="authenticationManager">
+    <ss:authentication-provider>
+      <ss:user-service id="userService">
+        <ss:user name="admin" password="admin" authorities="ROLE_ADMIN" />
+        <ss:user name="joe" password="secret" authorities="ROLE_ADMIN" />
+        <ss:user name="anon" password="anon" authorities="ROLE_ANON" />
+        <ss:user name="user" password="password" authorities="ROLE_ANON" />
+        <ss:user name="ross" password="ross" authorities="ROLE_ANON" />
+        <ss:user name="marie" password="marie" authorities="ROLE_ANON" />
+      </ss:user-service>
+    </ss:authentication-provider>
+  </ss:authentication-manager>
+
+</beans>
+----
+
+你可以在Mule应用中定义一个安全管理器，这个应用可以像这样使用Spring Authentication Manager：
+
+[source, xml, linenum]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule
+  xmlns:spring="http://www.mulesoft.org/schema/mule/spring"
+  xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesoft.org/schema/mule/core
+    http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/spring
+    http://www.mulesoft.org/schema/mule/spring/current/mule-spring.xsd">
+
+  <spring:config name="springConfig" files="beans.xml" doc:id="8623553f-16f6-45d9-acef-e23764e05bf8" />
+
+  <spring:security-manager>
+    <spring:delegate-security-provider name="memory-provider" delegate-ref="authenticationManager" />
+  </spring:security-manager>
+
+</mule>
+----
+
+== 使用Spring授权筛选器验证身份验证
+
+Spring模块添加了对过滤器的支持，如果使用Mule Security Manager无法验证身份验证，该过滤器将失败，例如：
+
+[source, xml, linenum]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule
+  xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  xmlns:db="http://www.mulesoft.org/schema/mule/db"
+  xmlns:spring="http://www.mulesoft.org/schema/mule/spring"
+  xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesoft.org/schema/mule/core
+    http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/spring
+    http://www.mulesoft.org/schema/mule/spring/current/mule-spring.xsd
+    http://www.mulesoft.org/schema/mule/db      http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+    http://www.mulesoft.org/schema/mule/http
+    http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+  <spring:config name="springConfig" files="beans.xml" doc:id="8623553f-16f6-45d9-acef-e23764e05bf8" />
+
+  <spring:security-manager>
+    <spring:delegate-security-provider name="memory-provider" delegate-ref="authenticationManager" />
+  </spring:security-manager>
+
+  <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="75a02b96-91d0-4850-899c-1af6578a6d09" >
+      <http:listener-connection host="0.0.0.0" port="9090" />
+  </http:listener-config>
+
+  <flow name="spring-exampleFlow" doc:id="a70ad320-475c-42db-be69-a589589c93c7" >
+    <http:listener config-ref="HTTP_Listener_config" path="/" doc:name="Listener" doc:id="37ac75b8-9c40-492b-97fa-9e1d2a0c708f" />
+    <http:basic-security-filter realm="mule" />
+      <spring:authorization-filter requiredAuthorities="ROLE_ADMIN" doc:id="64de0fab-6550-4ac3-b91c-543dd61a9a06" />
+  </flow>
+</mule>
+----
+
+`http:basic-security-filter`尝试使用基本身份验证对用户进行身份验证。如果请求被成功验证，Mule将检索用户名并在Spring `authorization-filter`中使用它来搜索该用户并尝试授权针对ROLE_ADMIN权限的请求。
+
+== 另请参阅
+
+*  link:/mule4-user-guide/v/4.1/configuring-properties[关于Mule Apps中的属性占位符]

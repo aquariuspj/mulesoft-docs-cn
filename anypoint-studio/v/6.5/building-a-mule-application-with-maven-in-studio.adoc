@@ -1,0 +1,178 @@
+= 在Studio中使用Maven构建一个Mule应用程序
+:keywords: connectors, anypoint, studio, maven
+
+本指南将引导您从头开始创建Mavenized Mule应用程序项目。它包括为项目提供单元测试，维护其POM文件，然后构建和部署项目。
+
+== 先决条件
+
+本文假定您有 link:https://www.mulesoft.com/ty/dl/studio[下载并安装Anypoint Studio]。如果您之前没有使用Eclipse或基于Eclipse的IDE的经验，请查看 link:/anypoint-studio/v/6.5/index[Anypoint Studio界面]的简要介绍。该文档还假定您熟悉 link:https://maven.apache.org/[Apache Maven]并知道它的用途。
+
+
+== 创建一个Maven项目
+
+. 在Studio中选择*File*> *New*> *Mule Project*。
++
+image:2013-11-26_16-17-43.png[2013-11-26_16-17-43]
+
+. 选中复选框*Create POM file for project and maintain with Maven*。然后，为您的新项目定义一个*Group Id*，*Artifact Id*和*Version*。点击*Finish*。
++
+image:NewMuleProjectwMaven.png[NewMuleProjectwMaven]
++
+[NOTE]
+如果您看到消息*Maven is currently disabled, configure Maven*，请单击链接以在您的Anypoint Studio实例中启用Maven。
+
+.  Studio会自动构建您的Maven项目。如果一切正常，您应该在控制台输出中看到`BUILD SUCCESS`消息。
+
+== 构建一个简单的项目
+
+在您的项目中构建以下流程：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector and a Set Payload Component into your flow:
++
+image:set+payload+basic+flow.png[set+payload+basic+flow]
++
+. Open the connector's properties editor and Create a new *Connector Configuration* element by clicking the green plus sign image:add.png[plus sign].
+. Fill in the two required fields: *Host* and *Port*. Set the host to `localhost` and leave the port as the default value `8081`.
++
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*Name* |`HTTP_Listener_Configuration`
+|*Host* |`localhost`
+|*Port* |`8081`
+|===
+
+. Back in the connector's properties editor, leave the path as the default `"/"`
+
+.  Configure the Set Payload component to set the value to "Hello World!", as shown below:
++
+image:Set-payload-hello-world.png[Set-payload-hello-world]
+....
+[tab,title="XML Editor"]
+....
+Create the following simple flow. It includes an `http:inbound-endpoint` with default values and a `set-payload` component that sets the payload to "Hello World!".
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"/>
+<flow name="exampleFlow1" doc:name="exampleFlow1">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP Connector"/>
+    <set-payload value="Hello World!" doc:name="Set Payload"/>
+</flow
+----
+....
+------
+
+. 现在通过在Anypoint Studio中的嵌入式服务器上运行您的项目来尝试它。点击项目名称，然后点击*Run As*> *Mule Application*。
+. 打开浏览器窗口并转到`http://localhost:8081`。
+. 您应该在浏览器中看到"Hello World!"消息。
+
+== 添加单元测试
+
+. 现在是添加单元测试的时候了。为此，请右键单击项目的`src/test/java`文件夹，然后选择*New > Class*。
++
+image:Newclass.png[的NewClass]
+
+.  *Name*您的课程类似*HelloWorldTestCase*，输入您选择的*Package*名称，然后按*Finish.*
++
+image:Maven-newjavaclass.png[Maven的newjavaclass]
++
+. 使用以下代码修改新创建的类（HelloWorldTestCase.java）：
++
+[source, java, linenums]
+----
+include::/_sources/building-a-mule-application-with-maven-in-studio.java[]
+----
+<1>这个类扩展了FunctionalTestCase，这是Mule抽象JUnit测试用例的实现。有关更多信息，请参阅 link:/mule-user-guide/v/3.8/functional-testing[功能测试]。
+<2>创建一个新的Mule客户端。
+<3>使用HTTP GET方法向客户端发送HTTP URL。
+<4>声明返回值不为null并且等于"Hello World!"。
+
+== 使用Maven运行应用程序
+
+. 在包资源管理器中，右键单击您的项目，然后选择*Run As*> *Mule Application with Maven*。
+
+. 请留意下方的控制台，以查看Maven在构建过程中发布的消息。如果您看到“BUILD SUCCESS”消息，这意味着Maven已经执行了测试并成功部署了应用程序。
+
+== 管理相关性
+
+在Studio中，当您在启用Maven支持的项目中将其他构建块拖放到画布上时，Studio会使用所需的依赖关系自动更新您的POM文件。 （你可以通过打开你的pom.xml来查看它里面的内容，然后在数据库连接器中添加一些东西到你的流程中，保存你的项目，然后再次打开你的pom.xml以查看已经添加的依赖关系。 ）但是，在某些情况下，您可能需要手动管理POM文件。例如，如果您将逻辑添加到依赖依赖项的测试用例中，那么您必须自己将该依赖项添加到您的POM文件中，如此处所述。
+
+. 在您的包资源管理器中，查找*pom.xml*文件并将其打开。
++
+image:openpom.png[openpom]
++
+. 添加您的附加依赖项。为了完成这个例子，你需要添加这些依赖关系：
++
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>com.jayway.restassured</groupId>
+  <artifactId>rest-assured</artifactId>
+  <version>2.3.1</version>
+  <scope>test</scope>
+  <exclusions>
+    <exclusion>
+      <groupId>org.groovy-lang</groupId>
+      <artifactId>groovy</artifactId>
+    </exclusion>
+  </exclusions>
+</dependency>
+<dependency>
+  <groupId>org.groovy-lang</groupId>
+  <artifactId>groovy-all</artifactId>
+  <version>2.2.1</version>
+  <scope>test</scope>
+</dependency>
+<dependency>
+  <groupId>commons-cli</groupId>
+  <artifactId>commons-cli</artifactId>
+  <version>1.1</version>
+</dependency>
+----
++
+. 打开您在前一节中创建的测试类`HelloWorldTestCase.java`，并添加您添加为依赖项的类。例如：
++
+[source]
+----
+import static com.jayway.restassured.RestAssured.*;
+----
++
+. 您现在可以在测试用例文件中使用新的Java库。例如，将REST保证的DSL https://code.google.com/p/rest-assured/添加到您的测试用例文件中。
++
+[source, java, linenums]
+----
+@Test
+ public void dependencyClientTestCase() throws Exception
+ {
+  String response = get("http://localhost:8081").body().asString();
+  assertEquals(MESSAGE, response);
+ }
+----
++
+. 保存您的项目，然后再次运行构建，方法是再次右键单击项目名称并选择**Run As > Mule Application with Maven**。
+
+. 您应该在控制台中看到Studio下载您添加的依赖关系，然后正确构建项目。
+
+== 故障处理
+
+如果Maven在构建项目时配置得很好，那么所有必需的依赖关系都应该到位，不需要额外的步骤。但是，如果出于任何原因Maven在创建项目时无法正常工作，则不包括这些依赖项。如果发生这种情况，Studio仍然允许您稍后添加这些依赖关系。
+
+在包资源管理器中，右键单击您的项目，然后选择**Maven support in Studio ­> Populate Maven repository**。
+
+这将使用您的Mule版本所需的所有模块填充您的本地Maven存储库（在Linux中，通常位于$ HOME / .m2 / repository /中）。控制台会通知您导入过程的进度。
+
+== 另请参阅
+
+* 详细了解 link:/mule-user-guide/v/3.8/using-maven-with-mule[和Mule一起使用Maven]。
+
+* 了解如何 link:/anypoint-studio/v/6.5/maven-support-in-anypoint-studio[配置您的Studio首选项以使用Maven]。
+* 了解如何 link:/anypoint-studio/v/6.5/enabling-maven-support-for-a-studio-project[“mavenize”现有的Anypoint Studio项目]。
+
+* 了解如何 link:/anypoint-studio/v/6.5/importing-a-maven-project-into-studio[将现有的Maven项目导入Anypoint Studio]。
+
+* 访问其他Maven link:/mule-user-guide/v/3.8/maven-reference[参考]和 link:/mule-user-guide/v/3.8/configuring-maven-to-work-with-mule-esb[组态]信息。

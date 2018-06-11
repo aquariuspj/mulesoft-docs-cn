@@ -1,0 +1,171 @@
+= 内容参数
+
+[[_content-parameters]]
+
+考虑以下操作（伪代码）：
+
+[source, xml, linenums]
+----
+<file:write path="hello.txt" overwrite="true" content="#[payload]" />
+----
+
+注意组成操作的参数经常扮演不同的角色。
+
+== 行为参数
+
+这些参数管理决定操作行为的设置。在上面的示例中，如果文件已存在，则`overwrite`参数将配置要采取的操作。 `path`参数指示在哪里写内容。两个参数都配置操作，但由于这是一个写入操作，
+它们并不代表主要概念，即要写入的数据。
+
+一些操作完全由行为参数组成，例如：
+
+[source, xml, linenums]
+----
+<file:copy from="somePath" to="anotherPath" />
+----
+
+这两个参数都是行为的，因为操作没有任何内容。内容位于复制的文件中。
+
+== 内容参数
+
+如果您考虑以上行为参数的解释，则内容参数的定义是显而易见的。在上面的`file:write`示例中，内容是一个`@Content`参数。
+
+内容参数具有以下特征：
+
+* 他们必须接受表达式。支持SUPPORTS_EXPRESSIONS和EXPRESSION_REQUIRED，但如果使用`@Expression(NOT_SUPPORTED)`，则编译将失败。
+* 每个内容参数都可以嵌入自己的DataWeave脚本来生成内容。因此，不允许内联参数的内联定义。
+* 内容参数​​始终以文本元素的形式转换为DSL，这正是为了启用嵌入式DataWeave脚本。
+
+再次考虑`file:write`操作，这次使用内容参数。假设您在流中使用此操作，并且消息负载是您希望以XML格式存储的JSON。
+
+[source, xml, linenums]
+----
+<file:write path="myFile.xml">
+	<file:content>
+		<![CDATA[#[
+        %dw 2.0
+        output application/xml
+        ---
+        rootElement: payload
+        ]
+        ]]>
+	</file:content>
+</file:write>
+----
+
+在模块的代码中，`content`参数用`@Content`注释标记：
+
+[source, java, linenums]
+----
+public void write(String path, @Content InputStream content) {
+    // write code
+}
+----
+
+[[primary_content_parameter]]
+== 主要内容参数
+
+在某些情况下，操作具有许多内容参数，例如：
+
+[source, xml, linenums]
+----
+<http:request path="/my/api">
+	<http:request-builder>
+		<http:body>
+			#[body..]
+		</http:body>
+		<http:uri-params>
+			#[uri-params …]
+		</http:uri-params>
+		<http:headers>
+			#[you get the picture..]
+		</http:headers>
+	</http:request-builder>
+</http:request>
+----
+
+正如您所看到的，您可以拥有任意数量的内容参数，这意味着可以在多个方法参数上使用`@Content`批注。
+但是，{{0​​}}参数比其他参数更重要。尽管标头也是HTTP请求中发送的内容的一部分，但这些标头与发送的主体互补。因此，如果某个操作具有多个内容参数，则必须使用`@Content(primary = true)`将其中一个标记为主要内容。
+
+主内容参数具有与常规内容参数相同的所有特征，以及以下内容：
+
+* 它们自动成为可选项。
+* 它们自动默认为`#[payload]`。
+
+运行时会将这两个功能自动添加到参数中。
+
+[TIP]
+回到只有一个内容参数的`file:write`示例：它是否是主要的？ _是_。当一个操作只有一个内容参数时，SDK会自动将其视为主要参数。这意味着`file:write`操作中的内容参数会自动变为可选，并且默认为`#[payload]`。这有助于跨模块实施一致性。
+
+== 更改主要内容的默认值
+
+有些情况下主要内容应该默认为有效载荷以外的其他内容。当操作只有一个内容参数时，这往往会发生更多，并且该参数并不总是需要的。例如，考虑数据库连接器。 Select查询的输入参数是主要内容，但并非所有查询都需要输入参数。所以真正的默认值应该是一张空白的地图。
+
+您可以通过组合`@Content`和`@Optional`注释来完成此操作。例如，以下内容将默认设置为空映射：
+
+[source, java, linenums]
+----
+public List<Map> select(@Text String sql,
+                        @Optional(defaultValue="#[{}]") @Content Map<String, Object> inputParameters) {
+	// select
+}
+----
+
+您还可以将内容参数设置为可选，并且没有默认值：
+
+[source, java, linenums]
+----
+public List<Map> select(@Text String sql,
+                        @Optional @Content Map<String, Object> inputParameters) {
+	// select
+}
+----
+
+最后，您可以将`@Content`注释与`@NullSafe`合并，例如：
+
+[source, java, linenums]
+----
+public List<Map> select(@Text String sql,
+                        @Optional @NullSafe @Content Map<String, Object> inputParameters) {
+	// select
+}
+----
+
+[TIP]
+第一个和第三个例子是等价的。但是，{{0​​}}选项是首选，因为它为模块的用户提供了更好的体验。将`#[{}]`作为明确的默认值可能会让没有经验的Mule用户感到困惑。
+
+== 在参数组中嵌入内容参数
+
+上述<<primary_content_parameter,`http:request`>>操作中的内容参数包含在名为`request-builder`的元素中。出于可用性原因，连接器的作者选择将所有与请求相关的属性分组到一个封闭对象中。这是支持的
+由SDK以如下方式进行：
+
+[source, java, linenums]
+----
+public void request(String path, @ParameterGroup(showInDsl=true) HttpRequestBuilder requestBuilder) {
+    // request
+}
+----
+
+正如你所看到的，这里没有内容参数。但是，如果您查看`HttpRequestBuilder`类内部，则会看到`@Content`个注释：
+
+[source, java, linenums]
+----
+public class HttpRequestBuilder {
+
+    @Parameter
+    @Content(primary = true)
+    private InputStream body;
+
+    @Parameter
+    @Content
+    @NullSafe
+    private Map<String, String> uriParams;
+
+    @Parameter
+    @Content
+    @NullSafe
+    private Map<String, String> uriParams;
+}
+----
+
+[TIP]
+在示例请求操作中从`HttpRequestBuilder`参数中移除`@ParameterGroup`注释将导致编译错误。复杂类型不允许使用`@Content`。

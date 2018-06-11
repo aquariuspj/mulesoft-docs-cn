@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <file:connector name="File" writeToDirectory="/Users/me/Documents" autoDelete="true" streaming="true" validateConnections="true" doc:name="File"/>
+    <flow name="basicFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="Receive Order by HTTP"/>
+        <cxf:jaxws-service doc:name="Fulfillment Web Service - SOAP"/>
+        <custom-transformer class="basic.Fulfillment" doc:name="Process Order with Java"/>
+        <async doc:name="Async">
+            <dw:transform-message doc:name="Transform Message">
+                <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://mulesoft.org/tshirt-service
+---
+{
+        ns0#OrderTshirt: {
+                email: payload.buyer.email,
+                name: payload.buyer.name,
+                address1: payload.buyer.address,
+                city: payload.buyer.city,
+                stateOrProvince: payload.buyer.state,
+                postalCode: payload.buyer.postCode,
+                country: payload.buyer.nationality
+        }
+}
+---
+{
+}]]></dw:set-payload>
+    </dw:transform-message>
+    <file:outbound-endpoint path="/Users/me/Documents/T-ShirtOrderFulfillment" connector-ref="File" responseTimeout="10000" doc:name="Fulfillment File"/>
+  </async>
+ </flow>
+</mule>

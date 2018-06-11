@@ -1,0 +1,95 @@
+= 商业活动用例
+
+[WARNING]
+审阅者注意事项：这是一个新页面，将作为分析业务事件主题下的子页面显示在Management Console文档中。
+
+管理控制台上的Business Events选项卡使您可以查看Mule服务器上的业务事务和事件，从而可以跟踪和分析特定消息的流程和处置。例如，您可以使用这些数据对业务事务中的故障进行根本原因分析，或识别消息处理瓶颈。
+
+本页说明了使用Business Events选项卡来满足特定需求的一些示例。
+
+== 根本原因分析示例
+
+假设一家企业，我们称之为ShopMuley，运行一个Mule应用程序来处理来自客户的订单。应用程序中的处理流程如下所示：
+
+image:OrderFulfillmentFlow.png[OrderFulfillmentFlow]
+
+应用程序的关键部分如下所示：
+
+* 订单从客户收到并进行处理。
+* 应用折扣（适用于客户）。
+* 进一步处理是异步完成的。
+* 创建Salesforce合同。
+* 根据订购的物品，订单将发送至Sony或Logitech以履行。
+
+现在让我们假设一位客户致电ShopMuley的支持部门，并报告他没有收到采购订单47625中要求的项目。支持部门可以使用Business Events选项卡对问题进行根本原因分析。假设应用程序已设置为跟踪订单履行流程中的事件。以下是一段代码片断，突出显示了流程的跟踪相关规范。
+
+[source, xml, linenums]
+----
+<flow name="Fulfillment Flow" doc:name="Fulfillment"> ❶
+<http:inbound-endpoint host="localhost" port="1080" ...
+  tracking:enable-default-events="true" doc:name="Receive Order"
+  doc:description="Process HTTP requests or responses."/> ❷
+  ...
+<tracking:transaction id="#[groovy:payload.orderId]" /> ❸
+<component doc:name="Calculate Discount"... >
+<async doc:name="Async"
+  doc:description="Asynchronous block of execution">...</async>
+</flow>
+----
+
+❶将在`doc:name`属性中指定将为流（`Fulfillment`）显示的名称。
+❷对默认事件启用跟踪，其名称将显示为`Receive Order`。请注意，已为流中的所有默认事件指定了显示名称。 +
+transaction交易ID是自定义的。搜索结果中的Id列将显示与交易相关的订单ID。
+
+这些规范使支持部门能够通过订单ID搜索交易，查看为交易中的流程生成的事件，并查看为流程和事件显示的有意义的名称。
+
+这样可以轻松搜索订单ID为47625的交易。
+
+image:search-by-orderid.png[搜索按订单ID]
+
+点击Id为47625的交易，显示在流程中生成的事件的数据。
+
+image:order-events.png[订单事件]
+
+看起来，订单已成功从客户收到，但交易在订单交付给Logitech执行前未能成功。代码中最近的更改可能导致了这个问题。现在，支持人员将专注于该部分代码以隔离和解决问题。
+
+== 符合性测试示例
+
+除了进行根本原因分析之外，“业务事件”选项卡在许多其他方面也很有用。例如，您可以利用它来进行合规性测试。假设ShopMuley的员工希望根据客户的折扣层级确保其折扣适用。为此，他们可以定义在应用折扣前后追踪商品价格的"before"和"after"个自定义事件。以下是自定义事件在实现流程中可能的样子。
+
+[source, xml, linenums]
+----
+<flow name="Fulfillment Flow" doc:name="Fulfillment">
+<http:inbound-endpoint host="localhost"
+port="1080" ...    tracking:enable-default-events="true"
+doc:name="Receive Order"
+doc:description="Process HTTP requests or responses."/>
+...
+<tracking:transaction id="#[groovy:payload.orderId]" />
+<tracking:custom-event event-name="Price"> ❶
+<tracking:meta-data key="price" value="#[groovy:payload.price]" />
+<tracking:meta-data key="customer-tier" value="#[groovy:payload.customer-tier]" />            </tracking:custom-event>
+<component doc:name="Calculate Discount" ... >
+<tracking:custom-event event-name="Price After Discount"> ❷
+<tracking:meta-data key="price-after-discount" value="#[groovy:payload.price]" />
+<tracking:meta-data key="customer-tier" value="#[groovy:payload.customer-tier]" />            </tracking:custom-event>
+<async doc:name="Async" doc:description="Asynchronous block of execution">           ...                    </async>
+</flow>
+----
+
+❶这是"before"自定义事件。它跟踪应用折扣之前商品的价格以及客户的折扣层级。
+❷这是"after"自定义事件。它跟踪应用折扣后商品的价格以及客户的折扣级别。
+
+交易完成后，员工可以查看"before"事件（此处列为"Price"）的数据，以查看客户的折扣等级以及应用折扣之前的价格。他们可以查看"after"事件的数据（此处列为"Price After Discount"）以查看应用折扣后的价格。
+
+image:custom-event-discount.png[自定义事件，折扣]
+
+“Business Events”选项卡的另一个用途是检测瓶颈。在这种情况下，您可以搜索显示的数据，查找一直需要很长时间才能处理的事件。
+
+link:/mule-management-console/v/3.2/tracking-and-querying-business-events[<<上一页：*追踪和查询商业活动*]
+
+link:/mule-management-console/v/3.2/configuring-a-database-for-business-event-data-persistence[下一步：*配置业务事件数据持久性数据库* >>]
+
+== 另请参阅
+
+*  https://support.mulesoft.com [联系MuleSoft支持]

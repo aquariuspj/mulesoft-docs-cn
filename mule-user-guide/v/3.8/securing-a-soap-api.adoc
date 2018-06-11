@@ -1,0 +1,279 @@
+= 保护SOAP API
+:keywords: anypoint studio, esb, security, soap, encryption, digital signature, timestamp
+
+*_Enterprise_*
+
+当SOAP API向外界公开专用网络数据时，该数据将通过四到七个单独的协议层（请参阅 http://en.wikipedia.org/wiki/TCP/IP_model[TCP / IP]或 http://en.wikipedia.org/wiki/OSI_model[OSI]）传播，从而引发潜在的安全漏洞。例如，在协议栈上的较高层实现安全性（例如应用层）通常提供比在较低传输层（仅提供HTTPS安全性）的实现更好的保护。
+
+要实现应用程序层安全性，请在您的SOAP API上启用 http://msdn.microsoft.com/en-us/library/ms977327.aspx[WS-安全]。 WS-security是一个 http://cxf.apache.org/[CXF]配置，它定义了一个新的SOAP头，能够携带各种安全令牌，系统用它来识别API调用者并检查权限。 WS-security可以包含以下内容：
+
+* 加密
+* 数字签名
+* 时间戳
+
+您还可以将<<Adding a Token Validator, custom validator>>添加到CXF组件。
+
+*<<Complete Code Example>>*
+
+== 启用WS-Security
+
+要在应用程序中的SOAP API上启用WS安全性，您必须将WS配置添加到流中的*CXF Component*。此方法仅在一个API中为您的流程中的本地WS安全启用。
+
+对于涉及API的Mule流，添加 link:/mule-user-guide/v/3.8/cxf-component-reference[* CXF组件*]以发布，使用或创建API的代理。完成以下步骤以在CXF组件上配置WS-Security。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+You configure a security token to identify API callers using a key-value pair where the value is a CXF WSS4J security-configuration text string or a value reference:
+
+* The string value is one of the following constants: 
+** https://ws.apache.org/wss4j/apidocs/org/apache/wss4j/dom/WSConstants.html[WSConstants], a class to define the kind of access the server allows
+** https://ws.apache.org/wss4j/apidocs/org/apache/wss4j/dom/handler/WSHandlerConstants.html[WSHandlerConstants], a class to specify the names, actions, and other strings for data deployment of the WSS handler
+* The bean *Value Reference* is the name of the bean that the key references.  For example, when the key is `passwordCallbackRef`, enter the name of the bean in the Value Reference field.
+
+To configure the CXF component, you enter a string value `UsernameToken` in the value field under *Add Configuration Element*. In XML, this step mirrors the addition of a key-value pair inside the `ws-config` child element of a `ws-security` element. By adding configuration elements to your SOAP component, you are creating a map of key-value pairs that correspond to the CXF WSS4J security-configuration text strings.
+
+To secure a SOAP API:
+
+. Open the properties editor, then click the *Security* tab.
+. Click image:add.png[(plus)] in *Add Configuration Element* to create a new key-value pair.
++
+image::securing-a-soap-api-063ca.png[securing-a-soap-api-063ca]
++
+The `cxf:property` default key name appears.
++
+. In the *Key* field, replace the default key with a name, for example `action.`
+. Enter a value, for example `UsernameToken`, in the *Value* field.
++
+image::securing-a-soap-api-52d2b.png[securing-a-soap-api-52d2b]
++
+. Click *Finish* to save the key-value pair. 
+. Repeat these steps to add as many `ws-security` configurations as you need, then click *OK*.
+....
+[tab,title="Studio Visual Editor or Standalone"]
+....
+. To your CXF element (i.e. SOAP component), add a child element for `cxf:ws-security`.
+. Within the `cxf:ws-security` child element, add a child element for `cxf:ws-config`.
+. Within the `cxf:ws-config` child element, add a child element for `cxf:property`.
+. Add two attributes to the cxf:property child element according to the table below. Be sure to enter either a `value `_OR_ a `value-ref`; the two are mutually exclusive.
++
+[%autowidth.spread]
+|===
+|*Attribute* |*Description*
+|*key* |Specify a name for the property.
+|*value* |Specify a https://ws.apache.org/wss4j/apidocs/org/apache/wss4j/dom/WSConstants.html[WS Constant ](a class to define the kind of access the server allows) or a https://ws.apache.org/wss4j/apidocs/org/apache/wss4j/dom/handler/WSHandlerConstants.html[WSHandlerConstant] (a class to specify the names, actions, and other strings for data deployment of the WSS handler). For example, enter `UsernameToken` in the value field.
+|*value- ref* |Specify the bean that the key must reference. When the key must reference a bean (for instance, when the key is `passwordCallbackRef`), specify the name of the bean as the value-ref.
+|===
+. Repeat the preceding step to add as many WS-security configurations as you want to your API. Refer to the following sample code:
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd">
+ 
+<http:listener-config name="listener-config" host="localhost" port="8081"/> 
+<flow name="Creation1Flow1" doc:name="Creation1Flow1">
+    <http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+    <cxf:jaxws-service doc:name="SOAP">
+        <cxf:ws-security>
+            <cxf:ws-config>
+                <cxf:property key="action" value="UsernameToken"/>
+            </cxf:ws-config>
+        </cxf:ws-security>
+    </cxf:jaxws-service>
+</flow>
+----
+....
+------
+
+== 添加令牌验证器
+
+如果您在Mule的SOAP API中启用了WS-Security，则还可以将CXF组件配置为委派对其发送或接收的消息凭证进行身份验证。
+
+CXF组件可能会陷入处理任务和验证消息。要减轻负载，您可以指示WS-security将某些消息身份验证任务委派给*Token Validator*，其中包括：
+
+* 在`CallbackHandler`实现无法访问密码的情况下验证`UsernameToken`
+* 验证接收到的SAML断言的属性
+* 将接收到的安全令牌分派给第三方安全服务进行验证
+
+完成以下过程将标记验证程序添加到您的API。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. On the *Security* tab of a CXF component in a flow, click one or more of the checkboxes to delegate message authentication tasks to token validators.
++
+image::securing-a-soap-api-1f421.png[securing-a-soap-api-1f421]
++
+The token validators serve the following purposes:
++
+[%header,cols="2*"]
+|===
+|Token Validator |Purpose
+|*User Name* |Authenticates the user name and password credentials associated with each message in a manner similar to HTTP Digest authentication.
+|*{{0}}* |Checks messages against SAML 1.1 assertion statements in order to approve or reject access to the API.
+|*{{0}}* |Checks messages against SAML 2.0 assertion statements in order to approve or reject access to the API.
+|*Timestamp* |Examines the timeliness of messages – when they were created and received, and when they expire – to make decisions about which messages to process.
+|*Signature* |Examines the digital signature attached to messages to make decisions about which messages to process.
+|*Binary Security Token* |Examines binary encoded security tokens (such as Kerberos) to make decisions about which messages to process.
+|===
+. In the *Bean* field associated with the token validator you select,  select an existing bean from the drop-down.
++
+Your token validator references this bean to apply, replace, or extend the default behavior associated with a security token. 
++
+Alternatively, if you have not yet created any beans, click the
+image:add.png[(plus)] button to open a new properties panel for creating and configuring a new bean. The bean imports the Java class you have built to specify the custom validator override behavior.
++
+image::securing-a-soap-api-d8161.png[securing-a-soap-api-d8161]
++
+. Click *OK*.
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+
+. Above all flows in your Mule project, create a global `spring:bean` element to import the Java class you have built to specify the token validator's behavior. Refer to code sample below.
++
+ View Java code for Bean Creation
+. To the CXF element in your flow, add a child element (below any `cxf:ws-config` elements you may have added) for `cxf:ws-custom-validator`.
+. To the `cxf:ws-custom-validator` child element, add a child element according to the type of action you want the validator to perform. Refer to the table below.
++
+[%header,cols="2*"]
+|===================
+|Token Validator |Purpose
+|*cxf:username-token-validator* |Authenticates the user name and password credentials associated with each message in a manner similar to HTTP Digest authentication.
+|*cxf:saml1-token-validator* |Checks messages against http://en.wikipedia.org/wiki/SAML_1.1[SAML 1.1] assertion statements in order to approve or reject access to the API.
+|*cxf:saml2-token-validator* |Checks messages against http://en.wikipedia.org/wiki/SAML_2.0[SAML 2.0] assertion statements in order to approve or reject access to the API.
+|*cxf:timestamp-token-validator* |Examines the timeliness of messages – when they were created and received, and when they expire – to make decisions about which messages to process.
+|*cxf:signature-token-validator* |Examines the digital signature attached to messages to make decisions about which messages to process.
+|*cxf:bst-token-validator* |Examines binary encoded security tokens (such as Kerberos) to make decisions about which messages to process.
+|===================
+. Add a `ref` attribute to the validator to reference the global spring:bean element which imports the Java class.
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd">
+ 
+<spring:beans>
+    <spring:bean id="customTokenValidator" name="Bean" class="org.mule.example.myClass"/>
+</spring:beans>
+ 
+<http:listener-config name="listener-config" host="localhost" port="8081"/>   
+<flow name="Creation1Flow1" doc:name="Creation1Flow1">
+    <http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+    <cxf:jaxws-service doc:name="SOAP">
+        <cxf:ws-security>
+            <cxf:ws-config>
+                <cxf:property key="action" value="UsernameToken"/>
+            </cxf:ws-config>
+            <cxf:ws-custom-validator>
+                <cxf:username-token-validator ref="Bean"/>
+            </cxf:ws-custom-validator>
+        </cxf:ws-security>
+    </cxf:jaxws-service>
+</flow>
+----
+....
+------
+
+== 完整的代码示例
+
+有关示例应用程序的完整说明，请参阅 link:/anypoint-exchange[Anypoint Exchange]。
+
+[source, xml, linenums]
+----
+<?xml version="1.0"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:core="http://www.mulesoft.org/schema/mule/core" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation=" http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd  http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd  http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd  http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd ">
+    <spring:beans>
+        <spring:bean class="com.mulesoft.mule.example.security.SAMLCustomValidator" id="Bean" name="samlCustomValidator"/>
+    </spring:beans>
+    <http:listener-config name="listener-config" host="localhost" port="63081" basePath="services"/>
+ 
+    <flow doc:name="UnsecureServiceFlow" name="UnsecureServiceFlow">
+        <http:listener config-ref="listener-config" path="unsecure" doc:name="HTTP Connector"/>
+        <cxf:jaxws-service doc:name="Unsecure service" serviceClass="com.mulesoft.mule.example.security.Greeter"/>
+        <component class="com.mulesoft.mule.example.security.GreeterService" doc:name="Greeter Service"/>
+    </flow>
+    <flow doc:name="UsernameTokenServiceFlow" name="UsernameTokenServiceFlow">
+        <http:listener config-ref="listener-config" path="username" doc:name="HTTP Connector"/>    
+        <cxf:jaxws-service doc:name="Secure UsernameToken service" serviceClass="com.mulesoft.mule.example.security.Greeter">
+            <cxf:ws-security>
+                <cxf:ws-config>
+                    <cxf:property key="action" value="UsernameToken Timestamp"/>
+                    <cxf:property key="passwordCallbackClass" value="com.mulesoft.mule.example.security.PasswordCallback"/>
+                </cxf:ws-config>
+            </cxf:ws-security>
+        </cxf:jaxws-service>
+        <component class="com.mulesoft.mule.example.security.GreeterService" doc:name="Greeter Service"/>
+    </flow>
+    <flow doc:name="UsernameTokenSignedServiceFlow" name="UsernameTokenSignedServiceFlow">
+        <http:listener config-ref="listener-config" path="signed" doc:name="HTTP Connector"/>
+        <cxf:jaxws-service doc:name="Secure UsernameToken Signed service" serviceClass="com.mulesoft.mule.example.security.Greeter">
+            <cxf:ws-security>
+                <cxf:ws-config>
+                    <cxf:property key="action" value="UsernameToken Signature Timestamp"/>
+                    <cxf:property key="signaturePropFile" value="wssecurity.properties"/>
+                    <cxf:property key="passwordCallbackClass" value="com.mulesoft.mule.example.security.PasswordCallback"/>
+                </cxf:ws-config>
+            </cxf:ws-security>
+        </cxf:jaxws-service>
+        <component class="com.mulesoft.mule.example.security.GreeterService" doc:name="Greeter Service"/>
+    </flow>
+    <flow doc:name="UsernameTokenEncryptedServiceFlow" name="UsernameTokenEncryptedServiceFlow">
+        <http:listener config-ref="listener-config" path="encrypted" doc:name="HTTP Connector"/>
+        <cxf:jaxws-service doc:name="Secure UsernameToken Encrypted service" serviceClass="com.mulesoft.mule.example.security.Greeter">
+            <cxf:ws-security>
+                <cxf:ws-config>
+                    <cxf:property key="action" value="UsernameToken Timestamp Encrypt"/>
+                    <cxf:property key="decryptionPropFile" value="wssecurity.properties"/>
+                    <cxf:property key="passwordCallbackClass" value="com.mulesoft.mule.example.security.PasswordCallback"/>
+                </cxf:ws-config>
+            </cxf:ws-security>
+        </cxf:jaxws-service>
+        <component class="com.mulesoft.mule.example.security.GreeterService" doc:name="Greeter Service"/>
+    </flow>
+    <flow doc:name="SamlTokenServiceFlow" name="SamlTokenServiceFlow">
+        <http:listener config-ref="listener-config" path="saml" doc:name="HTTP Connector"/>
+        <cxf:jaxws-service doc:name="Secure SAMLToken service" serviceClass="com.mulesoft.mule.example.security.Greeter">
+            <cxf:ws-security>
+                <cxf:ws-config>
+                    <cxf:property key="action" value="SAMLTokenUnsigned Timestamp"/>
+                </cxf:ws-config>
+                <cxf:ws-custom-validator>
+                    <cxf:saml2-token-validator ref="samlCustomValidator"/>
+                </cxf:ws-custom-validator>
+            </cxf:ws-security>
+        </cxf:jaxws-service>
+        <component class="com.mulesoft.mule.example.security.GreeterService" doc:name="Greeter Service"/>
+    </flow>
+    <flow doc:name="SignedSamlTokenServiceFlow" name="SignedSamlTokenServiceFlow">
+        <http:listener config-ref="listener-config" path="signedsaml" doc:name="HTTP Connector"/>
+        <cxf:jaxws-service doc:name="Secure SAMLToken Signed service" serviceClass="com.mulesoft.mule.example.security.Greeter">
+            <cxf:ws-security>
+                <cxf:ws-config>
+                    <cxf:property key="action" value="SAMLTokenUnsigned Signature"/>
+                    <cxf:property key="signaturePropFile" value="wssecurity.properties"/>
+                </cxf:ws-config>
+                <cxf:ws-custom-validator>
+                    <cxf:saml2-token-validator ref="samlCustomValidator"/>
+                </cxf:ws-custom-validator>
+            </cxf:ws-security>
+        </cxf:jaxws-service>
+        <component class="com.mulesoft.mule.example.security.GreeterService" doc:name="Greeter Service"/>
+    </flow>
+</mule>
+----
+
+== 另请参阅
+
+* 详细了解如何在Mule应用程序中配置 link:/mule-user-guide/v/3.8/cxf-component-reference[CXF组件]。

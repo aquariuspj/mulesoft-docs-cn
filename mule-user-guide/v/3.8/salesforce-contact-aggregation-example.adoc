@@ -1,0 +1,247 @@
+=  Salesforce联系人聚合示例
+:keywords: anypoint studio, esb, connector, endpoint, salesforce
+
+
+此示例应用程序使用 link:/mule-user-guide/v/3.8/salesforce-connector[Salesforce连接器]查询来自两个独立Salesforce实例的联系人，并确定两个实例中存在哪些联系人。下面的部分描述了应用程序中每个流程的功能。下面的部分将介绍Salesforce Global Connector Configuration的配置，Mule应用程序通过该配置与Salesforce建立连接。
+
+除此示例之外，还可以访问Salesforce Connector的 link:/mule-user-guide/v/3.8/salesforce-connector[介绍]和https://mulesoft.github.io/mule-salesforce-connector/[reference]文档。
+
+== 先决条件
+
+本文假设您熟悉Mule， link:/anypoint-studio/v/6/[Anypoint Studio界面]， link:/mule-user-guide/v/3.8/global-elements[全球元素]， link:/anypoint-studio/v/6/datasense[DataSense]和 link:/mule-user-guide/v/3.8/dataweave[DataWeave]或其前任 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[的DataMapper]。此外，假定您熟悉Salesforce并拥有 link:http://developer.force.com/[developerforce]帐户。详细了解 link:/mule-user-guide/v/3.8/flows-and-subflows[流量和子流量]，以深入了解此示例的设计。
+
+
+== 了解流程
+
+下面的部分描述了每个流程的功能。
+
+image:contact_aggr_flows.png[contact_aggr_flows]
+
+===  mainFlow
+
+由*triggerFlow*调用（在应用程序的单独mflow文件中配置），mainFlow开始处理通过HTTP请求接受的消息triggerFlow。 mainFlow包含四个*Flow Ref*范围，它们在应用程序中连续调用四个子流。该流还引用 link:/mule-user-guide/v/3.8/catch-exception-strategy[捕捉异常策略]来处理抛出的异常。在运行时，mainFlow通过调用*gatherDataFlow*开始，如下例所示。
+
+[source, xml, linenums]
+----
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp"
+    xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns="http://www.mulesoft.org/schema/mule/core"
+    xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+ 
+    <!-- In this file you should declare all your inbound endpoints and from here control the access to your application -->
+
+    <flow name="triggerFlow" processingStrategy="synchronous" doc:name="triggerFlow" doc:description="This is the simplest entry point to start the execution of your Template.
+Here you should:
+    * Define any inbound endpoints
+    * Handle any input parameter and transform it into the expected format by the mainFlow.
+Here you should not:
+    * Run validations against external systems
+    * Choose a flow of your application based on input parameters">
+<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+      <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="${http.port}" path="generatereport" doc:name="Start Report Generation"/>
+      <flow name="mainFlow>
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="call mainFlow"/>
+      </flow>
+...
+</mule>
+----
+
+===  gatherDataFlow
+
+该流程包含两个 link:/mule-user-guide/v/3.8/message-enricher[信息丰富]范围，每个范围内都有一个Salesforce连接器。每个Salesforce连接器连接到Salesforce实例以检索*Contact*类型的所有字段。每个连接器的消息丰富程序将这些信息存储在两个 link:/mule-user-guide/v/3.8/mule-message-structure[流量变量]中，每个Salesforce组织一个。
+
+在稍后阶段，应用程序访问这两个流量变量以确定哪些联系人在两个组织中都存在。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:gatherDataFlow.png[gatherDataFlow]
+....
+[tab,title="XML Editor"]
+....
+
+[source, xml, linenums]
+----
+<sub-flow name="gatherDataFlow" doc:name="gatherDataFlow">
+        <enricher source="#[payload]" target="#[flowVars['contactsFromOrgA']]" doc:name="Store result in FlowVar 'contactsFromOrgA'">
+            <sfdc:query config-ref="SalesforceA" query="dsql:SELECT Name, Email, Id  FROM Contact" doc:name="query all contacts from SalesForce instance A"/>
+        </enricher>
+        <enricher source="#[payload]" target="#[flowVars['contactsFromOrgB']]" doc:name="Store result in FlowVar 'contactsFromOrgB'">
+            <sfdc:query config-ref="SalesforceB" query="dsql:SELECT Name, Email, Id  FROM Contact" doc:name="query all contacts from SalesForce instance B"/>
+        </enricher>
+</sub-flow>
+----
+....
+------
+
+如您所见，每个Salesforce连接器都位于一个更加丰富的范围内。第一个Salesforce连接器查询联系人数据"Salesforce instance A"; Mule使用richher范围将这些数据记录为流变量`contactsFromOrgA`。此时，应用程序包含存储在此变量中的来自"Salesforce instance A"的所有联系人。
+
+然后，第二个Salesforce连接器和第二个集成商使用"Salesforce instance B"重复上述练习，将实例的联系人数据存储在流变量`contactsFromOrgB`中。
+
+每个Salesforce连接器引用一个Salesforce link:/mule-user-guide/v/3.8/global-elements[全球元素]，该Salesforce为每个Salesforce组织配置了连接参数（用户标识，密码等）。要查看每个全局元素的配置，请参阅<<Salesforce Global Elements>>部分。
+
+下表列出了Salesforce连接器的配置（"instance A"）。此配置与第二个Salesforce连接器（"instance B"）的配置相同，只是每个连接器都引用不同的全局元素。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+=== Properties Editor
+
+image:sfdcconfiguration1.png[sfdcconfiguration1]
+
+[%header%autowidth.spread]
+|===
+|Parameter |Value
+|*Display Name* |`query all contacts from SalesForce instance A`
+|*Connector Configuration* |`SalesforceA`
+|*Operation* |`Query`
+|*Language* |`DataSense Query Language`
+|*Query Text* |`SELECT Name, Email, Id  FROM Contact`
+|*Fetch Size* |`100`
+|===
+....
+[tab,title="XML Editor"]
+....
+
+[source, xml, linenums]
+----
+<sfdc:query config-ref="SalesforceA" query="dsql:SELECT Name, Email, Id  FROM Contact" doc:name="query all contacts from SalesForce instance A"/>
+----
+....
+------
+
+应用程序创建包含两个Salesforce组织的联系信息的两个变量后，mainFlow会调用*aggregationFlow*子流。
+
+===  aggregationFlow
+
+此子流只包含一个元素： link:/mule-user-guide/v/3.8/java-component-reference[Java组件]，它调用自定义的活动。该组件将两个联系人列表（包含在流变量`contactsFromOrgA`和`contactsFromOrgB –`中的联系人列表）合并到一个列表中。应用程序将合并列表传递回mainFlow，然后再传递给*formatOutputFlow*。
+
+===  formatOutputFlow
+
+在此流程中，自定义Java组件在`Email`字段中搜索由aggregationFlow生成的合并联系人列表，以获取具有相同内容的元素。任何多次出现都表示Salesforce组织中存在的联系人。此Java组件输出这些"duplicates"另一个列表。
+
+接下来， link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[DataMapper转换器]将Java对象映射到一个CSV文件，然后该文件流转换为一个字符串。流程将消息传递给mainFlow，现在是一串重复的电子邮件地址。 mainFlow继续将消息发送到*outboundFlow*（在应用程序中的单独mflow文件中配置），以便将结果通过电子邮件发送到预定义的地址。
+
+[source, xml, linenums]
+----
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp"
+    xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns="http://www.mulesoft.org/schema/mule/core"
+    xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+ 
+    <!-- In this file you should declare all your inbound endpoints, and from here control the access to your application. -->
+...   
+      <flow name="outboundFlow" doc:name="outboundFlow" doc:description="This is the simplest output point to push the result of the data processing.
+Here you should:
+    * Call external systems through outbound endpoints
+Here you should not:
+    * Perform generic data transformation
+ 
+The outboundFlow is in this file in order to maintain the logical abstraction of the Template.">
+        <file:outbound-endpoint path="/Users/admin/_marcos/sfdc-templates/sfdc2sfdc-contact-aggregation-master/_output" outputPattern="result.txt" responseTimeout="10000" doc:name="Write output"/>
+    </flow>
+</mule>
+----
+
+==  Salesforce全球元素
+
+下表列出了建立与"Salesforce instance A"的连接的Salesforce全局元素的配置。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+=== General Tab
+
+==== Properties Editor
+
+image:SFglobalelem.png[SFglobalelem]
+
+[%header%autowidth.spread]
+|===
+|Parameter |Value
+|*Name* |`SalesforceA`
+|*Username* |Redacted. Use the appropriate user ID for your Salesforce instance.
+|*Password* |Redacted. Use the appropriate password for your Salesforce instance.
+|*Security Token* |Redacted. Use the appropriate security token for your Salesforce instance.
+|*Url* |Redacted. Use the appropriate URL for your Salesforce instance, such as `https://salesforce.com/services/Soap/u/30.0`
+|*Proxy Host* |
+|*Proxy Port* |
+|*Proxy Username* |
+|*Proxy Password* |
+|*Session Id* |
+|*Service Endpoint* |
+|*Enable DataSense* |True
+|*Time Ojbect Store Reference* |
+|*Assignment Rule Id* |
+|*Client Id* |
+|*Batch Sobject Max Depth* |`5` (default)
+|*Allow Field Truncation Support* |
+|*Use Default Rule* |
+|===
+
+=== Pooling Profile Tab
+
+In this tab, all settings reflect their default values.
+
+==== Properties Editor
+
+image:SFglobalelem-connpooltab.png[SFglobalelem-connpooltab]
+
+[%header%autowidth.spread]
+|===
+|Parameter |Value |
+|*Max active* |`5`
+|*Max idle* |`5`
+|*Initialisation policy* |`INITIALISE_ONE`
+|*Exhausted action*|`WHEN_EXHAUSTED_GROW`
+|*Max wait* |`5`
+|*Min eviction (ms)* |`1800000`
+|*Eviction check interval (ms)* |`-1`
+|===
+
+=== Reconnection Tab
+
+In this tab, all settings reflect their default values.
+
+==== Properties Editor
+
+image:SFglobalelem-reconntab.png[SFglobalelem-reconntab]
+
+[%header%autowidth.spread]
+|===
+|Parameter |Value
+|*Do not use a Reconnection strategy* |Checked
+|*Run the reconnection in a separated thread* |Unchecked
+|===
+....
+------
+
+== 另请参阅
+
+* 访问 link:/mule-user-guide/v/3.8/salesforce-connector[Salesforce连接器]的介绍材料。
+
+Salesforce Connector的* 访问https://mulesoft.github.io/mule-salesforce-connector/[full参考文档]。
+
+* 详细了解 link:/mule-user-guide/v/3.8/mule-message-structure[流量变量]。
+
+* 详细了解 link:/mule-user-guide/v/3.8/flows-and-subflows[流量和子流量]。
+
+* 通常了解有关 link:/mule-user-guide/v/3.8/anypoint-connectors[Anypoint连接器]的更多信息。

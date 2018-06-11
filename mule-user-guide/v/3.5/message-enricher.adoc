@@ -1,0 +1,88 @@
+= 消息Enricher
+:keywords: studio, mule, esb, enrich, flow control
+
+一种常见的情况是需要使用源系统未提供的信息来丰富传入的消息。如果目标系统需要比源系统可提供的更多信息，则可以使用更丰富的内容。
+
+考虑来自源系统的消息包含邮政编码，但目标系统需要两个字母的状态。可以使用丰富资源的邮政编码来查找状态。丰富者用当前消息（包含邮政编码）向富集资源呼叫，然后用结果丰富当前消息。
+
+[source, xml, linenums]
+----
+<flow name="orderProcessingFlow">
+   <inbound-endpoint ref="orderEndpoint"/>
+   <enricher target="#[variable:state]">
+       <outbound-endpoint ref="stateLookup"/>
+   </enricher>
+   <outbound-endpoint ref="orderStep2"/>
+</flow>
+----
+
+这是一个非常简单的流程，具有单向入站和出站端点，并且作为订单处理管道的一部分。此流程使用richher将状态_flow variable_添加到当前消息，并返回`stateLookup`端点返回的状态。 'target'属性定义了如何使用与表达式评估器使用相同语法的`MessageEnricher`来丰富当前消息。
+
+*Notes:*
+
+*  Mule目前仅支持丰富_flow variables_和消息标题。
+* 即使Message Enricher接收到Mule消息的副本，也不会复制有效内容。
+换句话说，如果消息的有效负载是可变对象（例如，其中具有不同字段的bean），并且Message Enricher中的消息处理器更改其中一个字段的值，则Message Enricher之外的消息处理器只能看到更改的值。
+
+== 更复杂的丰富
+
+在这个特定的例子中，'addressLookup'端点收到完整的消息，在某些情况下，这可能是一个通用服务，它不知道如何解析我们的订单消息，而只是一个zip字符串。提高配置以支持这一点非常容易，请考虑以下代码片段：
+
+[source, xml, linenums]
+----
+<flow name="orderProcessingFlow">
+   <inbound-endpoint ref="orderconnector"/>
+   <enricher target="#[variable:address]">
+       <outbound-endpoint ref="addressLookup">
+           <expression-transformer evaluator="xpath" expression="/order/address/zip" />
+       </outbound-endpoint>
+   </enricher>
+   <outbound-endpoint ref="orderStep2"/>
+</flow>
+----
+
+“丰富资源”可以是任何消息处理器，出站连接器，处理器链或流程引用。如果使用出站连接器，那么它当然应该有一个`request-responseexchange`模式。
+
+== 更高级的示例
+
+*enricher*元素还支持更丰富的用例，其中丰富资源返回的消息不仅仅是一个简单的字符串，这正是我们需要的丰富当前消息的方式，通常您可能希望用只是调用外部服务的结果中的一部分信息。
+
+例如，如果您有要求验证用于订单的信用卡并且使用邮政编码添加完整地址。信用卡验证过程应该填充标题为“paymentValidated”的真或假，这将在以后使用。我们可以通过调用授权服务（如Authorize.Net）来轻松执行信用卡验证，以执行此验证，但是我们遇到了此连接器返回的问题不仅仅是布尔值。
+
+解决方案是使用richters的source属性，在使用它来丰富目标之前，它将从结果消息中选择一个值。
+
+[source, xml, linenums]
+----
+<flow name="orderProcessingFlow">
+   <inbound-endpoint ref="orderconnector"/>
+   <enricher target="#[variable:paymentValidated]" source="/authorizenet/authorization/@valid">
+       <authorizenet:authorize cardNumber="/order/cc/number" />
+   </enricher>
+   <outbound-endpoint ref="orderStep2"/>
+</flow>
+----
+
+此方法允许您将来自富集资源的响应消息中的内容映射到当前消息。如果您有更高级的用例，则还可以将丰富资源响应中的`n`值映射到当前消息中丰富的m值，这是通过使用每个具有源属性和目标属性的子丰富元素来完成的。注意：如果使用儿童丰富元素，则不允许使用richher的源/目标属性。
+
+[source, xml, linenums]
+----
+<flow name="orderProcessingFlow">
+   <inbound-endpoint ref="orderconnector"/>
+   <enricher>
+       <authorizenet:authorize cardNumber="/order/cc/number" />
+       <enrich target="#[variable:paymentValidated]" source="/authorizenet/authorization/@valid" />
+       <enrich target="#[variable:paymentAuthCode]" source="/authorizenet/authorization/code"/>
+   </enricher>
+   <outbound-endpoint ref="orderStep2"/>
+</flow>
+----
+
+== 变量和Enrichers
+
+您可以通过使用 link:/mule-user-guide/v/3.7/mule-expression-language-mel[Mule表达语言MEL]表达式填充字段来使源成为名称空间，例如使用从Mule消息接收参数的xpath表达式。
+
+您可以在这些页面上找到有关使用任何丰富的变量的信息：
+
+在运行时加载*  link:/mule-user-guide/v/3.6/non-mel-expressions-configuration-reference[默认浓缩物]
+*  http://www.mulesoft.org/docs/site/current/schemadocs/schemas/mule_xsd/elements/enricher.html[浓缩元素]的架构文档
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/enricher/MessageEnricher.html[org.mule.core.enricher.MessageEnricher]的*  API文档

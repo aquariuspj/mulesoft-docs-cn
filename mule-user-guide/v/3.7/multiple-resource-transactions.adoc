@@ -1,0 +1,53 @@
+= 多个资源事务
+:keywords: anypoint studio, esb, jms, vm, transaction grouping, resource grouping
+
+使用*Multi Resource transaction*将来自多个JMS或VM资源的一系列操作组合到一个虚拟事务中。
+
+多个资源事务对于创建事务桥而不使用分布式事务很有用。例如，如果要桥接两个不同的连接器以形成事务单元，则可以按照以下示例配置多资源事务。
+
+[source, xml, linenums]
+----
+<mule xmlns:wmq="http://www.mulesoft.org/schema/mule/ee/wmq" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+
+http://www.mulesoft.org/schema/mule/ee/wmq http://www.mulesoft.org/schema/mule/ee/wmq/current/mule-wmq-ee.xsd
+
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+
+    <jms:activemq-connector name="jmsConnector"
+                            maxRedelivery="3"
+                            disableTemporaryReplyToDestinations="true"/>
+
+    <wmq:connector name="wmqConnector"
+                   hostName="winter"
+                   port="1414"
+                   disableReplyToHandler="true"
+                   disableTemporaryReplyToDestinations="true"
+                   queueManager="MY_QUEUE_MANAGER"
+                   targetClient="NONJMS_MQ"
+                   transportType="CLIENT_MQ_TCPIP"
+                   specification="1.1"
+                   numberOfConsumers="16"
+                   username=""
+                   password=""/>
+
+    <flow name="MultiTxFlow">
+        <jms:inbound-endpoint queue="in" connector-ref="jmsConnector">
+            <ee:multi-transaction action="ALWAYS_BEGIN"/>
+        </jms:inbound-endpoint>
+        <test:component/>
+        <wmq:outbound-endpoint queue="out" connector-ref="wmqConnector">
+             <ee:multi-transaction action="ALWAYS_JOIN"/>
+        </wmq:outbound-endpoint>
+    </flow>
+</mule>
+----
+
+在上例中，Mule在入站连接器上收到消息时启动本地JMS事务。 Mule在出站连接器上发送消息时启动本地WMQ事务。在这种情况下，由于连接器被配置为多个资源事务，Mule首先提交WMQ事务，然后提交JMS事务。最终，Mule或者成功或者失败并且将它们作为一个虚拟单元回滚。
+
+请注意，如果您使用多资源事务配置入站连接器，则还必须将任何其他连接器配置为多个资源事务，并且将操作设置为"ALWAYS_JOIN"才能成为虚拟事务处理单元的一部分。
+
+有关如何配置多资源事务的详细信息，请参阅 link:/mule-user-guide/v/3.7/transaction-management[交易管理]。

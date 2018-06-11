@@ -1,0 +1,71 @@
+= 关于Streaming Batch Aggregator
+
+您可以配置批量聚合器范围以流式传输其内容。 +
+这使您可以汇总作业实例中的所有记录，无论它们有多少或多大。
+
+流式传输功能可以确保您可以接收作业实例中的所有记录，而不会耗尽内存，而不是使用固定大小的批量聚合器收到的元素列表。
+
+例如，如果您需要将数百万条记录写入CSV文件，则可以将记录处理为流式批量聚合器。
+
+[source, xml, linenums]
+----
+<batch:job jobName="batchJob">
+	<batch:process-records >
+		<batch:step name="batchStep">
+			<batch:aggregator streaming="true">
+				<file:write path="reallyLarge.csv">
+					<file:content><![CDATA[%dw 2.0
+						...
+
+					}]]></file:content>
+			</batch:aggregator>
+		</batch:step>
+	</batch:process-records>
+</batch:job>
+----
+
+在使用流式聚合器时，您可以替换，更改或存储每条记录的有效负载和可变数据。
+
+通过添加foreach范围，您可以遍历整个流记录集，并使用Groovy和脚本模块修改负载并为每个收集的记录创建一个变量。 +
+您可以顺序浏览每条记录的数据并永久存储每条记录的有效负载和变量。在批量聚合器中访问记录的这种方法称为顺序访问。
+
+[source,xml,linenums]
+----
+<batch:job jobName="batchJob">
+	<batch:process-records>
+		<batch:step name="batchStep">
+			<batch:aggregator doc:name="batchAggregator" streaming="true">
+				<foreach doc:name="For Each">
+					<script:execute engine="groovy">
+						<script:code>
+              vars['marco'] = 'polo'
+							vars['record'].payload = 'foo'
+						</script:code>
+					</script:execute>
+				</foreach>
+			</batch:aggregator>
+		</batch:step>
+	</batch:process-records>
+</batch:job>
+----
+
+顺序访问方法假定：
+
+. 聚合器大小与聚合记录的数量相匹配。
+. 汇总记录与列表中的项目之间存在直接关联。
+
+由于内存限制，流式聚合器不支持随机访问。 +
+随机访问的记录有效载荷以`immutable List`形式公开，由于流聚合器意味着可以访问整组记录，而没有固定的提交大小，因此运行时无法保证所有记录都适合内存。
+
+== 提示
+
+{0}} *Streaming from SaaS providers:*通常，在通过Anypoint Connector将数据发送到SaaS提供商（如Salesforce）时，您可能不会使用批量流式处理，因为SaaS提供商通常在接受流式输入方面有限制。而是在写入诸如CSV，JSON或XML之类的文件时使用流式批处理。
+
+*  *Batch streaming and performance:*批量处理流数据确实会影响应用程序的性能，从而降低处理事务的速度。虽然性能下降，但能够批量处理流式数据的权衡可能需要在您的实施中使用。
+
+*  *Batch streaming and access to items:*使用批量串流的最大缺点是您对输出中的项目的访问权限有限。换句话说，使用_fixed-size commit_，您会得到一个不可修改的列表，从而允许您访问并迭代处理其项目;通过_streaming commit_，你可以得到一个只读，只向前迭代器。
+
+== 另请参阅
+
+*  link:batch-aggregator-concept[关于批量聚合器]
+*  link:fix-batch-aggregator-concept[关于固定大小的批量聚合器]

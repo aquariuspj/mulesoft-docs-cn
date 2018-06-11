@@ -1,0 +1,449 @@
+= 示例：测试APIkit
+：版本信息：3.8.0和更新
+:keywords: munit, testing, unit testing
+
+[[scenario]]
+== 概述
+
+本文档包含测试基于APIkit的应用程序的基本示例。测试基于APIkit的应用程序有两种基本方法：浏览APIkit路由器，或者不通过APIkit路由器。
+
+差异在于你想要测试的东西。显然，如果你浏览APIkit路由器，你会得到比没有完整的测试更完整的测试;然而，没有通过路由器屏蔽你的测试API相关的信息，只允许你测试API的业务逻辑。
+
+在这个例子中，我们通过APIkit路由器。
+
+除XML配置中包含的内容外，APIkit路由器还处理一些任务：
+
+* 按资源/方法/内容类型进行路由
+* 验证输入有效载荷，标题，查询参数，uri-params
+* 响应有效负载的自动转换（序列化）
+
+为了执行这些任务，APIkit路由器不断读取`api.raml`文件。因此，通过APIkit路由器可以帮助您在实现API的XML配置和RAML定义文件之间保持一致。
+
+[[hands-on]]
+== 示例测试
+
+创建一个新的Mule Studio项目并在`api`文件夹中创建一个RAML定义文件（有关如何操作的详细信息，请参阅 link:/apikit/apikit-tutorial[APIkit教程]）。
+
+[[the-raml-definition]]
+===  RAML定义
+
+---------------------------------------------
+#%RAML 0.8
+---
+title: Sample API
+
+/munit:
+  displayName: Login
+  get:
+    description: Login through signed request
+    responses:
+      200:
+        body:
+          application/json:
+  post:
+    description: Login through signed request
+    responses:
+      201:
+        body:
+          application/json:
+  put:
+    description: Login through signed request
+    responses:
+      201:
+        body:
+          application/json:
+  delete:
+    description: Login through signed request
+    responses:
+      200:
+        body:
+          application/json:
+---------------------------------------------
+
+[[the-api-implementation]]
+===  API实现
+
+下面是为RAML定义生成流之后的结果：
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:api-kit-generated-flow.png[api-kit-generated-flow] +
+
+Note that APIKit also creates a Global Exception Strategy to catch all possible http status code errors: +
+image:api-kit-generated-exceptions.png[api-kit-generated-exceptions]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<apikit:config name="api-config" raml="api.raml" consoleEnabled="true" consolePath="console" doc:name="Router" />
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="9090" connectionIdleTimeout="999999" doc:name="HTTP Listener Configuration" basePath="/api"/>
+    <apikit:mapping-exception-strategy name="api-apiKitGlobalExceptionMapping" >
+        <apikit:mapping statusCode="404">
+            <apikit:exception value="org.mule.module.apikit.exception.NotFoundException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Resource not found&quot;]" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="405">
+            <apikit:exception value="org.mule.module.apikit.exception.MethodNotAllowedException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Method not allowed&quot;]" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="415">
+            <apikit:exception value="org.mule.module.apikit.exception.UnsupportedMediaTypeException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Unsupported media type&quot;]" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="406">
+            <apikit:exception value="org.mule.module.apikit.exception.NotAcceptableException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Not acceptable&quot;]" doc:name="Set Payload" />
+        </apikit:mapping>
+        <apikit:mapping statusCode="400">
+            <apikit:exception value="org.mule.module.apikit.exception.BadRequestException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+            <set-payload value="{ &quot;message&quot;: &quot;Bad request&quot;]" doc:name="Set Payload" />
+        </apikit:mapping>
+    </apikit:mapping-exception-strategy>
+    <flow name="api-main" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="*" doc:name="HTTP"/>
+        <apikit:router config-ref="api-config" doc:name="APIkit Router" />
+        <exception-strategy ref="api-apiKitGlobalExceptionMapping" doc:name="Reference Exception Strategy" />
+    </flow>
+    <flow name="get:/munit:api-config" >
+        <set-payload value="#['GET RESPONSE']" doc:name="Set Payload" />
+    </flow>
+    <flow name="put:/munit:api-config" >
+        <set-payload value="#['PUT RESPONSE']" doc:name="Set Payload"/>
+    </flow>
+    <flow name="delete:/munit:api-config" >
+        <set-payload value="#['DELETE RESPONSE']" doc:name="Set Payload"/>
+    </flow>
+    <flow name="post:/munit:api-config" >
+        <set-payload value="#['POST RESPONSE']" doc:name="Set Payload"/>
+    </flow>
+----
+....
+------
+
+
+
+[WARNING]
+--
+创建此示例时，请确保将APIkit组件添加到项目中：+
+image:create-project-add-apikit-components.png[创建项目，附加apikit组件]
+--
+
+注意：在上例中，HTTP全局配置的默认侦听器端口已更改为9090。
+
+[[the-munit-test]]
+===  MUnit测试
+
+这些部分包含测试重要部分的细目。您可以在页面底部找到完整版本的XML。
+
+*The MUnit configuration:*
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:munit-configuration-mock-false.png[munit-configuration-mock-false]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<munit:config doc:name="Munit configuration" mock-connectors="false" mock-inbounds="false"/>
+<spring:beans>
+  <spring:import resource="classpath:api.xml"/>
+</spring:beans>
+----
+....
+------
+
+注意：在MUnit配置中，您必须将`mock-connectors`和`mock-inbounds`设置为`false`。默认情况下，MUnit将这些值设置为`true`（因为通常您不想启用入站端点），因此您必须手动将这些值设置为false;否则测试不起作用。
+
+*An actual test:*
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:test-get-sample.png[test-get-sample] +
+image:test-get-sample-global.png[test-get-sample-global]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<munit:test name="api-test-get" description="Test">
+  <munit:set payload="#['']" doc:name="Set Message"/>
+  <http:request config-ref="HTTP_Request_Configuration" path="/munit" method="GET" doc:name="HTTP"/>
+  <object-to-string-transformer doc:name="Object to String"/>
+  <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq(200))]" doc:name="Assert True"/>
+  <munit:assert-on-equals message="The response payload is not correct!" expectedValue="&quot;GET RESPONSE&quot;" actualValue="#[payload]" doc:name="Assert Equals"/>
+</munit:test>
+----
+
+....
+------
+
+如您所见，我们使用`http connector`来触发测试。这使您可以使用HTTP出站端点来定义您需要的所有内容，以便找到您的API资源（HTTP动词，标题，路径，MIME类型等）。在这个例子中，我们只涉及动词。
+
+*The two assertions in the test:*
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:test-get-sample-assert-true.png[test-get-sample-assert-true] +
+image:test-get-assert-equals.png[test-get-assert-equals]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq('200'))]" doc:name="Assert True"/>
+
+<munit:assert-on-equals message="The response payload is not correct!" expectedValue="#['\&quot;GET RESPONSE\&quot;']" actualValue="#[payload]" doc:name="Assert Equals"/>
+----
+
+....
+------
+
+这个例子说明了像这样一个测试中需要的最基本的断言之一：
+
+* 验证HTTP状态码
+* 验证返回的有效负载
+
+*Full test config XML:*
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:full-test.png[full-test]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<munit:config name="munit" doc:name="MUnit configuration" mock-connectors="false" mock-inbounds="false"/>
+<spring:beans>
+    <spring:import resource="classpath:apigwexample-docs.xml"/>
+</spring:beans>
+
+<http:request-config name="HTTP_Request_Configuration" host="localhost" port="9090" basePath="/api" connectionIdleTimeout="999999" doc:name="HTTP Request Configuration">
+    <http:raml-api-configuration location="api.raml"/>
+</http:request-config>
+
+
+<munit:test name="api-test-get" description="Test">
+    <munit:set payload="#['']" doc:name="Set Message"/>
+    <http:request config-ref="HTTP_Request_Configuration" path="/munit" method="GET" doc:name="HTTP"/>
+    <object-to-string-transformer doc:name="Object to String"/>
+    <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq(200))]" doc:name="Assert True"/>
+    <munit:assert-on-equals message="The response payload is not correct!" expectedValue="&quot;GET RESPONSE&quot;" actualValue="#[payload]" doc:name="Assert Equals"/>
+</munit:test>
+
+<munit:test name="api-test-post" description="Test">
+    <munit:set payload="#['']" doc:name="Set Message"/>
+    <http:request config-ref="HTTP_Request_Configuration" path="/munit" method="POST" doc:name="HTTP"/>
+    <object-to-string-transformer doc:name="Object to String"/>
+    <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq(201))]" doc:name="Assert True"/>
+    <munit:assert-on-equals message="The response payload is not correct!" expectedValue="&quot;POST RESPONSE&quot;" actualValue="#[payload]" doc:name="Assert Equals"/>
+</munit:test>
+
+<munit:test name="api-test-put" description="Test">
+    <munit:set payload="#['']" doc:name="Set Message"/>
+    <http:request config-ref="HTTP_Request_Configuration" path="/munit" method="PUT" doc:name="HTTP"/>
+    <object-to-string-transformer doc:name="Object to String"/>
+    <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq(201))]" doc:name="Assert True"/>
+    <munit:assert-on-equals message="The response payload is not correct!" expectedValue="&quot;PUT RESPONSE&quot;" actualValue="#[payload]" doc:name="Assert Equals"/>
+</munit:test>
+
+<munit:test name="api-test-delete" description="Test">
+    <munit:set payload="#['']" doc:name="Set Message"/>
+    <http:request config-ref="HTTP_Request_Configuration" path="/munit" method="DELETE" doc:name="HTTP"/>
+    <object-to-string-transformer doc:name="Object to String"/>
+    <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq(200))]" doc:name="Assert True"/>
+    <munit:assert-on-equals message="The response payload is not correct!" expectedValue="&quot;DELETE RESPONSE&quot;" actualValue="#[payload]" doc:name="Assert Equals"/>
+</munit:test>
+----
+
+....
+------
+
+[[conclusion]]
+=== 结论
+
+此示例显示如何触发APIkit公开的端点的命中，以及为什么以这种方式测试端点很重要。与往常一样，您可以使用MUnit提供的工具： link:/munit/v/1.3/mock-message-processor[嘲笑]， link:/munit/v/1.3/spy-message-processor[间谍]， link:/munit/v/1.3/verify-message-processor[验证]， link:/munit/v/1.3/assertion-message-processor[断言]等，使您的测试尽可能复杂。
+
+== 自动创建测试套件
+
+虽然这个例子是为了展示如何从一开始就构建一个测试套件，但MUnit允许您根据您的RAML定义自动创建一个测试套件。 +
+这在 link:/getting-started/implement-and-test[实施和测试API快速入门]部分中进行了说明。
+
+根据{{​​0}}，MUnit的脚手架自动创建以下测试套件：
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:generated-test-suite.png[generated-test-suite]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:mock="http://www.mulesoft.org/schema/mule/mock" xmlns:munit="http://www.mulesoft.org/schema/mule/munit" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd http://www.mulesoft.org/schema/mule/mock http://www.mulesoft.org/schema/mule/mock/current/mule-mock.xsd ">
+    <spring:beans>
+        <spring:import resource="classpath:t-shirt.xml" />
+    </spring:beans>
+    <munit:config mock-connectors="false" mock-inbounds="false" />
+    <http:request-config name="HTTP_Request_Configuration" host="localhost" port="8081" basePath="/api" />
+    <munit:test name="get:/products:t-shirt-config-200-application/json-FlowTest" description="Verifying functionality of [get:/products:t-shirt-config-200-application/json]">
+        <http:request config-ref="HTTP_Request_Configuration" method="GET" path="/products">
+            <http:request-builder>
+                <http:header headerName="Accept" value="application/json" />
+            </http:request-builder>
+        </http:request>
+        <object-to-string-transformer doc:name="http response to string" />
+        <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq(200))]" doc:name="assert that - http.status eq 200" />
+        <munit:assert-on-equals message="The response payload is not correct!" expectedValue="#[getResource('scaffolder/response/get_200_products_application_json.json').asString()]" actualValue="#[payload]" doc:name="assert that - payload is as expected" />
+    </munit:test>
+    <munit:test name="get:/orders/status:t-shirt-config-200-application/json-FlowTest" description="Verifying functionality of [get:/orders/status:t-shirt-config-200-application/json]">
+        <set-variable variableName="orderId" value="#['4321']" doc:name="orderId" />
+        <set-variable variableName="email" value="#['max@mule.com']" doc:name="email" />
+        <http:request config-ref="HTTP_Request_Configuration" method="GET" path="/orders/status">
+            <http:request-builder>
+                <http:header headerName="Accept" value="application/json" />
+                <{{0}}]" />
+                <{{0}}]" />
+            </http:request-builder>
+        </http:request>
+        <object-to-string-transformer doc:name="http response to string" />
+        <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq(200))]" doc:name="assert that - http.status eq 200" />
+        <munit:assert-on-equals message="The response payload is not correct!" expectedValue="#[getResource('scaffolder/response/get_200_orders_status_application_json.json').asString()]" actualValue="#[payload]" doc:name="assert that - payload is as expected" />
+    </munit:test>
+    <munit:test name="post:/orders:application/json:t-shirt-config-200-application/json-FlowTest" description="Verifying functionality of [post:/orders:application/json:t-shirt-config-200-application/json]">
+        <set-payload value="#[getResource('scaffolder/request/post_orders_application_json.json').asString()]" />
+        <http:request config-ref="HTTP_Request_Configuration" method="POST" path="/orders">
+            <http:request-builder>
+                <http:header headerName="Accept" value="application/json" />
+                <http:header headerName="Content-Type" value="application/json" />
+            </http:request-builder>
+        </http:request>
+        <object-to-string-transformer doc:name="http response to string" />
+        <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq(200))]" doc:name="assert that - http.status eq 200" />
+        <munit:assert-on-equals message="The response payload is not correct!" expectedValue="#[getResource('scaffolder/response/post_200_orders_application_json.json').asString()]" actualValue="#[payload]" doc:name="assert that - payload is as expected" />
+    </munit:test>
+</mule>
+
+
+----
+....
+------
+
+根据API定义中的请求和响应示例，MUnit 1.3中捆绑的新RAML脚手架会生成位于`src/test/resources/scaffolder`中的外部文件。
+然后使用 link:/munit/v/1.3/mock-message-processor#loading-payloads-from-files-and-scripts[getResource MEL表达式]引用来自MUnit测试的请求和响应：
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image::example-testing-apikit-4dee9.png[]
+....
+[tab,title="XML or Standalone Editor"]
+....
+
+[source,xml,linenums]
+----
+<munit:test name="post:/orders:application/json:api-config-200-application/json-FlowTest" description="Verifying functionality of [post:/orders:application/json:api-config-200-application/json]">
+        <set-payload value="#[getResource('scaffolder/request/post_orders_application_json.json').asString()]" />
+        <http:request config-ref="HTTP_Request_Configuration" method="POST" path="/orders">
+            <http:request-builder>
+                <http:header headerName="Accept" value="application/json" />
+                <http:header headerName="Content-Type" value="application/json" />
+            </http:request-builder>
+        </http:request>
+        <object-to-string-transformer doc:name="http response to string" />
+        <munit:assert-true message="The HTTP Status code is not correct!" condition="#[messageInboundProperty('http.status').is(eq(200))]" doc:name="assert that - http.status eq 200" />
+        <munit:assert-on-equals message="The response payload is not correct!" expectedValue="#[getResource('scaffolder/response/post_200_orders_application_json.json').asString()]" actualValue="#[payload]" doc:name="assert that - payload is as expected" />
+</munit:test>
+----
+....
+------
+
+[NOTE]
+--
+根据RAML定义生成MUnit测试的Scaffolder不考虑您的应用程序是否使用 link:/mule-user-guide/v/3.8/tls-configuration[TLS配置]。 +
+如果您的应用程序使用配置为使用TLS的侦听器，那么在运行脚手架以生成MUnit套件时，您需要在测试中手动配置请求者以使用TLS。
+--
+
+如果您的API定义没有为您的查询参数或标题设置示例，则可以配置脚手架为您的MUnit测试设置默认值。 +
+转到*Preferences*，然后选择_Anypoint Studio_> _Munit_> _Scaffolder_并选择`Allow setting default values when scaffolding tests`。
+
+image::example-testing-apikit-8d4e2.png[]
+
+此外，您可以选择禁用请求/响应文件创建，以防您想在xml文件中定义它们。
+
+// 去做
+//默认设置值
+
+
+=== 支持RAML 1.0的脚手架
+
+脚手架没有使用一些新的RAML 1.0功能。例如，如果您定义了具有某种类型的元素，那么脚手架将不会生成具有该类型属性的负载（就像它使用JSON模式一样），它将生成一个空的负载。
+
+//这个脚手架对RAML 1.0的支持有限。下面列出了MUnit脚手架不支持的RAML 1.0功能列表：
+//
+// *安全方案
+// *数据类型操作：连接/联合/交点
+// *多个例子
+// *属性的空值
+// *使用"?"的可选属性
+// *完全导航资源类型，特征和类型
+//
+// RAML的功能1 MUnit Scaffolder不支持
+// *安全方案
+//
+//不支持java解析器（截至今天）的RAML 1的特性，我们也不支持：
+// *数据类型操作：连接/联合/交点
+// *多个例子
+// *属性的空值
+// *使用"?"的可选属性
+// *完全导航资源类型，特征和类型
+//
+//解析器不支持的其他功能（我们不关心）：
+// https://docs.mulesoft.com/release-notes/raml-1-early-access-support
+//
+// RAML的功能1 MUnit不用于：
+// *库
+// *覆盖/扩展
+// *注释
+
+[NOTE]
+--
+虽然 link:/munit/v/1.3/munit-coverage-report[应用范围]是基于您的应用程序由于执行测试而运行多少次的质量指标，但RAML（API）覆盖率指的是您的RAML定义有多少种情况以及有多少测试。
+
+所有可能的RAML API场景与实际的API实现之间没有硬关联。 +
+测试的脚手架尝试为API中的每个可能的路径创建测试场景。
+
+在任何情况下，都没有监视/报告工具可以显示你的raml api实现/覆盖了多少。
+--
+
+
+== 最后一分钟评论
+
+您可以在使用或不使用API​​网关的情况下在Mule运行时使用API​​kit。 API网关运行时1.3  -  2.x有一个 link:/api-manager/api-gateway-domain[域名为api-gateway]。
+
+了解如何使用域 link:/munit/v/1.3/munit-domain-support[这里]。
+

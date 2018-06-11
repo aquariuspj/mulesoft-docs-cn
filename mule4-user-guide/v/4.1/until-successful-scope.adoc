@@ -1,0 +1,105 @@
+= 直到成功范围
+:keywords: anypoint studio, studio, mule, until successful, reattempts, retry
+
+直到成功范围处理其中的组件，直到它们成功或耗尽最大重试次数。
+
+使用Until Successful的常见过程包括：
+
+* 例如，在调用可能存在可用性问题的远程Web服务时，调度到出站端点。
+* 执行组件方法，例如，在可能依赖不可靠资源的Spring bean上执行时。
+* 使用子流重新执行多个操作，直到它们全部成功。
+
+Until Successful范围提供了此表中描述的字段：
+
+[%header,cols="1,3"]
+|===
+| {属性{1}}说明
+|最大重试次数（`maxRetries`） |指定尝试的最大重试次数。错误如下所示：`Message: 'until-successful' retries exhausted.`
+|重试之间的毫秒数（`millisBetweenRetries`） |指定两次尝试处理之间的最小时间间隔（以毫秒为单位）。实际时间间隔取决于以前的执行情况，但不应超过此数字的两倍。默认值是60000毫秒（一分钟）。
+|===
+
+这个XML示例每秒最多允许五次重试。
+
+----
+<until-successful maxRetries="5"
+  doc:name="My Until Successful Component"
+  millisBetweenRetries="1000">
+    <!-- One or more processors here -->
+</until-successful>
+----
+
+////
+== 另请参阅
+
+link:about-components[关于Mule组件]
+link:/connectors[关于连接器]
+////
+
+////
+== 成功与失败
+[cols="30a,70a"]
+|===
+|失败 |直接成功范围内的消息处理器将引发异常或包含异常有效内容。另外，如果表达式在属性`failureExpression`中提供，并且它的计算结果为`true`。
+|成功 |直接成功范围内的任何消息处理器都不会抛出任何异常或包含异常有效负载，或者根本不返回任何消息（即，出口端点）。
+| _ conditional _  |如果配置了失败表达式，Mule会根据表达式计算返回消息，以动态确定操作是失败还是成功。
+|===
+
+=== 配置failureExpression
+
+如果范围失败，则创建`RetryPolicyExhaustedException`，并将其打包为`MessagingException`并传递给包含`Until Successful`元素的流的异常处理程序。
+
+以下说明如何配置直到成功范围返回的`failureExpression`：
+
+[source, xml, linenums]
+----
+<Until Successful objectStore-ref="objectStore"
+   failureExpression="#[message.inboundProperties['http.status'] != 202]"
+   maxRetries="6" secondsBetweenRetries="600">
+   <http:request config-ref="HTTP_Request_Configuration" path="flakey"
+     method="POST" doc:name="HTTP"/>
+</Until Successful>
+----
+
+=== 当所有Else失败时
+
+如果消息处理失败并且超过最大重试次数，则直到成功的消息处理器的默认行为包括记录消息详细信息并将其删除。
+
+如果您希望对丢弃的消息执行特定的操作（例如，将其存储在文件或数据库中），则可以配置“死信队列”端点“丢弃消息的发送位置。
+
+有关更多信息，请参阅<<Configuring a Dead Letter Queue>>。
+
+=== 配置死信队列
+
+要管理在Until Successful范围内已用尽`maxRetries`数量的消息，您可以定义Mule可以发送此类消息的DLQ（死信队列）端点。以下代码示例显示了如何使用VM端点接收已丢弃的消息。
+
+[source, xml, linenums]
+----
+<vm:endpoint name="dlqChannel" path="dlq" />
+
+<Until Successful objectStore-ref="objectStore"
+                  dlqEndpoint-ref="dlqChannel"
+                  maxRetries="3"
+                  secondsBetweenRetries="10">
+...
+</Until Successful>
+----
+
+配置DLQ的一个常见选项是做一个全局端点：
+
+[source,xml,linenums]
+----
+<vm:inbound-endpoint exchange-pattern="one-way" path="dlqChannel" name="dlqChannel" doc:name="dlqChannel"/>
+----
+
+然后有一个流程：
+
+[source,xml,linenums]
+----
+<flow name="dead-letter-queue-testFlow2" doc:name="dead-letter-queue-testFlow2">
+<vm:inbound-endpoint exchange-pattern="one-way" ref="dlqChannel" doc:name="VM"/>
+<logger level="WARN" doc:name="logger"/>
+</flow>
+----
+
+因此，直到成功的`deadLetterQueue-ref="dlqChannel"`指的是全局端点。
+////

@@ -1,0 +1,298 @@
+= 参数
+:keywords: mule, sdk, parameter
+
+参数是属于给定组件的可配置参数。 <<configs#, Configurations>>，<<module-structure#components, Components>>和<<connections#, Connection Providers>>被称为_parameterizables_，因为
+他们可以通过他们的参数进行配置。
+
+参数提供组件需要的信息，以便可以将其配置为正常工作。每个参数都包含以下信息：
+
+* 一种限制参数可以具有的值的类型。
+* 唯一标识它的名称。
+
+这是一个简单的例子：
+
+[source, java, linenums]
+----
+@Parameter
+private String foo;
+----
+
+一个参数可以被定义为一个类的一个字段或者一个方法的参数，
+取决于你正在处理的组件种类。
+
+例如，<<operations#, operation>>参数的定义与声明操作的方法的任何参数相同。它不需要用`@Parameter`进行注释。
+
+看看下面的`foo`。
+
+[source, java, linenums]
+----
+public void method(String foo){}
+----
+
+== 使用复杂类型
+
+这个例子使用更复杂的参数，而不是像字符串和整数这样的简单类型。
+
+[source, java, linenums]
+----
+@Parameter
+@Optional
+private Options options;
+----
+
+其中`Options`是`POJO Object`，定义为：
+
+[source, java, linenums]
+----
+public class Options {
+
+    @Parameter
+    public String color;
+
+    @Parameter
+    @Optional
+    public String mode;
+
+    public String getColor(){
+        return color;
+    }
+
+    public void setColor(String color){
+        this.color = color;
+    }
+
+    public String getMode(){
+        return mode;
+    }
+
+    public void setMode(String mode){
+        this.mode = mode;
+    }
+}
+----
+
+关于这个例子的一些注意事项：
+
+* 整个参数`Options`用作可选参数，所以如果您决定使用它，则需要确保`Options`中的所有必需参数都已设置。
+* 如果`Options`未配置，则其值将为`null`（请参阅<<null-safe#, NullSafe>>以更改此行为）。
+*  `Options`参数必须是Java bean属性（也就是说，它们需要具有与字段名称匹配的setter和getter）。
+
+=== 复杂类型DSL
+
+复杂类型应与常规参数分开。将所有复杂类型属性与特定于元素的参数合并是没有意义的。
+
+这就是为什么为复杂类型创建子定义的原因。此示例显示<<configs#, Configuration>>中的复杂`Options`类型：
+
+[source, xml, linenums]
+----
+<module:config name="config-name" someConfigAttribute="value">
+  <module:options color="BLUE" mode="DARK"/>
+</module:config>
+----
+
+请注意，`module:options`与参数`name`和`someConfigAttribute`是分开的。
+
+== 修饰符
+
+参数是高度可定制的。本部分确定了在定义参数以指定行为或限制时可以使用的一些修饰符。
+
+=== 表达式支持
+
+`ExpressionSupport`描述配置的值是DataWeave表达式时参数的行为。
+
+有三个可能的值：
+
+*  `REQUIRED`：该参数只接受表达式。
+*  `SUPPORTED`（默认）：该参数可以处理表达式和简单值。
+*  `NOT_SUPPORTED`：该参数需要静态值。表达式不受支持。
+
+这些值可以简单地通过添加`@Expression`注释来配置。
+
+[source, java, linenums]
+----
+@Parameter
+@Expression(SUPPORTED)
+private String foo;
+----
+
+上面的示例定义了一个名为`foo`的`String`类型的参数，该参数可以具有静态值（例如`"bar"`）或表达式（例如`"\#[vars.foo]"`）。
+
+=== 可选性
+
+参数可以是必需的或可选的。
+
+有时候，参数指定的信息对于你想要做的事情（例如，HTTP请求的主机名）非常重要，以至于没有设置它就无法继续。其他时候，您可以在没有这些信息的情况下运行，或者仅使用默认值（例如，HTTP侦听器中的端口为80）。
+
+默认情况下需要一个参数，除非您使用`@Optional`对其进行了注释，例如：
+
+[source, java, linenums]
+----
+@Parameter
+@Optional(defaultValue="80")
+private Integer port;
+----
+
+可选参数可以有一个默认值。
+
+请注意，`@Optional`只接受`String`值，但SDK会将其自动转换为您的参数类型。此外，如果参数支持表达式，则可以使用一个作为默认值。
+
+=== 使用@Alias
+
+每个参数的名称将是给定的字段的名称。您可以使用`@Alias`批注覆盖此名称。
+
+[source, java, linenums]
+----
+@Parameter
+@Optional
+@Alias("class")
+private String clazz;
+----
+
+请注意，使用`@Alias`可以使用Java保留项（例如`class`）来命名参数。您不能使用保留字词来命名字段。
+
+=== 自定义参数DSL
+
+可以使用`@ParameterDsl`注释来自定义参数在DSL中的外观和行为。
+该注释允许您设置关于生成的XML DSL的语法和语义的指令，
+它可以应用于模型中的任何参数。
+
+`@ParameterDsl`注释具有两个可配置元素：
+
+*  `allowInlineDefinition`：+
+  指示相关参数是否应支持内联定义作为子元素。
+  这用于自定义复杂类型参数的DSL，尤其是当您需要避免时
+  内嵌定义，因为它具有非法字段（如`name`字段）或结构
+  非常复杂，无法用内联表示。
++
+例如，如果您在<<configs#, Configuration>>中使用`Options`类型并声明参数
+与`@ParameterDsl(allowInlineDefinition=false)`，你不再有子元素：
++
+[source, xml, linenums]
+----
+<module:config name="config-name" someConfigAttribute="value" options="#[vars.options]"/>
+----
++
+*  `allowReferences`：+
+  指示相关参数在接收`String`时是否应支持注册表引用。
+  这对于控制参数在配置时的行为方式很有用，如果它的类型
+  参数未提供足够的信息来自动配置引用支持。
++
+例如，在JMS连接器中，如果您想避免让用户从中注入对象
+注册表作为`ConsumerType`配置，您声明它不支持引用：
++
+[source, java, linenums]
+----
+@Parameter
+@Optional
+@Expression(NOT_SUPPORTED)
+@ParameterDsl(allowReferences = false)
+private ConsumerType consumerType;
+----
+
+[[groups]]
+== 参数组
+
+`@ParameterGroup`注释允许您定义一组共享某种类型的参数
+在他们属于同一个群体时有意义的特殊关系。
+
+你如何发现它们？应该放入`@ParameterGroup`中的参数是
+那些总是*travel together*的。
+
+使用`@ParameterGroup`还可以使UI呈现呈现所有`@Parameters`
+把它们放在一个盒子里面，把它们与其他没有的`@Parameters`分开
+属于该组，例如：
+
+image::parameters/group.png[参数组]
+
+正如您在上面的图片中看到的那样，`Connection`组包含4个参数，
+还有其他像`Soap Version`不在该组中的其他人。这是一个不错的方法
+分开`Parameters`的关注点。
+
+一个简单的例子可以是一个参数组，定义如下：
+
+[source, java, linenums]
+----
+public class ConnectionProperties {
+
+    @Parameter
+    public String host;
+
+    @Parameter
+    @Optional(defaultValue="80")
+    public Integer port;
+
+    public String getHost(){
+        return host;
+    }
+
+    public void setHost(String host){
+        this.host = host;
+    }
+
+    public Integer getPort(){
+        return port;
+    }
+
+    public void setPort(Integer port){
+        this.port = port;
+    }
+}
+----
+
+上面的例子可以像这样使用：
+
+[source, java, lineums]
+----
+@ParameterGroup("Connection")
+private ConnectionProperties properties;
+----
+
+`"Connection"`是`@ParameterGroup`的名称，是将用于的名称
+UI。
+
+定义`properties` `@ParameterGroup`的类不会有名为`properties`的参数。
+相反，它将包含在`ConnectionProperties`中定义的参数：
+
+* 名为`host`的必需参数。
+* 名为`port`的可选参数。
+
+换句话说，定义参数组的类用这些额外的参数来扩充
+并将包含在`ConnectionProperties`中定义的参数以及所声明的所有其他参数。
+
+请注意，使用`@ParameterGroup`注释的每个字段必须是Java bean属性（即它需要让setter和getter与字段名匹配）。
+
+==  POJO与参数组
+
+可以对`@ParameterGroup`进行配置，以便将其写入DSL中的子元素
+而不是散布在声明它的组件周围。
+
+换句话说，假设这样的操作：
+
+[source, java, lineums]
+----
+public void execute(@ParameterGroup ConnectionProperties properties) { ... }
+----
+
+这是以上操作的DSL：
+
+[source, xml, linenums]
+----
+<example:execute host="localhost" port="8080">
+----
+
+但是，如果您使用`@ParameterGroup(showInDsl=true)`配置参数组，则DSL现在看起来像：
+
+[source, xml, linenums]
+----
+<example:execute message="Example message!">
+    <example:properties host="localhost" port="8080"/>
+</example:execute>
+----
+
+定义POJO `@Parameter`时，您会得到相同的DSL，因此您可能会问何时使用POJO而不是使用带有`@ParameterGroup`注释的POJO？
+
+这两个概念之间有一些细微的差别。如果你关心整体类型和它提供的结构，你应该使用POJO。
+
+例如，`ConnectionProperties`（上面）将两个参数保存在一起，因为它们始终配置在一起。在这种情况下，参数不代表模块域中的实体。 `@ParameterGroup`只是将相关的内容放在一起并将它们显示在用户界面中的简便方法。
+
+但是，上面定义的`Options` POJO关系到对象本身，而不仅仅是它包含的参数。例如，拥有`Options`列表是有意义的，因为每个对象都是独立的（在OOP意义上）。另一方面，如果仅仅为了将事物组合在一起而使用类，而对模块的域没有任何特别的意义，那么有一个参数组是有意义的。

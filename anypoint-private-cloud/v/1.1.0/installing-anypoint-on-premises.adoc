@@ -1,0 +1,767 @@
+= 在Premises Edition上安装Anypoint Platform
+:keywords:anypoint platform, on premises
+//在第319行插入到Mule代理安装文件的链接
+
+[WARNING]
+要安装此产品，请联系您的MuleSoft客户成功代表或客户经理，您必须先获得一个使您可以使用它的许可证。
+
+
+本节介绍如何安装*Anypoint Platform On-Premises Edition*。 Anypoint Platform On-​​Premises Edition提供许多 link:https://anypoint.mulesoft.com[Anypoint平台]在线版本中可用的功能，您可以在本地服务器上运行该功能，并且可以使用您需要的任何安全策略来保护该功能。
+
+== 假设
+
+本页假定您至少对基于Unix的系统和网络有基本的了解，并熟悉命令行。您还应该熟悉 link:https://docs.docker.com/engine/installation/[搬运工人]。
+
+
+== 概述
+
+
+Anypoint Platform可以通过<<Download Script Bundle,obtaining the installation ZIP file from MuleSoft>>下载并安装在本地。目前，Anypoint Platform On-​​premises Edition通过开放源代码虚拟化平台 link:https://docs.docker.com/engine/installation/[搬运工人]运行， link:http://rancher.com/rancher/[农场工人]也用于在生产环境中运行Docker容器。 Docker使用_containers_将应用程序包装在一个完整的文件系统中，包含运行所需的所有东西，包括运行时和配置数据。 MuleSoft提供Docker镜像，其中包含Anypoint Platform On-​​Premises Edition的不同组件 - 完成配置 - 您可以在Docker上运行该镜像。
+
+Docker在Linux上本地运行，但可以通过Linux虚拟机在OS X和Windows上使用它。您可以使用Docker支持的Linux发行版创建自己的虚拟机，或者下载并使用包含Docker Machine和Docker Compose的Docker Toolbox。 Docker Machine作为Docker运行的虚拟Linux机器的包装器。
+
+本文档包含一个简要的部分，介绍如何在您的操作系统上安装Docker，并完整地说明如何在您的Docker容器上下载和运行Anypoint Platform。
+
+使用Rancher，您可以根据需要运行每个无状态服务的许多副本，并且Rancher会自动在注册主机之间平衡它们。这就是说，你只会想要有一个单例服务实例（数据库，DBbackuper，mcm）。例如，如果您有3个主机注册，并且您想运行每个服务的2个副本，那么Rancher将自动确定哪些主机应该运行每个服务。
+
+image:rancher-struct.png[牧场结构]
+
+
+=== 系统要求
+
+[cols="2*a"]
+|===
+.2 + |操作系统
+| RHEL 7.1或更高版本
+| CentOS 7.1或更高版本
+0.2 + |存储
+`var/lib/docker` | 30 GB
+用于主目录的| 1 GB
+0.2 + |记忆
+|最低8GB的RAM
+建议使用| 16GB内存
+0.2 + |泊坞
+| Docker引擎1.8.0或更高版本
+| Docker Compose 1.3.1或更高版本
+.3 + |身份管理提供商
+| OpenAM 11.0或更高版本
+| LDAP v3
+| Ping Federate 6.10,7.1或7.2。
+|网络端口| TCP：80,8080,8081,443,8443,9999
+|  |  UPD：500,4500
+|===
+
+
+[WARNING]
+您需要有Docker 1.8或更高版本。
+
+按照适用于您系统的码头安装说明进行操作。 https://docs.docker.com/engine/installation/
+
+=== 下载脚本包
+
+根据您希望安装的内容，下载以下一揽子配置文件和脚本：
+
+*  link:_attachments/anypoint-platform-1.1.1.zip[Anypoint Platform On Premise Edition]：用于安装Anypoint Platform的全部功能，包括API管理工具。
+
+这些.zip文件包含运行Anypoint Platform所需的所有配置和安装脚本。
+
+===  Docker上Anypoint平台的架构
+
+[TIP]
+有关Docker的更详细的解释，请参阅 link:https://docs.docker.com/engine/understanding-docker/[Docker文档]。
+
+Docker使用服务器 - 客户端体系结构。它在存储docker _images_的Linux主机上作为守护程序运行。泊坞窗图像是一个包含环境和应用程序的模板。使用客户端应用程序，您可以告诉Docker守护程序从特定映像运行_container_。容器是一个虚拟操作系统，在运行时根据您指定的图像提供的模板构建。容器运行图像的应用程序，例如Web服务器。
+
+Anypoint Platform On-​​Premises是_multi容器应用程序_，即其模块占用多个容器。 Anypoint Platform使用https://docs.docker.com/compose/[Docker Compose]，这个工具允许您使用单个命令启动或关闭多容器应用程序。如果您使用的是Docker Toolbox，那么它已经包含了Docker Compose。
+
+要运行Anypoint Platform On-​​Premises，您需要：
+
+* 原生或在虚拟机上安装Docker v1.8或更高版本
+* 安装Docker Compose
+* 订阅并登录到MuleSoft Docker存储库，下载适用于Anypoint Platform的Docker镜像
+* 运行Anypoint平台
+* 运行一个命令，使用一组初始用户对验证数据库进行验证
+* 登录到Anypoint平台
+
+这些步骤在下面详述。
+
+== 安装Docker和Rancher
+
+link:http://www.docker.com[搬运工人]在Linux上本地运行，包括Debian，Ubuntu，Red Hat，CentOS，Oracle等。
+
+Docker也可以使用Docker Toolbox在OS X（10.6 "Snow Leopard"及以上）和Windows（7和8.1）上运行。但是，我们只建议使用Mac或Windows进行演示。下载OS X和Windows的指令的链接使用Docker Toolbox。
+
+有关安装Docker的说明：
+
+*  link:https://docs.docker.com/engine/installation/[Linux的]（检查支持的发行版的链接）
+*  link:https://docs.docker.com/engine/installation/mac/[OS X]（10.6 "Snow Leopard"及以上）
+*  link:https://docs.docker.com/engine/installation/windows/[视窗]（7和8.1）
+
+其他资源：
+
+*  link:https://docs.docker.com/engine/userguide/[Docker用户指南]
+
+=== 安装Docker Compose
+
+请按照 link:https://docs.docker.com/compose/install/[Docker Compose安装]中列出的说明进行操作
+
+==== 将平台配置文件复制到`/opt/config`
+
+Anypoint Platform配置文件必须位于每台主机上的可预测位置，因为Rancher在任何可用主机上动态启动服务。这意味着它不会像docker-compose那样从当前工作目录中找到配置文件。已选择`/opt/config`作为存储平台配置文件的默认目录，因此您需要下载 link:_attachments/anypoint-platform.zip[任何平台在Premsies]并将config目录复制到`/opt`文件夹中。在您要设置的每台主机上重复此过程。
+
+[source]
+----
+> cd anypoint-platform
+> sudo cp -r config /opt/.
+----
+
+====  Rancher服务器安装：
+
+在指定的计算机上运行牧羊人服务器以承载它。它占用一个码头集装箱。
+
+[source]
+----
+> sudo docker run -v /opt/config/logos/:/usr/share/cattle/war/assets/images/logos -d --restart=always -p 9999:8080 rancher/server:v1.0.1
+----
+
+几分钟后，服务器将会运行，并允许您在选择víaHTTP的浏览器上访问用户界面：`http://$SERVER_IP:9999`
+
+image:rancher-welcome.png[牧场主欢迎]
+
+您现在已经启动并运行了服务器。从这里开始，本教程将使用UI而不是终端来管理安装。
+
+==== 注册主机：
+
+确保Docker和Docker构成已安装在机器中。这台机器将作为主机运行MuleSoft软件。在这台机器上打开一个终端。
+
+从UI顶部导航栏重新回到浏览器，点击*INFRASTRUCTURE*，然后点击*HOSTS*。您将看到一个显示所有注册主机的屏幕。此时，您将看不到任何注册的机器。
+
+image:add-host.png[添加主机]
+
+点击ADD HOST按钮添加一个主机。在下一页中，UI将要求您提供主机应用于连接到服务器的基本URL。默认情况下，它将使用您的浏览器当前所在的URL，这应该没问题，因此请按*Save*转到下一页。
+
+image:add-host2.png[添加host2]
+
+有几种方法可以自动配置来自不同云提供商的主机。由于您已经配置了自己的服务器，因此我们不会使用任何这些服务器。点击CUSTOM图标，它会给你一个命令在主机上运行。复制并粘贴到您的终端中，以便向服务器注册主机（这将在主机上运行Rancher代理Docker镜像）。点击*close*。等待一会儿，然后返回到主机的屏幕，您将看到主机已注册到服务器，并且已准备好接收命令。
+
+image:add-host3.png[添加主机3]
+
+image:add-host4.png[添加主机4]
+
+您要添加到群集中的主机之一需要被指定为“数据库”主机，这将确保故障切换场景的正确容器放置。选择您的指定主机并通过单击向下箭头打开其下拉菜单，选择“编辑”并添加以下标签：
+
+[source]
+----
+"database_role" = "a"
+----
+
+image:rancher-assign-db1.png[分配数据库]
+
+image:rancher-assign-db2.png[分配db2]
+
+您还需要添加应用程序主机。为此，您需要向主机添加标签以指定app_role = any。您可以在同一台主机上（1​​6GB RAM）执行数据库和应用程序，但对于生产用途，我们建议将数据库和应用程序分开。
+
+[source]
+----
+"app_role" = "any"
+----
+
+使用该标签，所有应用程序容器将在该主机中执行。您可以添加多个应用程序主机。
+
+
+您可以验证主机现在在主机屏幕上查看时显示此标签。
+
+
+
+[NOTE]
+确保正确的*one*单个主机连接了此标签。
+
+image:rancher-assign-db-confirm.png[确认活动]
+
+===  Docker注册表设置
+
+
+虽然Docker注册表可以手动添加到Rancher管理的每台主机上，但最好将“docker.mulesoft.com”添加到平台上以确保该注册表在Rancher控制下的所有节点上都存在。这样Rancher就可以在任何主机上自行拖拉MuleSoft图像，而无需用户干预。
+
+在Rancher用户界面中，点击用户界面右上角的图标，然后选择*Registries*
+
+image:add-registry1.png[选择注册表]
+
+image:add-registry2.png[选择注册表]
+
+. 创建一个新的“自定义”注册表。您应该输入具有适当权限的Anypoint凭据来提取图像。
+
++
+image:add-registry3.png[习惯]
+
+
+. 确认您创建的新注册表现在处于活动状态
+
++
+image:add-registry3.png[校验]
+
+
+. 要在每台主机上添加Docker注册表，请在每台主机上登录并使用命令行拖出MuleSoft图像。发行版中包含的脚本`pull-docker-images.sh`有助于提取所有图片。
+
+[NOTE]
+====
+我们使用我们自己的内部码头注册表。要下载这些图片，您需要将适当的权限添加到您的Anypoint帐户。如果您还没有这些服务，请联系客户代表（CSM或AE），他们将指导您完成供应流程。
+====
+
+==== 可选：在平台配置中重新生成证书，密钥和密钥库
+
+在本文档中包含可供下载的两个zip文件的情况下，有一组默认的加密密钥，自签名证书和密钥库供平台出于安全目的使用，例如在mule /网关运行时注册期间签署证书。开箱即用，这个平台使用这些默认文件可以正常工作，但是如果您希望用新生成的文件替换它们以提高安全性，我们已经包含一个脚本来自动执行此过程。
+
+[source]
+----
+> cd anypoint-platform
+> keystore-generation.sh
+----
+
+按照屏幕提示进行操作。请注意，一旦执行，将从名为`truststore.jks)`的流程生成一个新文件。对于您希望注册到控制台的所有运行时，此文件是 link:/mule-user-guide/v/3.8/mule-agents[骡子代理]所必需的，因为代理使用双向SSL验证。在注册运行时之前，您必须将该文件复制到该运行时的`conf/`文件夹中。
+
+
+==== 将平台配置文件复制到`/opt/config`
+
+确保您已在每台注册的主机中的`/opt/config`中复制配置文件。
+
+
+=== 上传SSL证书
+
+Anypoint平台创建负载均衡器，使SSL终止。默认情况下，Rancher配置文件依赖于名为“mulesoft-demo”的现有SSL证书。要上传其密钥和证书，请在Rancher打开INFRASTRUCTURE  - > CERTIFICATES并单击*Add Certificate*按钮。然后上传或插入密钥和证书。
+
+image:rancher-add-certificate.png[添加证书]
+
+[NOTE]
+====
+如果您的证书名称不是“mulesoft-demo”，则需要在rancher-compose.yml文件中修改以下行：
+
+[source, yaml]
+----
+nginx-ssl-lb:
+  scale: 1
+  default_cert: mulesoft-demo
+----
+
+====
+
+image:rancher-add-certificate2.png[添加证书]
+
+=== 通过用户界面运行平台
+
+首先，点击顶部导航栏上的*Applications*链接，然后点击*Add Stack*按钮。
+
+image:rancher-add-stack.png[添加堆栈]
+
+为新创建的堆栈命名（作为建议，将其命名为`anypoint-platform`），并加载作为开始时附加的两个.zip软件包中的一部分的`docker-compose-single-db.yml`和`rancher-compose.yml`文件本文件。这相当于“rancher-compose create”命令。
+
+image:rancher-add-stack2.png[添加堆栈2]
+
+完成此操作后，您可以返回堆栈屏幕，您将可以看到在您使用的堆栈名称下创建的Anypoint Platform的所有图像。这些图像尚未运行，但已使用您提供的信息创建了堆栈。要运行平台，请点击堆栈的*Options*图标，然后选择*Start Services*。
+
+image:rancher-start-services.png[开始服务]
+
+这些服务需要几分钟的时间才能联机。服务启动并准备就绪后，图标将缓慢变绿。
+
+image:rancher-start-services2.png[开始服务2]
+
+一旦图像全部处于活动状态（混合休眠除外，其将在执行种子脚本之前保持退化状态）。您的堆栈屏幕将如下图所示：
+
+image:rancher-start-services3.png[开始服务3]
+
+=== 迁移和种子数据库
+
+现在所有服务都已启动并运行，您可以运行迁移并为验证，对象存储和api平台数据库创建种子。有两种方法可以做到这一点：
+
+. 最简单的方法是运行`seed-database.sh`脚本，您可以下载这两个包中的.zip文件。该脚本按顺序运行所有3个迁移。
++
+[NOTE]
+该脚本仅适用于所有服务都在1台主机上运行的情况。
+
+. 如果服务在不同的主机上运行，​​那么您应该使用下面描述的手动方法。
+
+==== 使用seed-database.sh
+
+在这两个.zip包文件中，都有一个名为`seed-database.sh`的文件。将此文件复制到运行所有服务的主机并从终端运行。它按顺序执行所有必要的迁移。
+
+==== 手动迁移数据库并进行种子设定
+
+Rancher可以很容易地通过UI向任何容器打开终端窗口，您可以通过手动执行迁移命令。
+
+. 在您的活动服务中，找到*authentication*服务。将鼠标悬停在正在运行的容器上，然后单击下拉菜单中的图标。然后点击*Execute Shell*打开容器内的终端。
+
++
+image:rancher-execute-shell.png[执行shell]
+
+. 在终端窗口中，运行以下命令来迁移并为数据库创建种子。它会在完成时通知您并报告任何错误。
++
+[source]
+----
+> npm run grunt -- seedprem
+----
++
+image:rancher-shell1.png[抽壳]
+
++
+image:rancher-shell2.png[shell2]
+
+. 使用*objectstore*服务重复这些步骤，但是这次运行以下命令：
+
++
+[source]
+----
+> npm run knex -- migrate:latest
+----
+
++
+image:rancher-shell3.png[shell3]
+
++
+. 对*api-platform*服务重复相同的步骤，并运行与对象库服务相同的命令：
+
++
+[source]
+----
+> npm run knex -- migrate:latest
+----
+
+. 对*exchange*服务重复相同的步骤，并运行与对象库服务相同的命令：
+
++
+[source]
+----
+> npm run gulp -- migrate-latest
+----
+
+. 对*hybrid-rest*服务重复相同的步骤以打开终端并在下面运行此命令来为其数据库创建种子。如果服务标记为*degraded*，请不要惊慌，因为这意味着服务使用的数据库尚未准备好。
+
++
+[source]
+----
+> /usr/local/bin/migrate.sh
+----
+
+. 最后一步是在迁移后重新启动混合休眠服务，以便它可以在启动时验证模式并正确初始化自身。要完成此操作，请将牧场主ui导航回*hybridrest*服务，然后单击顶部的*stop*按钮以停止此服务。服务停止后，按钮将变为可用于重新启动服务的*start*按钮。它应该呈现为绿色且正在运行。
+
+恭喜！您现在已经安装了在Docker上运行的Anypoint Platform。
+
+== 登录到Anypoint平台
+
+要首次登录Anypoint平台，请将浏览器指向以下URL：
+
+[code, bash, linenums]
+----
+https://$PLATFORM_URL/accounts/#/setup
+----
+
+确保使用`https`而不是`http`，否则登录无效。
+
+当您首次登录Anypoint Platform时，Anypoint Platform会提示您创建组织和用户。
+
+在创建组织和用户之后，要登录到Anypoint Platform，系统将提示您使用刚刚创建的用户帐户登录。
+
+随后，要登录到Anypoint Platform，您可以转到`https://$PLATFORM_URL`。
+
+此时，您可以开始创建组织，添加服务器，邀请用户等。
+
+有关管理API平台的详细信息，请参阅 link:/access-management/[Anypoint平台管理]。
+
+
+=== 扩展到多个主机
+
+Rancher允许您在多个主机之间分发容器，并使其对客户完全透明。缩放非常简单：
+
+. 确保您的基础架构拥有多台主机 - 您可以在下面看到一个示例。您可以通过访问*Infrastructure*  - > *Hosts*来查看
+
++
+image:rancher-multi-host.png[多主机]
+
++
+[NOTE]
+如果你只有一台主机，缩放在技术上仍然是可能的，但不是很实用。
+
+. 确保所有主机上都存在该平台的所有配置文件。您可以复制它们，或者最好放在NAS上并将共享挂载到所有主机上的`/opt`文件夹中。
+. 转到*Applications*  - > *Stacks*并选择您要缩放的服务。
+
++
+[NOTE]
+====
+在添加主机时，平台将自动在新主机中为可扩展平台的所有部分创建冗余服务。
+====
+
+外部设备上的===  SSL终端：
+
+如果要为外部设备上的Anypoint Platform流量进行SSL加密，并且不需要HTTPS入口点（`nginx-ssl-lb`  - 默认的SSL负载均衡器），则可以创建额外的负载均衡器而不使用SSL加密。
+
+. 在Rancher上打开*APPLICATION*  - > *STACK*并点击`Add Stack`按钮
+
++
+image:rancher-applications-add-stack.png[添加堆栈]
+
+. 键入此堆栈的名称，例如“ExternalSSL”，然后单击*Create*
+
++
+image:rancher-application-add-stack2.png[添加堆栈]
+
+. 点击*Add Service*菜单的右侧部分，然后选择*Add Load Balancer*
+
++
+image:rancher-application-add-stack3.png[添加stack3]
+
+. 将其配置为纯HTTP负载平衡，如下例所示：
++
+[%header,cols="2*a"]
+|===
+| *Scale*  | 总是在每个主机上运行此容器的一个实例（*推荐选项）
+| *Name*  |  HTTP磅
+用于Anypoint平台的| *Description*  | 普通http负载均衡器（*可选）
+| *Source Port*  |  80
+| *Protocol*  |  TCP
+| *Default Target Port*  |  80
+| *Access*  | 公共
+| *Target Service*  |  nginx的
+|===
+
+. 然后点击*Save*
++
+image:rancher-add-load-balancer.png[负载均衡器]
+
+. 确认服务处于活动状态（可能需要几分钟时间）
+
++
+image:rancher-add-load-balancer2.png[负载均衡器]
+
+
+== 身份管理配置
+
+===  OpenAM配置（版本12）
+
+以下是OpenAM配置。请替换$ OPEN_AM_URL和@PLATFORM_URL以获取合适的网址。
+
+*Identity Federation Service Provider*
+[%header,cols="2*a"]
+|===
+|登录网址 |  https：// $ OPEN_AM_URL：8443 / openam / saml2 / jsp / idpSSOInit.jsp？spEntityID = $ PLATFORM_URL＆metaAlias = / idp
+|注销url  |  https：// $ OPEN_AM_URL：8443 / openam / saml2 / jsp / spSingleLogoutInit.jsp？binding = urn：oasis：names：tc：SAML：2.0：bindings：HTTP-重定向和idpEntityID = $ PLATFORM_URL＆metaAlias = / IDP及的RelayState = HTTP：//mulesoft.com
+|===
+
+*Admin Token Provider*
+[%header,cols="2*a"]
+|===
+|创建网址 |  https：// $ OPEN_AM_URL：8443 / openam / json / authenticate
+| {用户名{1}}管理员
+| {密码{1}} 11111
+|===
+
+*OAuth2 Authorization Provider*
+[%header,cols="2*a"]
+|===
+|授权网址 |  https：// $ OPEN_AM_URL：8443 / openam / oauth2 / authorize
+|===
+
+*OAuth2 Token Provider*
+[%header,cols="2*a"]
+|===
+|创建网址 | https：// $ OPEN_AM_URL：8443 / openam / oauth2 / access_token
+|===
+
+*OAuth2 Token Validation Provider*
+[%header,cols="2*a"]
+|===
+|验证URL  |  https：// $ OPEN_AM_URL：8443 / openam / oauth2 / tokeninfo
+|用户名令牌映射 |
+|===
+
+*OAuth2 Client Provider*
+[%header,cols="2*a"]
+|===
+|创建Url  |  https：// $ OPEN_AM_URL：8443 / openam / frrest / oauth2 / client /？_action = create
+|删除网址 |  https：// $ OPEN_AM_URL：8443 / openam / frrest / oauth2 / client / {{client_id}}
+|范围 | cn，sn，邮件​​，uid，givenName
+|默认范围 | cn，sn，mail，uid，givenName
+|===
+
+*SAML 2.0*
+[%header,cols="2*a"]
+|===
+| {发行{1}} test.openam
+|公钥 | asdfasdfasdfasdfasdfasdfasfasdfasdfasdfsfas
+|观众 |  $ PLATFORM_URL
+|绕过过期 | 取消选中
+|组属性 |
+|===
+
+*SSO with an example user*
+
+转到`https://$PLATFORM_URL/accounts/login/<domain>``（您可以点击“齿轮”图标，然后点击*Organization*标签，然后点击主组织）找到域。
+然后使用您的用户名和密码登录OpenAM。
+
+===  OpenAM配置（版本11）
+
+*Identity Federation Service Provider*
+[%header,cols="2*a"]
+|===
+|登录网址 |  https：// $ OPEN_AM_URL：8443 / openam / saml2 / jsp / idpSSOInit.jsp？spEntityID = $ PLATFORM_URL＆metaAlias = / idp
+|注销url  |  https：// $ OPEN_AM_URL：8443 / openam / saml2 / jsp / spSingleLogoutInit.jsp？binding = urn：oasis：names：tc：SAML：2.0：bindings：HTTP-重定向和idpEntityID = $ PLATFORM_URL＆metaAlias = / IDP及的RelayState = HTTP：//mulesoft.com
+|===
+
+*Admin Token Provider*
+[%header,cols="2*a"]
+|===
+|创建网址 |  https：// $ OPEN_AM_URL：8443 / openam / json / authenticate
+| {用户名{1}}管理员
+| {密码{1}} 111111
+|===
+
+*OAuth2 Authorization Provider*
+[%header,cols="2*a"]
+|===
+|授权网址 |  https：// $ OPEN_AM_URL：8443 / openam / oauth2 / authorize
+|===
+
+*OAuth2 Token Provider*
+[%header,cols="2*a"]
+|===
+|创建网址 |  https：// $ OPEN_AM_URL：8443 / openam / oauth2 / access_token
+|===
+
+*OAuth2 Token Validation Provider*
+[%header,cols="2*a"]
+|===
+|验证URL  |  https：// $ OPEN_AM_URL：8443 / openam / oauth2 / tokeninfo
+|用户名令牌映射 |
+|===
+
+*OAuth2 Client Provider*
+[%header,cols="2*a"]
+|===
+|创建Url  |  https：// $ OPEN_AM_URL：8443 / openam / frrest / oauth2 / client /？_action = create
+|删除网址 |  https：// $ OPEN_AM_URL：8443 / openam / frrest / oauth2 / client / {{client_id}}
+|范围 |  cn，sn，邮件​​，uid，givenName
+|默认范围 |  cn，sn，mail，uid，givenName
+|===
+
+*SAML 2.0*
+[%header,cols="2*a"]
+|===
+| {发行{1}} test.openam
+|公钥 |  asdfasdfasdfasdfasdfasdfasfasdfasdfasdfsfas
+|观众 |  $ PLATFORM_URL
+|绕过过期 | 取消选中
+|组属性 |
+|===
+
+*SSO with an example user*
+转到`https://$PLATFORM_URL/accounts/login/<domain>``（您可以点击“齿轮”图标，然后点击*Organization*标签，然后点击主组织）找到域。
+然后使用您的用户名和密码登录OpenAM。
+
+===  Ping联合配置（版本6.10）
+
+以下是PingFederate配置。请用合适的网址替换$ PING_FEDERATE_URL和$ PLATFORM_URL。
+
+*Identity Federation Service Provider*
+[%header,cols="2*a"]
+|===
+|登录网址 |  https：// $ PING_FEDERATE_URL：9031 / idp / startSSO.ping？PartnerSpId = $ PLATFORM_URL
+|退出网址 |  https：// $ PING_FEDERATE_URL：9031 / idp / SLO.saml2
+|===
+
+*OAuth2 Authorization Provider*
+[%header,cols="2*a"]
+|===
+|授权网址 |  https：// $ PING_FEDERATE_URL：9031 / as / authorization.oauth2
+|===
+
+*OAuth2 Token Provider*
+[%header,cols="2*a"]
+|===
+|创建网址 |  https：// $ PING_FEDERATE_URL：9031 / as / token.oauth2
+|===
+
+*OAuth2 Token Validation Provider*
+[%header,cols="2*a"]
+|===
+|验证网址 |  https：// $ PING_FEDERATE_URL：9031 / as / token.oauth2
+|用户名令牌映射 |
+|===
+
+*OAuth2 Client Provider*
+[%header,cols="2*a"]
+|===
+|创建Url  |  https：// $ PING_FEDERATE_URL：9031 / pf-ws / rest / oauth / clients
+|删除网址 |  https：// $ PING_FEDERATE_URL：9031 / pf-ws / rest / oauth / clients / {{client_id}}
+| {用户名{1}}管理员
+| {密码{1}} 11111
+|===
+
+*SAML 2.0*
+[%header,cols="2*a"]
+|===
+| {发行{1}} dev.mulesoft.com
+|公钥 |  asdfasdfasdfasdfasdfasdfasfasdfasdfasdfsfas
+|观众 |  $ PLATFORM_URL
+|绕过过期 | 取消选中
+|组属性 |  memberOf
+|===
+
+*SSO with an example user*
+转到`https://$PLATFORM_URL/accounts/login/<domain>``（您可以点击“齿轮”图标，然后点击*Organization*标签，然后点击主组织）找到域。
+然后使用您的用户名和密码登录OpenAM。
+
+===  LDAP配置
+
+以下是LDAP配置。您可以使用自己的LDAP，因为它是完全可配置的，并且也支持LDAP。
+
+*Connection*
+[%header,cols="2*a"]
+|===
+| {主机{1}} LDAP：// $ LDAP_URL
+| {端口{1}} $ LDAP_PORT
+|绑定DN  |  cn = Manager，dc = muleforge，dc = org
+| {密码{1}} examplepass
+| {connectTimeoutSeconds {1}} 10
+| {operationTimeoutMs {1}} 30000
+|===
+
+*Search Bases*
+[%header,cols="2*a"]
+|===
+| {用户{1}} OU =人，DC = muleforge，DC =有机
+| {组{1}} OU =基团，DC = muleforge，DC =有机
+|===
+
+*DNs*
+[%header,cols="2*a"]
+|===
+| {用户{1}} UID = {{用户名}}，OU =人，DC = muleforge，DC =有机
+| {组{1}} CN = {{组名}}，OU =基团，DC = muleforge，DC =有机
+|===
+
+*Filters*
+[%header,cols="2*a"]
+|===
+| {userByUsername {1}}（＆（objectClass的=为inetOrgPerson）（UID = {{用户名}}））
+| {userByEmail {1}}（＆（objectClass的=为inetOrgPerson）（邮件= {{电子邮件}}））
+| {groupByGroupName {1}}（＆（objectClass的= groupOfUniqueNames的）（CN = {{组名}}））
+| {groupsByUsername {1}}（＆（objectClass的= groupOfUniqueNames的）（uniqueMember = UID = {{用户名}}，OU =人，DC = muleforge，DC = ORG））
+|===
+
+*User Field Mappings*
+[%header,cols="2*a"]
+|===
+| {用户名{1}} UID
+|电子邮件 | 邮件
+| {的firstName {1}}给定名称
+| {lastName的{1}} SN
+| ID为 |  entryUUID
+|===
+
+*Group Field Mappings*
+[%header,cols="2*a"]
+|===
+| {组名{1}} CN
+| ID为 |  entryUUID
+|===
+
+=== 重置管理员用户的密码
+
+将密码重置令牌添加到数据库中。为了简单起见，我们将代码的值设置为用户的名字。请将admin更改为您在设置步骤中创建的管理员用户的实际用户名。在数据库主机上执行以下操作：
+
++
+[source]
+----
+> docker exec -it $(docker-compose ps -q authdb | head -n 1) psql -Udocker ms_authentication -c "insert into recover_codes (user_id, recover_code) (select id, username from users where username='admin');"
+----
+
+通过导航到以下链接输入新密码。请将主机更改为您用于安装的主机名。将管理员更改为您在设置步骤中创建的管理员用户的用户名。 `https://anypoint.mulesoft.local/accounts/#/new-password?code=admin`
+
+
+=== 创建备份和恢复
+
+您可以备份Anypoint Platform使用的Postgres数据库。数据库目录是使用安装在数据库容器可以运行的所有主机上的`/opt/dbs`上的外部存储自动创建的。
+
+要开始将数据转储到这些数据库，请运行以下命令：
+
+[source]
+----
+$pg_dumpall -c -h $i -U username > DATABASE.dump
+----
+
+在这里，您必须用您的实际用户名替换用户名，用数据将存储的文件替换DATABASE.dump。
+
+
+[TIP]
+有关'pg_dump'命令的完整概述，请参阅 link:http://www.enterprisedb.com/docs/en/8.4/pg/app-pgdump.html[PostgreSQL的文档]。
+
+
+如果您需要从备份中恢复数据库，请运行以下命令：
+
+[source]
+----
+pg_resore -U username DATABASE.dump
+----
+
+在这里，您必须用您的实际用户名替换用户名，用数据将存储的文件替换DATABASE.dump。
+
+[NOTE]
+在执行恢复时，请谨慎操作恢复到的位置，并遵循组织中有关备份恢复的任何策略。
+
+要打开其中一个数据库的内容，可以使用以下命令：
+
+[source]
+----
+cat $DIR/DATABASE.dump | psql -U username -d DATABASE
+----
+
+
+
+
+== 将服务器添加到您的Anypoint Platform内部部署
+
+[[download_agent]]
+=== 下载适用于Anypoint Platform Mule Agent的On-Prem
+
+要将服务器添加到本地Anypoint Platform，您需要 link:http://mule-agent.s3.amazonaws.com/1.3.1/mule-agent-1.3.1.zip[下载]并安装该代理。
+
+. 将` mule-agent-[VERSION].zip`解压缩到`$MULE_HOME/bin`文件夹。
++
+[INFO]
+====
+代理zip文件包含这3个文件 -  `amc_setup`文件安装Mule代理插件。
+
+*  `amc_setup`  -  Mac和Linux安装文件
+*  `amc_setup.bat`  -  Windows安装文件
+*  `agent-setup-<version>.jar`  - 由安装文件调用
+====
+
+在完成API平台中的所需步骤后，您必须从此位置运行它，如下所述。
+
+=== 获取服务器的令牌
+
+有关本部分中概述的步骤的完整说明，请参阅 link:/runtime-manager/managing-servers#add-a-server[管理服务器]。
+
+在您的Anypoint Platform On-​​premise Edition安装中，单击导航栏中的*Applications*并选择您的环境。然后，在左侧菜单中选择*Servers*。
+
+Anypoint Platform为您提供了一个通用命令，用于在Mule服务器上安装Mule代理，并将服务器与Anypoint Platform配对。该命令包含一个令牌，用`-H`参数表示。
+
+一个示例命令如下所示：
+
+[code, bash, linenums]
+----
+./amc_setup -H 9658e868-[redacted]-d84e1116b585---1 server-name
+----
+
+将命令复制到剪贴板。在Mule服务器所在的机器上打开终端并转至`$MULE_HOME/bin`。在这里，您应该已经放置了Mule代理安装程序的副本（请参阅<<download_agent,above>>）。
+
+在`$MULE_HOME/bin`目录中，粘贴给定的命令并追加以下参数：
+
+[code, bash, linenums]
+----
+./amc_setup -H <token> <server name> -A http://$DOCKER_IP_ADDRESS:8080/hybrid/api/v1 -W "wss://<Anypoint Platform host>:8443/mule" -C https://<AnypointPlatform host>/accounts -F https://<Anypoint Platform host>/apiplatform
+----
+
+哪里：
+
+*  `<Anypoint Platform host>`：Anypoint Platform所在机器的IP地址或网络主机名
+*  `<token>`：Anypoint Platform为您的服务器提供的令牌
+*  `<server name>`：Anypoint Platform平台上您的服务器的所需名称

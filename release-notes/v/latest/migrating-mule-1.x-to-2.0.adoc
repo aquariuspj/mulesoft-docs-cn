@@ -1,0 +1,453 @@
+= 将Mule 1.x迁移到2.0
+:keywords: release notes
+
+本页介绍Mule 2.0中的主要配置和代码更改，以帮助Mule 1.x用户理解发布之间的变化。有关新功能和更改的更多信息，请参阅此版本中的新增功能。
+
+Mule 2.0的主要新功能是利用 http://static.springframework.org/spring/docs/2.0.x/reference/extensible-xml.html[Spring的可扩展XML创作]的强大的基于模式的新配置风格。 +
+新格式看起来与Mule 1.x格式相似，从Mule 1.x升级到2.x相当简单。此页面将帮助您开始使用。
+
+== 快速参考
+
+本节提供了从1.x到2.x的更改的快速参考。
+
+===  XML配置更改
+
+以下是XML配置中的一些高级更改。有关详细信息，请参阅下面的<<Configuration Changes>>。
+
+[%header,cols="2*"]
+|===
+| {1.x的{1}} 2.x的
+|拦截器 |支持从Mule 2.1.0开始
+| Mule实现是属性 | Mule实现是元素
+| Mule描述符实现是明确需要的 |服务组件配置是可选的。 PassThroughComponent是默认值。
+|端点：地址或名称属性 |端点：地址，名称或新路径属性
+|===
+
+=== 代码更改
+
+有关这些更改的详细信息，请参阅此版本中的新增功能。
+
+[%header,cols="2*"]
+|===
+| {1.x的{1}} 2.x的
+
+|  org.mule.umo。*
+在大多数情况下，|  org.mule.api。*
+
+|  org.mule.providers。*
+|  org.mule.transport。*。
+
+|  org.mule.extras。*
+|  org.mule.module.NAME。*
+
+| 包名称是单数/复数
+| 包名称是单数
+
+|  MuleClient.receive（...）
+|  MuleClient.request（...）
+
+|  MuleManager实用程序类
+通过生命周期方法或MuleAwareContext实现可以使用|  MuleContext实例。
+
+|  QuickConfigurationBuilder
+| 不再支持
+
+|  MuleXMLConfigurationBuilder
+|  DefaultMuleContextFactory
+
+|  UMOMessage
+|  MuleMessage
+
+|  MuleMessage
+|  DefaultMuleMessage
+
+|  UMOEndpoint
+|  InboundEndpoint或OutboundEndpoint
+
+|  UMOEndpointURI
+|  EndpointURI
+
+|  MuleEndpoint.getOrCreateEndpointForUri（...，UMOEndpoint.ENDPOINT_TYPE_SENDER）
+| 新的DefaultEndpointFactory（）。getOutboundEndpoint（...）
+
+|  MuleEndpoint.getOrCreateEndpointForUri（...，UMOEndpoint.ENDPOINT_TYPE_RECEIVER）
+| 新的DefaultEndpointFactory（）。getInboundEndpoint（...）
+
+|  doPostFunctionalSetUp（）
+|  suitePreSetUp（）和doSetUp（）
+|===
+
+
+== 配置更改
+
+本节详细介绍配置更改。
+
+=== 文件标题
+
+Mule配置文件现在基于XML模式而不是DTD。因此，您必须在此空配置文件中配置Mule核命名空间以及任何模块或传输，如下所示。
+
+*Mule 1.4*
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!DOCTYPE mule-configuration PUBLIC "-//MuleSource //DTD mule-configuration XML V1.0//EN"
+                                "http://mule.mulesource.org/dtds/mule-configuration.dtd">
+
+<mule-configuration id="Samples" version="1.0">
+
+</mule-configuration>
+----
+
+*Mule 2.0*
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesource.org/schema/mule/core/2.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:jms="http://www.mulesource.org/schema/mule/jms/2.0"
+      xsi:schemaLocation="
+          http://www.mulesource.org/schema/mule/core/2.0 http://www.mulesource.org/schema/mule/core/2.0/mule.xsd
+          http://www.mulesource.org/schema/mule/jms/2.0 http://www.mulesource.org/schema/mule/jms/2.0/mule-jms.xsd">
+
+</mule>
+----
+
+[NOTE]
+本页描述了使用*mule*作为默认命名空间的推荐方法，但您也可以使用其他默认命名空间，例如Spring "beans"命名空间。
+
+=== 环境属性
+
+Mule 2.0现在使用`<configuration/>`元素来配置全局设置，例如线程配置文件和同步/异步消息的默认端点设置。有关使用此元素的信息，请参阅全局设置配置参考。
+
+您现在在模型上设置队列配置文件，并直接在池组件上设置池配置文件。有关线程配置文件，队列配置文件和池的更多信息，请参阅调整性能。
+
+==== 服务器ID
+
+在2.0中，一些系统属性在启动后不可变，例如serverId。 serverId不能再在XML配置中设置。相反，您必须使用`-M-Dmule.serverId=YOUR_MULE_SERVER_ID`系统属性来指定它，或者在启动Mule上下文之前通过调用`org.mule.config.DefaultMuleConfiguration.setId()`以编程方式将其设置为父应用程序。例如：
+
+[source,java]
+----
+MuleContext muleContext = new
+DefaultMuleContextFactory().createMuleContext();
+muleContext.getConfiguration().setId("MY_SERVER");
+muleContext.start();
+----
+
+==== 服务器网址
+
+在1.x中，您通过为`<mule-environment-properties>`元素中的`serverUrl`属性指定值来启动管理代理。在2.x中，您改为使用`<remote-dispatcher-agent>`元素（请参阅 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/module/client/remoting/RemoteDispatcherAgent.html[org.mule.module.client.remoting.RemoteDispatcherAgent]）。
+
+例如：
+[source, xml, linenums]
+----
+<client:remote-dispatcher-agent>
+    <client:remote-endpoint address="tcp://localhost:60504" synchronous="true" />
+</client:remote-dispatcher-agent>
+----
+
+=== 连接器
+
+就像使用Mule 1.x一样，连接器在Mule配置中被配置为顶层元素，但他们现在使用特定于传输的模式。连接器元件相应地发生了变化，如下所示：
+
+*Mule 1.4*
+[source, xml, linenums]
+----
+<connector className="org.mule.providers.vm.VMConnector"/>
+<connector className="org.mule.providers.jms.JmsConnector"/>
+----
+
+
+*Mule 2.0*
+[source, xml, linenums]
+----
+<vm:connector/>
+<jms:connector/>
+----
+
+这种新方法提供了巨大的优势，因为每个传输器现在都定义了自己的配置连接器的语法，避免了类名称和无类型属性。此外，您可以使用您最喜爱的IDE的自动完成功能，使Mule 2.0快速且易于配置。
+
+以下是另一个例子，说明从回声示例中获取的stdio连接器：
+
+*Mule 1.4*
+[source, xml, linenums]
+----
+<connector name="SystemStreamConnector" className="org.mule.providers.stream.SystemStreamConnector">
+    <properties>
+        <property name="promptMessage" value="Please enter something: "/>
+        <property name="messageDelayTime" value="1000"/>
+    </properties>
+</connector>
+----
+
+*Mule 2.0*
+[source, xml, linenums]
+----
+<stdio:connector name="SystemStreamConnector"
+                 promptMessage="Please enter something: "
+                 messageDelayTime="1000"/>
+----
+
+[NOTE]
+要使用特定的传输，您必须按照上面所述导入其名称空间。
+
+=== 端点
+
+如下所述，端点现在更容易配置，并且在Mule 2.0中更具有上下文特定性。
+
+*Global Endpoints*
+
+全局端点充当端点模板，允许您为多个逻辑端点配置和重用端点配置。要配置全局端点，可以使用"endpoint"元素作为顶层元素，而不是路由器或异常策略。您可以在全局端点上配置与逻辑端点上相同的所有元素，包括使其成为传输特定的元素。 +
+1.4中的<endpoint-identifier>等同于2.0中的全局端点，它只配置了一个URI。
+
+笔记：
+
+* 请谨慎定义入站和出站端点引用的全局端点上的变换器，因为变换器对于入站和出站端点不相同。
+* 尽管逻辑端点继承并可以扩展全局端点配置，但不能扩展属性。在逻辑端点上配置的属性将覆盖在引用的全局端点上配置的属性。
+
+*Explicit Endpoint Types*
+
+您现在明确指定端点类型（入站，出站或响应）。这种方法允许端点具有更具体的配置。例如，通过将端点指定为入站，可以确保在入站文件连接器上配置轮询频率，但不在其出站配对文件上配置轮询频率。
+
+*Transport-specific Endpoints*
+
+终端配置已得到改进以避免无类型的属性。其中一些属性是交叉传输属性或元素，而另一些则由传输特定的端点定义来定义。
+
+*Mule 1.4*
+[source, xml, linenums]
+----
+<endpoint address="pop3://bob:secret@localhost:62002" transformers="BytesToMime"/>
+----
+*Mule 2.0*
+[source, xml, linenums]
+----
+<pop3:inbound-endpoint user="bob" password="secret" host="localhost" port="62002">
+    <email:bytes-to-mime-transformer/>
+</pop3:inbound-endpoint>
+----
+=== 服务和组件（以前称为MuleDescriptors）
+
+服务和组件现在配置不同。以下是Mule Hello示例的两个版本：
+
+*Mule 1.4*
+[source, xml, linenums]
+----
+<mule-descriptor name="ChitChatUMO" implementation="org.mule.samples.hello.ChitChatter">
+    <inbound-router>
+        <endpoint address="vm://chitchatter" transformers="NameStringToChatString"/>
+    </inbound-router>
+    <outbound-router>
+        <router className="org.mule.routing.outbound.OutboundPassThroughRouter">
+            <endpoint address="stream://System.out" transformers="ChatStringToString" />
+        </router>
+    </outbound-router>
+</mule-descriptor>
+----
+*Mule 2.0*
+[source, xml, linenums]
+----
+<service name="ChitChatUMO">
+    <inbound>
+        <vm:inbound-endpoint path="chitchatter" transformer-refs="NameStringToChatString"/>
+    </inbound>
+    <component class="org.mule.samples.hello.ChitChatter"/>
+    <outbound>
+        <outbound-pass-through-router>
+            <stdio:outbound-endpoint system="OUT" transformer-refs="ChatStringToString"/>
+        </outbound-pass-through-router>
+    </outbound>
+</service>
+----
+以下是对变化的描述：
+
+*New Nomenclature:*
+
+*MuleDescriptor*现在是*Service* +
+*Implementation*现在是*Component*
+
+*Extensibility:*
+
+组件是抽象的，允许多种实现类型。默认情况下，Mule包含两个实现：<component/>和<pooled-component/>。其他模块可以添加其他组件类型。
+
+<component>和<pooled-component>元素的配置方式完全相同，只不过<pooled-component>有一个可选的<pooling-profile>子元素可用于自定义池行为。这些元素可以使用"class"属性或将对象工厂定义为子元素。如果您使用"class"属性，则将默认使用原型对象工厂。您可以使用单例，原型和Spring对象工厂来配置组件。
+
+*Minimal Configuration:*
+[source, xml, linenums]
+----
+<component class="org.your.PrototypeComponent"/>
+..
+<pooled-component class="org.your.PooledPrototypeComponent"/>
+----
+*Complete Configuration Example:*
+[source, xml, linenums]
+----
+<spring:bean name="myPooledSpringBeanComponent" class="org.your.PooledSpringBeanComponent" />
+..
+<pooled-component>
+    <reflection-entry-point-resolver/>
+    <spring-object bean="myPooledSpringBeanComponent"/>
+    <custom-lifecycle-adapter-factory class="org.mule.config.spring.parsers.specific.TestLifecycleAdapterFactory"/>
+    <binding interface="java.lang.String" method="setMethod">
+        <outbound-endpoint address="vm://myEndpoint" />
+    </binding>
+    <pooling-profile exhaustedAction="WHEN_EXHAUSTED_FAIL"
+        initialisationPolicy="INITIALISE_ALL" maxActive="1"
+        maxIdle="2" maxWait="3" />
+</pooled-component>
+----
+=== 路由器和过滤器
+
+路由器和过滤器也可以利用新的基于模式的配置。大多数是在Mule中定义的，但是特定的模块和传输也可以通过在他们自己的命名空间中定义它们来提供路由器或过滤器。
+
+*Mule 1.4*
+[source, xml, linenums]
+----
+<router className="org.mule.routing.inbound.SelectiveConsumer"/>
+
+<router className="org.mule.routing.outbound.FilteringOutboundRouter"/>
+<router className="org.mule.routing.outbound.MulticastingRouter"/>
+<router className="org.my.CustomRouter"/>
+----
+*Mule 2.0*
+[source, xml, linenums]
+----
+<selective-consumer-router/>
+<filtering-router/>
+<multicasting-router/>
+<custom-inbound-router class="org.my.CustomRouter"/>
+----
+*Mule 1.4*
+[source, xml, linenums]
+----
+<global-endpoints>
+  <endpoint name="CustomerResponses" address="vm://customer.responses"/>
+</global-endpoints>
+..
+<router className="org.mule.routing.outbound.FilteringOutboundRouter">
+    <global-endpoint name="CustomerResponses"/>
+    <filter expectedType="org.mule.examples.loanbroker.messages.LoanQuote" className="org.mule.routing.filters.PayloadTypeFilter"/>
+</router>
+----
+*Mule 2.0*
+[source, xml, linenums]
+----
+<vm:endpoint name="CustomerResponses" path="customer.responses"/>
+..
+<filtering-router>
+    <outbound-endpoint ref="CustomerResponses"/>
+    <payload-type-filter expectedType="org.mule.examples.loanbroker.messages.LoanQuote"/>
+</filtering-router>
+----
+_（以LoanBroker ESN为例）_
+
+=== 变压器
+
+变形金刚也利用了新的基于模式的配置。模块和传输通过在它们自己的名字空间中定义它们来为变换器做出贡献。
+
+现在直接定义变形金刚而不是指定类名。
+
+*Mule 1.4*
+[source, xml, linenums]
+----
+<transformer className="org.mule.transformers.simple.MessagePropertiesTransformer"/>
+<transformer className="org.mule.transformers.simple.ByteArrayToObject"/>
+<transformer className="org.mule.transformers.xml.XsltTransformer"/>
+<transformer className="org.my.CustomTransformer"/>
+----
+*Mule 2.0*
+[source, xml, linenums]
+----
+<message-properties-transformer/>
+<byte-array-to-object-transformer/>
+<xml:xslt-transformer/>
+<custom-transformer class="org.my.CustomTransformer"/>
+----
+自定义转换器仍可以与"custom-transformer"元素一起使用。
+
+变形金刚可以使用"transformer-refs"属性从端点引用，或者可以内联声明。
+
+*Mule 1.4*
+[source, xml, linenums]
+----
+<global-endpoint name="CustomerRequestsREST" transformers="RestRequestToCustomerRequestTransformer"/>
+----
+*Mule 2.0*
+[source, xml, linenums]
+----
+<inbound-endpoint ref="CustomerRequestsREST" transformer-refs="Transformer1 Transformer2"/>
+
+<inbound-endpoint ref="CustomerRequestsREST">
+    <transformer ref="RestRequestToCustomerRequestTransformer" />
+</inbound-endpoint>
+
+<inbound-endpoint ref="IncomingData">
+    <byte-array-to-object-transformer/>
+</inbound-endpoint>
+----
+=== 桥接
+
+Mule 2.0简化了桥接配置。要实施桥接服务，只需配置入站和出站路由器。桥接发生隐含。
+
+*Mule 1.4*
+[source, xml, linenums]
+----
+<mule-descriptor name="bridge" implementation="org.mule.components.simple.BridgeComponent">
+    <inbound-router>
+        <endpoint address="vm://bridge.inbound"/>
+    </inbound-router>
+    <outbound-router>
+        <router className="org.mule.routing.outbound.OutboundPassThroughRouter">
+            <endpoint address="vm://bridge.outbound"/>
+        </router>
+    </outbound-router>
+</mule-descriptor>
+----
+*Mule 2.0*
+[source, xml, linenums]
+----
+<service name="bridge">
+   <inbound>
+       <vm:inbound-endpoint path="bridge.inbound"/>
+   </inbound>
+   <outbound>
+       <outbound-pass-through-router>
+           <vm:outbound-endpoint path="bridge.outbound"/>
+       </outbound-pass-through-router>
+   </outbound>
+</service>
+----
+"bridge-component"和"pass-through-component"仍可用于向后兼容，但不再需要。
+
+=== 例外策略
+
+开发人员现在可以通过配置更好地控制事务。模式匹配过滤器可以用来匹配不同类型的异常。例如：
+[source, xml, linenums]
+----
+<model>
+    <default-service-exception-strategy>
+        <commit-transaction exception-pattern="*">
+        <jms:outbound-endpoint queue="DLQ"/>
+    </default-service-exception-strategy>
+    ...
+</model>
+----
+这个配置告诉Mule在我们发送到JMS DLQ（死信队列）之前保持当前事务处于打开状态，然后提交当前事务。
+
+对于某些交易，您可能需要立即回滚交易。例如：
+[source, xml, linenums]
+----
+<model>
+    <default-service-exception-strategy>
+        <commit-transaction exception-pattern="*">
+        <rollback-transaction exception-pattern"com.acme.a.*,com.acme.b.*"/>
+        <jms:outbound-endpoint queue="DLQ"/>
+    </default-service-exception-strategy>
+    ...
+</model>
+----
+此配置告诉Mule在存在包`com.acme.a`和`com.acme.b`的例外情况时回退事务。否则，提交当前事务。请注意，`<rollback-transaction>`优先于`<commit-transaction>`元素。
+
+
+Next：*Migrating Mule 2.0 to 2.1* >>

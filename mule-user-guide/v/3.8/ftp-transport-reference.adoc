@@ -1,0 +1,444 @@
+=  FTP传输参考
+:keywords: anypoint studio, connectors, files transfer, ftp, sftp, endpoints
+
+FTP传输允许将文件传输协议集成到Mule中。 Mule可以轮询远程FTP服务器目录，检索文件。并将它们处理为Mule消息。消息也可以作为文件上传到远程FTP服务器上的目录。
+
+Mule还支持用于安全文件传输的SFTP协议。 link:/mule-user-guide/v/3.8/sftp-transport-reference[SFTP传输]包含在Mule发行版中。
+
+== 传输信息
+
+[%header%autowidth.spread]
+|===
+|功能|值|说明
+|传输 |文件 |传输的名称/协议
+|文档 | link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/transport/ftp/package-summary.html[的JavaDoc]， link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ftp/namespace-overview.html[SchemaDoc]  | Javadoc和Schema doc
+|入站 | image:check.png[查]  |传输是否可以接收入站事件并可用于入站端点。
+|出站 | image:check.png[查]  |传输是否可以生成出站事件并与出站端点一起使用。
+|请求  | image:check.png[查]  |该端点是否可以通过请求调用直接查询（通过MuleClient或EventContext）。
+|交易 | image:error.png[错误]  |交易是否受交通支持。支持事务的传输可以在本地或分布式两阶段提交（XA）事务中进行配置。
+|流式传输 | image:check.png[查]  |此传输是否可以处理输入流中传入的消息。这可以非常有效地处理大数据。
+|重试 | image:check.png[查]   |此传输是否支持重试策略。请注意，所有传输都可以配置Retry策略，但只有这里标记的传输才是MuleSoft官方支持的。
+| MEP  |单向 |此传输所支持的消息交换模式。
+|默认MEP  |单向 |使用此传输的端点的默认MEP未明确配置MEP
+| Maven Artifact  | org.mule.transport：transportmule-transport-ftp  |此传输的组名称和工件名称位于 http://maven.apache.org/[Maven的]
+|===
+
+== 命名空间和语法
+
+命名空间（社区）：
+
+[source,xml]
+----
+http://www.mulesoft.org/schema/mule/ftp
+----
+
+XML模式位置（社区）：
+
+[source,xml]
+----
+http://www.mulesoft.org/schema/mule/ftp
+----
+命名空间（企业）
+
+*_Enterprise_*
+
+[source,xml]
+----
+http://www.mulesoft.org/schema/mule/ee/ftp
+----
+
+XML模式位置（企业）
+
+*_Enterprise_*
+
+[source,xml]
+----
+http://www.mulesoft.org/schema/mule/ee/ftp
+----
+
+句法：
+
+直线URI示例`ftp://theUser:secret@theHost:port/path`
+
+XML版本`<ftp:endpoint host="theHost" port="22" path="/path" user="theUser" password="secret"/>`
+
+连接器和端点语法`<ftp:connector name="ftpConnector" passive="true" binary="true" streaming="true"/>`
+
+== 注意事项
+
+== 特点
+
+* 轮询远程FTP服务器上的目录以查找新文件
+* 检索文件的FTP服务器
+* 传输二进制或文本文件
+* 根据文件名通配符过滤端点上的文件
+* 基于Mule表达式过滤端点上的文件
+* 将文件上传并存储在FTP服务器上
+* 根据Mule表达式重命名输出文件
+* 流式传输大文件
+* 支持 link:/mule-user-guide/v/3.8/configuring-reconnection-strategies[重新连接策略]
+
+Mule企业版包括几个额外的功能，允许文件过滤处理文件，并在处理后移动和重命名源FTP服务器上的文件。
+
+== 用法
+
+每个端点至少包含FTP连接的所有信息，例如主机，端口，路径，用户名和密码。可以在连接器上指定其他属性（如二进制或被动），并在端点级别上进行覆盖。
+
+FTP传输器定期轮询FTP服务器。在每个轮询请求后，打开一个到FTP服务器的新连接，指定的用户登录并且所有文件都列在指定的路径下。这意味着如果FTP服务器停机，则不需要做特别的规定 - 当前轮询尝试失败，但轮询不会停止。
+
+如果配置了 link:/mule-user-guide/v/3.8/configuring-reconnection-strategies[重新连接策略]，则可以根据您配置的策略，由Mule自动重新建立FTP连接。
+
+FTP传输不支持事务，因为文件传输协议本身不是事务性的。相反，您应该使用Mule中的 link:/mule-user-guide/v/3.8/error-handling[例外战略]将补偿交易设计到您的架构中。
+
+== 示例配置
+
+这个例子显示了一个简单的流程，用于获取FTP服务器上的所有可用文件（在其根目录中）并将它们存储到本地文件系统的目录中。
+
+*Downloading files from FTP using a Flow*
+
+[source,xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/current/mule-ftp.xsd">
+
+    <flow name="ftp2file">
+        <ftp:inbound-endpoint host="localhost" port="21" path="/" user="theUser" password="secret"/>
+        <file:outbound-endpoint path="/some/directory" outputPattern="#[header:originalFilename]"/>
+    </flow>
+</mule>
+----
+
+此示例显示如何仅选择FTP服务器上的某些文件。您可以通过配置文件名过滤器来控制端点接收哪些文件。过滤器用逗号分隔的列表表示。请注意，为了使用文件传输模式中的过滤器，它必须包含在内。
+
+*Filtering filenames using a Flow*
+
+[source,xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/current/mule-ftp.xsd">
+
+    <flow name="fileFilter">
+        <ftp:inbound-endpoint host="localhost" port="21" path="/" user="theUser" password="secret">
+            <file:filename-wildcard-filter pattern="*.txt,*.xml"/>
+        </ftp:inbound-endpoint>
+        <file:outbound-endpoint path="/some/directory" outputPattern="#[header:originalFilename]"/>
+    </flow>
+</mule>
+----
+
+本示例使用`simple-service`将从FTP服务器检索到的文件路由到`MyProcessingComponent`以供进一步处理。
+
+*Processing a file from FTP*
+
+[source,xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:ftp="http://www.mulesoft.org/schema/mule/ftp"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+       http://www.mulesoft.org/schema/mule/ftp http://www.mulesoft.org/schema/mule/ftp/current/mule-ftp.xsd">
+
+    <simple-service name="ftpProcessor"
+                address="ftp://theUser:secret@host:21/"
+                component-class="com.mycompany.mule.MyProcessingComponent"/>
+</mule>
+----
+
+== 配置选项
+
+=== 流
+
+如果FTP连接器上未启用流式传输，则Mule会尝试将其从FTP服务器读取的文件读取到`byte[]`中，以用作`MuleMessage`的有效内容。如果需要处理大型文件，此行为可能会造成麻烦。
+
+在这种情况下，在连接器上启用流式传输：
+
+[source,xml]
+----
+<ftp:connector name="ftpConnector" streaming="true">
+----
+
+而不是将文件的内容读入内存，Mule发送一个 link:http://download.oracle.com/javase/8/docs/api/java/io/InputStream.html[的InputStream]作为`MuleMessage`的有效载荷。此输入流表示的文件的名称在消息中存储为_originalFilename_属性。如果在入站端点上使用流式传输，则用户有责任关闭输入流。如果流出用于出站端点Mule自动关闭流。
+
+
+
+==  FTP传输
+FTP传输提供到FTP服务器的连接，允许文件作为消息在Mule中读写。
+
+== 连接器
+
+FTP连接器用于配置引用连接器的FTP端点的默认行为。如果只配置了一个FTP连接器，则所有FTP端点均使用该连接器。
+
+=== 连接器的属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| streaming  |是否应将InputStream作为消息有效载荷（如果为true）或字节数组（如果为false）发送。默认为false。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`false`
+| `connectionFactoryClass`  |扩展FtpConnectionFactory的类。 FtpConnectionFactory负责使用端点提供的凭据创建到服务器的连接。 Mule提供的默认实现使用Apache的Commons Net项目。 +
+*Type*：`class name` +
+*Required*：否+
+*Default*：无
+| `pollingFrequency`  |检查读取目录的频率（以毫秒为单位）。请注意，读取目录由监听组件的端点指定。 +
+*Type*：`long` +
+*Required*：否+
+*Default*：无
+| `outputPattern`  |将文件写入磁盘时使用的模式。这可以使用为此连接器+配置的文件名解析器所支持的模式
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| `binary`  |选择/禁用二进制文件传输类型。默认值是true。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`true`
+| `passive`  |选择/禁用被动协议（更有可能通过防火墙工作）。默认值是true。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`true`
+|===
+
+连接器的=== 子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+| `file:abstract-filenameParser`  | 0..1  |将文件写入FTP服务器时使用filenameParser。解析器使用解析器和当前消息将outputPattern属性转换为字符串。要将解析器添加到您的配置中，请将"file"命名空间导入到您的XML配置中。有关filenameParsers的更多信息，请参阅 link:/mule-user-guide/v/3.8/file-transport-reference[文件传输参考]。
+|===
+
+== 入站端点
+
+入站端点的=== 属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| `path`  |远程服务器上的文件位置。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| `user`  |如果FTP已通过身份验证，则这是用于身份验证的用户名。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| `password`  |用户进行身份验证的密码。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| `host`  |一个IP地址（例如www.mulesoft.com，localhost或192.168.0.1）。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| `port`  |连接的端口号。 +
+*Type*：`port number` +
+*Required*：否+
+*Default*：无
+| `binary`  |选择/禁用二进制文件传输类型。默认值是true。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`true`
+| `passive`  |选择/禁用被动协议（更有可能通过防火墙工作）。默认值是true。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`true`
+| `pollingFrequency`  |检查读取目录的频率（以毫秒为单位）。请注意，读取目录由监听组件的端点指定。 +
+*Type*：`long` +
+*Required*：否+
+*Default*：无
+|===
+
+`inbound-endpoint`没有子元素
+
+
+== 出站端点
+
+=== 出站端点的属性
+
+[%autowidth.spread]
+|===
+| {名称{1}}说明
+| `path`  |远程服务器上的文件位置。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| `user`  |如果FTP已通过身份验证，则这是用于身份验证的用户名。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| `password`  |用户进行身份验证的密码。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| `host`  |一个IP地址（例如www.mulesoft.com，localhost或192.168.0.1）。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| `port`  |连接的端口号。 +
+*Type*：`port number` +
+*Required*：否+
+*Default*：无
+| `binary`  |选择/禁用二进制文件传输类型。默认值是true。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`true`
+| `passive`  |选择/禁用被动协议（更有可能通过防火墙工作）。默认值是true。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`true`
+| `outputPattern`  |将文件写入磁盘时使用的模式。这可以使用为此连接器配置的文件名解析器所支持的模式。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+|===
+
+`outbound-endpoint`没有子元素
+
+== 端点
+
+=== 端点的属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+|路径 |远程服务器上的文件位置。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+|用户 |如果FTP已通过身份验证，则这是用于身份验证的用户名。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+|密码 |用户进行身份验证的密码。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| `host`  |一个IP地址（例如www.mulesoft.com，localhost或192.168.0.1）。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+| `port`  |连接的端口号。 +
+*Type*：`port number` +
+*Required*：否+
+*Default*：无
+| `binary`  |选择/禁用二进制文件传输类型。默认值是true。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`true`
+| `passive`  |选择/禁用被动协议（更有可能通过防火墙工作）。默认值是true。 +
+*Type*：`boolean` +
+*Required*：否+
+*Default*：`true`
+| `pollingFrequency`  |检查读取目录的频率（以毫秒为单位）。请注意，读取目录由监听组件的端点指定。 +
+*Type*：`long` +
+*Required*：否+
+*Default*：无
+| `outputPattern`  |将文件写入磁盘时使用的模式。这可以使用为此连接器配置的文件名解析器所支持的模式。 +
+*Type*：`string` +
+*Required*：否+
+*Default*：无
+|===
+
+`endpoint`没有子元素。
+
+===  Mule企业连接器属性
+
+*_Enterprise_*
+
+以下附加属性仅在Mule Enterprise中的FTP连接器上可用：
+
+[cols="30a,70a"]
+|===
+| `moveToDirectory`  |文件读取后应该写入的目录路径。如果此属性未设置，则文件被删除。
+| `moveToPattern`  |根据moveToDirectory属性指定的将读取文件移动到新位置时使用的模式。该属性可以使用为此连接器配置的filenameParser支持的模式。
+| `fileAge`  |除非它早于指定的年龄（以毫秒为单位），否则不要处理该文件。
+|===
+
+== 架构
+
+完成 link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ftp/namespace-overview.html[模式参考文档]。
+
+==  Javadoc API参考
+
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/transport/ftp/package-summary.html[Javadoc用于FTP传输]
+
+== 的Maven
+
+FTP传输可以包含以下依赖项：
+
+*_Community_*
+
+[source,xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-ftp</artifactId>
+  <version>3.8.0</version>
+</dependency>
+----
+
+*_Enterprise_*
+
+[source,xml, linenums]
+----
+<dependency>
+  <groupId>com.mulesoft.muleesb.transports</groupId>
+  <artifactId>mule-transport-ftp-ee</artifactId>
+  <version>3.8.0</version>
+</dependency>
+----
+
+== 扩展此模块或传输
+
+=== 自定义FtpConnectionFactory
+
+`FtpConnectionFactory`建立Mule与FTP服务器的连接。在99％的情况下，默认的连接工厂应该足够了。如果您需要更改Mule连接到FTP服务器的方式，请使用连接器上的`connectionFactoryClass`属性：
+
+[source,xml]
+----
+<ftp:connector name="ftpConnector" connectionFactoryClass="com.mycompany.mule.MyFtpConnectionFactory"/>
+----
+
+使用您的`FtpConnectionFactory`子类的完全限定类名称。
+
+*Note*：*must*是`FtpConnectionFactory`的子类，因为`FtpConnector`试图将工厂投射到该类。
+
+*Filename Parser*
+
+将文件写入FTP服务器时使用filenameParser。解析器将端点上配置的输出模式转换为使用解析器和当前消息编写的文件的名称。
+
+在99％的情况下，FTP传输中使用的文件名解析器应该足够了。解析器是一个实例：
+
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/transport/file/ExpressionFilenameParser.html[ExpressionFilenameParser]
+
+它允许使用 link:/mule-user-guide/v/3.8/non-mel-expressions-configuration-reference[任意表达]来组合在FTP服务器上存储文件时使用的文件名。
+
+您可以将自定义文件名解析器配置为连接器声明的子元素：
+
+[source,xml, linenums]
+----
+<ftp:connector name="ftpConnector" passive="true" binary="true" streaming="true">
+    <file:custom-filename-parser class="com.mycompany.mule.MyFilenameParser"/>
+</ftp:connector>
+----
+
+*Note*：您在此配置的类必须实现
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/transport/file/FilenameParser.html[FilenameParser]界面。
+
+== 最佳实践
+
+将您的登录凭证放入属性文件中，而不是在配置中进行硬编码。这也允许您在开发，测试和生产系统之间使用不同的设置。
+

@@ -1,0 +1,144 @@
+= 组件绑定
+
+组件可以在执行期间使用绑定来调用外部服务。用于Java组件的绑定将Java接口或单一接口方法绑定到出站端点。被调用的外部服务应该实现相同的接口，并且组件应该封装对该接口的引用，该引用在引导阶段由Mule配置构建器初始化。该引用将使用反射代理类进行初始化。
+
+image:pattern_bindings.png[pattern_bindings]
+
+通过组件绑定，您可以配置多个接口或单个接口，并将端点绑定到一个或多个Mule端点。
+
+Mule目前支持Java组件（Mule中的默认组件）和脚本组件（如Groovy或JRuby）的组件绑定。本页介绍如何配置每个。
+
+==  Java组件绑定配置
+
+组件可以使用绑定调用外部服务。绑定的接口以通常的bean getter和setter方法作为字段添加到组件。在组件的绑定配置中，可以将此接口与Mule端点的接口中的方法绑定。当调用该方法时，呼叫参数将通过Mule端点发送到另一个服务，该服务可能是本地或远程的。结果可能会从服务中返回并使用方法的返回参数传递回组件。该模型与传统的RPC调用非常相似。这里是一个例子：
+
+[source, java, linenums]
+----
+public class InvokerComponent
+{
+    private HelloInterface hello;
+
+    public String invoke(String s)
+    {
+        return "Received: " + hello.sayHello(s, "English");
+    }
+    public void setHello(HelloInterface hello)
+    {
+        this.hello = hello;
+    }
+    public HelloInterface getHello()
+    {
+        return hello;
+    }
+}
+----
+
+在此示例中，组件`InvokerComponent`具有`HelloInterface`类型的字段`hello`，该字段具有getter和setter方法。 `invoke`方法将在服务上调用并调用`hello.sayHello()`方法。此呼叫将导致另一个服务呼叫。
+
+使用单一方法`sayHello`，HelloInterface非常简单。
+
+[source, java, linenums]
+----
+public interface HelloInterface
+{
+    public String sayHello(String to, String language);
+}
+----
+
+[TIP]
+从Mule 3.x开始，您可以将接口返回类型设置为`MuleMessage`，以使您的组件可以访问完整的消息，而不仅仅是有效负载。
+
+现在，您只需配置组件即可将`sayHello`方法绑定到将调用其他服务的端点。
+
+[source, xml, linenums]
+----
+<service name="InvokerComponent">
+    <inbound>
+        <jms:inbound-endpoint queue="Invoker.in"/>
+    </inbound>
+
+    <component class="org.mule.examples.bindings.InvokerComponent">
+        <binding interface="org.mule.examples.bindings.HelloInterface" method="sayHello">
+            <axis:outbound-endpoint use="LITERAL" style="WRAPPED"
+                  address="http://myhost.com:81/services/HelloWeb?method=helloMethod" synchronous="true"/>
+        </binding>
+    </component>
+
+    <outbound>
+        <pass-through-router>
+            <jms:outbound-endpoint queue="Invoker.out"/>
+        </pass-through-router>
+    </outbound>
+</service>
+----
+对外部Web服务的调用是同步的，因为您希望返回结果并且需要阻止，直到调用完成。
+
+请注意，除非代理显式处理绑定接口方法，否则组件绑定不适用于Java代理对象。如果使用Spring组件，请确保使用CGLib代理。有关Spring-AOP代理行为的更多信息，请参阅http://static.springsource.org/spring/docs/3.0.x/spring-framework-reference/html/aop.html#aop-introduction-proxies。如果您使用注释处理器（例如交易），则可以指定以下内容：
+
+[source, xml, linenums]
+----
+<tx:annotation-driven proxy-target-class="true"/>
+----
+
+=== 处理数据类型
+
+您可以在拨打电话时处理数据转换，并使用端点上的常规转换器配置接收结果。在上面的示例中，假设Web服务正在等待`org.mule.examples.bindings.WebHelloRequest`对象并返回一个`org.mule.examples.bindings.WebHelloResponse`对象。您不希望组件知道这些外部数据类型，因此您可以配置转换器在进行调用时进行转换：
+
+[source, xml, linenums]
+----
+<component class="org.mule.examples.bindings.InvokerComponent">
+    <binding interface="org.mule.examples.bindings.HelloInterface" method="sayHello">
+        <axis:outbound-endpoint use="LITERAL" style="WRAPPED"
+                  address="http://myhost.com:81/services/HelloWeb?method=helloMethod" synchronous="true">
+            <transformers>
+                <custom-transformer class="org.mule.examples.bindings.StringsToWebRequest"/>
+            </transformers>
+            <response-transformers>
+                <custom-transformer class="org.mule.examples.bindings.WebResponseToString"/>
+            </response-transformers>
+        </axis:outbound-endpoint>
+    </binding>
+</component>
+----
+
+=== 例外
+
+如果远程服务调用触发了故障异常，则该异常将被序列化回本地服务调用并抛出。如果您的服务想要处理此异常，则必须像往常一样将该异常（或`java.lang.Exception`）添加到绑定方法签名并使用try catch块。
+
+[TIP]
+目前，org.mule.routing.binding.BindingInvocationHandler的`invoke()`方法在出现异常时总是抛出`UndeclaredThrowableException`，即使绑定的方法/接口抛出其中一个声明的异常。从Mule 3.x开始，如果原因已知并且类型与给定方法的"throws"子句中声明的某个例外相匹配，则将返回声明的异常。
+
+== 脚本组件绑定
+
+与Java组件绑定类似，脚本绑定为您的脚本组件启用相同的行为。在使用脚本组件时，绑定绑定到脚本上下文，并且可以通过使用绑定接口类名来访问。
+
+[source, xml, linenums]
+----
+<service name="ScriptService">
+    <inbound>
+        <vm:inbound-endpoint ref="inboundEndpoint"/>
+    </inbound>
+    <script:component>
+        <script:script engine="groovy">
+            return "Total: " + AdditionService.add(1,2)
+        </script:script>
+        <script:java-interface-binding interface="org.mule.tck.services.AdditionService" method="add">
+            <vm:outbound-endpoint path="addition.service" synchronous="true"/>
+        </script:java-interface-binding>
+    </script:component>
+    <outbound>
+        <pass-through-router>
+            <vm:outbound-endpoint ref="receivedEndpoint"/>
+        </pass-through-router>
+    </outbound>
+</service>
+----
+
+组件的实现包含在`<script:script>`元素中：
+
+[source, code, linenums]
+----
+return "Total: " + AdditionService.add(1,2)
+----
+
+我们使用短类名称`AdditionService`引用绑定接口并调用`add`方法，该方法将调用本地添加服务。

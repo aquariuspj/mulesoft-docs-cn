@@ -1,0 +1,187 @@
+=  RSS模块参考
+:keywords: transport, rss, connector, syndicated, feeds
+
+Mule RSS支持可以轻松地与RSS订阅源集成。
+
+它包含以下组件：
+
+*  `rss:feed-splitter`
+
+*  `rss:entry-last-updated-filter`
+
+*  `rss:feed-last-updated-filter`
+
+*  `rss:object-to-feed-transformer`
+
+== 架构
+
+*  link:http://www.mulesoft.org/schema/mule/rss/3.8/mule-rss.xsd[mule-rss.xsd模式]
+
+== 使用Feed
+
+最常见的模式之一是与RSS进行集成，即轮询Feed更新。用骡子这可以很容易地完成。您必须先编写收到RSS聚合条目的课程：
+
+*EntryReceiver.java*
+[source, java, linenums]
+----
+package org.mule.module.rss;
+ 
+import com.sun.syndication.feed.synd.SyndEntry;
+ 
+public class EntryReceiver
+{
+    public void readEntry(@Payload SyndEntry entry) throws Exception
+    {
+        //do stuff
+    }
+}
+----
+
+默认情况下，RSS提要会被分割为条目，因此对于每个条目，组件方法都会与提要中的下一个条目一起调用。流程配置：
+
+[source, xml, linenums]
+----
+<mule ...
+<rss:feed-last-updated-filter lastUpdate="2017-10-01 13:00:00" acceptWithoutUpdateDate="false" name="feedFilter" />
+<rss:object-to-feed-transformer name="ObjectToFeed" />
+<http:polling-connector name="PollingHttpConnector" pollingFrequency="1000" discardEmptyContent="false" />
+
+<flow name="flowTest">
+  <http:inbound-endpoint address="http://feeds.foxnews.com/foxnews/latest" connector-ref="PollingHttpConnector" />
+  <rss:feed-splitter />
+  <rss:entry-last-updated-filter lastUpdate="2017-09-22" />
+  <echo-component />
+</flow>
+</mule>
+----
+
+==  ETag的
+
+Atom HTTP端点默认尊重ETags和304 Not Modified响应代码，因此您不必担心会消耗不必要的更新。
+
+=== 自己访问Feed
+
+如果您想访问Feed本身，则可以通过名为feed.object的当前消息上的标题来使用它。您可以使用注释将其注入到入口点方法中：
+
+*EntryReceiver.java*
+[source, java]
+----
+public void processEntry(@Payload Entry entry, @Expr("#[header:invocation:feed.object]") Feed feed) throws Exception
+----
+
+
+如果您想完整处理Feed（没有将其分割为Entry对象），则可以在端点上设置以下标志：
+
+现在，无论添加或更新了多少条目，您的组件都会为每个Feed更改调用一次。如果您想要处理XML模型，或者甚至使用`java.io.InputStream`或`java.lang.String`来获取原始表示，则组件的方法应该期望`com.sun.syndication.feed.synd.SyndFeed`对象或仅`org.w3c.dom.Document`。
+
+*FeedReceiver.java*
+
+[source, java, linenums]
+----
+public void processFeed(@Payload SyndFeed feed) throws Exception
+{
+    //do stuff
+}
+----
+
+
+== 混合HTTP和RSS端点
+
+`rss:endpoint`元素是创建轮询http端点并分割馈送的快捷方式。如果您在配置中使用另一个非轮询HTTP端点，请配置HTTP轮询端点，并在您的Atom端点上引用它。
+
+[source, xml, linenums]
+----
+<http:connector name="HttpConnector"/>
+ 
+<http:polling-connector name="PollingHttpConnector" pollingFrequency="1000" discardEmptyContent="false"/>
+ 
+<flow name="eventConsumer">
+    <http:inbound-endpoint address="http://localhost:9002/events" connector-ref="PollingHttpConnector"/>
+    <component class="org.mule.module.rss.EntryReceiver"/>
+</flow>
+----
+
+通过其他协议访问订阅源。== 
+
+您可以使用其他Mule连接器（例如JMS，File或XMPP）来处理馈送并处理它们。为此，需要通过连接器提供Atom提要，通过JMS发送RSS文档或从文件进行轮询。 RSS模式定义了一个`<rss:feed-splitter/>`，可以分割从端点接收到的消息。
+
+=== 通过JMS
+
+[source, xml, linenums]
+----
+<flow name="feedSplitterConsumer">
+    <jms:inbound-endpoint queue="feed.in">
+        <rss:feed-splitter/>
+    </jms:inbound-endpoint>
+ 
+    <component class="org.mule.module.atom.event.EntryReceiver"/>
+</flow>
+----
+
+=== 通过文件
+
+[source, xml, linenums]
+----
+<flow name="feedSplitterConsumer">
+    <file:inbound-endpoint  path="${mule.working.dir}" pollingFrequency="1000" >
+        <file:filename-wildcard-filter pattern="*.rss"/>
+        <rss:feed-splitter/>
+    </file:inbound-endpoint>
+ 
+    <component class="org.mule.module.atom.event.EntryReceiver"/>
+</flow>
+----
+
+=== 处理没有RSS端点的提要
+
+以下示例仅供参考，它显示了在不使用`rss:endpoint`的情况下阅读Atom提要的显式配置。
+
+[source, xml, linenums]
+----
+<http:polling-connector name="PollingHttpConnector" pollingFrequency="1000" discardEmptyContent="false"/>
+ 
+<flow name="feedConsumer">
+    <http:inbound-endpoint address="http://rossmason.blogspot.com/feeds/posts/default" connector-ref="PollingHttpConnector">
+        <rss:feed-splitter/>
+        <rss:entry-last-updated-filter/>           
+    </http:inbound-endpoint>
+ 
+    <component class="org.mule.module.rss.EntryReceiver"/>
+</flow>
+----
+
+`rss:entry-last-updated-filter`位于`<rss:feed-splitter/>`之后，因为您需要拆分提要，以便过滤器可以处理它们。此外，我们并未在过滤器上设置`lastUpdate`日期，这意味着读取所有可用条目的默认行为，然后仅处理自上次读取以来的新条目。
+
+==  RSS模块参考
+
+RSS是许多网站用来提供新闻或更新等数据反馈的流行联合格式。
+
+=== 变压器
+
+这些是这种运输特有的变压器。请注意，这些会在启动时自动添加到Mule注册表中。当进行自动转换时，这些包括在搜索正确的变压器时。
+
+.Transformers
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| object-to-feed-transformer  |将消息的有效负载转换为`com.sun.syndication.feed.synd.SyndFeed`实例。
+|===
+
+=== 过滤器
+
+可以使用过滤器来控制允许哪些数据在流中继续。
+
+.Filters
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+|条目最后更新过滤器 |根据过去的更新日期过滤RSS条目对象。这对于从Feed中过滤较旧的条目很有用。此过滤器仅适用于RSS SyndEntry对象而非SyndFeed对象。
+|供稿最后更新过滤器 |根据过去的更新日期过滤整个RSS供稿。这对处理自特定日期以来尚未更新的Feed是有用的。此过滤器仅适用于RSS SyndFeed对象。
+|===
+
+== 进料分离器
+
+将馈送条目拆分为单个条目对象。每个条目都将在Mule中单独发布。
+
+饲料分配器没有子元素。
+

@@ -1,0 +1,71 @@
+= 配置Mule Stacktraces
+:keywords: anypoint, studio, mule, on premises, on premise, amc, logs, stacktraces, verbose
+
+默认情况下，Mule会从堆栈过滤掉一些内部类的引用，以产生更可读的输出。这种行为可以通过以下三种方式之一来控制：
+
+* 命令行参数
+
+* 在Mule Studio中设置属性
+
+* 使用JMX
+
+== 命令行参数
+
+使用两个命令行属性可以使用`-M-DpropertyName`控制此行为：
+
+*  `mule.stacktrace.full`  - 当出现时，Mule不会过滤堆栈轨迹。只适用于Mule开发者，最终用户可能永远不需要启用它。 （您也可以使用属性`mule.verbose.exceptions=true`，结果相同。）
+
+*  `mule.stacktrace.filter`  - 要从堆栈跟踪中移除的包和/或类的逗号分隔列表，它们通过`string.startsWith()`进行匹配。
+
+== 在Anypoint Studio中设置属性
+
+在Studio中，您可以设置与上面指定的属性相同的属性，以指示Mule提供未过滤的堆栈跟踪或配置要移除的包或类的特定过滤器。要调整这些设置，请打开您的`mule-project.xml`文件并定义环境变量以指定所需的行为。在下面的示例中，`mule.stacktrace.full`属性设置为*true*。
+
+image:Studio-config-stacktrace.png[演播室配置，堆栈跟踪]
+
+== 使用JMX
+
+配置MBean现在公开两个新选项：
+
+*  `FullStackTrace`  - 同上
+
+*  `StackTraceFilter`  - 同上
+
+[NOTE]
+====
+即使每个应用都有其自己的配置MBean，这些设置也是在应用之间共享的。这意味着在一个应用中修改它会影响其他应用。
+====
+
+== 获取Stacktrace和线程转储
+
+请按照以下步骤对Mule进行验尸以防万一停止，并且需要更多信息来查找原因。
+
+获取Mule进程ID，我们将其简称为`MULE_PID`。要识别Mule进程，请使用Unix / Linux `ps`命令，或者从终端执行`jps`命令。 jps工具附带用于运行Mule的JDK。例如，包含"MuleContainerBootstrap"或"ApplicationDeployer"或类似行的行将标识Mule过程。
+
+=== 获取线程转储
+
+现代JDK包含jstack工具，您可以利用它来获取线程转储：
+
+----
+jstack -l MULE_PID > filename.tdump
+----
+
+=== 在出现内存不足错误时进行堆转储
+
+如果您想在Mule服务器抛出内存不足错误时想要获得堆转储，请执行此过程：`java.lang.OutOfMemoryError: Java heap space`
+
+==== 过程
+
+Oracle Java虚拟机提供了 link:https://docs.oracle.com/javase/7/docs/webnotes/tsg/TSG-VM/html/clopts.html#gbzrr[JVM修饰符]来收集这些信息。请注意，您必须在应用此更改后重新启动Mule服务器，并再次重现OOM错误。
+
+要将此修饰符应用于Mule使用的JVM，可以在Mule的`/conf/wrapper.conf`中设置一个参数，该参数在以下情况下会自动触发堆转储的创建：
+
+----
+wrapper.java.additional.<n>=-XX:+HeapDumpOnOutOfMemoryError 
+wrapper.java.additional.<n+1>=-XX:HeapDumpPath=path/to/dumps
+----
+
+* 将<n>更改为`wrapper.conf`中的序列后面的数字
+
+如果没有为堆转储定义路径，则将在java进程启动的目录中创建该文件。堆转储文件应该生成为`java_pid<pid>.hprof.<unique number>`。
+

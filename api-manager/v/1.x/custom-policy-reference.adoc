@@ -1,0 +1,314 @@
+= 自定义策略文件参考
+:keywords: policy, gateway, yaml, pointcut
+
+此策略定义YAML和策略配置XML文件构成了自定义策略。
+
+//已移除请参阅SE-4243。 （kris 8.22.2016）有关更多示例，请导航到安装API Gateway运行时或Mule 3.8统一运行时的目录，搜索文件夹`examples`> `policies`以查找一组示例XML这些文件涉及平台中可用的默认策略。
+
+== 策略定义YAML文件
+
+策略定义文件定义策略的高级属性，可配置参数，标签以及在实施策略时作为UI可见的提示。
+
+以下示例显示IP白名单策略定义YAML文件：
+
+[source,yaml,linenums]
+----
+id: ip-whitelist
+name: IP whitelist
+description: Limits all service calls to a defined set of IP addresses.
+category: Security
+standalone: true
+requiresConnectivity: false
+resourceLevelSupported: true
+providedCharacteristics:
+  - IP filtered
+requiredCharacteristics: []
+configuration:
+  - propertyName: ipExpression
+    name: IP expression
+    description: |
+      Mule Expression for extracting the IP address from this API request.
+      for example, #[message.inboundProperties['http.headers']['X-Forwarded-For']]
+    type: expression
+    defaultValue:
+    optional: true
+    sensitive: false
+    allowMultiple: false
+  - propertyName: ips
+    name: Whitelist
+    description: Limited list of IP addresses allowed API access
+    type: ipaddress
+    optional: false
+    sensitive: false
+    allowMultiple: true
+----
+
+您定义的新属性具有基于您希望用户在应用策略时配置的值的值。 IP白名单策略示例要求`ipExpression`和`ips`属性的值。策略配置XML文件引用这些属性。系统会提示用户为其分配值。
+
+以下政策定义值与新政策相关：
+
+[%header,cols="30a,70a"]
+|===
+| {参数{1}}说明
+|名称 |字符串 - 策略名称
+|描述 |字符串 - 在应用策略详细信息时显示的描述
+|类别 |字符串 - 策略的类别
+| standalone  |布尔值 - 如果策略可以单独使用，或者仅当策略只能作为另一策略的一部分应用，则为true。
+| providedCharacteristics  |数组 - 通过应用此策略实现的可选特征的列表。
+| requiresConnectivity  | 布尔值 - 传统的内部参数。该功能未实现。
+| resourceLevelSupported  | 布尔值 -  True表示用户可以将策略应用于特定的API资源; False表示该策略适用于所有API资源。 （Mule 3.8.1及更高版本）
+| requiredCharacteristics  |数组 - 在应用此策略之前满足的所需特性的列表。所需特性可以通过应用其他提供这些特性的策略来实现。这允许策略之间的依赖关系。任何字符串输入都是有效的特征名称，只要至少有一个其他策略提供此特征，这些特征都区分大小写。
+|配置 |数组 - 一组与您的策略相关的可配置属性，以下是每个属性的参数详细信息。
+| ramlSnippet | string  -  RAML 0.08规范中描述的安全机制。
+| ramlV1Snippet  | string  -  RAML 1.0规范中描述的安全机制。
+|===
+
+=== 提供了特征参数
+
+通常，您将`providedCharacteristics`设置为避免不能同时应用的策略之间的冲突。例如，一次只能应用一个OAuth 2.0策略。使用`OAuth 2.0 protected`仅指定一个OAuth 2.0策略。
+
+现有特征列表是：
+
+*  `Client ID required`
+*  `CORS enabled`
+*  `Baseline Rate Limiting`
+*  `SLA Rate Limiting`
+*  `Requires authentication`
+*  `IP filtered`
+*  `JSON threat protected`
+*  `Security manager`
+*  `OAuth 2.0 protected`
+*  `OAuth 2.0 provider`
+*  `XML threat protected`
+
+该列表是无限的：任何字符串输入都是有效的特征名称。列表项是区分大小写的。
+
+=== 配置参数
+
+`configuration`参数列出了一组属性。每个可以包含以下参数：
+
+[%header,cols="30a,70a"]
+|===
+| {参数{1}}说明
+| `propertyName`  | string  - 内部参考的属性名称。
+| `name`  | string  - 要在配置窗口中显示的属性名称。
+| `description`  | string  - 要在配置窗口中显示的属性描述。
+| `type`  |字符串 - 数据类型：字符串，布尔值，int，ipaddress，表达式（MEL中），键值，rateLimits。如果type = int，则定义minimumValue和maximumValue。
+| `optional`  |布尔值 - 如果为其指定值是可选的，则为true。
+| `sensitive`  |布尔值 - 如果此字段包含的信息是敏感的（通常用于密码和令牌），则为true。当从服务器请求策略信息时，这些敏感字段被过滤掉。
+| `allowMultiple`  |布尔值 - 如果可以分配多个值，则为真。仅当`type`为`ipaddress`时有效。
+| `minimumValue`  | int  - 仅适用于int和required类型的值。
+| `maximumValue`  | int  - 仅适用于int和required类型的值。
+| `defaultValue`  |仅适用于int，boolean，string和expression类型的属性。
+|===
+
+====  propertyName语法
+
+以下片段显示了如何定义以下类型的propertyName参数：
+
+* 整数
+* 布尔
+* 字符串
+* 地图
+
+==== 整数
+
+如果type = int，则必须定义minimumValue和maximumValue。
+
+[source,yaml,linenums]
+----
+configuration:
+ - propertyName: aint
+   name: Test Int single between 5 and 10
+   description: Some Description
+   type: int
+   minimumValue: 5
+   maximumValue: 10
+   optional: true
+   sensitive: false
+   allowMultiple: false
+----
+
+==== 布尔
+
+[source,yaml,linenums]
+----
+configuration:
+ - propertyName: aboolean
+   name: Test Boolean single
+   description: Some Description
+   type: boolean
+   optional: true
+   sensitive: false
+   allowMultiple: false
+   defaultValue: false
+----
+
+==== 字符串
+
+[source,yaml,linenums]
+----
+configuration:
+ - propertyName: astring
+   name: Test String single
+   description: Some Description
+   type: string
+   optional: true
+   sensitive: false
+   allowMultiple: false
+----
+
+==== 地图
+
+[source,yaml,linenums]
+----
+configuration:
+ - propertyName: amap
+   name: Test Key/Value Map
+   description: Some Description
+   type: keyvalue
+   optional: true
+   sensitive: false
+   allowMultiple: true
+----
+
+====  ramlSnippet和ramlV1Snippet参数
+
+在自定义政策的YAML中，您可以包含`ramlSnippet`和`ramlV1Snippet`参数。将自定义策略添加到Anypoint Platform时，RAML .80或RAML 1片段的链接显示在“应用策略”列表中。
+
+以下代码片段显示了MuleSoft提供的基于节流SLA策略的YAML文件片段中的`ramlSnippet`和`ramlV1Snippet`参数：
+
+----
+id: test
+name: test
+description: Rosario Central
+...
+configuration:
+  - propertyName: omar
+    name: arnaldo
+...
+  - propertyName: rosario
+    name: central
+...
+ramlSnippet: |
+  traits:
+  - client-id-required:
+      queryParameters:
+        client_id:
+          type: string
+        client_secret:
+          type: string
+  ...
+  /products:
+  get:
+    is: [client-id-required]
+    description: Gets a list of all the inventory products.
+ramlV1Snippet: |
+  traits:
+  client-id-required:
+    queryParameters:
+      client_id:
+        type: string
+      client_secret:
+        type: string
+  ...
+  /products:
+  get:
+    is: [client-id-required]
+    description: Gets a list of all the inventory products.
+----
+
+== 策略配置XML文件
+
+策略配置是一个XML文件，用于实现策略的实际执行。配置通过在创建Mule Runtime应用程序时利用流中的元素来实现。所有可用于Mule运行时的元素都可以用于自定义策略。
+
+策略配置定义了执行策略的实际流程。像Mule应用程序一样结构化，您可以将内容包装在以下标签中：
+
+[source,xml,linenums]
+----
+<policy>
+</policy>
+----
+
+开头`<policy>`标签包含对策略中使用的所有Mule XSD文件的引用。您可以添加的一些Mule元素也需要添加相应的XSD参考。
+
+您可以为`<policy>`元素参数添加属性`id`和`policyName`，以收集有关分析API的数据。
+
+默认情况下，当您创建自定义策略时，您可以访问以下可在配置XML文件中引用的默认配置属性：
+
+[%header,cols="30a,70a"]
+|===
+|属性 |说明
+| `policyId`  |当前策略的唯一ID
+| `endpointUri`  | API入站端点的完整URI
+| `apiId`  | API的唯一ID号
+| `apiVersionId`  | API版本的唯一ID号
+| `apiName`  | API的名称
+| `isRamlEndpoint`  |布尔值，用于确定端点是否链接到RAML定义文件
+| `isWsdlEndpoint`  |布尔值，用于确定端点是否链接到WSDL定义文件
+| `isHttpEndpoint`  |布尔值，用于确定端点是否遵循HTTP协议
+|===
+
+除了这些默认属性外，您还可以在策略定义YAML文件中指定新的属性，并在策略配置XML文件中引用它们。
+
+=== 策略标签属性
+
+策略标记属性是自定义策略XML配置的重要组成部分：
+
+`<policy>`标记中的*  `order`属性
+<before> </before>和<after> </after>中的*  {{1}
+
+这些属性决定了策略执行的顺序。
+
+`requiresContracts`属性对于客户端验证至关重要。
+
+自定义策略属性参考包含有关这些属性的更多信息。
+
+=== 自定义策略例外块
+
+您可以在自定义策略定义中的异常块之前和之后定义，以增强流的catch异常策略而无需对其进行修改。 “自定义策略例外块参考”包含有关此主题的更多信息。
+
+=== 之前和之后的标签
+
+封闭在配置文件的主要元素中的是您可以添加的两个基本结构：`<before></before>`和`<after></after>`个标签。两者都是可选的，但如果您希望它执行任何操作，则您的策略必须至少有一个。
+
+如以下流程所示，只要请求到达入站端点，并且在您的API执行您的其余消息处理器之前，每当有一个传入请求到达API时，*before*标记之间的内容就会执行流动。每当有一个请求到您的API请求时，*after*标记之间的内容也会执行，就在您到达API的出站端点之前，并且已经执行了您的流程中的每个其他消息处理器之后。
+
+image:basic+flow.png[基本+流]
+
+除了`<before></before>`和`<after></after>`标签之外，您还可以将`<mule:processor-chain></mule:processor-chain>`标签添加为额外的流程，以便执行更多步骤。这些流程不会自行执行，它们必须以您的政策的*before*或*after*部分以某种方式引用。编写策略时，与编写Mule应用程序不同，您必须为元素的名称添加`mule:`后缀。
+
+[source,xml,linenums]
+----
+<policy>
+    <before>
+        <!-- Elements automatically executed at the start -->
+    </before>
+    <after>
+        <!-- Elements automatically executed at the end -->
+    </after>
+ 
+    <mule:processor-chain name="chain1">
+        <!-- This flow may be called to be executed by the others -->
+    </mule:processor-chain>
+ 
+    <mule:processor-chain name="chain2">
+        <!-- This flow may be called to be executed by the others -->
+    </mule:processor-chain>
+</policy>
+----
+
+本文档的"Pointcuts Reference"部分涵盖了启用资源级别策略。
+
+DataWeave组件支持在Mule Runtime 3.8.5及更高版本的自定义策略中使用。
+
+
+== 另请参阅
+
+*  link:/api-manager/v/1.x/custom-policy-reference[自定义策略参考]
+*  link:/api-manager/v/1.x/custom-pol-config-xml-props-reference[自定义策略属性参考]
+*  link:/api-manager/v/1.x/cust-pol-exception-blocks-reference[自定义策略例外块参考]
+*  link:/api-manager/v/1.x/pointcuts-reference[切入点参考]
+*  link:/mule-user-guide/v/3.8/elements-in-a-mule-flow[用于定义自定义策略配置的元素]
+*  link:/api-manager/v/1.x/custom-policy-reference#ramlsnippet-and-ramlv1snippet-parameters[ramlSnippet]
+

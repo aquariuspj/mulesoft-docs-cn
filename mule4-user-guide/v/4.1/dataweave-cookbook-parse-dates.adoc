@@ -1,0 +1,144 @@
+= 示例：使用DataWeave解析日期
+:keywords: studio, anypoint, transform, transformer, format, xml, json, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+这些示例在DataWeave头中定义了一个函数（`fun`），用于在不同的日期格式中对日期分隔符（`/`，`.`和`-`）进行归一化，以便所有人都使用相同的分隔符（`-`）。
+
+这些示例使用这些函数：
+
+*  `replace`，以便所有日期均匹配单个模式。
+*  `mapObject`遍历`date`元素。该脚本将归一化函数应用于每个`date`。
+*  `as`（在第二个DataWeave脚本中）将值的数据类型更改为具有特定日期格式的日期类型。
+
+
+== 示例：将日期返回为字符串类型
+
+。输入
+[source,Dataweave,linenums]
+----
+<dates>
+  <date>26-JUL-16</date>
+  <date>27/JUL/16</date>
+  <date>28.JUL.16</date>
+</dates>
+----
+
+.DataWeave
+[source,Dataweave,linenums]
+----
+%dw 2.0
+output text/xml
+fun normalize(date) date replace "/" with "-" replace "." with "-"
+---
+
+dates: (payload.dates mapObject {
+    normalized_as_string: normalize($.date)
+})
+
+----
+
+.Output（日期是字符串类型）
+[source,Dataweave,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<dates>
+  <normalized_as_string>26-JUL-16</normalized_as_string>
+  <normalized_as_string>27-JUL-16</normalized_as_string>
+  <normalized_as_string>28-JUL-16</normalized_as_string>
+</dates>
+----
+
+== 示例：将日期返回为日期类型
+
+。输入
+[source,Dataweave,linenums]
+----
+<dates>
+  <date>26-JUL-16</date>
+  <date>27/JUL/16</date>
+  <date>28.JUL.16</date>
+</dates>
+----
+
+.DataWeave
+[source,Dataweave,linenums]
+----
+%dw 2.0
+output text/xml
+fun normalize(date) date replace "/" with "-" replace "." with "-"
+---
+// Outputs date values as Date types in the specified format
+dates: (payload.dates mapObject {
+    normalized_as_date: normalize($.date) as Date {format: "d-MMM-yy"}
+})
+----
+
+.Output（日期是日期类型）
+[source,Dataweave,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<dates>
+  <normalized_as_date>2016-07-26</normalized_as_date>
+  <normalized_as_date>2016-07-27</normalized_as_date>
+  <normalized_as_date>2016-07-28</normalized_as_date>
+</dates>
+----
+
+////
+TODO：在发布之前需要获得这个工作！
+== 示例：使用条件日期分析
+
+假设你想包含一个允许不同格式的日期字段，并且希望DataWeave能够相应地解析每个字段。对于这个例子，假设你想接受这三种格式：
+
+*  Sun，06 Nov 1994 08:49:37 GMT = `E, d LLL u H:m:s O`
+*  Sun Nov 6 08:49:37 1994 = `cccc, d-LLL-u H:m:s O`
+* 星期日，06-Nov-94 08:49:37 GMT = `E LLL d H:m:s u`
+
+从写出一个正则表达式开始，以匹配它们中的每一个：
+
+*  Sun，06 Nov 1994 08:49:37 GMT = `/^[A-z][A-z][A-z],/`
+*  Sun Nov 6 08:49:37 1994 = `/^[A-z][A-z][A-z]\s/`
+* 星期日，06-Nov-94 08:49:37 GMT =这将是默认设置
+
+您可以在DW link:dataweave-types#functions-and-lambdas[功能]中使用这些正则表达式，它首先评估字符串以查看它匹配的正则表达式，然后通过相应的函数转换它。该功能应该执行以下操作：
+
+. 将输入字符串作为参数
+. 将其与正则表达式匹配以确定它所处的格式
+. 使用相应的属性运行强制日期函数
+// link:dw-functions-core#coerce-to-date[强制到目前为止]
+. 返回日期时间对象
+
+=== 转换示例
+
+
+.DataWeave
+[source,Dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var parseDate = (dateStr) -> (
+  if (dateStr contains /^[A-z][A-z][A-z],/)
+    dateStr as Localdatetime {format: "E, d LLL u H:m:s O"}
+  else if (dateStr contains /^[A-z][A-z][A-z]\s/)
+      (dateStr as Localdatetime {format: "E LLL d H:m:s u"})
+    else dateStr as Localdatetime {format: "cccc, d-LLL-u H:m:s O"})
+---
+date: parseDate(payload.dateString)
+----
+////
+
+== 相关示例
+
+*  link:dataweave-cookbook-add-and-subtract-time[添加和减去日期]
+
+*  link:dataweave-cookbook-reference-multiple-inputs[参考多个输入]
+
+
+== 另请参阅
+
+*  link:dataweave-types[DataWeave值类型]
+
+// * link:dw-functions-core[DataWeave核心功能]
+
+*  link:dataweave-selectors[DataWeave选择器]
+
+*  link:dataweave-cookbook[DataWeave食谱]

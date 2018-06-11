@@ -1,0 +1,600 @@
+
+= 迁移数据库连接器
+
+//一般地解释Mule 3和Mule 4之间如何以及为什么会发生变化。
+数据库连接器从Mule 3到Mule 4的主要变化包括：
+
+* 所有数据库操作（如选择，插入，更新，删除等）已被重构为单独的操作。 Mule 4还有新的专用批量操作。
+* 使用DataWeave：数据库操作（如插入和更新）支持DataWeave版本2转换。您可以构建插入或更新数据库而无消息副作用的数据集，并且不再使用消息富集器。
+* 您可以用类似的方式执行动态和静态查询。
+*  Mule流式框架会自动配置用于您的操作。您可以执行select语句并异步处理结果，而不必担心连接泄漏。
+
+[[whats_covered_here]]
+== 这里涵盖了什么？
+
+*  <<database_configuration>>
+ **  <<data_source_ref>>
+ **  <<connector_config_detail>>
+*  <<database_dynamic_queries>>
+*  <<database_streaming>>
+*  <<database_operation_bulk>>
+
+[[database_configuration]]
+== 数据库连接配置
+
+// TODO：解释配置更改？
+Mule 3和Mule 4的数据库连接器支持Derby，MySQL，Oracle和通用数据库配置。对于Mule 4，还支持Microsoft SQL Server和数据源引用连接。
+
+这些连接配置的XML在Mule 4中发生了变化：
+
+*  Mule 3：数据库元素，例如`<db:derby-config />`是顶层元素。
+*  Mule 4：`<db:config />`是Mule 4中所有数据库连接配置的顶层元素，并且特定的数据库配置嵌套在单独的`<db:config />`元素下：
+** 德比：`<db:data-source-connection />`
+**  Microsoft SQL Server：`<db:mssql-connection />`
+**  MySQL：`<db:my-sql-connection />`
+**  Oracle：`<db:oracle-connection />`
+** 通用：`<db:generic-connection />`
+** 数据源参考连接：`<db:data-source-connection />`
+
+.Mule 3示例：Derby连接配置
+[source,xml, linenums]
+----
+<db:derby-config name="DerbyConfig" url="derbydatabase.com/MydatabaseTest"/>
+----
+
+请注意，上面的Mule 3示例中的`<db:derby-config />`在下面的Mule 4示例中变为`<db:config />`，并且数据库的URL的属性从`url`变为`database` Mule 4. Mule 4中的`<db:derby-connection />`子元素是新的。
+
+.Mule 4示例：Derby连接配置
+[source,xml, linenums]
+----
+<db:config name="DerbyConfig">
+  <db:derby-connection database="derbydatabase.com/MydatabaseTest" />
+</db:config>
+----
+
+另请注意，在Mule 4中，可以使用其他`<db:derby-connection />`设置（XML属性）：
+
+*  `create="true|false"`：是否在不存在的情况下创建数据库。
+*  `subsubProtocol="directory"`：Derby使用的SubsubProtocol的类型。可用的选项有`directory`，`memory`，`classpath`和`jar`。
+
+下一节介绍其他数据库的连接配置。
+
+[[data_source_ref]]
+=== 数据源参考
+
+这些主题为其他数据库连接提供了Mule 4 XML示例，并包含特定于连接器的设置：
+
+*  <<example_data_source_db>>
+*  <<example_generic_db>>
+*  <<example_mssql_db>>
+*  <<example_mysql_db>>
+*  <<example_oracle_db>>
+*  <<example_mssql_db>>
+*  <<example_driver>>
+
+请注意，前一节中的Derby的Mule 3示例显示了Mule 3和Mule 4在数据库连接配置（包括My SQL，Oracle等）方面的主要差异。它还显示了从Mule 3到Mule 4数据库连接的主要迁移模式：
+
+* 德比：<<database_configuration>>
+
+[[example_data_source_db]]
+====  Mule 4示例：数据源参考
+
+要使用数据源参考，您需要：
+
+1  - 创建一个XML Spring Beans文件，创建表示`DataSource`的Spring Bean
+
+.datasource弹簧-beans.xml文件
+[source,xml,lineums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:schemaLocation="
+               http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd">
+
+    <bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+        <property name="driverName" value="org.apache.derby.jdbc.EmbeddedDriver"/>
+        <property name="url" value="jdbc:derby:muleEmbeddedDB;create=true"/>
+    </bean>
+
+</beans>
+----
+
+警告：需要配置包含DataSource实现的Maven依赖项。
+对于此示例`org.enhydra.jdbc.standard.StandardDataSource`，所需的依赖关系是：+
+ +
+`<dependency>` +
+     `<groupId>com.experlog</groupId>` +
+     `<artifactId>xapool</artifactId>` +
+     `<version>1.5.0</version>` +
+`</dependency>`
+
+2  - 创建数据源连接
+
+<1>使用*Mule Spring Module* [链接到Spring模块]导入`datasource-spring-beans.xml`文件
+<2>使用DataSource连接创建DB配置，并添加为`dataSourceRef`的Spring Bean ID
+DataSource Bean在`datasource-spring-beans.xml`中创建。
+
+[source,xml, linenums]
+----
+<spring:config name="spring-beans" files="datasource-spring-beans.xml"/> //<1>
+
+<db:config name="db-datasource">
+    <db:data-source-connection dataSourceRef="jdbcDataSource"> //<2>
+        <reconnection failsDeployment="true">
+            <reconnect frequency="4000" count="4"/>
+        </reconnection>
+        <db:column-types>
+            <db:column-type id="124"
+                            typeName="column_type"
+                            className="class_name"/>
+        </db:column-types>
+        <db:pooling-profile maxPoolSize="6" minPoolSize="1"
+                            acquireIncrement="2" preparedStatementCacheSize="6"
+                            maxWait="1" maxWaitUnit="MINUTES"/>
+    </db:data-source-connection>
+</db:config>
+----
+
+此设置对数据源参考是唯一的：
+
+*  `dataSourceRef="my_ref_here"`：引用JDBC DataSource对象。这个对象通常使用Spring创建。在使用XA事务时，必须提供XADataSource对象。
+
+[[example_generic_db]]
+====  Mule 4示例：泛型
+[source,xml, linenums]
+----
+<db:config name="generic_connection">
+  <db:generic-connection url="url_here" driverClassName="driver_class_name_here"
+    transactionIsolation="READ_COMMITTED" useXaTransactions="true"/>
+</db:config>
+----
+
+这些设置对于通用数据库是唯一的：
+
+*  `url="url_here"`用于连接到数据库的JDBC URL。
+*  `driverClassName="driver_class_name_here"`为数据库驱动程序类的完全限定名称。
+
+警告：Maven依赖项包含在。中引用的类
+应该在Mule应用程序中配置`driverClassName`参数。 +
+此外，由于新的Mule 4 ClassLoading机制，此依赖性必须声明为共享库
+导出到DB连接器。
+
+// TODO链接如何添加共享库或用户永远不会实现如何操作
+
+另请参阅<<db_transactions>>。
+
+[[example_mssql_db]]
+====  Mule 4示例：Microsoft SQL Server
+[source,xml, linenums]
+----
+<db:config name="Microsoft_SQL_Server">
+  <db:mssql-connection host="my_host" user="myuser" password="mypassword" databaseName="mydatabase" >
+  </db:mssql-connection>
+</db:config>
+----
+
+另请参阅<<db_transactions>>。
+
+[[example_mysql_db]]
+====  Mule 4示例：MySQL
+[source,xml, linenums]
+----
+<db:config name="MySQL">
+  <db:my-sql-connection host="myhost" user="myuser" password="mypassword" database="mydatabase" >
+  </db:my-sql-connection>
+</db:config>
+----
+
+另请参阅<<db_transactions>>。
+
+[[example_oracle_db]]
+====  Mule 4示例：Oracle JDBC数据库
+[source,xml, linenums]
+----
+<db:config name="Oracle_Connection">
+  <db:oracle-connection host="myhost" user="myuser" password="mypassword" instance="myinstance" >
+  </db:oracle-connection>
+  <expiration-policy />
+</db:config>
+----
+
+另请参阅<<db_transactions>>。
+
+[[example_driver]]
+==== 示例：Microsoft SQL Server驱动程序的Maven依赖关系设置
+Microsoft SQL Server，MySQL，Derby，Oracle配置需要一个驱动程序。
+
+[source,xml, linenums]
+----
+<dependency>
+  <groupId>com.microsoft.sqlserver</groupId>
+  <artifactId>mssql-jdbc</artifactId>
+  <version>6.2.2.jre8</version>
+</dependency>
+----
+
+警告：由于新的Mule 4 ClassLoading机制，此依赖性必须声明为共享库
+导出到DB连接器。使用Studio或Flow Designer，这将自动配置。
+
+// TODO链接如何添加共享库或用户永远不会实现如何操作
+
+[[connector_config_detail]]
+=== 示例：详细的连接器配置
+
+在Mule 4中，您可以在数据库连接配置（如`<db:mysql-config />`）下为这些设置添加子元素：
+
+*  <<db_transactions>>
+**  <<tx_actions>>
+**  <<tx_isolation>>
+**  <<xa_tx>>
+*  <<connection_properties>>
+*  <<column_types>>
+*  <<pooling_profile>>
+*  <<reconnection_strategies>>
+*  <<expiration_policies>>
+
+[[db_transactions]]
+==== 数据库事务
+
+[[tx_isolation]]
+===== 事务隔离
+
+事务处理是在连接数据库时在驱动程序上设置事务隔离级别。
+
+ * *NOT_CONFIGURED* (Default)
+ *  *READ_COMMITTED*（`transactionIsolation="READ_COMMITTED"`）
+ *  *READ_UNCOMMITTED*（`transactionIsolation="READ_UNCOMMITTED"`）
+ *  *REPEATABLE_READ*（`transactionIsolation="REPEATABLE_READ"`）
+ *  *SERIALIZABLE*（`transactionIsolation="SERIALIZABLE"`）
+
+.Mule 3示例：事务隔离
+[source,xml, linenums]
+----
+<db:mysql-config name="db_config" host="0.0.0.0" port="3306" transactionIsolation="READ_COMMITTED"/>
+----
+
+.Mule 4示例：事务隔离
+[source,xml, linenums]
+----
+<db:config name="db_config" >
+  <db:my-sql-connection host="0.0.0.0" port="3306" transactionIsolation="READ_COMMITTED"/>
+</db:config>
+----
+
+[[xa_tx]]
+=====  XA交易
+
+可将连接配置为在*Mule 3*和*Mule 4*中的XA事务中工作
+这可以在连接配置设置`useXaTransactions="true"`中进行配置
+
+.Mule 3示例：XA Transactions
+[source,xml, linenums]
+----
+<db:mysql-config name="db_config" host="0.0.0.0" port="3306" useXaTransactions="true"/>
+----
+
+.Mule 4示例：XA Transactions
+[source,xml, linenums]
+----
+<db:config name="db_config" >
+  <db:my-sql-connection host="0.0.0.0" port="3306" useXaTransactions="true"/>
+</db:config>
+----
+
+[[connection_properties]]
+==== 连接属性
+*MySQL*和*Microsoft SQL Server*数据库配置提供连接属性设置，
+这些属性作为附加属性被注入JDBC连接。
+
+.Mule 3示例：连接属性
+[source,xml, linenums]
+----
+<db:mysql-config name="db_config" host="0.0.0.0" port="3306" user="root" password="my-secret-pw">
+    <db:connection-properties>
+        <db:property key="userId" value="123123"/>
+        <db:property key="permissions" value="SYS"/>
+    </db:connection-properties>
+</db:mysql-config>
+----
+
+.Mule 4示例：连接属性
+[source,xml, linenums]
+----
+<db:config name="db_config" >
+  <db:my-sql-connection host="0.0.0.0" port="3306" user="root" password="my-secret-pw">
+    <db:connection-properties >
+      <db:connection-property key="userId" value="123123" />
+      <db:connection-property key="permissions" value="SYS" />
+    </db:connection-properties>
+  </db:my-sql-connection>
+</db:config>
+----
+
+[[column_types]]
+==== 列类型
+非标准列类型的* 列类型（`<db:column-types/>`）。
+
+[[pooling_profile]]
+==== 汇集配置文件
+* 具有连接池连接的JDBC数据源的池配置文件（`<db:pooling-profile/>`）。这与Mule 3中的连接池几乎相同。
+//来自SPEC：JDBC数据源的池化配置，能够集中连接。请注意，这不是Mule的标准Pooling配置文件，而是定位到数据源的自定义配置文件。
+
+// TODO：应该链接到这个主题上的adoc模式
+[[reconnection_strategies]]
+==== 重新连接策略
+
+重新连接策略设置在Mule 3和Mule 4中类似。但是，Mule 4中不提供自定义重新连接策略。
+
+以下示例显示了这些设置的XML更改：
+
+*  *None*：默认。与Mule中不使用重新连接策略相同3。
+*  *Standard*：与Mule中的标准重新连接相同3.两者具有相同的选项：频率（毫秒），重新连接尝试
+*  *Forever*：与永久重新连接Mule 3相同。
++
+.Mule 3示例：重新连接设置
+[source,xml, linenums]
+----
+<db:mysql-config ...>
+  <reconnect frequency="4000" count="4"/>`
+</db:mysql-config>
+
+<db:mysql-config ...>
+  <reconnect-forever frequency="4000"/>`
+</db:mysql-config>
+----
++
+.Mule 4示例：重新连接设置
+[source,xml, linenums]
+----
+<db:mssql-connection ...>
+  <reconnection failsDeployment="true">
+    <reconnect frequency="4000" count="4"/>
+  </reconnection>
+</db:mssql-connection>
+
+<db:mssql-connection ...>
+  <reconnection >
+    <reconnect-forever frequency="4000" />
+  </reconnection>
+</db:mssql-connection>
+----
+
+[[database_operations_overview]]
+== 数据库连接器操作
+
+* 查询SQL查询文本和输入参数（如<<database_operation_select>>中所示）。
+* 流式策略设置（如<<database_streaming>>中所示）
+*  <<tx_actions>>
+* 查询设置
+* 针对错误的错误映射，包括DB：BAD_SQL_SYNTAX，DB：QUERY_EXECUTION
+*  Mule 4输入和输出元数据的属性，有效载荷和变量
+
+[[database_parameterized_queries]]
+=== 迁移参数化查询
+
+在*Mule 3*和*Mule 4*中，都以键值对的形式提供输入参数。
+这些键与分号字符（:)通过名称引用参数值一起使用，
+这意味着在*Mule 3*中编写的SQL参数化查询不需要使用更改
+在*Mule 4*中。
+建议使用此方法以避免SQL注入攻击，并允许连接器
+执行优化，以改善Mule应用程序的整体性能。
+
+==== 输入参数
+
+* 在*Mule 3*中，每个输入参数在`<db:select/>`操作内定义为`<db:in-param/>`元素
+其中包含参数名称的`name`属性和保存参数值的`value`属性。
+
+* 在*Mule 4*中，输入参数定义为Map `<db:input-parameters>`，其中键是参数的名称，值
+作为参数值。该地图只能使用DataWeave创建。
+
+.Mule 3示例：参数化的SELECT Query
+[source,xml, linenums]
+----
+<db:select config-ref="databaseConfig">
+    <db:parameterized-query>
+       SELECT * FROM employees WHERE last_name = :last_name
+    </db:parameterized-query>
+    <db:in-param name="last_name" value="#[flowVars.lastName]"/>
+</db:select>
+----
+
+.Mule 4示例：参数化的SELECT Query
+[source,xml, linenums]
+----
+<db:select config-ref="databaseConfig">
+  <db:sql>
+    SELECT * FROM employees WHERE last_name = :last_name
+  </db:sql>
+  <db:input-parameters>
+    #[
+      {
+        last_name : vars.lastName
+      }
+    ]
+  </db:input-parameters>
+</db:select>
+----
+
+[[database_dynamic_queries]]
+=== 迁移动态查询
+
+有时，您不仅需要参数化WHERE子句，还要参数化查询本身的某些部分。这种情况下的示例用例是查询，这些查询需要根据条件选择在线/历史表，或者项目列需要变化的复杂查询。
+
+在Mule 3中，select的概念被拆分为参数化和动态查询，并且不能同时使用两者。您必须选择具有动态查询还是具有使用参数的优势（SQL注入保护，PreparedStatement优化等）。此外，做一个或另一个的语法是不同的，所以你必须学习两种不同的方法来做同样的事情。
+
+但是对于Mule 4中的新数据库连接器，现在可以通过查询中的表达式同时使用这两种方法：
+
+.Mule 3示例：动态SELECT查询
+[source,xml, linenums]
+----
+<db:select config-ref="databaseConfig">
+  <db:dynamic-query>
+    SELECT * FROM #[flowVars.table] WHERE name = #[flowVars.name]
+  </db:dynamic-query>
+</db:select>
+----
+
+.Mule 4示例：动态SELECT查询
+[source,xml, linenums]
+----
+<db:select config-ref="databaseConfig">
+  <db:sql>
+    #['SELECT * FROM $(vars.table) WHERE name = $(vars.name)']
+  </db:sql>
+</db:select>
+----
+
+GOTCHA：由于整个查询被视为字符串而不是使用PreparedStatements，因此Mule 3示例的性能较差并且容易受到SQL注入攻击
+
+[[database_streaming]]
+== 流式传输大型结果
+
+流处理可以处理对大数据库表的结果查询，这可能会返回数万条记录，特别是对于集成用例。流媒体是一个很好的解决方案。
+
+=== 启用流式传输
+在*Mule 3*中，流默认情况下处于禁用状态，因此您必须启用它才能使用它。
+
+在*Mule 4*中，流式传输始终处于打开状态，但您可以配置运行时将通过其实现可重复流式传输的策略。有关这方面的更多信息，请参阅 link:streaming-about[流式文档页面]。
+
+ 提示：请注意，禁用可重复流式传输将阻止DataWeave和其他组件多次处理流，即使并行处理也是如此。
+
+[[database_operation_bulk]]
+=== 迁移批量操作
+
+==== 启用批量模式
+在*Mule 3*中，您可以通过*Insert, Update, and Delete*操作的`bulkMode="true"`设置来设置批量功能。
+
+在*Mule 4*中，您可以使用专用批量插入（`<db:bulk-insert>`），批量更新（`<db:bulk-update>`）和批量删除（`<db:bulk-delete>`）数据库。这意味着操作不再根据收到的有效负载来改变它们的行为。
+
+==== 使用批量数据
+
+在*Mule 3*中，在批量查询中，连接器的工作方式与`<for-each/>`组件类似，它将当前有效负载值，
+希望 成为项目的集合，并对集合的每个值执行`<db:in-param />`个表达式。
+
+在*Mule 4*中，它看起来有点不同，它并不消耗集合中的每个元素的有效负载和执行表达式，
+需要注入一组条目。
+
+===== 示例：
+
+.Mule 3示例：使用参数化查询进行选择
+[source,xml, linenums]
+----
+<db:insert config-ref="db_config" bulkMode="true">
+    <db:parameterized-query>
+      INSERT INTO customers (id, name, lastName)
+      VALUES (:id, :name, :lastName)
+    </db:parameterized-query>
+    <db:in-param name="id" value="#[payload.id]"/>
+    <db:in-param name="name" value="#[payload.name]"/>
+    <db:in-param name="name" value="#[payload.lastName]"/>
+</db:insert>
+----
+
+.Mule 4示例：使用批量操作获取不同的值
+[source,xml, linenums]
+----
+<db:bulk-insert config-ref="db_config" >
+  <db:sql>
+    INSERT INTO customers (id, name, lastName)
+    VALUES (:id, :name, :lastName)
+  </db:sql>
+  <db:bulk-input-parameters>
+  #[[{
+      id: 2,
+      name: 'George',
+      lastName: 'Costanza'
+    },
+    {
+      id: 3,
+      name: 'Cosmo',
+      lastName: 'Kramer'
+    }]]
+  </db:bulk-input-parameters>
+</db:bulk-insert>
+----
+
+[[tx_actions]]
+=== 交易行为
+
+数据库操作在事务内部执行时可以决定它们的方式
+将与交易进行交互。
+
+可用的交易行为：
+
+*  *ALWAYS_JOIN*
+*  *JOIN_IF_POSSIBLE*
+*  *NOT_SUPPORTED*
+
+.Mule 3示例：事务性操作
+[source,xml, linenums]
+----
+<db:select config-ref="db_config" transactionalAction="ALWAYS_JOIN">
+   <db:parameterized-query>
+     SELECT * FROM people
+   </db:parameterized-query>
+</db:select>
+----
+
+.Mule 4示例：事务性操作
+[source,xml, linenums]
+----
+<db:select config-ref="db_config" transactionalAction="ALWAYS_JOIN">
+  <db:sql>
+    SELECT * FROM people
+  </db:sql>
+</db:select>
+----
+
+[[output_target]]
+=== 输出目标
+在*Mule 3*中，DB连接器可以将执行输出保存在所需的位置
+目标变量。在*Mule 4*中，这仍然可以完成，但有一些差异。
+
+在*Mule 3*中，输出只是执行结果，所以在什么时候
+配置，例如：`target="#[flowVars.targetVar]"`这意味着查询
+执行将保存在流变量`targetVar`中。
+
+在*Mule 4*中非常相似，您有一个`target`参数，它是的名称
+目标流变量，这不能是一个表达式，并且*Mule 4*中的新参数
+是`targetValue`，这是一个针对该操作进行评估的表达式
+结果。例如，这可以是：`\#[payload]`，以保存整个有效负载，或
+`#[payload[0]]`只保存选择查询的第一行。
+
+
+.Mule 3示例：输出目标
+[source,xml, linenums]
+----
+<db:select config-ref="db_config" target="#[flowVars.targetVar]">
+    <db:parameterized-query>
+      SELECT * FROM People
+    </db:parameterized-query>
+</db:select>
+----
+
+.Mule 4示例：输出目标
+[source,xml, linenums]
+----
+<db:select config-ref="db_config" target="targetVar" targetValue="#[payload]">
+  <db:sql>
+    SELECT * from People
+  </db:sql>
+</db:select>
+----
+
+要使用数据库连接器，只需使用Studio调色板将其添加到应用程序中，或者在您的`pom.xml`文件中添加以下依赖项：
+
+[source,XML,linenums]
+----
+<dependency>
+    <groupId>org.mule.connectors</groupId>
+    <artifactId>mule-db-connector</artifactId>
+    <version>1.2.0</version> <!-- or newer -->
+    <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== 另请参阅
+
+*  link:/connectors/db-connector-index[数据库连接器概述]
+*  link:streaming-about[关于在Mule 4.0流媒体]。

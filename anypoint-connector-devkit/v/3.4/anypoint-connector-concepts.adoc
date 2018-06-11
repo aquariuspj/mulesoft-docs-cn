@@ -1,0 +1,145 @@
+=  Anypoint连接器概念
+
+**Anypoint** *Connector*是一个使Mule应用程序能够使用特定协议通过网络连接到另一个应用程序或Web服务的元素。本节介绍Anypoint Connector的体系结构，DevKit支持连接器与Mule的接口以及开发人员必须自行构建的客户端功能。
+
+== 假设
+
+此页面假定了 link:/mule-user-guide/v/3.4/mule-fundamentals[骡子基础]中提供的Mule ESB的一般知识。由于DevKit广泛使用Java注释来将Java连接器代码与Mule集成，因此本文假定您熟悉Java的注释机制。此外，它假定您对Anypoint连接器和DevKit的作用有一般的了解，如 link:/anypoint-connector-devkit/v/3.4[Anypoint连接器DevKit]中所述。
+
+==  Anypoint连接器
+
+连接器使Mule能够与外部目标应用程序或其他资源进行通信，将目标呈现的任何API桥接到由Mule提供的接口。换句话说，连接器插入到API的开放端，因此_your_应用程序可以与另一个应用程序交换数据。
+
+*What it is*  - 连接器的实现定义了以下内容：
+
+* 连接器暴露的操作
+用于将数据传入和传出连接器操作的数据模型（POJO和/或键值映射）* 
+* 连接器的XML元素和Mule ESB中使用的可配置属性
+* 用于与Mule交流状态的例外情况
+* 用户在其中配置连接器的Studio中的属性对话框
+
+
+
+*What it does*  - 连接目标时，连接器必须执行以下操作：
+
+* 建立与目标公开的端点的基本连接
+* 对目标进行身份验证以获取其操作权限
+* 调用API操作（例如，通过调用SOAP或REST接口），传递参数以及处理响应和异常
+* 将数据格式从应用程序的API转换为POJO或键值地图，以便在Mule中使用
+
+*How to build it*  -  DevKit的目的是尽可能简化构建，测试，然后释放连接器，以便所有连接器在Mule中呈现出统一的体验。使用DevKit，您的大部分开发工作都会写入Mule独立客户端代码以访问您的目标;一个相对简单的Java类会封装客户端代码，并根据您应用的注释将其与Mule连接。
+
+DevKit还为以下活动提供开箱即用的支持：
+
+* 与连接器对象的Mule生命周期集成，根据需要自动调用初始化，启动，停止和处理连接器对象上的方法
+* 连接池，尽可能重用连接到资源
+* 实例池，最大限度地减少连接器对象的创建和销毁
+* 管理使用OAuth或其他常用身份验证方法的目标的身份验证
+
+==  Anypoint连接器的体系结构
+
+连接器呈现出两个面向世界：一个是Mule，另一个是目标。下图说明了连接器的结构及其两个主要功能元素：**@Connector Class**和*Client Classes*
+
+image:create-connector-architecture.png[image,title="architecture.png"]
+
+=== 面向骡子的功能
+
+连接器的面向骡子的一面包括以下内容：
+
+*  *a main Java class*，被称为@Connector类，它使用DevKit @Connector Java注释进行了注释
+可以在Mule中配置的*  *connector attributes*，它们被定义为@Connector类的属性，并用@Configurable
+连接器上可用的*  *methods that expose operations*，它们用@Processor注解，通常称为@Processor方法。
+
+其他注释定义与认证相关的功能和连接管理，并控制连接器的Studio对话框的布局。提出或传播的数据模型和异常也是面向Mule的类。
+
+当您使用Maven创建项目时，DevKit为您生成一个框架@Connector类。然后，您可以添加@Configurable属性，@Processor方法和身份验证逻辑来​​构建连接器。在构建过程中，注释处理器将您的代码与所需功能进行扩展，以便与Mule集成。
+
+=== 面向目标的功能
+
+连接器面向目标（即面向客户端）侧的结构取决于用于访问目标系统的技术。 @Connector类将使用一个类来访问客​​户端功能;这通常被称为客户端类。
+
+客户端类通常依赖于其他类实际实现对目标的调用。根据您的目标，可能会为您生成或提供一些这些类。例如，如果您有一个Java客户端库，或者正在使用SOAP服务的WSDL文件，那么大多数客户端代码都在那里实现。在其他情况下，您必须自己编写此代码。
+
+=== 数据模型实体类和例外
+
+连接器的数据模型由传入和传出公开操作的对象组成。虽然许多Web服务接受并返回XML或JSON数据，但适当的Mule连接器必须将客户端使用的数据格式转换为Java对象 -  POJO或表示发送到目标并从目标返回的数据对象的键值映射。 （将原始XML或JSON响应返回给Mule是未成熟，未正确实现的连接器的标志之一。）
+
+该连接器还引发了Mule的异常，以表示可能发生的不同错误：连接和身份验证失败，逻辑错误（例如传递给操作的错误参数）等等。
+
+== 在Java中实现Anypoint连接器
+
+为任何特定目标构建连接器时，您必须做出几个选择。
+
+. 选择一种认证机制
+. 选择访问目标API的方法
+. 选择是将数据模型建立在POJO还是paps上
+
+你的选择通常由目标决定。例如，一个应用程序可能只能通过基本的身份验证通过基于SOAP的Web服务访问提供对客户端的访问，或者可能提供Java客户端库，但不提供其他访问方式。
+
+但是，在某些情况下，您可能有多个选项可用于访问目标。例如，应用程序可能有一个Java客户端库，以方便访问方法子集，并提供功能完整的RESTful API。一般来说，如果客户端库可用，它是最简单的解决方案，但您可以选择最适合您的用例的那个。
+
+=== 认证机制
+
+DevKit可以与大多数身份验证机制集成。大多数Web服务都支持基本身份验证或某种版本的OAuth，每种都支持DevKit开箱即用。 DevKit还支持其他身份验证协议，如SAML。
+
+一些API提供多种身份验证方法。例如，Twitter的API允许您在基本身份验证方法和多种样式的OAuth身份验证之间进行选择。根据您的要求和您的特定情况，您可能能够在连接器中实施多种身份验证方式。
+
+实现身份验证功能需要在@Connector类级别使用注释，并且还可能需要客户机类中的代码（例如，向Web服务调用添加与身份验证相关的HTTP标头）。下表列出了DevKit支持的身份验证方法。
+
+[%header%autowidth.spread]
+|===
+|认证方法 |完整文档 |笔记
+| *OAuth 1*  | link:/anypoint-connector-devkit/v/3.4/implementing-oauth-1.0-authentication[实施OAuth 1.0身份验证] .2 + |更常见于REST风格的Web服务和云应用程序。
+
+| *OAuth 2 or other OAuth variants*  | link:/anypoint-connector-devkit/v/3.4/implementing-oauth-2.0-authentication[实施OAuth 2.0身份验证]
+
+| *Basic Authentication*
+*(username/password)*  | link:/anypoint-connector-devkit/v/3.4/implementing-connection-management[实施连接管理]  | SOAP Web服务更常见。
+
+| *Other authentication protocols* +
+*(e.g. SAML, NTLM,  Kerberos, LDAP)*  | link:/anypoint-connector-devkit/v/3.4/implementing-connection-management[实施连接管理]  |与基本认证类似，（依赖于相同的注释）。您可能不得不实施一些补充逻辑。
+|===
+
+有关这些协议的更多详细信息，请参阅 link:/anypoint-connector-devkit/v/3.4/authentication-methods[认证方法]。
+
+=== 目标
+
+您可以使用DevKit为几乎任何类型的目标构建连接器。但是，绝大多数应用程序公开（至少）以下其中一个：Java客户端库，基于SOAP的RPC API或RESTful API。
+
+DevKit为这些通用目标支持广泛使用的客户端选项和技术，详见下表。
+
+[%header%autowidth.spread]
+|===
+|目标 |方法 |备注 |完整文档
+| *Java Client Library*  |使用客户端库 |如果可用，这通常是调用远程服务的最简单方法。 | link:/anypoint-connector-devkit/v/3.4/connector-to-java-client-library-example[连接到Java客户端库示例]
+
+| *SOAP API*  |使用Apache CXF  |构建和使用SOAP Web服务的_de facto_标准。
+| link:/anypoint-connector-devkit/v/3.4/connector-to-soap-service-via-cxf-client-example[通过CXF客户端示例连接到SOAP服务]
+
+.2 + | *RESTful API*  | Jersey Client  |灵活地访问任何RESTful API。 | link:/anypoint-connector-devkit/v/3.4/connector-to-restful-service-with-jersey-client-example[使用Jersey客户端示例连接到RESTful服务]
+
+| DevKit RESTCall批注 | DevKit内置的简单RESTful API客户端。 | link:/anypoint-connector-devkit/v/3.4/connector-to-restful-api-with-restcall-annotations-example[使用RESTCall注释示例连接到RESTful API]
+|===
+请注意，对于SOAP和RESTful API，都可以选择其他客户端库。例如， http://cxf.apache.org/[Apache CXF]为RESTful Web服务提供支持。这种方法可以起作用，但通常不推荐。
+
+在一些不寻常的情况下，您可能需要针对一些较低级别的协议。一些例子包括：
+
+* 一些非标准的Web服务可能需要使用低级 http://http//hc.apache.org/httpcomponents-client-ga/[Apache HTTP客户端]
+* 传统大型机环境可能需要较旧的协议
+* 连接的设备可能会通过一些新兴的"Internet of Things"协议提供访问权限
+
+在这种情况下，您可以编写自己的Java客户端库来访问资源，然后构建@Connector类来封装该客户端库，如 link:/anypoint-connector-devkit/v/3.4/connector-to-java-client-library-example[连接到Java客户端库示例]中所述。
+
+=== 更多数据
+
+如上所述，Mule使用数据模型与目标交换数据，并将该数据模型作为Java对象展示给Mule。连接器将这些对象以可由元数据感知操作符（如 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[的DataMapper]）处理的形式公开给Mule。
+
+* 大多数应用程序通过他们的操作公开*static data model*。例如，日历应用程序可能会公开一个固定结构来表示预定的约会。对于这些应用程序，应用程序对象的最简单表示形式就像普通的旧Java对象（PO​​JO）。
+* 一些复杂的应用程序（例如Salesforce）定义了*dynamic data model*。特定的Salesforce部署可能为诸如`Customer`的对象定制了定义，这些对象具有额外的已定义属性。这种应用程序的连接器应该将对象数据作为可以存储任意属性的键值映射返回给Mule，并且应该能够从应用程序中提取元数据。
+
+您可以将连接器配置为支持Mule link:/mule-user-guide/v/3.4/mule-datasense[DataSense]，其中还包括支持查询语言的应用程序（例如Salesforce）的**query support **。查询支持需要额外的实施工作，以将应用程序使用的查询语法映射到Studio中可用的查询用户界面。
+
+== 另请参阅
+
+*  **NEXT:** link:/anypoint-connector-devkit/v/3.4/setting-up-a-devkit-development-environment[设置您的DevKit开发环境]。
+* 阅读 link:/anypoint-connector-devkit/v/3.4/devkit-shortcut-to-success[DevKit成功的捷径]以快速浏览连接器的开发周期。

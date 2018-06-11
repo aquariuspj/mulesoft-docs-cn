@@ -1,0 +1,361 @@
+=  JDBC示例
+
+*_Enterprise Edition_*
+
+Mule ESB中的*JDBC Transport*便于客户端访问JDBC兼容的数据库，如Oracle数据库或Sybase数据库。换句话说，当最终用户（客户端）需要访问和使用数据库中的信息（存储在服务器上）时，Mule的JDBC传输位于中间，将它们连接在一起，并控制信息流入和流出，数据库。
+
+JDBC传输不仅可以管理对数据库的访问，它也可以使用存储过程*SQL queries*来使用信息填充数据库，或者操作从数据库中检索到的数据。这个Mule ESB示例应用程序演示了您可以对JDBC传输和SQL查询执行的一些操作。
+
+在*JDBC Example*应用程序中，最终用户通过Web浏览器向Mule应用程序提交请求，以访问数据库以执行四项不同的任务：
+
+* 将 http://en.wikipedia.org/wiki/Comma-separated_values[逗号分隔值（CSV）]数据转换并保存到数据库，然后将数据作为响应检索并返回给最终用户
+* 克隆数据库中的记录，然后返回指示记录数量的响应
+* 清除其内容的数据库
+* 从数据库检索数据，然后将数据作为响应返回给最终用户
+
+JDBC示例应用程序巧妙地执行几个任务：
+
+. 它一起使用JDBC端点和SQL查询来操纵数据
+. 它为消息设置属性
+. 它解析并转换消息有效载荷数据
+. 它使用自定义的异常策略处理错误
+
+这个例子应该使您能够创建输入，检索和使用来自JDBC数据库的数据的应用程序。要更多地了解Mule ESB整合服务和系统的能力，请访问Mule link:/mule-user-guide/v/3.3/mule-examples[骡子的例子]并查看其他正在运行的应用程序。
+
+== 假设
+
+本文档假定您熟悉Mule ESB和 link:/mule-user-guide/v/3.3/mule-studio-essentials[Mule Studio界面]。要提高您对Studio的熟悉度，请考虑完成一个或多个 link:/mule-user-guide/v/3.3/mule-studio[Mule Studio教程]。
+
+本文档在Mule ESB的图形用户界面（GUI）*Mule Studio*的上下文中描述了示例的细节。在适当的情况下，XML配置在可扩展部分的Studio界面屏幕截图之后。
+
+== 设置
+
+与此JDBC示例一样，您可以直接在*Mule Studio*或*Mule Standalone*（不带Studio的Mule ESB）中创建模板应用程序。您可以调整这些基于用例的模板的配置，以在Mule中创建您自己的自定义应用程序。
+
+[WARNING]
+====
+*Database Required*
+
+为了与功能性示例交互，您必须有权访问**JDBC-compatible database**，例如Oracle或Sybase。在运行Mule JDBC示例应用程序（详细步骤如下）之前，您需要完成以下三项任务：
+
+. 在数据库上运行两个脚本来创建表和存储过程
+. 在Mule示例中配置`db.properties`文件，以便应用程序可以连接到您的数据库
+. 将数据库的驱动程序添加到Mule中的参考库中
+
+如果您无法访问数据库以查看应用程序，则仍然可以在*Mule Studio*或*Mule Standalone*中构建示例应用程序并阅读本文档，引用客户端用户界面截图，以了解<<How it Works>>。
+====
+
+==== 在Mule Studio中使用示例应用程序
+
+. 完成 link:/mule-user-guide/v/3.3/mule-examples[示例和练习]中的过程来创建，然后在Mule Studio中运行JDBC模板。
+. 确定您有权访问的Oracle或Sybase数据库，以及您为了演示此示例应用程序而不介意填充一些示例数据。
+. 在Studio的*Package Expolorer*窗格中，单击`src/main/resources`展开文件夹，然后单击以展开`scripts.oracle`文件夹（如果您使用的是Oracle数据库），或者{ 4}}文件夹，如果您使用的是Sybase数据库。
++
+image:scripts_studio.png[scripts_studio]
+
+. 复制`procs.ddl`和`tables.ddl`文件的内容并在数据库上运行这些脚本。
++
+[%autowidth.spread,cols=2*]
+|===
+| image:check.png[查]
+一个|
+
+*Need More Details?*
+
+查看精细指令
+
+. 双击`procs.ddl`文件，在新的Studio *Canvas*窗格中将其打开。
+. 双击`tables.ddl`文件以在新的Studio画布窗格中将其打开。
++
+image:open_canvases.png[open_canvases]
+
+. 访问您的数据库。例如，您可以通过Oracle SQL Developer访问Oracle数据库。
+. 将`procs.ddl`文件的所有内容（在Studio画布窗格中打开）复制到您的数据库开发工具中。
+. 将`tables.ddl`文件的所有内容（在Studio画布窗格中打开）复制到您的数据库开发工具中。
+. 在数据库上运行这两个脚本，以便在数据库中创建存储过程和表。
+|===
+
+. 在Studio的包资源管理器窗格中展开的`src/main/resources`中，双击`db.properties`文件以在新的Studio画布窗格中将其打开。
+. 在文件的第5行`database.connection=`之后，输入数据库的连接信息，以便JDBC应用程序可以连接到它。
++
+image:line_five.png[line_five]
+
+. 在包资源管理器窗格中，右键单击`jdbc_example`项目的文件名。
+. 选择`Build Path`> `Add External Archives...`。
+. 在出现的导航面板中，浏览并打开数据库的驱动程序文件。例如，打开`ojdbc6.jar`。
+. 点击Studio中的*Save*图标，将您的更改保存在Mule中。
+. 在资源管理器窗格中，右键单击`mule-config.mflow`文件，然后选择`Run As`> `Mule Application`。工作室运行应用程序，骡子踢起来！
+. 要停止应用程序的运行，请点击Studio的*Console*中的红色*Terminate*按钮。
++
+image:terminate.png[终止]
+
+. 打开您的网络浏览器，在地址栏中输入`http://localhost:8084/services/jdbc`，然后按*enter*。
+. 您的浏览器会显示*Mule JDBC Example*表单供最终用户与应用程序交互。 +
++
+image:launch_page3.png[launch_page3]
+
+==== 使用Mule独立的示例应用程序
+
+. 完成 link:/mule-user-guide/v/3.3/mule-examples[示例和练习]中的过程来创建，然后在Mule Standalone（无Studio的Mule ESB）中运行JDBC示例。
+. 确定您有权访问的Oracle或Sybase数据库，以及您为了演示此示例应用程序而不介意填充一些示例数据。
+. 在您的硬盘上，导航至`mule-enterprise-standalone-3.3.0`> `examples`> `jdbc`> `scripts`。
++
+image:standalone_scripts2.png[standalone_scripts2]
+
+. 如果您使用的是Oracle数据库，或者`scripts.sybase`文件夹，如果您使用的是Sybase数据库，请单击展开`scripts.oracle`文件夹。
+. 复制`procs.ddl`和`tables.ddl`文件的内容并在数据库上运行这些脚本。
++
+[%autowidth.spread,cols=2*]
+|===
+| image:check.png[查]
+一个|
+
+*Need More Details?*
+
+查看精细指令
+
+. 双击`procs.ddl`文件以在文本编辑器中打开它。
+. 双击`tables.ddl`文件以在文本编辑器中打开它。
+. 访问您的数据库。例如，您可以通过Oracle SQL Developer访问Oracle数据库。
+. 将`procs.ddl`文件的所有内容（在您的文本编辑器中打开）复制到您的数据库开发工具中。
+. 将`tables.ddl`文件的所有内容（在您的文本编辑器中打开）复制到您的数据库开发工具中。
+. 在数据库上运行这两个脚本，以便在数据库中创建存储过程和表。
+|===
+
+. 在您的硬盘上，导航至`mule-enterprise-standalone-3.3.0`> `apps`，然后双击`mule-example-jdbc-3.3.0.zip`解压缩文件。
+. 解压缩后，导航至`mule-example-jdbc-3.3.0`> `classes`，然后双击`db.properties`文件以在文本编辑器中打开它。
+. 在文件的第5行`database.connection=`之后，输入数据库的连接信息，以便JDBC应用程序可以连接到它。
++
+image:db_properties2.png[db_properties2]
+
+. 保存文件并关闭文本编辑器。
+。在您的硬盘上，浏览您的文件以查找数据库的驱动程序文件。例如，打开`ojdbc6.jar`。
+. 复制驱动程序文件，然后导航到`mule-example-jdbc-3.3.0`> `lib`> `user`文件夹。
+. 将您的驱动程序文件的副本粘贴到`user`文件夹中。
+. 启动Mule并运行JDBC示例。
++
+[TIP]
+====
+*Need More Details?*
+
+了解如何启动Mule
+
+.  *PC*：打开*Console*。
+  *Mac*：打开*Terminal*应用程序（`Applications`> `Utilities`> `Terminal`）。
+. 访问您的示例中粘贴zip文件的目录和文件夹（即Mule中的应用程序文件夹）。例如，键入`cd /Users/aaron/Downloads/mule-standalone-3.3.0/apps`
+. 访问压缩文件本身。例如，键入`cd ..`
+. 运行Mule。例如，键入`./bin/mule`
+====
+
+. 要阻止应用程序运行，请在PC的控制台窗口中键入*CTRL-C*，或在Mac终端应用程序中键入*Command-C*。
+. 打开您的网络浏览器，在地址栏中输入`http://localhost:8084/services/jdbc`，然后按*enter*。
+. 您的浏览器会显示*Mule JDBC Example*表单供最终用户与应用程序交互（请参阅上图）。
+
+== 它是如何工作的
+
+*JDBC*示例应用程序由四个流程组成，每个流程处理特定类型的客户端请求。以下提供了每个流在应用程序中执行的操作的简要说明。
+
+*  *CSVLoader*流会转换CSV数据，将其保存到数据库，然后返回一个响应，以XML格式显示数据库中的记录。
+*  *DoubleMules*流克隆数据库中的所有记录（即将数据库内容加倍），然后返回显示数据库中记录数的响应。
+*  *CleanupDB*流程清除数据库的内容。
+*  *AllMules*流检索数据库中所有记录中的信息，然后返回以XML格式显示记录的响应。
+
+以下各节详细阐述了JDBC示例应用程序的逐流配置以及它如何响应最终用户请求。
+
+[NOTE]
+====
+*Does order matter?*
+
+在这个应用程序中首先出现哪个流并不重要;例如，*AllMules*流可以轻松地位于*CSVLoader*流的前面，而无需更改应用程序的功能。
+====
+
+[TIP]
+====
+*For Mule Studio Users*
+
+在Mule Studio中，双击代表 link:/mule-user-guide/v/3.3/studio-building-blocks[积木]的图标以打开其*Properties Panel*并检查配置详细信息。或者，您可以单击*Configuration XML*选项卡来访问和检查应用程序的XML配置文件。
+
+image:config_tab.png[config_tab]
+====
+
+===  CSVLoader流
+
+*CSVLoader*流将 http://en.wikipedia.org/wiki/Comma-separated_values[逗号分隔值（CSV）]数据保存到数据库，然后返回以XML格式显示记录的响应。
+
+image:CSVLoader.png[CSVLoader]
+
+//查看XML
+
+==== 要求
+
+在浏览器上的客户端用户界面上（参见下图），用户单击*Load CSV Data*按钮向服务器端应用程序提交请求。该请求要求Mule将CSV数据保存到数据库，然后以XML格式返回数据。 （在本例中，开发人员用数据预填充了*CSV Data to Load*字段，以便您轻松使用功能示例。）
+
+image:launch_page3.png[launch_page3]
+
+====  Ajax入站端点
+
+该请求满足JDBC示例应用程序并激活CSVLoader流程。在此流程中，**{{0}} **“监听”`/services/jdbc/loadCSV`频道上的用户请求;也就是说，它等待用户按*Load CSV Data*。请注意，此端点仅监听_only_用于加载CSV数据的用户请求，而不是侦听，清理或克隆数据库记录的请求：一种请求类型，一种流程要处理它。此外，由于它具有单向的消息交换模式，因此此Ajax端点仅接收来自最终用户的请求;它不会返回响应。
+
+除了侦听和接收消息之外，Ajax端点还将消息的数据格式从CSV数据转换为Java http://en.wikipedia.org/wiki/Associative_array[地图对象]。要执行此转换，端点引用*Global CSV to Maps Transformer*以遵循有关如何转换数据格式的特定说明。左下图显示了Studio中的Ajax端点属性面板;请注意红色部分，其中端点引用全局CSV来映射变换器。下面的图片右侧显示了全局CSV以映射Studio中变压器的属性面板。
+
+image:global_transform.png[global_transform]
+
+//查看XML
+
+[NOTE]
+====
+*What is a Global Element?*
+
+Mule ESB支持应用程序中的*Global Elements*，如JDBC示例中的*JDBC Connector*和*CSV2Maps Transformer*。
+
+您可以创建一个全局元素来详细说明您的配置或传输细节，而不是重复编写相同的代码以将相同的配置应用于多个消息处理器。然后，您可以指示Mule应用程序中的任意数量的消息处理器引用该全局元素。
+
+*Learn more...*
+
+在此示例中，描述JDBC连接器配置的代码在CSVLoader流中不存在;而是代码驻留在全局元素中，该元素位于应用程序的XML配置文件（以及*Mule Studio*中的*Global Elements*选项卡中的所有其他流程之上）。
+
+Ajax端点引用全局CSV2Maps变换器以获取有关如何变换其接收的数据的指示; JDBC端点引用全局JDBC连接器以获取传输配置详细信息。 Ajax端点也自动引用全局*Ajax Connector*，因此您无需手动指定连接器引用。
+====
+
+
+====  JDBC端点
+
+在使用Ajax端点接收并转换消息负载后，该流将使用请求响应**{{0}}**将CSV数据保存到数据库。在这种情况下，CSV数据包含有关居住在最终用户牧场上的骡子的信息，例如骡子的名字，颜色和重量。
+
+此流程中的JDBC端点执行两项任务：
+
+它访问数据库. 
+使用地图对象将数据保存到数据库中. 
+
+要执行这些任务，JDBC端点与另外两件事结合使用：*Global JDBC Connector*和*SQL Query*或存储过程。
+
+link:/mule-user-guide/v/3.3/jdbc-transport-reference[JDBC连接器]  -  JDBC示例应用程序中的全局元素 - 帮助JDBC Endpoint及其任务（上面列出）。
+
+. 作为 link:/mule-user-guide/v/3.3/connecting-using-transports[连接器]，它通过提供有关如何连接到它的特定详细信息（如URL的存在位置）以及如何获得对它的访问来帮助JDBC端点访问数据库（数据库的用户名和密码）。见左下图。
+. 它存储SQL查询（即存储过程），为了将数据保存到数据库：`commitLoadedMules`（下，右），此流中的JDBC端点引用了其中一个。
++
+image:global_JDBC.png[global_JDBC]
+
+//查看XML
+
+CSVLoader流中的JDBC端点仅引用全局JDBC连接器中的连接器信息（请参阅下图，左侧）和SQL查询（下方，右侧）。请注意，您可以将SQL查询存储在流中的单个JDBC端点上，并且将执行与引用全局JDBC连接器完全相同的过程。使用全局JDBC连接器来存储查询的唯一原因是为了节省时间 - 如果您预期在应用程序中多次使用查询，则可以高效地将其写入一次，全局连接器中，然后多次引用它。
+
+image:global_references.png[global_references]
+
+//查看XML
+
+==== 变压器
+
+由于最终用户需要XML格式的响应，因此CSVLoader流使用**{{0}} **来转换消息负载的数据格式。回想一下，最终用户以CSV数据格式发送请求，并且Ajax端点将内容转换为映射对象，以便JDBC端点可以将数据保存到数据库。为了符合对XML响应的需求，Mule现在再次转换该消息。
+
+流中的下一个构建块**{{0}}**设置消息负载的属性，以指定其包含的内容的类型（对于HTTP协议）。在这种情况下，`Set Property`属性变换器将该属性的值设置为`text/xml`。
+
+====  Ajax出站端点
+
+最后，Ajax出站端点向最终用户返回响应。它将它的响应 - 现在是一个包含XML格式的CSV数据的消息负载 - 发送到客户端期望响应的特定通道`/jdbc/reply`。
+
+==== 响应
+
+在Mule处理最终用户请求后，它会在浏览器的客户端用户界面的*Response*字段中将消息作为消息返回给最终用户。 CSVLoader流将返回一条消息，该消息显示为数据库中所有Mule的XML列表（参见下图）。
++
+image:csv_loaded4.png[csv_loaded4]
+
+==== 回滚异常策略
+
+注意CSVLoader流程也包含一个**{{0}}**。
+
+如果此流程中发生错误，则回滚异常策略会捕获异常并执行两个操作：
+
+. 它通知应用程序管理员
+. 它使用Ajax端点向`/jdbc/reply`通道上的最终用户发送回复。
+
+当回退异常策略处理错误时，它最终会向最终用户的浏览器返回响应。
+
+===  DoubleMules流
+
+*DoubleMules*流克隆数据库中的记录，然后向最终用户返回响应以指示现有记录的数量。 +
+ +
+  image:double_mules.png[double_mules]
+
+ 查看XML
+
+==== 要求
+
+在浏览器上的客户端用户界面上，用户单击*Clone Mules*按钮向服务器端应用程序提交请求。
+
+==== 处理
+
+在此流程中，Ajax端点“监听”`services/jdbc/clone`通道上的用户请求。
+
+接下来，请求 - 响应JDBC端点调用`callCloneStoredProc`过程。与CSVLoader流中的JDBC端点一样，端点本身不包含SQL查询，它只是引用全局JDBC连接器上的存储过程 -  `callCloneStoredProc`。根据该过程，Mule克隆数据库的内容，然后将总记录的新计数作为Java对象传递给下一个消息处理器。
+
+*Object to {{0}} Transformer*转换消息有效载荷的数据格式，以使内容（数据库中所有Mule的计数）成为 http://en.wikipedia.org/wiki/Human-readable[人类可读]。
+
+最后，Ajax出站端点向最终用户返回响应。它将响应指向客户期望响应的特定频道`/jdbc/reply`。
+
+==== 响应
+
+在Mule处理最终用户请求后，它会在其浏览器的客户端用户界面的*Response*字段中将消息作为消息返回给最终用户。 CSVLoader流程会返回一条显示为简单记录计数的消息（请参阅下图）。 +
+
+
+image:cloned_mules4.png[cloned_mules4]
+=======
+
+
+===  CleanupDB流
+
+在应用程序中最简单的流程，*CleanupDB*流程只需清除其内容的数据库。
+
+image:clean_up.png[清理]
+
+//查看XML
+
+==== 要求
+
+在浏览器上的客户端用户界面上，用户单击*Cleanup Mules*按钮向服务器端应用程序提交请求。
+
+==== 处理
+
+只有两个构建块，Mule开始处理带有监听最终用户请求的Ajax端点的消息。在此流程中，Ajax端点“侦听”到`services/jdbc/cleanup`通道。
+
+然后JDBC端点遵循全局JDBC连接器的`callCleanupStoredProc` SQL查询中的指令从数据库中删除所有记录;它不会删除表格，只会删除表格中包含的数据。
+
+这是唯一不会向最终用户返回响应的流程。最终用户界面仅向用户显示一条消息，以确认它（客户端）向数据库发送命令以清除其内容（请参见下图）。 +
+ +
+  image:table_wiped4.png[table_wiped4]
+
+===  AllMules流程
+
+*AllMules*流程只需从数据库中检索数据，并以XML格式将数据返回给最终用户。
+
+image:all_mules.png[all_mules]
+
+//查看XML
+
+==== 要求
+
+在客户端用户界面上，最终用户单击*Retrieve Mules*按钮向服务器端应用程序提交请求。
+
+==== 处理
+
+通过监听通道`/services/jdbc/allMules`上的请求，Ajax端点接收请求并将其传递给JDBC端点以检索数据。
+
+根据全局JDBC连接器中`selectLoadedMules` SQL查询的指示信息，JDBC端点从数据库中检索所有数据，并将地图对象传递给Maps to XML转换器。
+
+从这一点来看，AllMules流行为模仿了CSVLoader流的行为：
+
+*  `Maps to XML`转换器转换消息有效载荷的数据格式
+*  `Set Property`转换器在消息有效负载上设置内容类型`text/xml`
+* 出站`Ajax`端点向频道`/jdbc/reply`上的用户返回响应
+
+==== 响应
+
+在处理完最终用户请求之后，Mule会在浏览器的客户端用户界面的*Response*字段中向最终用户返回响应消息。该消息包含数据库中所有Mule的XML列表（请参阅下图）。 +
+ +
+  image:retreived_mules.png[retreived_mules]
+
+== 相关主题
+
+* 有关使用JDBC端点的更多信息，请参阅 link:/mule-user-guide/v/3.3/database-jdbc-endpoint-reference[数据库（JDBC）端点参考]。
+* 有关变形金刚的更多信息，请参阅 link:/mule-user-guide/v/3.3/studio-transformers[工作室变形金刚]。
+* 有关将异常策略应用于流程的更多信息，请参阅 link:/mule-user-guide/v/3.3/error-handling[错误处理]。

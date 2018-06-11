@@ -1,0 +1,243 @@
+= 创建传输
+:keywords: customize, custom transport
+
+传输被用来实现消息通道并以一致的方式提供到底层数据源或消息通道的连接。 Mule为许多不同的协议提供传输，包括文件，FTP，HTTP，JMS，JDBC，Quartz等等。有关完整列表，请参阅 link:/mule-user-guide/v/3.7/transports-reference[传输参考]。在https://www.anypoint.mulesoft.com/exchange/?type=connector&search=community[Anypoint Exchange]中也有社区创建的传输（也称为连接器）。如果您需要使用非提供的协议发送消息，则可以创建一个新的连接器。
+
+== 概述
+
+创建新的传输时，您必须在 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/package-summary.html[org.mule.transport]包中实现一组Mule接口，然后扩展提供的抽象类。为了快速入门，您可以使用 link:/mule-user-guide/v/3.7/transport-archetype[Maven运输原型]作为传输的代码模板。如果您想更新现有的交通工具，请改为使用 link:/mule-user-guide/v/3.7/creating-module-archetypes[创建模块原型]。
+
+骡子运输可以是以下类型之一：
+
+. 仅入站：组件只能订阅事件。他们不能派遣活动。
+
+. 仅出站：组件只能分派事件。他们无法订阅活动。
+
+. 入站出站：组件可以订阅和分派事件
+
+== 传输接口
+
+传输由一组接口实现组成，这些接口实现公开底层传输的功能。
+
+image:creating-transports-providers.png[创建，运输，供应商]
+
+[%header,cols="20a,80a"]
+|===
+| {接口{1}}角色
+|连接器 |用于管理接收者，分派者和请求者，并存储任何配置信息。
+|消息接收方 |实现传输的服务器部分。例如，TcpMessageReceiver创建一个服务器套接字来接收传入的请求。将此传输用于入站通信时，会创建MessageReceiver实例。
+|消息分派器 |实现传输的客户端部分。例如，一个TcpMessageDispatcher打开一个套接字发送请求。当此传输用于出站通信时，会创建MessageDispatcher实例。
+|消息请求者 |也用于接收MessageReceiver等传入消息，而不是订阅入站事件或轮询资源或消息通道消息仅在"request"上接收。服务上的入站端点始终使用MessageReceiver而不是MessageRequester，但它们可以以编程方式用于从消息通道或资源请求单个消息。
+|消息工厂 |从传入的传输消息创建一个MuleMessage实例。例如，HTTP消息工厂通过使用HTTP请求的输入流作为有效内容创建一个新的MuleMessage，并将所有请求标头作为属性传递给MuleMessage。
+|变形金刚 |变形金刚用于在传输特定的数据格式和其他格式之间转换数据，例如从HTTP响应到字符串。调度员必须调用`MuleEvent.transformMessage()`来转换消息。
+|端点 |将消息通道或资源的使用配置为服务配置的一部分的方法。端点定义要使用的传输方式，并包括诸如主机或队列名称，要使用的过滤器和事务信息等设置。在服务上定义端点会导致Mule为正在使用的协议创建必要的传输连接器。
+|===
+
+在编写传输时，您必须实现以下接口来定义Mule和底层技术之间的协议。
+
+===  org.mule.api.transport.Connector
+
+Mule使用该连接器来注册侦听器并为传输创建消息调度器。应由所有消息接收器，分派器和请求者共享的配置参数存储在连接器上。通常，多个入站和出站端点只需要一个连接器实例，因为多个消息接收器，分派器和请求者可以与连接器关联。但是，如果底层传输API具有连接的概念（如JMS或JDBC API），则Mule连接器和底层连接之间应该存在一对一的映射关系。
+
+===  org.mule.api.transport.MessageReceiver
+
+消息接收器用于接收来自底层传输的传入数据并将其作为事件打包。消息接收器本质上是传输的服务器实现（其中消息分派器是客户端实现）。例如，HTTP消息接收器是一个接受HTTP请求的HTTP服务器实现。如果传输支持入站通信，则需要此类的实现。
+
+===  org.mule.api.transport.MessageDispatcher
+
+Message Dispatcher用于发送消息，类似于使用底层技术进行客户调用。例如，CXF消息分派器进行Web服务调用。如果传输支持出站通信，则需要此类的实现。消息分派器必须调用`MuleEvent.transformMessage()`才能在调度之前调用任何必需的变换器。
+
+===  org.mule.api.transport.MessageRequester
+
+Message Requester用于从消息通道或资源请求消息，而不是订阅入站事件或轮询资源以查找消息。这通常以编程方式使用，但不用于在服务上配置的入站端点。如果传输支持从消息信道请求消息，则需要此类的实现。
+
+===  org.mule.api.transport.MessageDispatcherFactory
+
+这是用于创建MessageDispatcher实例的工厂类。如果传输支持出站通信，则需要此类的实现。
+
+===  org.mule.api.transport.MuleMessageFactory
+
+消息工厂用于提供从传输的消息格式创建MuleMessage实例的一致方式。
+
+== 执行
+
+Mule为所有上述接口提供抽象实现。这些实现处理所有的Mule细节，留下一些抽象方法来实现自定义传输代码。因此，编写自定义传输操作就像编写/嵌入特定于底层技术的客户端和/或服务器代码一样简单。以下各节介绍可用的实现。
+
+为了快速入门，请使用Maven link:/mule-user-guide/v/3.7/transport-archetype[运输原型]。
+
+== 连接器
+
+link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/AbstractConnector.html[org.mule.transport.AbstractConnector]实现了Mule连接器所需的所有默认功能，例如线程配置和接收器/调度器管理。有关标准连接器属性的详细信息，请参阅 link:/mule-user-guide/v/3.7/configuring-a-transport[配置传输]。
+
+您可以在连接器上设置充当默认设置的其他属性。例如，您可以设置默认使用的端点属性，除非在配置特定端点时覆盖端点属性。
+
+有时连接器负责管理底层技术具有连接概念的传输的连接资源，例如JMS或JDBC。这些类型的连接器在Mule连接器和底层连接之间具有一对一映射。因此，如果您希望在单个Mule实例中有两个或更多物理JMS连接，则应为每个连接创建一个新连接器。
+
+对于其他传输，Mule实例中只有一个特定协议的连接器管理所有端点连接。一个这样的例子是基于套接字的传输，例如TCP，其中每个接收器管理它自己的ServerSocket并且连接器管理多个接收器。
+
+=== 实施方法
+
+[%header,cols="20a,60a,20a"]
+|===
+|方法名称 |描述 |必需
+| doInitialise（） |一旦连接器上的所有bean属性都被设置，并且可用于验证和初始化连接器的状态，则调用 |否
+| doStart（） |如果有一个服务器实例或与连接器相关联的连接（如AxisServer或JMS或JDBC连接），则此方法应使资源处于启动状态。{ {2}}无
+| doConnect（） |如果未在接收器/调度程序级别处理，则与基础资源建立连接。 |否
+| doDisconnect（） |关闭在doConnect（）中进行的任何连接。 |否
+| doStop（） |应将任何关联资源置于停止状态。 Mule自动调用stop（）方法。 |否
+| doDispose（） |应该清理与连接器相关的任何打开的资源。 |否
+|===
+
+== 消息接收器
+
+消息接收器对于每个传输都有不同的表现，但Mule提供了一些标准实现，可用于轮询资源和管理资源事务。通常有两种类型的消息接收器：轮询和基于监听器。
+
+* 轮询接收器轮询资源，如文件系统，数据库和流。
+* 基于监听器的接收器将自己注册为传输器的监听器。例子是JMS（javax.message.MessageListener）和Pop3（javax.mail.MessageCountListener）。这些基本类型可能会被处理。
+
+下面介绍Mule提供的抽象实现。
+
+=== 摘要消息接收器
+
+link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/AbstractMessageReceiver.html[AbstractMessageReceiver]提供路由事件的方法。扩展此类时，应设置必要的代码以将对象注册为传输的侦听器。这通常是实现监听器接口并注册的情况。
+
+==== 实施方法
+
+[%header,cols="20a,60a,20a"]
+|===
+|方法名称 |描述 |必需
+| doConnect（） |应该连接底层传输，例如连接套接字或注册SOAP服务。当没有连接时，应使用此方法检查资源是否可用。例如，FileMessageReceiver检查它使用的目录是否可用且可读。即使在调用doConnect（）方法之后，MessageReceiver仍应保持“停止”状态。这意味着已经建立连接，但在调用start（）方法之前没有收到任何事件。如果接收方没有连接，则调用MessageReceiver的start（）调用doConnect（）。 |是
+| doDisconnect（） |断开并整理使用doConnect（）方法分配的任何资源。此方法应使MessageReceiver处于断开状态，以便可以使用doConnect（）方法重新连接。 |是
+| doStart（） |应该执行必要的操作来使接收器开始接收事件。这与doConnect（）方法不同，后者实际上建立了与传输的连接，但使MessageReceiver保持停止状态。对于基于轮询的MessageReceivers，doStart（）方法只是启动轮询线程。对于Axis消息接收者，调用SOAPService上的启动方法。执行的操作取决于正在使用的运输。通常，自定义传输不需要重写此方法。 |否
+| doStop（） |应执行任何必要的操作来阻止接收方接收事件。 |否
+| doDispose（） |在连接器被丢弃时调用，并应清理所有资源。当调用此方法时，doStop（）和doDisconnect（）方法将隐式调用。 |否
+|===
+
+=== 轮询消息接收器
+
+一些运输工具会定期轮询资源，等待新的数据到达。基于 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/AbstractPollingMessageReceiver.html[AbstractPollingMessageReceiver]的轮询消息接收器实现了设置和销毁侦听线程所需的代码，并提供了以给定频率重复调用的单个方法`poll()`。设置和销毁监听线程应分别在doStart（）和doStop（）方法中进行。
+
+==== 实施方法
+
+[%header,cols="20a,60a,20a"]
+|==========
+|方法名称 |描述 |必需
+| poll（） |以配置的频率重复执行。此方法应执行读取数据并将其返回所需的逻辑。返回的数据是新消息的有效负载。返回null将导致没有事件被触发。 |是
+|==========
+
+=== 事务轮询消息接收器
+
+TransactedPollingMessageReceiver可由启用事务的传输器用于管理传入请求的轮询和事务。该接收方使用事务模板来执行事务中的请求，并且事务本身是根据接收方的端点配置创建的。此类的派生实现必须是线程安全的，因为可以同时启动多个线程以提高吞吐量。
+
+==== 实施方法
+
+除了标准消息接收方中的实现以外，您还为交易轮询消息接收方实现了以下方法：
+
+[%header,cols="20a,60a,20a"]
+|===
+|方法名称 |描述 |必需
+| getMessages（） |返回表示各个消息有效载荷的对象列表。有效载荷可以是任何类型的对象，并被发送到MuleEvent对象中的Mule服务。 |是
+为`getMessages()`返回的列表中的每个对象调用| processMessage（Object） |。处理的每个对象都在自己的事务中进行管理。 |是的
+|===
+
+=== 线程管理
+
+接收器为每个请求产生一个线程是很常见的。所有接收器线程都是使用接收器上的WorkManager分配的。 WorkManager负责执行线程中的工作单元。它有一个线程池，允许线程被重用并确保只产生预定数量的线程。
+
+WorkManager是 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/api/context/WorkManager.html[org.mule.api.context.WorkManager]的实现，它实际上只是 link:http://docs.oracle.com/javaee/7/api/javax/resource/spi/work/WorkManager.html[javax.resource.spi.work.WorkManager]的一个包装，并带有一些额外的生命周期方法。 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/AbstractMessageReceiver.html[AbstractMessageReceiver]上有一个`getWorkManager()`方法，您可以使用该方法获取对接收方的WorkManager的引用。工作项目（例如要在单独的线程中执行的代码）必须实现`javax.resource.spi.work.Work`。此接口扩展`java.lang.Runnable`，因此具有由WorkManager调用的`run()`方法。
+
+使用WorkManager调度时，应该在WorkManager上调用`scheduleWork(...)`，而不是`startWork(...)`。
+
+== 消息调度程序
+
+消息接收器相当于传输服务器，它服务于客户端请求，而消息分派器则是客户端传输的实现。消息调度程序负责通过传输进行客户端请求，例如写入套接字或调用Web服务。 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/AbstractMessageDispatcher.html[AbstractMessageDispatcher]提供了一个很好的基础实现，留下了三个自定义MessageDispatcher实现的方法。
+
+=== 实施方法
+
+[%header,cols="20a,60a,20a"]
+|===
+|方法名称 |描述 |必需
+| doSend（MuleEvent） |通过传输发送消息有效载荷。如果有来自运输工具的回应，则应从此方法返回。当端点同步运行时调用`sendEvent`方法，并且最终返回的任何响应都将传回给调用者。此方法在与请求线程相同的线程中执行。 |是
+| doDispatch（MuleEvent） |在端点异步时调用，并应调用传输但不返回任何结果。如果返回结果，应该忽略它，并且如果它们的底层传输确实有异步处理的概念，那么应该调用它。此方法在与请求线程不同的线程中执行。 |是
+| doConnect（） |建立与底层传输的连接，例如连接到套接字或注册SOAP服务。当没有连接时，应使用此方法检查资源是否可用。例如，`FileMessageDispatcher`检查它使用的目录是否可用且可读。即使在调用`doConnect()`方法之后，`MessageDispatcher`仍应保持“停止”状态。 |是
+| doDisconnect（） |断开和整理由`doConnect()`方法分配的任何资源。此方法应将`MessageDispatcher`返回到断开连接状态，以便可以使用`doConnect()`方法重新连接它{是}}是
+| doDispose（） |当Dispatcher被丢弃时调用并应清除所有打开的资源。 |否
+|===
+
+== 消息请求者
+
+与消息接收者和调度员一样，运输的消息请求者的实现（如果它甚至适用）差别很大。摘要 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/AbstractMessageRequester.html[AbstractMessageRequester]为扩展和实现您自己的消息请求者提供了基础，并实现了路由事件的方法。尽管鉴于请求者的性质​​，请求者可以实现`doConnect`和`doDisconnect`方法，但这也可以作为`doRequest`实现的一部分来完成，它实际上取决于底层传输方式，保持连接一直打开或不能进行任意请求。
+
+[%header,cols="20a,60a,20a"]
+|===
+|方法名称 |描述 |必需
+| doRequest（long） |用于对传输资源进行任意请求。如果超时时间为0，则方法应该阻塞，直到收到端点上的消息。 |
+| doConnect（） |应根据需要连接底层传输，例如连接到套接字..  |否
+| doDisconnect（） |断开并整理使用doConnect（）方法分配的任何资源。此方法应该返回处于断开状态的MessageReceiver，以便可以使用doConnect（）方法重新连接。 |否
+| doInitialise（） |在所有属性设置完成后请求者被初始化时调用。任何必需的初始化都可以在这里完成。 |否
+| doStart（） |请求者启动时调用。请求者启动时所需的任何传输特定实现都应在此实现。 |否
+| doStop（） |请求者停止时调用。在此请求中实现请求者停止时所需的任何特定于传输的实现。 |否
+| doDispose（） |在处理请求者时调用，并清理所有打开的资源。 |否
+|===
+
+=== 线程和调度程序缓存
+
+自定义传输不需要担心调度程序线程。除非关闭线程，否则上面列出的Dispatcher方法在它们自己的线程中执行。这由`AbstractMessageDispatcher`进行管理。
+
+当对调度程序发出请求时，会从`AbstractConnector`上的调度程序缓存中查找它。高速缓存由被分派到的端点进行键控。如果找不到调度程序，则使用`MessageDispatcherFactory`创建调度程序，然后将其存储在缓存中供以后使用。
+
+=== 消息工厂
+
+消息工厂将来自底层传输格式的消息转换为MuleMessage。几乎所有的消息传递协议都有消息负载和标题属性的概念。消息工厂提取该有效载荷并可选择将传输消息的所有属性复制到MuleMessage中。可以查询由消息工厂创建的MuleMessage的底层传输消息的属性。例如：
+
+[source, code, linenums]
+----
+//JMS message ID
+String id = (String)message.getProperty("JMSMssageID");
+ 
+//HTTP content length
+int contentLength = message.getIntProperty("Content-Length");
+----
+
+请注意，属性名称使用与底层传输所使用的名称相同的名称; `Content-Length`是一个标准的HTTP标头名称，`JMSMessageID`是`javax.jms.Message`界面上等价的bean属性名称。
+
+消息工厂应该扩展 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/AbstractMuleMessageFactory.html[org.mule.transport.AbstractMuleMessageFactory]，它实现了org.mule.api.transport.MuleMessageFactory接口所需的许多常用方法。
+
+==== 实施方法
+
+[%header,cols="20a,60a,20a"]
+|===
+|方法名称 |描述 |必需
+| extractPayload（） |按原样返回消息有效载荷。 |是
+| addProperties（） |将传输消息的所有属性复制到作为参数传递的DefaultMuleMessage实例中。 |否
+| addAttachments（） |将传输消息的所有附件复制到作为参数 |传递的DefaultMuleMessage实例中否
+|===
+
+== 服务描述符
+
+每个传输都有一个服务描述符，描述了用于构建传输的类。有关完整信息，请参阅 link:/mule-user-guide/v/3.7/transport-service-descriptors[运输服务描述符]。
+
+== 编码标准
+
+以下是创建传输时使用的编码标准。
+
+== 包结构
+
+所有Mule运输都有类似的包装结构。他们遵循以下惯例：
+
+[source, code]
+----
+org.mule.transport.<protocol>
+----
+
+协议是传输协议标识符，如'tcp'或'soap'。任何用于运输的变压器和过滤器都存储在主包装的“变压器”或“过滤器”包装中。请注意，如果传输对于给定协议有多个实现（例如SOAP协议的Axis和CXF实现），则包名称应该是协议，例如`soap`而不是`axis`或`cxf`。
+
+=== 国际
+
+您的传输实现中使用的任何异常消息都应存储在资源包中，以便它们可以是 link:/mule-user-guide/v/3.7/internationalizing-strings[国际]。消息包是一个标准的Java属性文件，必须位于：
+
+[source, code]
+----
+META-INF/services/org/mule/i18n/<protocol>-messages.properties
+----
+

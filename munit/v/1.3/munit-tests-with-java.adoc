@@ -1,0 +1,598 @@
+=  MUnit使用Java进行测试
+:keywords: munit, testing, unit testing
+
+MUnit允许您使用Java和XML代码来测试您的配置文件。
+本指南介绍了如何使用Java配置套件并创建测试。
+您可以使用MUnit创建测试，通过消息创建断言，
+并嘲笑，间谍和验证你的消息处理器。
+
+注意：使用Java或XML测试您的配置文件是您的选择。
+但是，目前只有XML允许测试覆盖率，动态端口和使用Maven插件。
+
+== 创建您的套件类
+
+要使用Java运行MUnit测试，请创建一个扩展`FunctionalMunitSuite`的类。
+
+例如：
+
+[source,java,linenums]
+----
+import org.mule.munit.runner.functional.FunctionalMunitSuite;
+
+public class MyTestSuite extends FunctionalMunitSuite {
+
+}
+----
+
+== 选择要测试的配置文件
+
+要指定要测试的配置文件，请实施
+在您的课程中使用`getConfigResources`方法并返回名称
+配置文件。
+
+如果您不覆盖此方法，MUnit将获取配置文件
+来自`mule-deploy.properties`文件中指定的信息，或者，如果找不到该文件，
+来自`mule-config.xml`文件。
+
+[source,java,linenums]
+----
+@Override
+protected String getConfigResources() {
+  return "my-config-file.xml";
+}
+----
+
+[NOTE]
+====
+要测试多个配置文件，请返回每个配置文件
+配置文件名以逗号分隔（","）。
+
+例如：`return "my-config-file.xml,my-second-config-file.xml"`
+====
+
+== 启用和禁用入站端点
+
+要启用或禁用入站端点，请覆盖`haveToDisableInboundEndpoints`
+ 方法。例如，如果您要启用入站端点，请使用：
+
+[source, java,linenums]
+----
+@Override
+protected boolean haveToDisableInboundEndpoints() {
+	return false;
+}
+----
+
+如果您不覆盖此方法，默认情况下会禁用入站端点。
+
+=== 为流启用入站端点
+
+要仅为流启用入站端点，请覆盖
+`getFlowsExcludedOfInboundDisabling`方法。
+
+例如：
+
+[source,java,linenums]
+----
+@Override
+protected List<String> getFlowsExcludedOfInboundDisabling() {
+  return Arrays.asList("firstFlow","thirdFlow");
+}
+----
+
+如果您不覆盖此方法，则所有流程都将停用入站端点。
+
+== 为Mule连接器启用和禁用模拟
+
+重要提示：在连接器中启用和禁用模拟仅适用于基于端点的出站端点连接器。
+
+要启用或禁用连接器的模拟，请覆盖
+`haveToMockMuleConnectors`方法。
+
+例如，如果你不想嘲笑
+连接器，使用：
+
+[source, java,linenums]
+----
+@Override
+protected boolean haveToMockMuleConnectors() {
+  return false;
+}
+----
+
+如果您不覆盖此方法，默认连接器会被模拟。
+
+创建和启动Mule上下文时的== 操作
+
+要在创建或启动Mule上下文时执行操作，
+分别实施`muleContextStarted`或`muleContextStarted`。
+
+例如，要打印Mule上下文开始日期，请使用：
+
+[source, java,linenums]
+----
+@Override
+protected void muleContextStarted(MuleContext muleContext) {
+  System.out.println("Mule Context Started at" + new Date(muleContext.getStartDate()));
+}
+----
+
+== 创建您的测试
+
+配置套件后，下一步是创建测试。创建`JUnit`测试
+并使用`MUnit`提供测试配置文件的方法。
+创建测试的最简单方法是使用`JUnit`中的`@Test`注释。
+[source, java]
+----
+@Test
+public void MyTest() {
+
+}
+----
+
+== 运行流程
+
+要测试你的配置文件，你应该能够运行你的流程。
+`runFlow`方法允许您使用自定义`MuleEvent`作为输入来运行特定流程，
+并返回结果`MuleEvent`。
+
+要为测试创建自定义`MuleEvent`，请单击MUnit
+提供了`testEvent`方法，该方法使用Object作为有效内容创建一个事件。
+
+例如，对于以下流程：
+
+[source,xml,linenums]
+----
+<flow name="echoFlow">
+  <echo-component/>
+</flow>
+----
+
+如果你想要测试通过一个通过后有效负载没有被修改
+回声组件，创建这个测试：
+
+[source,java,linenums]
+----
+import org.junit.Assert;
+import org.junit.Test;
+import org.mule.api.MuleEvent;
+import org.mule.munit.runner.functional.FunctionalMunitSuite;
+
+public class MyTest extends FunctionalMunitSuite {
+
+  @Test
+  public void Test() throws Exception {
+    String myStringPayload = "myPayload";
+    MuleEvent resultMuleEvent = runFlow("echoFlow", testEvent(myStringPayload)); //<1>
+    Assert.assertEquals(myStringPayload, resultMuleEvent.getMessage().getPayload()); //<2>
+  }
+}
+----
+<1>使用特定的字符串作为有效内容运行`echoFlow`。
+<2>声明产生的有效载荷与原始载荷相同。
+
+注意：MUnit不提供它自己的Java断言库。
+您可以使用`JUnit`断言库执行断言，
+如前面例子的第一行所示。
+
+== 嘲讽
+
+MUnit允许您为消息处理器定义模拟行为。在这种情况下，
+MUnit用您定义的行为替换消息处理器的正常行为。
+
+*Example Mocking Configuration*
+
+以下示例为HTTP连接器设置访问通用数据库的流
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+​
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:spring="http://www.springframework.org/schema/beans"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+    <db:generic-config name="Generic_Database_Configuration" url="localhost:8082" doc:name="Generic Database Configuration"/>
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="myFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <db:select config-ref="Generic_Database_Configuration" doc:name="Select All Stocks">
+            <db:parameterized-query><![CDATA[SELECT * FROM flights;]]></db:parameterized-query>
+        </db:select>
+        <set-payload value="#[payload.substring(0,3)]" doc:name="Get Id"/>
+    </flow>
+</mule>
+----
+
+*Mocking Test*
+
+以下示例测试样本有效负载：
+
+[source,java,linenums]
+----
+import org.junit.Assert;
+import org.junit.Test;
+import org.mule.api.MuleEvent;
+import org.mule.api.MuleMessage;
+import org.mule.munit.common.mocking.MessageProcessorMocker;
+import org.mule.munit.runner.functional.FunctionalMunitSuite;
+​
+public class MyTestSuite extends FunctionalMunitSuite {
+​
+  @Test
+  public void MockingTest() throws Exception {
+    String myMockPayload = "815-OA";
+​
+    MuleMessage messageToBeReturned = muleMessageWithPayload(myMockPayload);
+    MessageProcessorMocker mocker = whenMessageProcessor("select").ofNamespace("db");
+    mocker.thenReturn(messageToBeReturned);
+​
+    MuleEvent resultMuleEvent = runFlow("myFlow", testEvent("example"));
+    Assert.assertEquals("815", resultMuleEvent.getMessage().getPayload());
+  }
+​
+}
+----
+
+=== 使用何时消息处理器
+
+`whenMessageProcessor`方法允许您模拟匹配的消息处理器
+某些属性。
+
+例如，如果以下流程是您的配置文件的一部分：
+
+[source,xml,linenums]
+----
+<flow name="myFlow">
+  <set-payload value="#[1]" doc:name="Set One As Payload"/>
+  <logger level="INFO" doc:name="Logger"/>
+</flow>
+----
+
+有几种方法可以匹配你想要模拟的处理器。
+
+==== 按处理器名称匹配
+
+[source,java,linenums]
+----
+MessageProcessorMocker mocker =
+  whenMessageProcessor("set-payload");
+----
+
+==== 添加一个名称空间属性
+
+[source,java,linenums]
+----
+MessageProcessorMocker mocker =
+  whenMessageProcessor("set-payload").ofNamespace("mule");
+----
+
+==== 添加其他属性
+
+在示例流程中，只有一个`set-payload`消息处理器，但是
+如果有多个，则应使用其他处理器属性，例如
+`doc:name`属性来模拟消息处理器。
+
+例如，对于以下流程：
+
+[source,xml,linenums]
+----
+<flow name="myFlow">
+  <set-payload value="#[1]" doc:name="Set One"/>
+  <logger level="INFO" doc:name="Logger"/>
+  <set-payload value="#[2]" doc:name="Set Two"/>
+</flow>
+----
+
+要仅嘲笑*second* `set-payload`处理器，请使用：
+
+[source,java,linenums]
+-----
+MessageProcessorMocker mocker =
+  whenMessageProcessor("set-payload")
+  .withAttributes(Attribute.attribute("name").
+                  ofNamespace("doc").
+                  withValue("Set Two"));
+-----
+
+*Return Value*
+
+找到与您的属性匹配的消息处理器后，您可以
+返回以下一项或多项：
+
+[%header,cols="30a,30a,40a"]
+|===
+|方法名称 |描述 | 示例
+
+| `thenReturn`
+|接收消息处理器返回的Mule消息。
+| `mocker.thenReturn(muleMessageWithPayload("myNewPayload"));`
+
+| `thenThrow`
+|接收消息处理器抛出的异常。
+| `mocker.thenThrow(new IllegalArgumentException());`
+
+| `thenReturnSameEvent`
+|返回消息处理器收到的相同事件。
+| `mocker.thenReturnSameEvent();`
+
+|===
+
+*Example*
+
+本示例构建在最后一个示例上，并向您演示如何模拟消息
+Java处理器：
+
+。流
+[source, xml,linenums]
+----
+<flow name="myFlow">
+  <set-payload value="My Current Payload"/>
+  <logger level="INFO"/>
+</flow>
+----
+
+。测试
+[source, java,linenums]
+----
+import org.junit.Test;
+import org.junit.Assert;
+import org.mule.api.MuleEvent;
+import org.mule.munit.common.mocking.MessageProcessorMocker;
+import org.mule.api.MuleMessage;
+import org.mule.munit.runner.functional.FunctionalMunitSuite;
+
+public class MyTestSuite extends FunctionalMunitSuite {
+
+  @Test
+  public void test() throws Exception {
+    String myMockPayload = "myPayload"; //<1>
+
+    MuleMessage messageToBeReturned =
+      muleMessageWithPayload(myMockPayload); //<2>
+    MessageProcessorMocker mocker =
+      whenMessageProcessor("set-payload"); //<3>
+    mocker.thenReturn(messageToBeReturned); //<4>
+
+    MuleEvent resultMuleEvent =
+      runFlow("myFlow", testEvent("example")); //<5>
+    Assert.assertEquals(myMockPayload,
+      resultMuleEvent.getMessage().getPayload()); //<6>
+  }
+}
+----
+<1>替换原始的有效载荷。
+<2>模拟返回的消息。
+<3>与`set-payload`消息处理器匹配的模拟。
+<4>将返回消息设置为模拟。
+<5>使用自定义`MuleEvent`运行流程。
+<6>声明模拟有效载荷替换原始有效载荷。
+
+== 间谍消息处理器
+
+`spyMessageProcessor`方法可以让你创建一个间谍
+看看在调用消息处理器之前和之后会发生什么。
+
+[source, java]
+----
+MunitSpy mySpy = spyMessageProcessor("logger");
+----
+
+注：`MunitSpy`用于匹配消息处理器的语法是相同的
+作为`MessageProcessorMocker`。因此，您可以匹配消息处理器
+按名称，名称空间和属性。
+
+间谍之前和之后=== 
+
+定义要在消息处理器之前和之后执行的操作
+执行，创建实现`SpyProcess`的类并定义该类
+`spy`方法。
+
+例如：
+
+[source,java,linenums]
+----
+SpyProcess beforeSpy = new SpyProcess() {
+
+  @Override
+  public void spy(MuleEvent event) throws MuleException {
+    System.out.println("Message before is " + event.getMessageAsString());
+  }
+};
+
+SpyProcess afterSpy = new SpyProcess() {
+
+  @Override
+  public void spy(MuleEvent event) throws MuleException {
+    System.out.println("Message after is " + event.getMessageAsString());
+  }
+};
+spyMessageProcessor("set-payload").before(beforeSpy).after(afterSpy);
+----
+
+间谍示例之前和之后=== 
+
+以下示例显示如何在消息前后与间谍进行断言
+处理器执行。
+
+。流
+[source,xml,linenums]
+----
+<flow name="myFlow">
+    <logger level="INFO"/>
+    <set-payload value="#[2]"/>
+</flow>
+----
+
+。测试
+[source, java,linenums]
+----
+import org.junit.Assert;
+import org.junit.Test;
+import org.mule.api.MuleEvent;
+import org.mule.api.MuleException;
+import org.mule.munit.common.mocking.SpyProcess;
+import org.mule.munit.runner.functional.FunctionalMunitSuite;
+
+@Test
+public void SpyTest() throws Exception {
+  SpyProcess beforeSpy = new SpyProcess() { //<1>
+
+    @Override
+    public void spy(MuleEvent event) throws MuleException {
+      Assert.assertEquals(1, event.getMessage().getPayload());
+    }
+  };
+  SpyProcess afterSpy = new SpyProcess() { //<2>
+
+    @Override
+    public void spy(MuleEvent event) throws MuleException {
+      Assert.assertEquals(2, event.getMessage().getPayload());
+    }
+  };
+  spyMessageProcessor("set-payload") //<3>
+    .ofNamespace("mule")
+    .before(beforeSpy)
+    .after(afterSpy);
+
+  runFlow("myFlow", testEvent(1)); //<4>
+
+}
+----
+<1>创建在消息处理器之前执行的间谍进程。
+<2>创建在消息处理器之后执行的间谍进程。
+<3>为设置的有效负载创建间谍消息处理器，并添加before和
+经过处理。
+<4>使用自定义`MuleEvent`运行流程。
+
+== 验证消息处理器
+
+例如，您可以验证是否已调用特定的消息处理器
+特定的次数。
+
+[source, java]
+----
+MunitVerifier verifier = verifyCallOfMessageProcessor("logger");
+----
+
+注：`MunitVerifier`用于匹配消息处理器的语法是相同的
+作为`MessageProcessorMocker`和`MunitSpy`。因此，你可以匹配一个
+消息处理器按名称，命名空间和属性。
+
+=== 验证配置和测试示例
+
+以下示例使用一个选项来确定调用记录器的次数：
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+​
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+  <flow name="choiceFlow">
+    <choice>
+      <when expression="#[payload == 1]">
+        <set-payload value="Payload is 1" />
+      </when>
+      <otherwise>
+        <logger level="INFO" />
+      </otherwise>
+    </choice>
+  </flow>
+</mule>
+----
+
+*Verify Test Example*
+
+以下示例测试配置：
+
+[source,java,linenums]
+----
+import org.junit.Test;
+import org.mule.munit.runner.functional.FunctionalMunitSuite;
+​
+​
+public class MyTestSuite extends FunctionalMunitSuite {
+
+  @Test
+  public void VerifyTest() throws Exception {
+​
+      runFlow("choiceFlow", testEvent(1));
+​
+      verifyCallOfMessageProcessor("set-payload").ofNamespace("mule").times(1);
+  }
+​
+}
+----
+
+=== 验证时间
+
+MUnit提供了以下方法，您可以使用它们来验证调用消息处理器的次数。
+
+[%header,cols="30a,70a"]
+|===
+|方法名称 |说明
+
+| `times`
+|接收调用消息处理器的*exact*次。
+
+| `atLeast`
+|接收调用消息处理器的*minimum*次。
+
+| `atMost`
+|接收调用消息处理器的*maximum*次。
+
+| `atLeastOnce`
+|消息处理器必须至少调用一次。
+
+|===
+
+如果上述条件不满足，则测试失败。
+
+*Example*
+
+以下示例显示如何确保`logger`消息处理器是
+称为*exactly*三次。
+
+。流
+[source,xml,linenums]
+----
+<flow name="choiceFlow">
+    <choice>
+        <when expression="#[payload == 1]">
+            <logger level="INFO"/>
+            <logger level="INFO"/>
+            <logger level="INFO"/>
+        </when>
+        <otherwise>
+            <logger level="INFO"/>
+        </otherwise>
+    </choice>
+</flow>
+----
+
+。测试
+[source, java,linenums]
+----
+import org.junit.Test;
+import org.mule.munit.runner.functional.FunctionalMunitSuite;
+
+public class MyTestSuite extends FunctionalMunitSuite {
+
+  @Test
+  public void VerifyTest() throws Exception{
+    runFlow("choiceFlow", testEvent(1)); //<1>
+
+    verifyCallOfMessageProcessor("logger").ofNamespace("mule").times(3); //<2>
+  }
+}
+----
+<1>使用自定义的MuleEvent运行流程。
+<2>确认记录器消息处理器被调用了三次。
+

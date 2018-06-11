@@ -1,0 +1,324 @@
+关于DataWeave变量，= 
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+DataWeave是一种函数式编程语言，变量的行为就像函数一样。变量被分配一个值，它可以是一个常量（如`var msg = "hello"`），也可以是诸如`() -> "hello"`之类的lambda表达式。
+
+当一个变量被分配一个lambda表达式时，它的行为就像一个函数。
+
+就像一个函数一样，变量赋值的lambda表达式可以包含可以在右边表达式中使用的参数，例如`(string) -> upper(string)`，它可以将任何字符串转换为大写。
+
+其他变量也可以作为参数传递给另一个变量的lambda表达式。这个例子展示了如何将`toUpper`变量的lambda表达式按名称传递给`addSuffix`变量的lambda表达式。
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+var toUpper = (aString) -> upper(aString)
+
+var addSuffix = (msg, aFunction, suffix) -> aFunction(msg ++ suffix)
+---
+addSuffix("hello", toUpper, " world") //result is "HELLO WORLD"
+----
+
+以下是DataWeave变量赋值的一些示例：
+
+。示例：DataWeave脚本中的变量赋值
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+var msg = "hello"
+
+var msg2 = (x = "ignore") -> "hello"
+
+var toUpper = (aString) -> upper(aString)
+
+var combined = (function, msg="universe") -> function(msg ++ " world")
+---
+[
+   msg: msg,
+   msg2: msg2(),
+   toUpper: toUpper(msg),
+   combined: combined(toUpper, msg="world"),
+   combined2: combined((x) -> lower(x) ++ " today", msg)
+]
+----
+
+上面的脚本产生了这个输出：
+
+。示例：输出
+[source,JSON, linenums]
+----
+[
+  {
+    "msg": "hello"
+  },
+  {
+    "msg2": "hello"
+  },
+  {
+    "toUpper": "HELLO"
+  },
+  {
+    "combined": "HELLO WORLD"
+  },
+  {
+    "combined2": "hello world today"
+  }
+]
+----
+
+在这些例子中：
+
+
+*  `msg` var被分配给一个常量。
+将*  `msg2`分配给映射到常量的表达式，因此`msg2()` ` behaves the same way as ` msg `, without the `（）`。
+*  `toUpper`变量将输入参数映射到DataWeave `upper`函数。所以它被用作其他语言中更传统的功能，如`toUpper(aString)`。
+*  `combined`接受函数名称作为输入参数，然后将该函数名称应用于第二个`msg`参数。第二个`msg`参数是可选的，因为指定了默认值`universe`。
+
+表达式`combined(toUpper, " world")`的结果是将前面定义的`toUpper`函数应用于`msg`参数值`world`。提供的第二个参数`world`将覆盖`msg="universe"`的默认值，因此结果为`HELLO WORLD`。
+
+最后的`combined2`键是表达式`combined((x) -> lower(x) ++ " today", msg)`。现在，不用传入已定义的函数，您可以“匿名”地定义lambda表达式，而不用任何名称。 Lambda表达式允许您在不同的上下文中重用更一般化的表达式。在此示例中，组合键使用名为`toUpper`的已定义变量，而`combined2`键在函数调用时定义表达式“inplace”。因此，在此示例中，不是将字符串`world`转换为`HELLO WORLD`，而是将其转换为`hello world today`å。
+
+请注意，这些类型的“inplace”表达式在JavaScript等语言中称为闭包。
+
+DataWeave包含语法糖来访问分配给变量的lambda表达式作为函数。为此，请使用`fun`指令替换`var`指令，并使用和`=`符号替换lambda表达式中的箭头`->`。您还可以将lambda表达式参数移到函数名称旁边，以便在其他过程式编程语言中将语法看作是函数声明。这使您可以像使用变量一样使用变量。所以前面的例子可以等效地写成：
+
+////
+旧的，简单的例子
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+var msg = "hello"
+
+fun msg2(optParm = "ignore") = "hello"
+
+fun toUpper(aString) = upper(aString)
+
+fun combined(function, msg="universe") = function(msg ++ " world")
+---
+[
+   msg: msg,
+   msg2: msg2(),
+   toUpper: toUpper(msg),
+   combined: combined(toUpper, msg),
+   combined2: combined((x) -> lower(x) ++ " today", msg)
+]
+----
+////
+
+
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+var msg = "hello"
+
+fun msg2(optParm = "ignore") = "hello"
+
+fun toTitle(text: String) = toUpper(text[0]) ++ toLower(text[1 to -1])
+
+fun combined(function, msg="universe") = function(msg ++ " world")
+---
+[
+   msg: msg,
+   msg2: msg2(),
+   toUpper: toTitle(msg),
+   combined: combined(toUpper, msg),
+   combined2: combined((x) -> lower(x) ++ " today", msg)
+]
+----
+
+这个例子产生相同的结果：
+
+
+[source,JSON, linenums]
+----
+[
+  {
+    "msg": "hello"
+  },
+  {
+    "msg2": "hello"
+  },
+  {
+    "toUpper": "HELLO"
+  },
+  {
+    "combined": "HELLO WORLD"
+  },
+  {
+    "combined2": "hello world today"
+  }
+]
+----
+
+DataWeave中的重要区别在于函数是变量，每个函数只是对`var`语法进行语法重命名，它允许您将函数名称或lambda表达式作为参数传递给其他函数。 `fun`语法允许您访问DataWeave的强大功能编程方面，同时还可以编写更简单的表达式，作为您可能更熟悉的函数调用。
+
+另外请注意，DataWeave变量（和函数）可以通过提供默认值来指定任意数量的可选参数，只要所有这些可选参数都是参数列表中的最后一个。
+
+=== 变量范围
+
+您可以在DataWeave脚本中初始化并使用全局和局部变量。
+
+* 全局变量在DataWeave脚本的头部被初始化，并且可以通过DataWeave脚本主体中的任何位置名称来引用。
++
+DataWeave脚本的标头接受初始化变量的`var`指令，例如：`var language='Español'`。您可以在标题中的不同行上声明多个全局变量。
++
+* 局部变量在DataWeave脚本的主体中进行初始化，并且只能在初始化表达式的范围内通过名称引用。
++
+初始化局部变量的语法如下所示：
+`using (<variable-name> = <expression>)`
++
+它必须使用关键字`using`，并且必须使用`var`语法，而不是`fun`语法。
++
+
+请注意，DataWeave变量不能被重新分配。它们也不同于作为Mule消息一部分的变量（如目标变量）。 DataWeave变量不会超出其初始化脚本的范围。
+
+您可以将多个局部变量定义组合为使用函数内的逗号分隔列表。例如：`using (firstName='Annie', lastName='Point')`
+
+[[example_global_variable]]
+=== 示例：全局DataWeave变量
+
+本示例初始化标题中的`language`变量，并在输出`language`元素中插入常量值`Español`。
+
+。转变
+[source, DataWeave, linenums]
+----
+%dw 2.0
+output application/xml
+var language='Español'
+---
+{
+  document: {
+    language: language,
+    text: "Hola mundo"
+  }
+}
+----
+
+.OUTPUT
+[source,XML, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<document>
+  <language>Español</language>
+  <text>Hola Mundo</text>
+</document>
+----
+
+[[example_local_variable]]
+=== 示例：本地DataWeave变量
+
+要初始化局部变量，可以使用文字表达式，变量引用表达式或函数表达式。这些表达式可以引用其范围内的任何其他局部变量或任何输入或全局变量。
+
+您只能在初始化它的表达式的范围内通过名称引用局部变量。该声明可以作为任何文字表达的前缀。文字分隔了变量的范围，所以你不能在范围之外引用任何变量。
+
+以下示例显示了在字面表达式中使用的局部变量的初始化。语法是一样的
+
+示例：作用域为简单值
+[source, DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+using (x = 2) 3 + x
+----
+
+结果是`5`。
+
+示例：作用于数组文字
+[source, DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+using (x = 2) [1, x, 3]
+----
+
+结果是`[ 1, 2, 3]`
+
+示例：作用域为对象字面量
+此处，对`user`的引用是有效的，因为它位于对象`person`内。
+
+[source, DataWeave, linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  person: using (user='Greg', gender='male') {
+    name: user,
+    gender: gender
+  }
+}
+----
+
+.OUTPUT
+[source, XML, linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<person>
+  <name>Greg</name>
+  <gender>male</gender>
+</person>
+----
+
+示例：超出范围的无效引用
+此示例产生错误，因为`gender`是在`person`范围之外引用的，`gender`已初始化。
+
+[source, DataWeave, linenums]
+----
+%dw 2.0
+output application/xml
+---
+entry: using (firstName = "Annie", lastName = "Point") {
+  person: using (user = firstName, gender = "male") {
+    name: user,
+    gender: gender
+  },
+  sn: lastName,
+  gen: gender
+}
+----
+
+无效的示例返回此错误：
+`Unable to resolve reference of gender.`
+
+示例：作用于全局变量和函数
+[source, DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+var myGlobalVar = 2
+---
+{
+  examples: {
+    // x is a global variable that is referenced by a literal expression.
+    'ex_a': using (x = myGlobalVar) 3 + x,
+    // y is an expression that coerces a Boolean into a string,  then referenced by the upper function.
+    'ex_b': using (y = true as String) upper(y ++ ' as a string'),
+    // z is a function expression that is referenced by a literal object.
+    'ex_c': using (z = ["a", "b", "c"] map upper($)) {mapping : z}
+  }
+}
+----
+
+.OUTPUT
+[source, JSON, linenums]
+----
+{
+  "examples": {
+    "ex_a": 5,
+    "ex_b": "TRUE AS A STRING",
+    "ex_c": {
+      "mapping": [
+        "A",
+        "B",
+        "C"
+      ]
+    }
+  }
+}
+----

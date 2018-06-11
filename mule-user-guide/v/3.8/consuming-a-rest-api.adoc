@@ -1,0 +1,468 @@
+= 使用REST API
+:keywords: anypoint, studio, connectors, rest, raml, api
+
+要从Mule应用程序中使用REST API，可以配置HTTP请求连接器。本文档描述如何准备请求，调用REST API并处理响应。
+
+如果您多次连接到相同的REST API，或者使用具有复杂身份验证协议的API，请考虑 link:/anypoint-connector-devkit/v/3.8[开发您自己的Anypoint连接器]。检查您要连接到的API是否已在https://www.anypoint.mulesoft.com/exchange/[Anypoint Exchange]中存在连接器。如果是这样，请将其下载到Anypoint Studio中。
+
+== 基本解剖学
+
+在其最简单的化身中，用于使用REST API的Mule应用程序包含以下内容：
+
+* 配置一个或多个消息处理器来构建您的请求
+
+* 配置为调用REST API的HTTP请求连接器
+
+* 配置一个或多个消息处理器来接受和处理响应
+
+image::consuming-a-rest-api-cd210.png[消费-A-REST的API-cd210AA]
+
+您可以配置构建请求的应用程序部分并处理响应。本文档重点介绍如何使用HTTP连接器调用REST API。
+
+== 最低配置
+
+您正在使用的REST API需要有一个描述它的 link:http://raml.org[肾错构瘤]文件。在RAML中，您可以定义以下内容：
+
+* 认证
+* 用于配置出站HTTP端点的基本URI
+* 范围
++
+基于身份验证凭证，例如，应用程序可以限制对某些资源上的GET请求的调用，或限制对资源的访问。
++
+* 资源
++
+您需要配置出站HTTP端点的资源路径。
++
+* 方法
++
+HTTP出站端点的默认方法是POST，因此您需要知道该资源支持哪些方法，并在必要时将此默认值更改为调用成功呼叫所需的方法。
++
+* 输入验证
++
+对于POST和PUT调用，API几乎总是要求输入格式，比如JSON和XML匹配其模式。
+
+如果您引用描述您的API的RAML文件，则HTTP连接器会主动向您提供智能建议。
+
+在Mule 3.8.0运行时中，您可以定义或配置以下内容：
+
+* 输出格式
++
+在流程中的HTTP出站端点之后，您需要消息处理器接受来自API的响应并将响应转换为可用格式。
++
+* 重定向
+如果API使用重定向，请在您的HTTP出站端点中启用重定向。
++
+* 方法的标题
++
+POST，PUT和DELETE请求几乎总是需要标题。
++
+* 错误处理
+
+==== 简单示例
+
+本示例使用 link:http://openweathermap.org/API[OpenWeatherMap API]。在这个例子中：
+
+*  API不需要身份验证。
+* 基本网址是http://api.openweathermap.org/data/2.5/
+* 范围仅限于少数资源，包括*weather*和*forecast*。这些资源上唯一可用的方法是*GET*。
+* 文档中提供的示例API请求显示，要在*London, UK*中检索有关当前天气的信息，您的API请求需要如下所示：
+
+[source]
+----
+http://api.openweathermap.org/data/2.5/weather?q=London,uk
+----
+
+该URL使用以下格式：
+
+image::consuming-a-rest-api-0f4ca.png[消费-A-REST的API-0f4ca]
+
+要在Mule应用程序中实现此调用，请按照下面的描述配置HTTP请求连接器。此示例显示_only_此HTTP连接器的配置。为了使这个例子有效，至少需要配置一个HTTP侦听器来触发流中的消息，并且至少有一个消息处理器来接受响应。请参阅 link:/mule-user-guide/v/3.8/rest-api-examples[完整的例子]了解更多信息。
+
+[tabs]
+------
+[tab,title="Studio"]
+....
+. Open the Properties Editor of the *HTTP Connector*.
+
+. Click image:add.png[add] next to Connector Configuration to create a new link:/mule-user-guide/v/3.8/global-elements[global element] that encapsulates configuration parameters for the connector.
+. Set the Host to *api.openweathermap.org* and the Port to *80*.
++
+image::consuming-a-rest-api-add1e.png[]
+
+. Click OK.
+. In the connector properties editor, set the *Path* to `/data/2.5/weather?q=London,uk`.
++
+When you specify the host you set in the global element together with the path to comprise the entire URL you want to reach.
++
+. Select the *Method* you want to use from the drop-down list. This example uses *GET*.
++
+image::consuming-a-rest-api-b33ed.png[consuming-a-rest-api-b33ed]
+
+. Click any blank area of the canvas to *Save* your configuration changes. +
++
+If the API you are calling requires working with security requirements, involves redirects, or requires a specifying an HTTP content-type and encoding header, the HTTP connector supports additional configuration options to manage these details.
+
+....
+[tab,title="XML Editor"]
+....
+[source,xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.openweathermap.org" port="80"  doc:name="HTTP Request Configuration"/>
+     
+<flow name="basic_tutorialFlow1">
+ 
+    <...>
+ 
+    <http:request config-ref="HTTP_Request_Configuration" path="/data/2.5/weather?q=London,uk" method="GET" doc:name="HTTP"/>
+</flow>
+----
+....
+------
+
+在这个例子中，JSON响应具有以下结构：
+
+[source,xml, linenums]
+----
+{
+  "coord": {
+    "lon": -0.13,
+    "lat": 51.51
+  },
+  "sys": {
+    "message": 0.0506,
+    "country": "GB",
+    "sunrise": 1396589257,
+    "sunset": 1396636746
+  },
+  "weather": [
+    {
+      "id": 801,
+      "main": "Clouds",
+      "description": "few clouds",
+      "icon": "02d"
+    }
+  ],
+  "base": "cmc stations",
+  "main": {
+    "temp": 287.46,
+    "pressure": 1010,
+    "temp_min": 285.93,
+    "temp_max": 289.26,
+    "humidity": 73
+  },
+  "wind": {
+    "speed": 2.06,
+    "gust": 4.11,
+    "deg": 310
+  },
+  "clouds": {
+    "all": 24
+  },
+  "dt": 1396633274,
+  "id": 2643743,
+  "name": "London",
+  "cod": 200
+}
+----
+
+您可以使用 link:/mule-user-guide/v/3.8/dataweave[转换消息组件]或JSON到Object的转换器将此响应转换为可从中提取信息的另一种格式，例如路由消息。
+
+如果此API具有关联的RAML文件，则可以在连接器的配置元素中引用它。有了这个，在选择要调用的动词和资产之后，Studio会公开与输出对应的元数据。与流程中的其他元素集成得到简化。
+
+== 使用MEL表达式配置动态请求
+
+在前面的例子中，请求在URL中被硬编码：
+
+----
+http://api.openweathermap.org/data/2.5/weather?q=London,uk
+----
+
+大多数使用情况要求根据消息中的某些数据动态更改API。例如，在以下GET请求示例中，调用指示Mule运行时从消息的有效内容中提取城市名称。
+
+----
+http://api.openweathermap.org/data/2.5/weather?q=#[payload.city]
+----
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. In the HTTP connector properties editor, shorten the Path field to only `/data/2.5/weather`
+
+. Click *Add Parameter* to create a few new fields that correspond to a new query-param. For the query parameter name, type `q` and for its value type `London,uk`. This matches the part of the string you removed `q=London,uk`.
++
+image::consuming-a-rest-api-52bdc.png[consuming-a-rest-api-52bdc]
+
+. Replace the hard-coded string in the Parameters *Value* `London,uk` to a variable incoming element of the Mule message: `#[payload.city]`.
++
+Using this variable assumes there is an element named city in the message payload.
++
+image::consuming-a-rest-api-10816.png[]
++
+If you're referencing a RAML file in your Connector Configuration, after selecting the path and method, the required query-params for the request type  are displayed.
+
+....
+[tab,title="Standlone XML"]
+....
+
+[source,xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.openweathermap.org" port="80"  doc:name="HTTP Request Configuration"/>
+<flow name="basic_tutorialFlow1">
+    <http:request config-ref="HTTP_Request_Configuration" path="/data/2.5/weather " method="GET" doc:name="HTTP">
+        <http:request-builder>
+            <{{0}}"/>
+        </http:request-builder>
+    </http:request>
+</flow>
+----
+....
+------
+
+在某些情况下，您可能需要根据消息属性中的数据或先前在流程中设置的变量来查询其他资源。例如：
+
+----
+http://api.someservice.com/#[flowVars['resource_path']]?#[flowVars['query_param']]=#[flowVars['query_param_value']]
+----
+
+您可能想要根据流程中较早执行的逻辑动态配置方法，例如GET或POST。要覆盖HTTP出站端点中设置的方法，请在端点之前使用*Property transformer*来显式设置`http.method`属性。
+
+[tabs]
+------
+[tab,title="Studio"]
+....
+Insert a *Property transformer* in your flow _before_ your HTTP connector and configure it to set the `http.method` property. Mule runtime uses this property to override the method attribute set on the HTTP connector.
+
+image::consuming-a-rest-api-e27b0.png[consuming-a-rest-api-e27b0]
+
+This sample configuration assumes that you have configured a flow variable earlier in your flow called `method-override` that populates the value of that variable with a valid method.
+....
+[tab,title="Standalone XML"]
+....
+Insert a `set-property` element in your flow before your HTTP connector and configure it to set the `http.method` property. If set, Mule runtime uses this property to override the method attribute set on the HTTP connector.
+
+[source,xml, linenums]
+----
+<set-property propertyName="http.method" value="#[flowVars['method-override']]" doc:name="Property"/>
+----
+
+This sample configuration assumes that you have configured a flow variable earlier in your flow called `method-override` with logic to populate the value of that variable with a valid method.
+....
+------
+
+== 处理HTTP内容类型和编码
+
+当您发送POST请求时，Mule运行时遵守以下有关正文的Content-Type和编码的规则。
+
+=== 发送
+
+[cols="2*"]
+|===
+| *For a String, char[], Reader, or similar* a |
+* 如果端点已经明确设置了编码，Mule运行时将使用此编码。
+* 如果端点没有显式设置编码，则Mule运行时将根据消息属性`Content-Type`确定编码。
+* 如果`Content-Type`消息属性未设置，Mule运行时使用Mule上下文默认配置。
+* 对于`Content-Type`，Mule运行时发送消息属性`Content-Type`，但使用实际的编码集。
+
+| *For binary content* a |
+编码不相关。 Mule运行时设置`Content-Type`如下：
+
+* 如果在消息上设置了`Content-Type`属性，则Mule运行时使用定义的内容类型。
+* 如果未在消息上设置`Content-Type`属性，则Mule运行时会将"application/octet-stream"设置为`Content-Type`。
+
+|===
+
+=== 接收
+
+当收到HTTP响应时，Mule消息的负载通常是HTTP响应的InputStream。
+
+== 使用自定义标题
+
+API（如OpenWeatherMap）要求您将自定义标头与请求（如开发人员密钥）一起传递。就像查询参数一样，您也可以在HTTP连接器上向您的请求添加标题。例如，如果您正在使用的API要求您注册开发人员密钥，那么请使用标头名称`accessKey`将该密钥作为标头传递给您的请求，您可以添加一个属性来设置此标头，如图所示下面。
+
+[tabs]
+------
+[tab,title="Studio"]
+....
+In the HTTP connector's properties editor click the *Add Parameter* button, this creates a few new fields that correspond to a new parameter. By default this creates a query-param, but you can pick other types of parameters from the dropdown menu, for this example pick *header*. For the header's name, type `accessKey` and for its value, provide your key.
+
+image::consuming-a-rest-api-6147d.png[]
+
+Alternatively, you can use the field *Value* to reference a variable incoming element of the Mule message, for example `#[payload.key]`, assuming there is an element named key in the message payload.
++
+image::consuming-a-rest-api-a9a95.png[consuming-a-rest-api-a9a95]
+
+You can also use a link:/mule-user-guide/v/3.8/configuring-properties[property placeholder], then define the value in your *mule-app.properties* file
+
+image::consuming-a-rest-api-ee3ac.png[consuming-a-rest-api-ee3ac]
+
+If you're referencing a RAML file in your Connector Configuration, after you select the path and method, the required headers for the type of request you want to make are displayed
+
+....
+[tab,title="Standalone XML"]
+....
+[source,xml, linenums]
+----
+<http:request config-ref="HTTP_Request_Configuration" path="/data/2.5/weather " method="GET" doc:name="HTTP">
+            <http:request-builder>
+                <http:header headerName="accessKey" value="12341234"/>
+            </http:request-builder>
+        </http:request>
+----
+
+You can also configure the value of the custom header using a MEL expression if you want to define the value dynamically (see image below).
+
+[source,xml, linenums]
+----
+<http:request config-ref="HTTP_Request_Configuration" path="/data/2.5/weather " method="GET" doc:name="HTTP">
+            <http:request-builder>
+                <{{0}}"/>
+            </http:request-builder>
+        </http:request>
+----
+
+You can also use a link:/mule-user-guide/v/3.8/configuring-properties[property placeholder], then define the value in your **mule-app.properties** file.
+
+[source,xml, linenums]
+----
+<http:request config-ref="HTTP_Request_Configuration" path="/data/2.5/weather " method="GET" doc:name="HTTP">
+            <http:request-builder>
+                <http:header headerName="accessKey" value="${access.key}"/>
+            </http:request-builder>
+        </http:request>
+----
+....
+------
+
+== 处理安全要求
+
+如果您使用复杂的身份验证协议（如OAuth），则可以 link:/anypoint-connector-devkit/v/3.8[建立你自己的Anypoint连接器]使用该API。
+
+===  HTTPS
+
+如果您正在使用的REST API要求传入请求通过HTTPS到达，则可以在Mule应用程序中配置全局HTTPS连接器，然后在出站端点中引用连接器。在本例中，您将创建一个Java密钥库文件（JKS）和 link:/mule-user-guide/v/3.8/tls-configuration[配置TLS]。
+
+首先，为HTTPS配置HTTP连接器：
+
+image::consuming-a-rest-api-ba463.png[消费-A-REST的API-ba463]
+
+接下来，创建一个密钥库文件来验证通信。这可以使用Java安装的bin目录中的Java keytool来完成。使用命令行导航到本机上的此目录，然后执行以下命令以创建密钥库文件：
+
+----
+keytool -genkey -alias mule -keyalg RSA -keystore keystore.jks
+----
+
+系统会提示您创建两个密码; _记住密码_。该命令在本地目录`keystore.jks`中创建一个`jks`文件。
+
+* 如果您使用的是Studio，请将`keystore.jks`拖放到Studio Package Explorer中的`appname/src/main/resources`目录中。
+
+* 如果您在Mule运行时中使用独立XML，请将其放置在`MULE_HOME/conf`目录中，如果您在多个应用程序中使用该目录，或者在`yourappname/src/main/resources`目录中使用该目录应用。
+
+现在，您可以在全局HTTPS连接器中引用此密钥存储库，而该连接器又由流程中的HTTP出站端点引用。
+
+[tabs]
+------
+[tab,title="Studio"]
+....
+. Open the *Properties Editor* of the *HTTP connector* that you have configured to use HTTPS, and click image:consuming-a-rest-api-3467e.png[consuming-a-rest-api-3467e] next to the connector configuration field.
+. On the *TLS/SSL* tab, select *Use TLS Config*.
+. In Key Store Configuration, select a type of key store configuration from the drop-down. For example, select JKS (Java Key Store).
++
+The default type is JKS (Java Key Store).
++
+. Enter the passwords you created when creating your keystore file in *Path*, *Key Password*, and *Password*, then click *OK*.
++
+If you placed your keystore in the  `appname/src/main/resources` directory, specify the name of the keystore as the value of the path. Otherwise, if the keystore is located in the MULE_HOME/conf directory, specify `"/keystore.jks"` as the path.
++
+image::consuming-a-rest-api-b0370.png[consuming-a-rest-api-b0370]
+....
+[tab,title="Standalone XML"]
+....
+[source,xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.openweathermap.org" port="80"  doc:name="HTTP Request Configuration">
+    <tls:context>
+        <tls:key-store path="keystore.jks" password="yourpassword" keyPassword="yourkeypassword"/>
+    </tls:context>
+</http:request-config>
+----
+
+....
+------
+
+=== 基本认证
+
+如果您正在使用的REST API要求您传递基本身份验证凭据，则可以在出站HTTP端点配置中提供它们。
+
+[tabs]
+------
+[tab,title="Studio"]
+....
+. Click  image:consuming-a-rest-api-3467e.png[consuming-a-rest-api-3467e] next to the connector configuration field, then select the *Authentication* tab.
+
+. Under *Protocol*, select *Basic*.
++
+The fields for providing your username and password appear. Your application passes these credentials with the API call at runtime.
++
+image::consuming-a-rest-api-4f8c3.png[consuming-a-rest-api-4f8c3]
++
+You can use link:/mule-user-guide/v/3.8/configuring-properties[property placeholders] for credentials and define the properties in your `mule-app.properties` file.
++
+image::consuming-a-rest-api-c1749.png[consuming-a-rest-api-c1749]
++
+. Navigate to your `mule-app.properties` file under `src/main/app` in the Package Explorer.
++
+image::consuming-a-rest-api-ba942.png[consuming-a-rest-api-ba942]
+
+. Define the placeholders here, as shown below.
++
+image:define-props.png[define-props]
+....
+[tab,title="Standalone XML"]
+....
+Add the user and password attributes to your `http:outbound-endpoint` configuration, as shown below.
+
+[source,xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.openweathermap.org" port="80"  doc:name="HTTP Request Configuration">
+    <http:basic-authentication username="myUsername" password="myPassword"/>
+</http:request-config>
+----
+
+Rather than hardcode the values of your credentials, you can define them as link:/mule-user-guide/v/3.8/configuring-properties[property placeholders].
+
+[source,xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.openweathermap.org" port="80"  doc:name="HTTP Request Configuration">
+    <http:basic-authentication username="${service.username}" password="${service.password}"/>
+</http:request-config>
+----
+
+Open (or create, if you don't have one) the `mule-app.properties` file in your application's `src/main/app` folder, then define the properties in the file:
+
+[source,xml, linenums]
+----
+service.username=myusername
+service.password=mypassword
+----
+....
+------
+
+== 提示
+
+*Follow redirects*
+
+如果您使用GET向API发出请求，并且API使用`redirectLocation`标头进行响应，请将HTTP连接器配置为遵循重定向，将请求推送至重定向URL。这仅适用于GET请求，因为您无法自动遵循POST请求的重定向。
+
+* 在Studio中，点击HTTP连接器属性编辑器的*Advanced*选项卡上的*Follow Redirects*复选框。
+* 在XML中，添加属性`followRedirects=` `"true"`。
++
+image::consuming-a-rest-api-b88bf.png[消费-A-REST的API-b88bf]
+
+
+*POST requests and the API schema*
+
+如果您正在使用POST请求调用REST API，则需要获取POST的API模式，并在您请求发送给API的Mule消息的有效内容中匹配该格式。一个好的方法是在流程中的HTTP出站端点之前插入 link:/mule-user-guide/v/3.8/dataweave[转换消息组件]，然后在属性编辑器中定义输出格式。
+
+image::consuming-a-rest-api-b372e.png[消费-A-REST的API-b372e]
+

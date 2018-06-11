@@ -1,0 +1,142 @@
+= 创建消息处理器
+
+消息处理器是Mule的一个关键概念。您可以将@ annotations添加到您的代码中，Mule用它来指定Java方法。消息处理器解释属性。
+
+例如，`@Processor`注释与注释处理器一起使用来指示要作为消息处理器使用的方法。
+
+快速示例：
+
+[source,java, linenums]
+----
+@Connector(name = "myextension", friendlyName="MyExtension Class")
+public class MyExtension {
+
+  @Processor
+  public void myMethod(String taskToComplete, String startDate, int taskIdNumber) {
+     // code here
+  }
+----
+
+在此示例中，@Processor属性指示由@Connector属性声明的MyExtension类中的myMethod。
+
+骡子调用myMethod方法如下。 DevKit将MyMethod（）转换为my-method：
+
+[source,xml, linenums]
+----
+<myextension:my-Method />
+----
+
+==  @Processor Annotation
+
+指定一个Mule调用的公共实例方法。这些方法可以接收任何数量和类型的参数，并有任何返回类型。
+
+[%header,cols="20a,80a"]
+|===
+| {参数{1}}说明
+| *name*  | *Optional*。调用此处理器的元素的XML名称。如果未指定，名称将从该方法的名称派生。
+| *friendlyName*  | *Required*。在连接器操作下拉菜单中显示的名称，位于全局元素下拉列表中。
+| *intercepting* a |
+*Optional.*将此值设置为true会触发截取消息处理器的生成，该处理器表示为：
+
+`{@link org.mule.api.processor.InterceptingMessageProcessor}`
+
+拦截消息处理器必须接收以下内容才能触发链的下一部分：
+
+`{@link org.mule.api.callback.SourceCallback}`
+
+如果拦截设置为false，则此值将生成一个消息处理器，该消息处理器表示为：
+
+`{@link org.mule.api.processor.MessageProcessor}`
+
+|===
+
+===  @可选
+
+指定从Mule调用方法时不需要方法参数的值。
+
+例：
+
+[source,java, linenums]
+----
+@Connector(name = "optional", friendlyName="OptionalConnector Class")
+public class OptionalConnector {
+  @Processor
+  public double division(int sum1, int sum2, @Optional int divisor) {
+      return (sum1 + sum2) / divisor;
+  }
+----
+
+指定一个返回25（（40 + 10）/ 2）的除数参数：
+
+[source,xml, linenums]
+----
+<optional:division sum1="40" sum2="10" divisor="2"/>
+----
+
+因为`divisor`参数不是必需的，所以执行以下操作会导致异常，因为它试图除以零（零是int数据类型的默认值）：
+
+[source,xml, linenums]
+----
+<optional:division sum1="40" sum2="10"/>
+----
+
+===  @默认
+
+如果未明确设置值，则指定参数的默认值。例如：
+
+[source,java, linenums]
+----
+@Connector(name="optional", friendlyName="OptionalConnector Class")
+public class OptionalConnector {
+    @Processor
+    public double division(int sum1, int sum2, @Optional @Default("1") int divisor) {
+        return (sum1 + sum2) / divisor;
+    }
+----
+
+由于除数参数的默认值为1，因此以下情况会正常执行并将有效负载设置为50：
+
+[source,xml, linenums]
+----
+<optional:division sum1="40" sum2="10"/>
+----
+
+最佳做法是指定一个除数值，使代码更具可读性和可维护性，例如：
+
+[source,xml, linenums]
+----
+<optional:division sum1="40" sum2="10" divisor="1"/>
+----
+
+两种格式都将有效载荷设置为50。
+
+== 截取消息处理器
+
+拦截消息处理器处理拦截另一个侦听器消息处理器的Mule事件。拦截消息处理器负责决定处理是否应该继续，也就是说，Mule应该调用链中的下一个消息处理器。
+
+将`intercepting`参数设置为true时，该方法必须具有类型为`org.mule.api.callback.SourceCallback`的参数。
+
+例：
+
+[source,java, linenums]
+----
+Processor(intercepting = true)
+  public Object shouldContinue(SourceCallback afterChain, ...) throws Exception {
+    if (...) {
+        return afterChain.process();
+    }
+
+    ...
+  }
+----
+
+== 限制
+
+您使用`@Processor`进行注释的方法：
+
+* 不能是静态的
+* 不能是非公开的
+* 不能有以`name`这个单词命名的参数
+* 不能重载
+
+*Note*：Mule保留了在构建连接器时无法使用的名称，这些名称会导致错误。其中有"name"。根据场景，DevKit也可以具有不同的保留名称，例如@Processor语句不能使用任何Mule LifeCycle接口（`initialise, start, stop`和`dispose`）命名。 DevKit让你知道哪个名称是错误的，你应该如何改变它。

@@ -1,0 +1,205 @@
+=  MSMQ连接器
+:keywords: msmq, connector
+
+*_Standard_*
+
+MSMQ连接器允许您通过Anypoint Gateway for Windows发送和接收来自MSMQ队列的数据。
+
+阅读本页后，您应该能够完成以下内容：
+
+* 下载并安装MSMQ连接器
+
+* 构建一个简单的示例项目
+
+* 上传，部署和运行您的项目
+
+== 先决条件
+
+*  .net 4.0（http://www.microsoft.com/en-US/download/details.aspx?id=17851）
+*  MSMQ服务（http://technet.microsoft.com/en-us/library/cc730960.aspx）
+
+== 安装和配置
+
+=== 安装Anypoint Gateway for Windows
+
+. 从[这里]下载Anypoint Gateway for Windows安装程序。解压缩软件分发。
+. 双击`Anypoint-Gateway-Service.exe`文件。
+. 点击*Options*更改安装位置，或者点击*Install*开始安装。
+. 安装完成后，安装程序会为您提供查看`readme.txt`文件的选项以及其他说明。点击*Finish*退出。
+. 安装程序会创建安装程序启动的新*Anypoint Gateway* Windows服务。
++
+image:AnypointGateway.png[AnypointGateway]
++
+要查看正在运行的服务，请在Windows 7中将控制面板*View by*选项设置为*Small Icons*时，单击*Control Panel > Administrative Tools > Services*。这些服务显示为：
++
+image:ServicesTool.png[ServicesTool]
+
+=== 为Windows服务配置Anypoint网关
+
+Windows服务的安装位置是`c:\Program Files(x86)\Anypoint Gateway for Windows`。该文件夹包含`Mule.SelfHost.exe`可执行文件，`Mule.SelfHost.exe.config`配置文件和PowerShell脚本来自动执行配置任务。
+
+[NOTE]
+如果配置文件未出现在文件夹中，则在Windows 7中，如果控制面板*View by*选项设置为*Small icons*，请单击*Control Panel > Folder Options > View > Show hidden files, folders, and drives*。
+
+可执行文件在端口9000启动一个新的Web服务器，该服务器只接受使用HTTPS的安全连接。您可以在`Mule.SelfHost.exe.config`配置文件中更改网关的端口号和身份验证令牌：
+
+[source, xml, linenums]
+----
+<appSettings>
+    <!-- Configure the service to listen on the following address. -->
+    <add key="OwinHostAddress" value="https://+:9000/"/>
+    <!-- Token that must be sent by the Mule connector's client in the Authorization header when accessing the Rest Api. -->
+    <add key="mule-auth-token" value="3nGdw7W+G1fSO2YBEHDmpo4N1Tg="/>
+</appSettings>
+----
+
+此Web服务器使用安装期间自动生成的自签名SSL证书。证书位于*Local Computer*证书存储区的*Personal*文件夹中：
+
+image::MMC_Personal_Certs.png[MMC_Personal_Certs]
+
+由于Windows服务依靠`http.sys`自托管Web服务器，因此端口号或SSL证书的任何更改都需要重新配置Windows。安装目录中的`Register-SslCert.ps1` PowerShell脚本处理此任务。如果端口或证书发生更改，请从[Powershell]控制台运行以下命令：
+
+`Register-SslCert.ps1 <certificate-thumbprint> <windows-account> <port>`
+
+*  `<certificate-thumbprint>`：SSL证书的指纹。它必须存储在本地商店帐户的个人文件夹中。
+
+*  `<windows-account>`：Windows用户或组获得注册端口的权限。模拟Windows服务或控制台应用程序的帐户必须是该组的一部分。
+
+*  `<port>`：HTTP端口
+
+*Example*：
+`Register-SslCert.ps1 a495cbf8c4af496f1ef81efb224c8097d039f922 everyone 9001`
+
+=== 在Anypoint Studio中安装MSMQ连接器
+
+. 在Anypoint Studio的帮助菜单下，点击*Install New Software*。
+. 在*Work with*字段旁边，点击下拉菜单并选择`Anypoint Connectors Update Site`或`+http://repository.mulesoft.org/connectors/releases/3.5.0+`。
+. 单击*Standard*旁边的箭头打开节点，然后搜索或浏览找到MSMQ连接器，如图所示。选中该框，然后点击*Next*。
++
+image:msmq-install.png[MSMQ安装]
++
+. 查看您选择的项目的详细信息，然后点击*Next*。
+. 点击接受产品的条款和条件，然后点击*Finish*。
+. 点击*Restart Now*完成安装。
+.  Studio重新启动后，展开Cloud Connectors调色板组以查看新的MSMQ连接器。
+
+== 示例
+
+这个例子需要对Mule ESB有一些基本的了解。以下文档介绍了此示例中的Mule ESB功能：
+
+*  link:/mule-user-guide/v/3.5/mule-expression-language-mel[骡子表达语言（MEL）]
+*  link:/mule-user-guide/v/3.4/configuring-endpoints[配置端点]
+*  link:/mule-user-guide/v/3.5/mule-transformers[骡变形金刚]
+*  link:/mule-user-guide/v/3.5/flow-reference-component-reference[流参考组件参考]
+*  link:/mule-user-guide/v/3.5/msmq-connector-user-guide[MSMQ连接器用户指南]
+
+== 在MSMQ中设置演示队列
+
+=== 第1步：创建队列
+
+image::MMC_PrivateQueues.png[MMC_PrivateQueues]
+
+. 打开运行MSMQ的服务器上的计算机管理控制台。
+. 展开*Services and Applications*。
+. 展开*Message Queuing*。
+. 右键单击*Private Queues*，然后单击*New*和*Private Queue*。
+. 为新队列命名*msmq-demo*，然后点击*Ok*。
+
+=== 第2步：授予权限
+
+为MSMQ连接器用于与队列进行交互的标识设置适当的权限。
+
+. 右键单击*msmq-demoqueue*并单击属性。
+
+. 选择安全选项卡。对于此演示，请确保“Everyone”具有以下权限：
++
+* 接收消息
+* 窥视消息
+* 获取属性
+* 获取权限
+* 发送消息
++
+image:msmq_demo_properties.png[msmq_demo_properties]
+
+== 设置一个骡子项目
+
+=== 第1步：创建一个新的Mule项目
+
+Anypoint Studio启动后，创建一个新项目：
+
+. 转到*File > New > Mule Project*。
+. 在*New Mule Project*配置菜单中，为该项目提供一个名称：*msmq-demo*。
+. 点击*Finish*。
+
+=== 第2步：创建一个MSMQ全局元素
+
+. 点击*Global Elements*标签。
+. 点击*Create*以显示全局类型对话框。
+. 按*msmq*过滤。
+. 从*Cloud Connectors*部分选择*MSMQ*，然后点击*OK*。
+. 使用`machinename/ip address : port`格式填写*Gateway Service Address*。 （例如，`localhost:9000`）。不要使用网址，因为它们不受支持。
+. 填写*Gateway Access Token*。您可以在*mule-auth-token* appSetting项下的Windows服务配置文件（`c:\Program Files(x86)\Anypoint Gateway for Windows\Mule.SelfHost.exe.config`）中找到已配置的令牌。
+. 使用*MSMQ*支持的语法填写*Queue name*。例如，上面创建的专用队列`.\private$\msmq-demo`。由于所需权限已授予“每个人”，因此您无需为此演示指定用户名和密码。
+. 如果您正在使用自签名SSL证书（如开箱即用的SSL证书），请确保已选中*Ignore SSL Warnings*。
+. 点击*Test Connection*，确保所有设置都正确。
+. 点击*OK*。
++
+image:GlobalElementProperties.png[GlobalElementProperties]
+
+== 构建流程
+
+样本流从现有队列发送和接收消息。变形金刚将骡子消息的必要信息提供给后续的消费行动。最终结果如下所示：
+
+image:BuildingFlows.png[BuildingFlows]
+
+=== 步骤1：构建"Send"流程
+
+. 通过*http*过滤调色板，并将*HTTP Endpoint*拖放到画布中。这会创建一个新的流`“msmq-demoFlow1”`。
+. 通过*payload*过滤调色板，并将*HTTP Endpoint*旁边的*Set Payload Transformer*拖动到其中。
+. 通过*logger*过滤调色板，并将*Set Payload*旁边的*Logger Component*拖动到其中。
+. 通过*msmq*过滤调色板，并将*Logger*旁边的*MSMQ Connector*拖动到其中。
+. 双击*HTTP Endpoint*。显示其属性对话框后，从*Exchange Patterns*组中选择单向。确保*Host*设置为`localhost`，并且*Port*设置为`8081`。保存更改。
+. 双击*Set Payload Transformer*。显示其属性对话框后，将*Value*设置为`#[header:INBOUND:http.relative.path]`，然后保存更改。
+. 双击*Logger Component*。显示其属性对话框后，将*Message*设置为`Sending message: #[payload]`，然后保存更改。
+. 双击*MSMQ Connector*。显示其属性对话框后，选择名为MSMQ的*Config Reference*。使用默认值保留其余字段，并保存更改。
+
+=== 第2步：构建"Receive"流程
+
+. 通过*msmq*过滤组件面板，并将*MSMQ Connector*拖到现有流程`“msmq-demoFlow1”`之外的画布上。这会创建一个新的流`msmq-demoFlow2`。
+. 通过*byte*过滤调色板，并将*MSMQ Connector*旁边的*Byte Array To String Transformer*拖动到其中。
+. 通过*logger*过滤调色板，并在*Byte Array To String Transformer*旁放置一个*Logger Component*。
+. 双击*MSMQ Connector*。显示其属性对话框后，选择名为MSMQ的*Config Reference*，并将其余属性保留为默认值。保存更改。
+. 双击*Logger Component*。显示其属性对话框后，将*Message*设置为`Received from queue: #[payload]`，然后保存更改。
+
+=== 第3步：运行流程
+
+. 右键单击*msmq-demo.mflow*并单击*Run As > Mule Application*。
+. 检查控制台以查看应用程序何时启动。如果没有发生错误，您应该看到消息已启动应用`'msmq-demo'`消息。
++
+[source, code, linenums]
+----
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Started app 'msmq-demo'                                  +
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+----
++
+. 访问`+http://localhost:8081/Hello-World+`处的端点并检查操作负载。
+. 以下消息应显示在控制台中。
++
+[source, code, linenums]
+----
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo].msmq-demoFlow1.stage1.02] org.mule.api.processor.LoggerMessageProcessor: Sending message: Hello-World
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo].msmq-demoFlow2.stage1.02] org.mule.api.processor.LoggerMessageProcessor: Received from queue: Hello-World
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo].msmq-demoFlow1.stage1.02] org.mule.api.processor.LoggerMessageProcessor: Sending message: Hello-World
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo].msmq-demoFlow2.stage1.02] org.mule.api.processor.LoggerMessageProcessor: Received from queue: Hello-World
+----
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.5/msmq-connector-faqs[MSMQ连接器常见问题]
+*  link:/mule-user-guide/v/3.5/msmq-connector-user-guide[MSMQ连接器用户指南]
+*  link:/release-notes/msmq-connector-release-notes[MSMQ连接器发行说明]
+
+
+
+

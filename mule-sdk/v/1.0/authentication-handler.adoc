@@ -1,0 +1,108 @@
+= 身份验证处理程序
+
+此处理程序允许您根据给定请求配置当前上下文的身份验证，该身份验证用于加密和入站身份验证。
+
+== 如何使用身份验证处理程序
+
+向操作添加类型为`AuthenticationHandler`的参数时，将在运行时注入来自当前上下文的身份验证处理程序实例。您可以使用此实例检查当前身份验证（如果有）并设置新身份验证。
+
+身份验证处理程序接口提供以下方法：
+
+*  `createCredentialsBuilder`返回一个用于创建`Credentials`实例的构建器。
+
+*  `createAuthentication`在给定`Credentials`的实例时创建一个`Authentication`实例。
+
+*  `setAuthentication`在给定`Authentication`时，将该值设置为当前上下文的身份验证。或者，您还可以提供将添加到`SecurityManager`的安全提供程序列表（名称）。
+
+*  `getAuthentication`从当前上下文返回`Authentication`。当前上下文可能不存在`Authentication`。
+
+== 用法示例
+
+想象一下，在收到一个HTTP请求之后，你想要在当前上下文的身份验证处理器上进行身份验证和存储。对于这个用例，您可以使用来自HTTP连接器的`basic-security-filter`操作。
+
+这个简化的示例显示了`basic-security-filter`是如何实现的：
+
+[source, java, linenums]
+----
+public class HttpOperations {
+
+  /**
+   * Authenticates received HTTP requests. Must be used after a listener component.
+   */
+  @Throws(BasicSecurityErrorTypeProvider.class)
+  public void basicSecurityFilter(@ParameterGroup(name = "Security Filter") HttpBasicAuthenticationFilter filter,
+                                  AuthenticationHandler authenticationHandler) { // <1>
+    try {
+      filter.authenticate(authenticationHandler);
+    } catch (BasicUnauthorisedException e) {
+      throw new ModuleException(BASIC_AUTHENTICATION, e);
+    } catch (SecurityProviderNotFoundException | SecurityException | UnknownAuthenticationTypeException e) {
+      throw new ModuleException(SERVER_SECURITY, e);
+    }
+  }
+ // ...
+}
+----
+
+<1>该操作具有将在运行时注入的`AuthenticationHandler`参数。
+
+[source, java, linenums]
+----
+public class HttpBasicAuthenticationFilter {
+
+  @Parameter
+  private String realm;
+
+  @Parameter
+  @Optional
+  @NullSafe
+  private List<String> securityProviders;
+
+  @Parameter
+  @Optional(defaultValue = "#[attributes]")
+  HttpRequestAttributes attributes; // <1>
+
+  public void authenticate(AuthenticationHandler authenticationHandler)
+      throws SecurityException, SecurityProviderNotFoundException, UnknownAuthenticationTypeException {
+    String header = attributes.getHeaders().get("Authorization".toLowerCase());
+
+    if ((header != null) && header.startsWith("Basic ")) {
+
+      String username = retrieveUsername(header);
+      String password = retrievePassword(header);
+
+
+      Credentials credentials = authenticationHandler.createCredentialsBuilder() // <2>
+          .withUsername(username)
+          .withPassword(password.toCharArray())
+          .build();
+
+      try {
+        Authentication authentication = authenticationHandler.createAuthentication(credentials); // <3>
+        authenticationHandler.setAuthentication(securityProviders, authentication); // <4>
+      } catch (UnauthorisedException e) { // <5>
+        throw new BasicUnauthorisedException(authFailedForUser(username), e);
+      }
+
+    } else if (header == null) {
+      throw new BasicUnauthorisedException(null, "HTTP basic authentication", "HTTP listener");
+    } else {
+      throw new UnsupportedAuthenticationSchemeException("Http Basic filter doesn't know how to handle header " + header));
+    }
+  }
+
+}
+----
+
+<1> `HttpRequestAttributes`从中取用户名和密码。
+
+使用从请求中获取的信息创建<2> `Credentials`。
+
+<3>根据`Credentials`创建`Authentication`。
+
+<4>根据`securityProviders`和设置检查认证信息
+给处理程序。
+
+<5>当认证信息无效时，抛出异常。
+
+如果流中有另一个操作以身份验证处理程序作为参数，则注入的实例将与在`basic-authentication-filter`操作中处理的实例相同。这样，通过使用`getAuthentication`方法，您将获得来自HTTP请求的凭据`Authentication`。

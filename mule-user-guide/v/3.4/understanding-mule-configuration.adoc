@@ -1,0 +1,881 @@
+= 了解Mule配置
+
+[ <<About XML Configuration>> ] [ <<Schema References>> ] [ <<Default Values>> ] [ <<Enumerated Values>> ] [ <<Advantages of a Strongly Typed Language>> ] [ <<About Spring Configuration>> ] [ <<Spring Beans>> ] [ <<Spring Properties>> ] [ <<Property Placeholders>> ] [ <<About Mule Configuration>> ] [ <<Global Elements>> ] [ <<Flows>> ] [ <<Configuration Patterns>> ] [ <<Custom Elements>> ] [ <<System-level Configuration>> ] [ <<Managers>> ] [ <<Agents>> ]
+
+== 关于XML配置
+
+Mule通过充分描述运行应用程序所需的结构来使用XML配置来定义每个应用程序。一个基本的Mule应用程序可以使用一个非常简单的配置，例如：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:stdio="http://www.mulesoft.org/schema/mule/stdio"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ 
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/stdio http://www.mulesoft.org/schema/mule/stdio/3.1/mule-stdio.xsd
+        http://www.mulesoft.org/schema/mule/core  http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd">
+ 
+ 
+    <stdio:connector name="stdio" promptMessage="Yes? " messageDelayTime="1000"/>
+ 
+    <flow name="echo">
+        <stdio:inbound-endpoint system="IN"/>
+        <stdio:outbound-endpoint system="OUT"/>
+    </flow>
+ 
+</mule>
+----
+
+我们将在下面详细检查这个配置的所有部分。现在注意到，尽管它很简单，但这是一个完整的应用程序，它的可读性非常好：即使是与Mule简短的了解，也可以清楚地知道它将消息从标准输入复制到标准输出。
+
+=== 架构参考
+
+Mule配置的语法由一组XML模式定义。每个配置都列出它使用的模式，并提供找到它们的URL。它们中的大多数将是Mule版本的Mule模式，但是另外可能有第三方模式，例如：
+
+*  Spring模式，用于定义所有Spring元素（比如Spring bean）的语法
+*  CXF模式，用于配置由Mule的CXF模块处理的Web服务
+
+配置中引用的每个模式都由两部分数据定义：
+
+* 它的名称空间，它是一个URI
+* 它的位置，这是一个网址
+
+配置都将模式的名称空间URI定义为XML名称空间，并将模式的名称空间和位置相关联。这是在顶层`mule`元素中完成的，正如我们在上面的配置中看到的那样：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" ❶
+      xmlns:stdio="http://www.mulesoft.org/schema/mule/stdio" ❷
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ 
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/stdio http://www.mulesoft.org/schema/mule/stdio/3.1/mule-stdio.xsd ❸
+        http://www.mulesoft.org/schema/mule/core  http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd" ❹>
+----
+
+❶显示被定义为配置的默认名称空间的核心mule模式的名称空间。这是最好的默认命名空间，因为很多配置的元素都是核心命名空间的一部分。 +
+❷显示Mule的stdio传输的名称空间，它允许使用标准I / O进行通信，并获得"stdio"前缀。 Mule模块或传输模式的约定是将其名称用作前缀。 +
+xsi：schemaLocation属性将模式的名称空间与其位置相关联。 ❸给出stdio模式的位置，以及❸给出核心模式。
+
+要求Mule配置包含这些内容，因为它们允许找到模式，以便可以针对它们验证配置。
+
+=== 默认值
+
+除了定义它们定义的元素和属性的语法之外，模式还可以为它们定义默认值。了解这些对于使您的配置可读性非常有用，因为您不必因为不必要的信息而混乱。默认值可以在架构本身或者定义它们的模块和传输的Mule文档中查找。例如，反复轮询端点的`<poll>`元素的定义包含以下属性定义：
+
+[source, xml, linenums]
+----
+<xsd:attribute name="frequency"  type="substitutableLong" default="1000">
+  <xsd:annotation>
+    <xsd:documentation>Polling frequency in milliseconds. Default frequency is 1000ms (1s).
+    </xsd:documentation>
+  </xsd:annotation>
+</xsd:attribute>
+----
+
+覆盖默认值1秒时只需要指定该属性。
+
+枚举值。=== 
+
+骡中的许多属性只能使用有限的一组值。这些在架构中定义为枚举值，以确保只能指定这些值。以下是stdio传输的一个例子：
+
+[source, xml, linenums]
+----
+<xsd:attribute name="system">
+  <xsd:simpleType>
+    <xsd:restriction base="xsd:NMTOKEN">
+      <xsd:enumeration value="IN"/>
+      <xsd:enumeration value="OUT"/>
+      <xsd:enumeration value="ERR"/>
+    </xsd:restriction>
+  </xsd:simpleType>
+</xsd:attribute>
+----
+
+这强制允许的唯一值分别为`IN`，`OUT`和`ERR`，分别对应于标准输入，输出和错误。
+
+=== 强类型语言的优势
+
+引用所有模式的要求可能看起来有点麻烦，但它有两个优势远远超过了这个努力。
+
+首先，它可以帮助您第一次创建有效的配置。主要的集成开发环境都提供了模式感知的XML编辑器。因此，在您创建和编辑配置时，IDE会提示您使用每个点允许的元素和属性，在键入几个字符后填写其名称，并突出显示任何需要更正的键入错误。同样，它可以为填充枚举值提供相同的帮助。
+
+其次，它允许Mule在应用程序启动时验证您的配置。与其他一些基于配置的系统不同，它们默默地忽略了他们无法识别的元素或属性，Mule会捕获这些错误以便纠正错误。例如，假设在上面的配置中，我们拼写错了"outbound-endpoint"。一旦应用程序尝试启动，结果将是错误：
+
+[source, code, linenums]
+----
+org.mule.api.lifecycle.InitialisationException: Line 14 in XML document is invalid;
+nested exception is org.xml.sax.SAXParseException: cvc-complex-type.2.4.a:
+Invalid content was found starting with element 'stdio:outbound-endpint'.
+----
+
+这直接指向需要纠正的行。它比简单地忽略问题并让你想知道为什么没有写出任何输出更有用。
+
+== 关于Spring配置
+
+用于解析配置的Mule工具嵌入了Spring，因此除了定义Mule特定的构造外，Mule配置还可以执行Spring配置可以执行的任何操作：创建Spring Bean，配置列表和映射，定义属性占位符等等。我们将在下面的章节中更详细地介绍这一点。请注意，一如既往，有必要引用适当的模式。
+
+=== 春豆
+
+在Mule配置中最简单的使用Spring就是定义Spring Beans。这些bean与Mule特定的对象一起放入Mule注册表中，可以通过任何自定义Java对象（例如自定义组件）按名称查找这些对象。您可以使用全面的Spring功能来创建它们。例如：
+
+[source, xml, linenums]
+----
+<spring:beans>
+  <spring:bean name="globalCache" class="com.mycompany.utils.LRUCache" >
+    <spring:property name="maxItems" value="200"/>
+  </spring:bean>
+</spring:beans>
+----
+
+=== 弹簧属性
+
+在使用自定义Java对象时，在Mule配置中有许多地方：自定义变换器，过滤器，消息处理器等。在每种情况下，一种可能性是指定要实例化的类和一组Spring属性来配置结果目的。再次，您可以在属性中使用全部的Spring语法，包括列表，地图等。
+
+这是一个例子：
+
+[source, xml, linenums]
+----
+<custom-processor class="com.mycompany.utils.CustomerClassChecker">
+  <spring:property name="highPriorities">
+    <spring:list>
+      <spring:value>Gold</spring:value>
+      <spring:value>Platinum</spring:value>
+      <spring:value>Executive</spring:value>
+    </spring:list>
+  </spring:property>
+</custom-processor>
+----
+
+创建自定义组件的语法有点不同，以允许更多地控制Java对象的创建方式。例如，要创建一个单例：
+
+[source, xml, linenums]
+----
+<component>
+  <singleton-object class="com.mycompany.utils.ProcessByPriority">
+    <properties>
+      <spring:entry key="contents">
+        <spring:list>
+          <spring:value>Gold</spring:value>
+          <spring:value>Platinum</spring:value>
+          <spring:value>Executive</spring:value>
+        </spring:list>
+      </spring:entry>
+    </properties>
+  </singleton-object>
+</component>
+----
+
+=== 属性占位符
+
+Mule配置可以包含对属性占位符的引用，以允许引用在配置文件外部指定的值。一个重要的用例是用户名和密码，这应该以更安全的方式指定。属性占位符的语法很简单：`${name`}，其中`name`是标准Java属性文件中的属性。
+
+以下是使用属性占位符及其所引用属性的配置示例：
+
+组态：
+
+[source, xml, linenums]
+----
+<spring:beans>
+  <context:property-placeholder
+           location="classpath:my-mule-app.properties,
+                     classpath:my-mule-app-override.properties" />
+</spring:beans>
+ 
+<http:endpoint name="ProtectedWebResource"
+               user="${web.rsc.user}"
+               password="${web.rsc.password}"
+               host="${web.rsc.host}"
+               port="80"
+               path="path/to/resource" />
+----
+
+属性文件：
+
+[source, code, linenums]
+----
+web.rsc.user=alice
+web.rsc.password=s3cr3t
+web.rsc.host=www.acme.com
+----
+
+请注意，文件的位置是类路径中的一个位置。另一种选择是URL，例如`file:///etc/mule/conf/my-mule-app-override.properties`。如上所示，还可以指定一个以逗号分隔的属性文件列表。
+
+== 关于Mule配置
+
+=== 全球元素
+
+可以在全球范围内指定许多骡子元素，即作为最外层`mule`元素的直接子元素。这些全局元素总是有名称，这些名称允许在使用它们的地方引用它们。请注意，Mule配置对全局元素使用单个平面命名空间。没有两个全局元素可以共享同一个名称，即使它们完全不同，例如终结点和过滤器。
+
+让我们来看看最常见的全球元素：
+
+==== 连接器
+
+连接器是Mule传输的具体实例，其属性描述了如何使用该传输。所有Mule端点使用继承连接器属性的传输。
+
+以下是连接器的一些示例：
+
+[source, xml, linenums]
+----
+<vm:connector name="persistentConnector"> ❶
+  <vm:queueProfile persistent="true" />
+</vm:connector>
+ 
+<file:connector name="fileConnector" ❷
+                pollingFrequency="1000" moveToDirectory="/tmp/test-data/out" />
+----
+
+v vm连接器指定其所有端点都将使用持久队列。 file文件连接器指定每个端点每秒轮询一次，并且还会处理一次文件将被移动到的目录。
+
+请注意，属性可以通过属性或子元素来指定。您可以通过检查该连接器的传输参考来确定如何指定连接器属性。
+
+端点与其连接器之间的关系实际上非常灵活：
+
+* 如果端点按名称指定了连接器，它将使用该连接器。当然，如果端点和连接器使用不同的传输，那是错误的。
+* 如果端点没有命名连接器，并且其传输只有一个连接器，则端点将使用该连接器。
+* 如果端点没有命名连接器，并且没有连接器用于传输，Mule会为该传输的所有端点创建一个默认连接器以供使用。
+* 如果端点没有命名连接器并且有多个连接器用于传输，那是错误的。
+
+有关连接器和端点配置的传输特定信息，请参阅可用传输。
+
+==== 端点
+
+Mule端点是可以从（入站）或写入（出站）读取消息的对象，并指定定义将如何完成的属性。端点可以用两种不同的方式指定：
+
+* 指定为全局元素的端点称为全局端点。流中指定的入站或出站端点可以使用`ref`属性引用全局端点。
+* 可以在不参考全局端点的情况下配置流中指定的入站或出站端点。
+
+全局端点指定一组属性，包括其位置。引用全局端点的入站和出站端点将继承其属性。以下是全球终端的一些例子：
+
+[source, xml, linenums]
+----
+<vm:endpoint name="in" address="vm://in" connector-ref="persistentConnector" /> ❶
+<http:endpoint name="in" host="localhost" port="8080" path = "services/orders" /> ❷
+<endpoint name="inFiles" address="file://c:/Orders" /> ❸
+----
+
+❶中的虚拟机端点指定其位置并引用上面显示的连接器。它使用通用`address`属性来指定其位置。 ❷处的http端点使用默认的http连接器。由于它明确配置为http端点，因此可以使用http特定的`host`，`port`和`path`属性来指定其位置。 ❸处的文件端点指定它将从中读取（或写入）的目录，并使用默认文件连接器。由于它配置为通用端点，因此必须通过`address`指定其位置。
+
+请注意，每个端点都使用特定的传输方式，但这可以通过两种不同的方式指定：
+
+* 如果元素有一个前缀，它使用与该前缀关联的传输。 （❶，❷）
+* 如果不是，则根据元素的地址属性确定前缀。 （❸）
+
+前缀风格是首选，特别是当位置很复杂时。比较
+
+[source, xml, linenums]
+----
+<http:endpoint name="in" host="localhost" port="8080" path = "services/orders" user="${user.name}" password ="${user.password}"/>
+----
+
+和
+
+[source, xml, linenums]
+----
+<endpoint address="http://${user.name}:${user.password}@localhost:8080/services/orders/">
+----
+
+端点最重要的属性之一是它的消息交换模式（简称MEP），即消息是只有一种方式，还是请求返回响应。这可以在几个级别指定：
+
+* 某些传输仅支持一个MEP。例如，imap是一种方式，因为在读取电子邮件时不会发送任何响应。另一方面，servlet。总是要求回应。
+* 每个传输都有一个默认的MEP。 jms默认是单向的，因为JMS消息通常不与响应相关。 http默认为请求响应，因为HTTP协议自然会对每个请求做出响应。
+* 端点可以定义MEP，但只允许为其传输合法的MRP
+
+==== 变压器
+
+变压器是转换当前Mule信息的对象。 Mule核心定义了一组基本的变换器，许多模块和传输定义了更多的内容，例如JSON模块定义了将对象转换为JSON并反之亦然的转换器，而Email传输定义了变换器，它们在字节数组和MIME消息。每种类型的转换器都定义了XML配置来定义其属性。以下是一些变形金刚的例子：
+
+[source, xml, linenums]
+----
+<json:json-to-object-transformer ❶
+      name="jsonToFruitCollection" returnClass="org.mule.module.json.transformers.FruitCollection">
+  <json:deserialization-mixin
+        mixinClass="org.mule.module.json.transformers.OrangeMixin"              targetClass="org.mule.tck.testmodels.fruit.Orange"/>
+</json:json-to-object-transformer>
+ 
+<message-properties-transformer name="SetInvocationProperty" scope="invocation"> ❷
+  <add-message-property key="processed" value="yes" />
+</message-properties-transformer>
+----
+
+❶中的转换器将当前消息转换为JSON，为`org.mule.tck.testmodels.fruit.Orange`类的转换指定特殊处理。 ❷中的转换器将调用作用域属性添加到当前消息。
+
+与端点一样，变换器可以配置为全局元素，并且可以指向它们的使用位置或配置位置。
+
+有关Mule变形金刚的更多信息，请参阅 link:/mule-user-guide/v/3.4/using-transformers[使用变形金刚]。
+
+==== 过滤器
+
+筛选器是确定是否应处理消息的对象。和变压器一样，Mule核心定义了一套基本的变压器，许多模块和传输定义更多。以下是一些过滤器的示例：
+
+[source, xml, linenums]
+----
+<wildcard-filter pattern="* header received"/> ❶
+ 
+<mxml:is-xml-filter/> ❷
+----
+
+只有在符合指定模式的情况下，❶处的过滤器才会继续处理当前消息。只有当它是XML文档时，❷处的过滤器才会继续处理当前消息。
+
+有几个特殊的滤波器可以扩展其他滤波器的功能。第一个是`message-filter`：
+
+[source, xml, linenums]
+----
+<message-filter onUnaccepted="deadLetterQueue"> ❶
+  <wildcard-filter pattern="* header received"/>
+</message-filter>
+ 
+<message-filter throwOnUnaccepted="true"> ❷
+  <mxml:is-xml-filter/>
+</message-filter>
+----
+
+如上所述，只有在符合指定模式的情况下，才继续处理当前消息。但现在，任何不匹配的消息都会被发送到一个死信队列以供进一步处理。只有当它是XML文档时才继续处理当前消息，否则将引发异常。
+
+其他特殊过滤器是`and-filter`，`or-filter`和`not-filter`，它们允许您将过滤器合并到逻辑表达式中：
+
+[source, xml, linenums]
+----
+<or-filter>
+  <wildcard-filter pattern="*priority:1*"/>
+  <and-filter>
+    <not-filter>
+      <wildcard-filter pattern="*region:Canada*"/>
+    </not-filter>
+    <wildcard-filter pattern="*priority:2*"/>
+  </and-filter>
+</or-filter>
+----
+
+只有在来自除加拿大以外的国家的优先级为1或优先级为2的消息时才会处理该消息。
+
+过滤器再次可以配置为全局元素，并参考它们的使用位置或配置位置。有关Mule过滤器的更多信息，请参阅 link:/mule-user-guide/v/3.4/using-filters[使用过滤器]
+
+==== 表达式
+
+[WARNING]
+以下表达式的描述是指Mule 3.3表达式评估器。有关在Mule中使用表达式的当前参考，请参阅 link:/mule-user-guide/v/3.4/mule-expression-language-mel[Mule表达语言MEL]。
+
+Mule具有强大的表达功能，允许系统的许多不同部分的信息用于影响消息处理。由于Mule的许多不同部分可以评估表达式，因此指定一个表达式需要两件事情：
+
+* 评估表达式的`evaluator`。骡提供了一个长长的评估者名单，或者你可以添加你自己的。
+*  `expression`正确，这是评估的内容。表达式的语法是评估者特定的。
+
+根据表达式的使用位置，有两种指定表达式的方法。通常，基于表达式的元素（如表达式转换器，表达式过滤器和基于表达式的路由器（如表达式消息拆分器））将具有表达式，评估程序和自定义评估程序的特定属性。例如：
+
+[source, xml, linenums]
+----
+<expression-filter evaluator="header" expression="my-header!=null"/>
+----
+
+将表达式替换为字符串值时，可以使用语法＃[evaluateator：expression]，例如：
+
+[source, xml, linenums]
+----
+<message-properties-transformer>
+    <add-message-property name="GUID" value="#[string:#[xpath:/msg/header/ID]-#[xpath:/msg/body/@ref]]"/>
+</message-properties-transformer>
+----
+
+这嵌套表达式调用：首先xpath评估器被用来从当前消息中提取数据两次，然后字符串评估器被用来从它们和文字连字符构造一个字符串。
+
+表达式和属性占位符可能看起来相似，但它们实际上完全不同。属性占位符在配置时被替换，并可用于构造需要静态的信息。表达式在运行时被替换，所以任何使用它们的都是动态的。考虑以下：
+
+[source, xml, linenums]
+----
+<vm:inbound-endpoint path="${vm.path}"/> ❶
+<vm:inbound-endpoint path="#[header:vm.path]"/> <!-- illegal! --> ❷
+<vm:outbound-endpoint path="${vm.path}"/> ❸
+<vm:outbound-endpoint path="#[header:vm.path]"/> ❹
+----
+
+❶很好 - 它决定了端点在配置时的位置（当然，必须设置属性vm.path）。 +
+❷是非法的。入站端点的地址必须在配置时设置，而ex +
+在构建配置之前无法评估压力。 +
+❸就像❶。 +
+❹是新鲜事物 - 一个动态终点。处理该消息时，端点将发送消息的位置将确定，并且每次都可能会有所不同。当然，没有定义属性vm.path的消息会导致错误。
+
+==== 名称和参考
+
+正如我们所看到的，许多Mule对象可以在全球范围内定义。这样做的好处是可以在整个应用程序中重用它们，方法是将它们引用到需要的地方。这有一个共同的模式：
+
+* 使用`name`属性为全局对象提供名称
+* 它使用"ref"属性引用
+
+对于每种类型的对象，都有一个通用元素用于引用它。
+
+* 所有全局变换器都由`transformer`元素引用
+* 所有全局消息处理器都由`processor`元素引用
+* 所有全球端点均由`inbound-endpoint`或`outbound-endpoint`个元素引用
+* 所有全局过滤器都由`filter`元素引用
+
+例如
+
+[source, xml, linenums]
+----
+<vm:endpoint name="in" address="vm://in" connector-ref="persistentConnector" />
+<expression-filter name="checkMyHeader" evaluator="header" expression="my-header!"/>
+<message-properties-transformer name="SetInvocationProperty" scope="invocation">
+  <add-message-property key="processed" value="yes" />
+</message-properties-transformer>
+ 
+<flow name="useReferences">
+  <vm:inbound-endpoint ref="in"/>
+  <filter ref="checkMyHeader"/>
+  <transformer ref="SetInvocationProperty"/>
+</flow>
+----
+
+另外，有些地方全局对象的名称是一个属性的值，例如：
+
+[source, xml, linenums]
+----
+<vm:endpoint name="in" address="vm://in" transformer-refs="canonicalize sort createHeaders" />
+----
+
+=== 流
+
+流量是骡子的基本加工单位。流程始于读取消息的入站端点，并以消息处理器列表（可选择以发送完整处理的消息的出站端点结束）继续。我们已经遇到了一些类型的消息处理器：变压器和滤波器。其他类型包括使用Java或Groovy等语言处理消息的组件，调用云服务的连接器以及可根据需要更改消息流的路由器。下面是一个简单的流程，我们将在我们检查其部分时参考它：
+
+[source, xml, linenums]
+----
+<flow name="acceptAndProcessOrder">
+  <http:inbound-endpoint ref="in"/> ❶
+  <byte-array-to-string-transformer/> ❷
+  <jdbc:outbound-endpoint ref="getOrdersById" exchange-pattern="request-response"/> ❸
+  <mxml:object-to-xml-transformer/> ❹
+  <expression-filter evaluator="xpath" expression="/status = 'ready'"/>❺
+  <logger level="DEBUG" message="fetched orders: #[payload]"/> ❻
+  <splitter evaluator="xpath" expression="/order"/> ➐
+ 
+  <enricher> ❽
+    <authorize:authorization-and-capture amount="#[xpath:/amount]" ❾
+              cardNumber="#[xpath:/card/number]"
+              expDate="#[xpath:/card/expire]" />
+    <enrich target="#[variable:PaymentSuccess]" source="#[bean:responseCode]"/>
+  </enricher>
+  <message-properties-transformer scope=:invocation"> ❶❶
+    <add-message-property key="user-email-address" value="#[xpath:/user/email]"/>
+  </message-properties-transformer>
+  <component class="org.mycompany.OrderPreProcessor"/>  ❶❷
+  <flow-ref name="processOrder"/> ❶❸
+  <smtp:outbound-endpoint  subject="Your order has been processed"  to="#[header:INVOCATION:user-email-address]"/> ❶❹
+ 
+  <default-exception-strategy> ❶❺
+    <processor-chain> ❶❻
+      <object-to-string-transformer/> ❶➐
+      <jms:outbound-endpoint ref="order-processing-errors"/> ❶❽
+    </processor-chain/>
+  </default-exception-strategy>
+</flow>
+----
+
+正如您期望的名称一样，此流程会接受并处理订单。请注意，在我们浏览它时，流程的配置如何完全映射到它所描述的逻辑：
+
+❶从HTTP端点读取消息。 +
+❷该消息被转换为一个字符串。 +
+❸该字符串用作查找数据库中订单列表的键。 +
+❹订单现在转换为XML。 +
+❺如果订单尚未准备好处理，则会跳过。 +
+❻该列表可选地被记录，用于调试目的。 +
+the列表中的每个订单都分成一个单独的消息+
+❽消息丰富用于向消息+添加信息
+❾Authorize.net被调用来授权订单+
+the保存订单中的电子邮件地址以备后用。 +
+❶❷调用Java组件来预处理订单。 +
+❶❸调用另一个名为`processOrder`的流程来处理订单。 +
+{`processOrder`返回的确认通过电子邮件发送到订单中的地址。
+
+如果处理订单导致异常，则调用exception的异常策略：
+
+this调用该链中的所有消息处理器来处理异常+
+❶❼首先将消息转换为ma字符串。 +
+❶❽最后，这个字符串被置于错误队列中进行手动处理。
+
+这个流程中的每一步都在下面详细描述，由结构组织。
+
+==== 端点
+
+之前，我们研究了全球终端的声明。在这里，我们看到流程中的端点，它们用于接收（入站）和发送（出站）消息。入站端点只出现在流的开始处，它们提供要处理的消息。出站端点可以出现在任何地方。通过流的消息路径取决于其端点的MEP：
+
+* 如果入站端点是请求响应，则流程在完成时将当前消息返回给其调用者。
+* 如果入站端点是单向的，则流程将在其完成时退出
+* 流到达请求响应出站端点时，它会将当前消息发送到该端点，等待响应并将该响应作为当前消息
+* 当流程到达单向出站端点时，它会将当前消息发送到该端点并继续处理当前消息
+
+❶通过HTTP连接接收消息。消息有效负载设置为接收到的字节数组，而所有HTTP标头成为入站消息属性。由于此端点是请求响应（http的缺省值），因此在流程结束时，当前消息将返回给调用者。
+
+❸这将使用当前消息作为参数调用JDBC查询，并将当前消息替换为查询的结果。由于此端点是请求 - 响应，查询的结果将成为当前消息。
+
+❶❹从子流程中返回的已完成订单的确认通过电子邮件发送。请注意，我们使用之前保存在邮件属性中的电子邮件地址。由于此端点是单向的（电子邮件传输的唯一MEP），因此当前消息不会更改。
+
+❶❽任何未正确处理的订单都将放入JMS队列进行手动检查。由于此端点是单向（jms的默认值），因此当前消息不会更改。
+
+因此，发回给调用者的消息将成为确认消息，以防成功，或者在发生故障时向JMS错误队列发送相同的字符串。
+
+==== 变压器
+
+如上所述，变换器改变当前消息。这里有几个例子。请注意，它们被定义在何处使用。它们也可以在全球范围内定义，并提及在哪里使用。
+
+❷该消息是一个字节数组，它被转换为一个字符串，从而使它成为数据库查询中的关键字。 +
+ ❹从数据库读取的顺序被转换为XML文档。 +
+ ❶❶电子邮件地址存储在消息属性中。请注意，与大多数转换器不同，message-properties-transformer不会影响消息的有效负载，只会影响其属性。 +
+ ❶❼导致异常的消息被转换为字符串。请注意，由于同一策略处理所有异常，因此我们不知道此时消息的确切类型。它可能是一个字节数组，一个字符串或一个XML文档。将所有这些转换为刺激使其接收器知道会发生什么。
+
+==== 信息丰富
+
+消息增强使用`enricher`元素完成。与改变当前消息的有效载荷的消息转换不同，丰富化为消息添加了附加属性。这允许流建立一系列信息供以后处理。有关丰富邮件的更多信息，请参阅 link:/mule-user-guide/v/3.4/message-enricher[消息Enricher]。
+
+enric浓缩器调用连接器来检索将作为消息属性存储的信息。因为连接器是在一个集成器中调用的，所以它的返回值由集成器处理，而不是成为消息。
+
+==== 记录器
+
+`logger`元素允许从流中写入调试信息。有关记录器的更多信息，请参阅 link:/mule-user-guide/v/3.4/logger-component-reference[记录器组件参考]
+
+output输出从数据库获取的每个订单，但仅在启用DEBUG模式时才会输出。这意味着流程通常会保持沉默，但在需要时可以轻松启用调试。
+
+==== 过滤器
+
+过滤器决定是否处理消息。
+
+❺如果获取文档的状态不是"ready"，则其处理将被跳过。
+
+==== 路由器
+
+路由器更改消息流。除了其他可能性之外，它可能会在不同的消息处理器中进行选择，将一条消息拆分为多条消息，将许多消息合并为一条有关路由器的更多信息，请参阅 link:/mule-user-guide/v/3.4/routing-message-processors[路由消息处理器]。
+
+❼在XML元素`order`处将从数据库检索到的文档拆分为多个顺序。结果是零个或多个订单，其中每个都由剩余的流程处理。也就是说，对于每个接收到的HTTP消息，流程都会通过分离器进行一次处理。剩余的流程可能会被处理零次，一次或多次，具体取决于文档包含的订单数量。
+
+==== 组件
+
+组件是用Java，groovy或其他语言编写的消息处理器。 Mule通过查找与消息类型的最佳匹配来确定调用某个组件的方法。为了帮助定制这个搜索，Mule使用了在组件上配置的称为入口点解析器的对象。这里有一些例子：
+
+[source, xml, linenums]
+----
+<component class="org.mycompany.OrderPreProcessor"> ❶
+<entry-point-resolver-set>
+  <method-entry-point-resolver>
+      <include-entry-point method="preProcessXMLOrder" />
+      <include-entry-point method="preProcessTextOrder" />
+    </method-entry-point-resolver>
+    <reflection-entry-point-resolver/>
+  </entry-point-resolver-set>
+</component>
+ 
+<component class="org.mycompany.OrderPreProcessor"> ❷
+  <property-entry-point-resolver property="methodToCall"/>
+</component>
+ 
+<component class="org.mycompany.generateDefaultOrder"> ❸
+  <no-arguments-entry-point-resolver>
+    <include-entry-point method="generate"/>
+  </no-arguments-entry-point-resolver>
+</component>
+----
+
+导致两种方法`preProcessXMLOrder`和`preProcessTextOrder`成为候选者。骡子通过使用消息的类型进行反思来选择他们。 +
+ ❷调用名称位于消息属性`methodToCall`中的方法。 +
+ ❸调用`generate`方法，即使它没有参数
+
+入口点解析器用于高级应用。几乎所有的时间，Mule都会找到正确的方法进行调用，而无需任何特殊的指导。
+
+❶❷这是一个Java组件，由它的类名指定，它由当前消息调用。在这种情况下，它会预处理消息。有关入口点解析器的更多信息，请参阅 link:/mule-user-guide/v/3.4/entry-point-resolver-configuration-reference[入口点解析器配置参考]。
+
+====  Anypoint连接器
+
+Anypoint连接器调用云服务。
+
+❾调用authorize.net授权购买信用卡，并从消息中传递信息。有关连接器的更多信息，请参阅 link:/mule-user-guide/v/3.4/anypoint-connectors[Anypoint连接器]。
+
+==== 处理器链
+
+处理器链是消息处理器的列表，将按顺序执行。它允许您使用多个处理器，其中一个配置允许只有一个处理器，就像在花括号之间放置Java语句列表一样。
+
+❶❻用于执行两个步骤作为例外策略的一部分。它首先转换并邮寄当前消息。
+
+==== 子流
+
+子流程是可以从另一个流程调用的流程。它代表了可重复使用的处理步骤。调用它很像调用Java方法 - 子流传递当前消息，当它返回时，调用流继续处理子流返回的消息。
+
+❶❸调用流程以处理已经预处理的订单并返回确认消息。
+
+==== 例外策略
+
+当其范围内发生异常时，就会调用异常策略，就像Java中的异常处理程序一样。它可以定义如何处理任何未决事务以及异常是否对流程致命，以及处理异常的逻辑。
+
+❶❺将导致异常的消息写入JMS队列，在那里检查它。有关例外策略的更多信息，请参阅 link:/mule-user-guide/v/3.4/error-handling[错误处理]。
+
+=== 配置模式
+
+流程具有强大而灵活的优势。任何骡子可以做的事情都可以放入流程中。 Mule还带有配置模式，每个模式都旨在简化Mule的常见用法。熟悉这些模式并在可能的情况下使用它们是值得的，因为您会使用库类而不是从头开始构建相同的功能。目前有四种配置模式：
+
+入站端点和出站端点之间的*  `pattern:bridge`桥接
+*  `pattern:simple-service`是从一个入站端点到一个组件的简单流程
+*  `pattern:validator`就像一个单向桥，除了在将消息发送到出站端点之前验证消息
+*  `pattern:web-service-proxy`是Web服务的代理。
+
+从3.1.1版开始，所有文件都在模式名称空间中，如图所示。在早期的Mule 3版本中，它们位于核心命名空间中，除了`ws:proxy`的Web服务代理之外。这些旧名称将继续适用于Mule 3.1.x版本，但在此之后将被删除。
+
+==== 共同特征
+
+为了灵活性，所有模式都允许以多种方式指定端点：
+
+在流程中，* 本地端点可以声明为子元素
+在流程中，* 对全局元素的引用可以声明为子元素
+可以将* 对全局元素的引用声明为属性`inboundEndpoint-ref`和`outboundEndpoint-ref`的值
+* 端点的地址可以作为属性`inboundAddress`和`outboundAddress`的值
+
+所有配置模式都可以指定异常策略，就像流程一样。
+
+==== 桥
+
+除了入站和出站端点，您还可以配置它
+
+* 要应用于请求的变换器列表
+* 要应用于回复的变形金刚列表
+* 是否处理事务中的消息。
+
+这里有些例子：
+
+[source, xml, linenums]
+----
+<pattern:bridge name="queue-to-topic" ❶
+        transacted="true"
+        inboundAddress="jms://myQueue"
+        outboundAddress="jms://topic:myTopic" />
+ 
+<pattern:bridge name="transforming-bridge" ❷
+        inboundAddress="vm://transforming-bridge.in"
+        transformer-refs="byte-array-to-string"
+        responseTransformer-refs="string-to-byte-array"
+        outboundAddress="vm://echo-service.in" />
+----
+
+using使用事务将消息从JMS队列复制到JMS主题。 ❷从入站虚拟机端点读取字节数组，将它们转换为字符串，并将它们写入出站虚拟机端点。响应是字符串，它们被转换为字节数组，然后写入出站端点。
+
+==== 简单服务
+
+这使您可以配置入站端点之外的配置
+
+* 要应用于请求的变换器列表
+* 要应用于回复的变形金刚列表
+* 组件
+* 组件类型，它允许您使用Jersey和CXF组件。
+
+这里有些例子：
+
+[source, xml, linenums]
+----
+<pattern:simple-service name="echo-service" ❶
+                endpoint-ref="echo-service-channel"
+                component-class="com.mycompany.EchoComponent" />
+ 
+ 
+<pattern:simple-service name="weather-forecaster-ws" ❷
+                address="http://localhost:6099/weather-forecast"
+                component-class="com.myompany.WeatherForecaster"
+                type="jax-ws" />
+----
+
+❶是回声请求的简单服务。 ❷是使用CXF组件的简单Web服务。请注意，如何创建它们需要littl4e配置。
+
+==== 验证程序
+
+这使您可以配置入站和出站端点
+
+* 要应用于请求的变换器列表
+* 要应用于回复的变形金刚列表
+* 过滤器来执行验证
+* 表达式来创建响应，以表明验证成功或失败
+
+这里是一个例子：
+
+[source, xml, linenums]
+----
+<pattern:validator name="validator" ❶
+           inboundAddress="vm://services/orders"
+           ackExpression="#[string:OK]"
+           nackExpression="#[string:illegal payload type]"
+           outboundAddress="vm://OrderService">❷
+  <payload-type-filter expectedType="com.mycompany.Order"/>
+</pattern:validator>
+----
+
+在调用订单服务之前，使用filter处的过滤器验证有效负载的类型是否正确。
+
+====  Web服务代理
+
+这创建了一个Web服务的代理。它修改通告的WSDL以包含代理的URL。
+
+这使您可以配置入站和出站端点以外的功能：
+
+* 要应用于请求的变换器列表
+* 要应用于回复的变形金刚列表
+* 服务WSDL的位置，可以是URL或文件名。
+
+这里是一个例子：
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+          inboundAddress="http://localhost:8090/weather-forecast"
+          outboundAddress="http://server1:6090/weather-forecast"
+          wsdlLocation="http://server1:6090/weather-forecast?wsdl" />
+----
+
+这会为位于server1上的天气预报服务创建一个代理。
+
+有关配置模式的更多信息，请参阅 link:/mule-user-guide/v/3.4/using-mule-configuration-patterns[使用Mule配置模式]。
+
+=== 自定义元素
+
+Mule是可扩展的，这意味着你可以创建自己的对象（通常通过扩展Mule类）。完成此操作后，有标准方法可将它们放入配置中。例如，假设您已经创建了`com.mycompany.HTMLCreator"`，它将大量文档类型转换为HTML。它应该是一个Spring bean，意思是
+
+* 它有一个默认的构造函数
+* 它通过设置bean属性进行自定义
+
+您现在可以使用`custom-transformer`元素将其放入您的配置中：
+
+[source, xml, linenums]
+----
+<custom-transformer mimeType="text/html" returnType="java.lang.String" class="com.mycompany.HTMLCreator">
+  <spring:property name="level" value="HTML5"/>
+  <spring:property name="browser" value="Firefox"/>
+</custom-transformer>
+----
+
+请注意，变压器的标准Mule属性是通常的方式。唯一的区别是对象本身是通过它的类名和Spring属性创建的，而不是通过模式定义的元素和属性。每种类型的Mule对象都有一个用于自定义扩展的元素：
+
+用于连接器的* 自定义连接器
+用于入口点解析器的* 定制入口点解析器
+异常策略的* 自定义异常策略
+过滤器的* 自定义过滤器
+用于消息处理器的* 定制处理器
+路由器的* 自定义路由器
+用于变压器的* 定制变压器
+
+=== 系统级配置
+
+该配置包含几个影响整个mule应用程序的全局设置。全部都是`configuration`元素的子元素，它本身是`mule`的顶级子元素。它们分为两组：线程配置文件和超时。
+
+==== 线程配置文件
+
+线程配置文件确定Mule如何管理其线程池。在大多数情况下，默认情况下性能会很好，但是如果您确定了这一点，例如，您的端点正在接收很多流量，以至于需要额外的线程来处理所有流量，则可以对选定的端点进行调整，或者通过更改默认情况下，适用于所有端点。可以调整的默认值及其相应的元素是：
+
+*  `default-threading-profile`为所有线程池
+用于调度（发送）消息的线程池的*  `default-dispatcher-threading-profile`
+用于接收消息的线程池的*  `default-receiver-threading-profile`
+
+==== 超时
+
+同样，默认超时通常表现良好，但如果您想调整它们，您可以按使用或全局进行调整。可以调整的超时时间以及相应的属性是：
+
+*  `defaultResponseTimeout`以毫秒为单位等待同步响应的时间。默认值是10秒。
+*  `defaultTransactionTimeout`以毫秒为单位等待事务完成的时间。默认值是30秒。
+*  `shutdownTimeout`等待Mule优雅地关闭多长时间，以毫秒为单位。默认值是5秒。
+
+=== 经理
+
+有几个全局对象用于管理Mule使用的系统级设施。他们在下面讨论。
+
+==== 交易经理
+
+Mule使用JTA管理XA交易;因此，要使用XA事务，JTA事务管理器是必需的，并且必须在配置中指定。 Mule有许多这样的显式配置，并且像往常一样，还允许您指定自定义管理器。用于指定事务管理器的元素是`mule`的直接子元素。
+
+WebSphere事务管理器的*  `websphere-transaction-manager`
+*  `jboss-transaction-manager`为JBoss事务管理器
+WebLogic事务管理器的*  * `weblogic-transaction-manager`
+JRun事务管理器的*  `jrun-transaction-manager`
+Resin交易管理器的*  `resin-transaction-manager`
+*  * `jndi-transaction-manager`在JNDI中查找事务管理器
+*  * `custom-transaction-manager`用于自定义查找事务管理器
+
+带星号的事务管理器允许您在执行查找之前配置JNDI环境。有关事务管理器的更多信息，请参阅 link:/mule-user-guide/v/3.4/transaction-management[交易管理]。
+
+==== 安全管理器
+
+Mule安全管理器可以配置一个或多个加密策略，然后由加密转换器，安全过滤器或安全传输（如SSL或HTTPS）使用。这些加密策略可以大大简化安全消息传递的配置，因为它们可以跨组件共享。此安全管理员使用全球`security-manager`元素进行设置，该元素是`mule`的直接子元素。
+
+例如，以下是使用JCE提供基于密码的加密的基于密码的加密策略（PBE）的示例。用户必须指定一个密码以及可选的盐和迭代计数。默认算法是PBEWithMD5AndDES，但用户可以指定JCE支持的任何有效算法。
+
+[source, xml, linenums]
+----
+<security-manager>
+  <password-encryption-strategy name="PBE" password="mule"/>
+</security-manager>
+----
+
+这个策略然后可以被系统中的其他组件引用，例如过滤器或变换器。
+
+[source, xml, linenums]
+----
+<decrypt-transformer name="EncryptedToByteArray" strategy-ref="PBE"/>
+ 
+<flow name="testOrderService">
+  <inbound-endpoint address="vm://test">
+    <encryption-security-filter strategy-ref="PBE"/>
+  </inbound-endpoint>
+  ...
+</flow>
+----
+
+有关Mule安全性的更多信息，请参阅 link:/mule-user-guide/v/3.4/configuring-security[配置安全性]。
+
+通知管理器。==== 
+
+无论何时发送，接收或处理消息，Mule都可以生成通知。为了实际创建和发送这些通知，对象必须注册才能接收它们。这是通过全球\ {\ {notifications}}元素完成的，该元素是mule的直接子元素。它允许您指定一个对象来接收通知以及指定发送通知。请注意，一个对象只会接收它为其实现正确接口的通知（这些接口在`org.mule.api.context.notification`包中定义。）下面是一个示例：
+
+[source, xml, linenums]
+----
+<spring:bean name="componentNotificationLogger" ❶
+             class="org.myfirm.ComponentMessageNotificationLogger"/>
+ 
+<spring:bean name="endpointNotificationLogger" ❷
+             class="org.myfirm.EndpointMessageNotificationLogger"/>
+ 
+<notifications> ❸
+  <notification event="COMPONENT-MESSAGE"/>
+  <notification event="ENDPOINT-MESSAGE"/>
+  <notification-listener ref="componentNotificationLogger"/>
+  <notification-listener ref="endpointNotificationLogger"/>
+</notifications>
+----
+
+假设`ComponentMessageNotificationLogger`实现`ComponentMessageNotificationListener`接口，`EndpointMessageNotificationLogger`实现`EndpointMessageNotificationListener`。 +
+❶和❷创建侦听器bean。 ❸似乎为组件和端点通知注册了两个Bean。但由于`ComponentMessageNotificationLogger`仅实现了组件通知的接口，所以它们都会收到（同样也适用于`EndpointMessageNotificationLogger`。
+
+有关通知的更多信息，请参阅 link:/mule-user-guide/v/3.4/notifications-configuration-reference[通知配置参考]。
+
+=== 代理
+
+Mule允许你定义代理来扩展Mule的功能。 Mule将管理代理的生命周期（初始化它们并在启动时启动它们，并停止它们并在关闭时处理它们）。这些代理几乎可以做任何事情;唯一的要求是他们实现了`org.mule.api.agent.Agent`，允许Mule管理它们。有关Mule代理的更多信息，请参阅 link:/mule-user-guide/v/3.4/mule-agents[骡代理]。
+
+==== 自定义代理
+
+要创建自定义代理，只需使用全局`custom-agent`元素进行声明，该元素是`mule`的直接子元素。该代理是一个Spring bean，因此通常需要一个类名称和一组Spring属性来配置它。此外，它需要一个名称，Mule在记录输出中使用它来标识它。这是一个例子：
+
+[source, xml, linenums]
+----
+<custom-agent name="heartbeat-agent" class="com.mycompany.HeartbeatProvider">
+  <spring:property name="frequency" value="30"/>
+<custom-agent>
+----
+
+这会创建一个每隔30秒发出一次心跳信号的代理。由于Mule会启动并停止它，因此当Mule服务器正在运行时，心跳就会出现。
+
+==== 管理代理
+
+Mule在管理名称空间中实现各种管理代理。
+
+*  `management:jmx-server`创建一个允许本地或远程访问Mule的JMX bean的JMX服务器
+*  `management:jmx-mx4j-adaptor`创建一个允许HTTP访问JMX bean的服务
+*  `management:rmi-server`创建一个允许RMI访问JMX bean的服务
+*  `management:jmx-notifications`创建一个将Mule通知传播给JMX的代理
+*  `management:jmx-log4j`允许JMX管理Mule使用Log4J
+*  `management:jmx-default-config`允许一次创建上述所有内容
+*  `management:log4j-notifications`创建一个将Mule通知传播到Log4J的代理
+*  `management:chainsaw-notifications`创建一个将Mule通知传播给Chainsaw的代理
+*  `management:publish-notifications`创建一个将Mule通知发布到Mule出站端点的代理
+*  `management:yourkit-profiler`创建一个将YourKit分析信息公开给JMX的代理

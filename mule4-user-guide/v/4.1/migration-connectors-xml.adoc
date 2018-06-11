@@ -1,0 +1,264 @@
+= 迁移XML模块
+
+Mule 4中的新XML模块取代了Mule 3中捆绑的模块。主要变化是：
+
+* 删除Mule 3.6中已弃用的组件和表达式，函数和评估程序：
+** 的JXPath滤波器
+**  Jaxen的过滤器
+** 的JXPath-提取变压器
+** 是-XML的过滤器
+**  XPath的过滤器
+* 对XPath，XSLT和XQuery组件的更改与新的Mule 4组件保持一致，主要围绕：
+**  DSL名称空间前缀已从`mxml`更改为`xml-module`
+** 返回类型的一致性
+** 语法和UX更改
+*  `xpath()`和`xpath3()`函数被新的`Xml-Module:xpath()`函数替代
+* 改进模式验证器的错误报告
+*  `schema-validation-filter`现在替换为`schema-validator`
+* 不再与Java绑定：它不再使用SAX，StaX或DOM类型。 Mule 4现在是强类型的，我们有关于哪些数据是XML格式的MIME类型信息。运行时间完成剩下的工作。所有XML文档均以字符串或流表示。这意味着以下内容不再存在（并且不再需要）：
+**  DOM到XML的变压器
+**  DOM到输出处理程序变压器
+**  XML到DOM的变压器
+**  XML的prettyprinter变压器
+**  JAXB对象到XML变压器
+**  JAXB-XML到对象的变压器
+**  JAXB上下文
+** 对象 -  XML的变压器
+**  XML到对象的变压器
+
+== 迁移XSLT操作
+
+=== 在外部文件中使用XSL样式表
+
+.Mule 3示例：在外部文件中使用XSL工作表
+[source,xml, linenums]
+----
+<mulexml:xslt-transformer xsl-file="cities-xslt.xsl" />
+----
+
+在骡子4：
+
+.Mule 4示例：在外部文件中使用XSL工作表
+[source, xml, linenums]
+----
+<xml-module:xslt-transform>
+    <xml-module:xslt>${file:::cities.xslt}</xml-module:xslt>
+</xml-module:xslt-transform>
+----
+
+=== 使用上下文属性
+
+.Mule 3示例：设置上下文属性
+[source,xml, linenums]
+----
+<mulexml:xslt-transformer xsl-file="cities-result-document-xslt.xsl">
+    <mulexml:context-property key="output_location" value="#[flowVars['outputFile']" />
+    <mulexml:context-property key="user_id" value="#[flowVars['userId']" />
+</mulexml:xslt-transformer>
+----
+
+.Mule 4示例：设置上下文属性
+[source, xml, linenums]
+----
+<xml-module:xslt-transform>
+    <xml-module:xslt>${file::cities.xslt}</xml-module:xslt>
+    <xml-module:context-properties>#[{'output_location': vars.outputFile, 'user_id': vars.userId}]</xml-module:context-properties>
+</xml-module:xslt-transform>
+----
+
+== 迁移XPath操作和表达式
+
+=== 使用XPath提取转换器
+
+XPath提取器不再支持自定义`resultType`参数。它现在总是返回一个包含所有匹配元素的字符串列表。
+
+.Mule 3示例：使用XPath提取器
+[source,xml, linenums]
+----
+<mule-xml:xpath-extractor-transformer expression="//book" resultType="STRING"/>
+----
+
+.Mule 4示例：使用XPath提取器
+[source, xml, linenums]
+----
+<xml-module:xpath-extract xpath="//book" />
+----
+
+=== 使用XPath表达式函数
+
+Mule 3最初有一个`xpath()` MEL函数。在Mule 3.6中，它不赞成使用新的`xpath3()`函数。现在，这两个函数都被一个新的`Xml-Module::xpath()` DataWeave函数替代，该函数在模块添加到应用程序时可用。
+
+.Mule 3示例：使用xpath3函数
+[source,xml, linenums]
+----
+<set-payload value="#[xpath3('//book', payload, 'NODESET')] />
+----
+
+Mule 3的`xpath3()`函数允许您指定XPath表达式和输入值，并根据预期的输出给出不同的选项：`BOOLEAN`，`STRING`，`NUMBER`， `NODESET`或`NODE`，其中`NODESET`和`NODE`需要了解Java的DOM树表示。
+
+新函数也接受XPath表达式和输入，但在这些方面有所不同：
+
+* 它增加了对自定义上下文属性的支持。
+* 它不允许指定输出类型。它总是会返回一个字符串列表，就像`<xml-module:xpath-extract>`一样。
+
+.Mule 4示例：使用xpath函数
+[source,xml, linenums]
+----
+<set-payload value="#[Xml-Module::xpath('//book', payload, {})] />
+----
+
+[TIP]
+您可以在任何DataWeave转换中使用此函数。
+
+=== 在自定义命名空间中使用XPath
+
+在Mule 3中，映射自定义名称空间前缀需要`<mxml:namespace-manager>`：
+
+.Mule 3示例：使用自定义名称空间
+[source,xml, linenums]
+----
+ <mulexml:namespace-manager includeConfigNamespaces="true">
+      <mulexml:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+      <mulexml:namespace prefix="mule" uri="http://simple.component.mule.org/"/>
+  </mulexml:namespace-manager>
+
+  <flow name="xpathWithNamespace">
+      <expression-transformer expression="xpath3('/soap:Envelope/soap:Body/mule:echo/mule:echo')" />
+  </flow>
+----
+
+这种方法的局限性是每个应用程序只能使用一个名称空间管理器。在Mule 4中，您可以根据需要声明多个`namespace-directory`元素，然后在每个操作中引用您需要的元素：
+
+.Mule 4示例：使用自定义命名空间
+[source, xml, linenums]
+----
+<xml-module:namespace-directory name="fullNs">
+    <xml-module:namespaces>
+        <xml-module:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+        <xml-module:namespace prefix="mule" uri="http://simple.component.mule.org/"/>
+    </xml-module:namespaces>
+</xml-module:namespace-directory>
+
+<flow name="xpathWithFullNs">
+    <xml-module:xpath-extract xpath="/soap:Envelope/soap:Body/mule:echo/mule:echo" namespaceDirectory="fullNs"/>
+</flow>
+----
+
+此外，您甚至可以选择不声明“命名空间目录”，而是仅将命名空间内联：
+
+.Mule 4示例：内联自定义名称空间映射
+[source, xml, linenums]
+----
+
+<flow name="xpathWithFullNs">
+    <xml-module:xpath-extract xpath="/soap:Envelope/soap:Body/mule:echo/mule:echo">
+      <xml-module:namespaces>
+          <xml-module:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+          <xml-module:namespace prefix="mule" uri="http://simple.component.mule.org/"/>
+      </xml-module:namespaces>
+    </xml-module:xpath-extract>
+</flow>
+----
+
+== 迁移XQuery操作
+
+主要区别在于在Mule 3中，这个变压器的输出类型取决于变换的结果：
+
+* 如果转换生成许多元素，则返回List。
+* 根据转换的不同，该列表中的元素可以是字符串，也可以是一些普通的Java代表，例如`Node`。
+* 如果转换只生成一个元素，则返回该元素。
+
+在Mule 4中，这将始终返回一个字符串列表。
+
+除此之外，更改仅限于语法：
+
+.Mule 3示例：使用XQuery变换器
+[source,xml, linenums]
+----
+<mxml:xquery-transformer>
+    <mxml:context-property key="books" value="#[flowVars['books']]" />
+    <mxml:context-property key="cities" value="#[flowVars['cities']]" />
+    <mxml:xquery-text>
+        <![CDATA[
+            xquery version "3.0";
+            declare variable $document external;
+            declare variable $cities external;
+            declare variable $books external;
+            <mixes>
+            {
+                for $b in $books/BOOKLIST/BOOKS/ITEM,
+                    $c in $cities/cities/city
+
+                return <mix title="{$b/TITLE/text()}" city="{$c/@name}" />
+            }
+            </mixes>
+        ]]>
+    </mxml:xquery-text>
+</mxml:xquery-transformer>
+----
+
+在骡子4：
+
+.Mule 4示例：使用XQuery转换器
+[source,xml, linenums]
+----
+<xml-module:xquery-transform>
+    <xml-module:xquery>
+        <![CDATA[
+            xquery version "3.0";
+            declare variable $document external;
+            declare variable $cities external;
+            declare variable $books external;
+            <mixes>
+            {
+                for $b in fn:doc($books)/BOOKLIST/BOOKS/ITEM,
+                    $c in fn:doc($cities)/cities/city
+
+                return <mix title="{$b/TITLE/text()}" city="{$c/@name}" />
+            }
+            </mixes>
+        ]]>
+    </xml-module:xquery>
+    <xml-module:context-properties>#[{'books' : vars.books, 'cities': vars.cities}] </xml-module:context-properties>
+</xml-module:xquery-transform>
+----
+
+== 根据模式验证XML
+
+在Mule 3中，使用过滤器来验证模式：
+
+.Mule 3示例：架构验证过滤器
+[source,xml, linenums]
+----
+<mxml:schema-validation-filter schemaLocations="schema1.xsd, schema2.xsd"/>
+----
+
+如果验证失败，则该消息被丢弃。
+
+在Mule 4中，我们用验证器替换了过滤器：
+
+.Mule 4示例：架构验证器
+[source,xml, linenums]
+----
+<xml-module:validate-schema schemas="schema1.xsd, schema2.xsd"/>
+----
+
+此验证器将引发{{0}​​}错误。
+
+== 安装XML模块
+
+要使用XML模块，只需使用Studio调色板或Flow Designer卡将其添加到应用程序中，或者在您的`pom.xml`文件中添加以下依赖项：
+
+[source,XML,linenums]
+----
+<dependency>
+    <groupId>org.mule.modules</groupId>
+    <artifactId>mule-xml-module</artifactId>
+    <version>1.1.0</version> <!-- or newer -->
+    <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== 另请参阅
+
+*  link:/connectors/xml-module[XML模块]

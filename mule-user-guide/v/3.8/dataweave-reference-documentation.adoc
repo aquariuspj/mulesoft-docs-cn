@@ -1,0 +1,4221 @@
+=  DataWeave参考文档
+:keywords: studio, anypoint, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+DataWeave Language是一个功能强大的模板引擎，允许您将数据转换为任何格式（XML，CSV，JSON，Pojos，Maps等）。
+
+让我们从一些例子开始，展示Dataweave作为数据转换工具的实力。
+
+基本示例=== 
+
+这个例子展示了从JSON到XML的简单映射
+
+。输入
+[source,json,linenums]
+----
+{
+  "title": "Java 8 in Action: Lambdas, Streams, and functional-style programming",
+  "author": "Mario Fusco",
+  "year": 2014
+}
+----
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  order: {
+    type: "Book",
+    title: payload.title,
+    details: "By $(payload.author) ($(payload.year))"
+  }
+}
+----
+
+.OUTPUT
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<order>
+  <type>Book</type>
+  <title>Java 8 in Action: Lambdas, Streams, and functional-style programming</title>
+  <details>By Mario Fusco (2014)</details>
+</order>
+----
+
+[TIP]
+在Anypoint Studio中，基于通过流组件的元数据隐式地知道输入。如果在外部使用DW，你应该声明一个输入指令'％input payload application / json'
+
+=== 字符串操作
+
+这个例子展示了在DataWeave中使用字符串是多么容易。
+
+。输入
+[source,xml,linenums]
+----
+<users>
+  <user>
+    <name>Mariano Achaval</name>
+    <phone>152235465654</phone>
+    <street>Laprida 924</street>
+  </user>
+  <user>
+    <name>Martin Alejandro Cousido</name>
+    <phone>15332255555</phone>
+    <street>Acassuso 2280</street>
+  </user>
+</users>
+----
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+%function words(name) name splitBy " "
+---
+contacts: payload.users.*user map using (parts =  words($.name)){
+  firstName: parts[0],
+  (secondName: parts[1]) when (sizeOf parts) > 2,
+  lastName: parts[-1],
+  email:((lower $.name) replace " " with ".") ++ "@acme.com",
+  address: $.street
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "contacts": [
+    {
+      "firstName": "Mariano",
+      "lastName": "Achaval",
+      "email": "mariano.achaval@acme.com.ar",
+      "address": "Laprida 924"
+    },
+    {
+      "firstName": "Martin",
+      "secondName": "Alejandro",
+      "lastName": "Cousido",
+      "email": "martin.alejandro.cousido@acme.com.ar",
+      "address": "Acassuso 2280"
+    }
+  ]
+}
+----
+
+[TIP]
+在Anypoint Studio中，基于通过流组件的元数据隐式地知道输入。如果在Mule之外使用DW，则应该声明一个输入指令'％input payload application / xml'
+
+
+=== 群组...
+
+这个例子显示了按给定的标准分组是多么容易，然后转换结果以匹配预期的输出。
+
+。输入
+[source,json,linenums]
+----
+{
+  "items": [
+      {
+        "type" : "book",
+        "label" : "Java Curiosities",
+        "author" : "Luis Miguel",
+        "image": "http://www.gravatar.com/avatar/a133c7d8d9245d063b136732272ea77e",
+        "url": "http://javacuriosities.blogspot.com.ar/"
+      },
+      {
+        "type" : "CD",
+        "label" : "No culpes a la noche",
+        "author" : "Luis Miguel",
+        "image": "http://www.gravatar.com/avatar/a133c7d8d9245d063b136732272ea77e"
+      },
+      {
+        "type" : "book",
+        "label" : "Mule in Action",
+        "author" : "Victor Romero"
+      },
+      {
+        "type" : "CD",
+        "label" : "Yesterday",
+        "author" : "The Beatles"
+      }
+    ]
+}
+----
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+patents : payload.items groupBy $.author pluck {
+  owner: $$,
+  categories: $.type
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "patents": [
+    {
+      "owner": "Victor Romero",
+      "categories": [
+        "book"
+      ]
+    },
+    {
+      "owner": "The Beatles",
+      "categories": [
+        "CD"
+      ]
+    },
+    {
+      "owner": "Luis Miguel",
+      "categories": [
+        "book",
+        "CD"
+      ]
+    }
+  ]
+}
+----
+
+[TIP]
+在Anypoint Studio中，基于通过流组件的元数据隐式地知道输入。如果在外部使用DW，你应该声明一个输入指令'％input payload application / json'
+
+== 文档结构
+
+DataWeave文件分为两个主要部分：
+
+. 用于定义指令的Header（可选）
+. 描述输出结构的Body
+
+这两部分由分隔符分隔，如果不存在标头，则不需要该分隔符。分隔符由三个破折号组成："---"
+
+以下是`.dwl`文件的外观。此代码描述从JSON输入到XML输出的转换：
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%input application/json
+%output application/xml
+---
+{
+  user: {
+    name: payload.user_name,
+    lastName: payload.user_lastName
+  }
+}
+---------------------------------------------------------------------
+
+请注意，两行代码组成头部，然后分隔符将其与文件的其余部分（即定义输出结构的正文）分隔。
+
+这个DataWeave示例希望收到一个JSON输入，其结构类似于下面的JSON示例：
+
+[source,json,linenums]
+---------------------------------------------------------------------
+ {
+  "user_name": "Annie",
+  "user_lastName": "Point"
+ }
+---------------------------------------------------------------------
+
+在接收到输入后，DataWeave生成如下所示的XML输出：
+
+[source,xml,linenums]
+---------------------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<user>
+ <name>Annie</name>
+ <lastName>Point</lastName>
+</user>
+---------------------------------------------------------------------
+
+[[the-header]]
+=== 部首
+
+DataWeave头部包含指令，它们定义了有关变换的高级信息。标题的结构是一系列行，每行都有自己的指令。标题以'---'结尾。
+
+通过指令你可以定义：
+
+*  DataWeave *version*
+*  *Input*类型和来源
+*  *Output*类型
+*  *Namespaces*导入到您的转换中
+*  *Constants*可在整个机构中引用
+*  *Functions*可以在整个机构中调用
+
+所有指令都在DataWeave文档的标题部分声明，并在其整个范围内执行。指令是一种声明需要在文档中引用的变量和常量和名称空间别名的机制。
+他们还需要声明变换的输出类型。在Anypoint Studio中，您可以选择使用它们来声明其他输入。您很少需要它们，因为到达Mule消息的任何数据都已隐式识别为输入。
+
+==== 版本指令
+
+通过此指令，您可以指定用于解释转换的DataWeave语法的版本。
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%dw 1.0
+---------------------------------------------------------------------
+
+命名空间指令==== 
+
+该指令将别名与其后续的URI相关联。只有当输入或输出是XML类型时，该指令才有意义。
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%namespace mes http://www.mulesoft.com/anypoint/SOA/message/v1.0
+---------------------------------------------------------------------
+
+==== 输入指令
+
+[WARNING]
+在Anypoint Studio中使用DataWeave时，不必为抵达DataWeave转换器（有效载荷，流变量和输入/出站属性）的Mule消息的任何组件声明输入指令，也不必为任何系统变量声明输入指令。这些已经被隐式地识别为输入，并且可以在DataWeave体中的任何地方被引用，而不需要将它们包括在标题中，因为它们的类型可以从Mule元数据中知道。
+
+输入是通过分配名称和内容类型来声明的。您可以根据需要定义许多输入指令。然后可以通过指令中定义的名称在DataWeave主体的任何部分引用它们（或其子元素）。
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%input payload application/xml
+---------------------------------------------------------------------
+
+有效的类型是：
+
+*  `application/json`
+*  `application/xml`
+*  `application/java`
+*  `application/csv`
+*  `application/dw`
+*  `text/json`
+*  `text/xml`
+*  `text/csv`
+
+=====  CSV输入分析
+
+在定义CSV类型的输入时，可以将一些可选参数添加到输入指令中，以定制数据解析的方式。这些未在DataWeave脚本中定义，而是在Transform Message XML元素中的Mule XML代码中定义。
+
+在Anypoint Studio中有两种方法可以实现这一点。您可以手动将属性添加到项目的XML中，也可以通过图形界面执行此操作，方法是从输入部分的树视图中选择元素并单击齿轮图标。有关更多详情，请参阅 link:/anypoint-studio/v/5/using-dataweave-in-studio#parsing-csv-inputs[在Studio中使用DataWeave]。
+
+==== 输出指令
+
+输出指令指定了使用内容/类型指定的转换中的输出类型。
+只能指定一个输出，然后在DataWeave主体中定义此输出的结构。
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%output application/xml
+---------------------------------------------------------------------
+
+有效的类型是：
+
+*  `application/json`
+*  `application/xml`
+*  `application/java`
+*  `application/csv`
+*  `application/dw`
+*  `text/json`
+*  `text/xml`
+*  `text/csv`
+
+===== 跳过空
+
+无论何时输出为XML或JSON类型，并且其元素或属性中都有空值，您可以指定是否生成包含具有"null"值字段的出站邮件，或者是否完全忽略这些字段。这可以通过名为*skipNullOn*的输出指令中的属性来设置，该指令可以设置为三个不同的值：*elements*，*attributes*或*everywhere*。
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%output application/xml skipNullOn="everywhere"
+---------------------------------------------------------------------
+
+当设置为：
+
+*  *elements*：具有空值的键：值对将被忽略。
+*  *attributes*：跳过一个空值的XML属性。
+*  *everywhere*：将此规则应用于元素和属性。
+
+[NOTE]
+该属性仅适用于输出格式为JSON或XML的情况。
+
+=====  CSV输出格式
+
+定义CSV类型的输出时，可以将一些可选参数添加到输出指令中，以定制数据解析的方式：
+
+[%header]
+|=======================
+| {参数{1}}输入 |缺省|说明
+|分隔符 | char  |， |将字段分隔开的字符
+|编码 |字符串 |  |要用于输出的字符集
+|引用 | char  |“ |分隔字段值的字符
+|转义 | char  |  \  |用于转义字段值中分隔符或引号字符出现的字符
+| {BUFFERSIZE {1}}数 |  |
+| {ignoreEmptyLine {1}}布尔 |  |
+|标题 | bool  | true  |指示输出的第一行是否应包含字段名称
+| quoteValues  | bool  | false  |指示是否应引用每个值，而不论其中是否包含特殊字符
+|=======================
+
+==== 定义常量指令
+
+您可以在标题中定义一个常量，然后可以在DataWeave正文中引用它（或其子元素，如果存在）。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%var conversionRate=13.15
+%output application/json
+---
+{
+ price_dollars: payload.price,
+ price_localCurrency: payload.price * conversionRate
+}
+---------------------------------------------------------------------
+
+==== 定义函数指令
+
+您可以在标题中定义一个函数，然后可以在DataWeave正文的任何​​部分调用它，包括参数。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%var toUser = (user) -> {name: user.name, lastName: user.lastName}
+%output application/json
+---
+{
+ user: toUser(payload)
+}
+---------------------------------------------------------------------
+
+=== 车身
+
+正文包含生成输出结构的*expression*。无论输入和输出的类型如何，输出的数据模型都始终以标准DataWeave语言和变换执行的此模型进行描述。
+
+生成输出的数据模型可以由三种不同类型的数据组成：
+
+. 对象：表示为键值对的集合
+. 数组：表示为一系列逗号分隔值
+. 简单文字
+
+当您编写DataWeave文件时，您可以定义一个表达式来生成上面列出的其中一种数据类型。
+
+=== 简单文字类型
+
+文字可以是以下类型：
+
+. 字符串：双引号（"Hello"）或单引号（'Hello'）
+.  Boolean：文字是真或假
+. 数字：支持十进制和整数值（例如：2.0）
+. 日期：由"|"包围的IS0-8601（例如：| 2003-10-01T23：57：59Z |）
+正则表达式："/"（例如：/（\ d +） - （\ d +）/）包含的正则表达式
+
+[source,DataWeave]
+---------------------------------------------------------------------
+This is a String literal expression
+---------------------------------------------------------------------
+
+=== 阵列
+
+数组是*expressions*的序列。
+
+[source,DataWeave]
+--------------------------------------------------------------------
+[ 1, 2 + 2, 3 * 3, $x ]
+--------------------------------------------------------------------
+
+=== 对象
+
+这些表示为逗号分隔的由花括号{}包围的键：值对的序列。
+
+。转变
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+myoutput:{
+  name : "Jill",
+  payload : payload.id + 3
+  }
+---------------------------------------------------------------------
+
+.OUTPUT
+[source,xml,linenums]
+---------------------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<myoutput>
+  <name>Jill</name>
+  <payload>5</payload>
+</myoutput>
+---------------------------------------------------------------------
+
+请注意，键和值都可以是*expressions*。
+
+== 流
+
+DataWeave支持流式传输大型有效载荷。 DataWeave代码本身不需要配置，但需要设置其他组件才能使其工作。请参阅 link:/mule-user-guide/v/3.7/dataweave-streaming[DataWeave流媒体]。
+
+
+== 示例转换
+
+假设您想要将XML文档转换为JSON，将额外的内容附加到输出。
+
+。输入为XML
+[source, xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<note>
+  <to>Tove</to>
+  <from>Jani</from>
+  <heading>Reminder</heading>
+  <body>Don't forget me this weekend!</body>
+</note>
+----
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+%var date='01-MAR-2015'
+---
+{
+  letter : payload,
+  sent : date
+}
+----
+
+。输出为JSON
+[source, json,linenums]
+----
+{
+  "letter": {
+    "note": {
+      "to": "Tove",
+      "from": "Jani",
+      "heading": "Reminder",
+      "body": "Don't forget me this weekend!"
+    }
+  },
+  "sent": "01-MAR-2015"
+}
+----
+
+[WARNING]
+无论何时从JSON转换为XML，请确保生成的输出作为XML文件有效。具体来说，确保有一个父标记，JSON支持最高级别的多个元素，而XML不支持。
+同样，无论何时将XML从XML转换为JSON，请确保生成的输出作为JSON文件有效。具体来说，确保在同一个父代中没有重复的密钥。 XML支持这个，但JSON不支持。
+
+==  DataWeave规范模型
+
+如上所述，DataWeave使用三种基本数据类型：对象，数组和简单类型，DataWeave转换的执行始终产生这三种数据类型之一。实质上，每个DataWeave转换的主体是一个单一表达式，用于定义一个此类元素（可以是Object，Array或Simple Literal）的结构和内容。
+
+该表达式可以使用以下任何元素构建：
+
+* 对象
+* 阵列
+* 简单文字
+* 变量和常量引用
+
+DataWeave转换可以像上面列表中单个元素的定义一​​样简单。即使是简单的文字'Hello world'也是一个有效的DataWeave转换。
+
+表达式也可能很复杂，也就是说它们可以由其他表达式组成。这可以通过在数组或对象中嵌套表达式或通过使用运算符来实现。
+在复杂表达式中，一个表达式的结果为其他表达式的后续执行设置上下文。您只需要记住每个表达式都会生成一个Object，一个Array或一个Simple literal。
+
+如果您在DataWeave的头文件中声明输入指令，而不管其类型（XML，JSON，Java）如何，
+如前所述，任何引用这些输入的执行都会产生一个Object，一个Array或一个简单的文字。当你理解这些数据类型的结构时，用DataWeave表达式的语法表达，你就可以有效地理解DataWeave。
+
+在Anypoint Studio中，如果您需要可视化数据的规范DataWeave模型以获取更好的参考，请将变换的输出类型设置为`application/dw`。然后，您的转换将数据作为DataWeave表达式输出，该表达式类似于JSON对象。看下面的例子。
+
+=== 转换为DataWeave的示例
+
+。输入
+[source, xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<note>
+  <to>Tove</to>
+  <from>Jani</from>
+  <heading>Reminder</heading>
+  <body>Don't forget me this weekend!</body>
+</note>
+----
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/dw
+---
+payload
+----
+
+.OUTPUT
+[source,DataWeave,linenums]
+----
+{ # <1>
+  note: { # <2>
+    to: "Tove",
+    from: "Jani",
+    heading: "Reminder", # <3>
+    body: "Dont forget me this weekend!"
+  }
+}
+----
+<1>输入被解析为一个Object。
+<2>如前所述，对象是键值对的序列。请注意XML输入中的每个元素名称如何被解析为一个键，后跟一个冒号：然后是值。
+<3>与*note*＃2中的情况一样，值可以是简单文字，就像*heading*字段或对象一样。
+
+== 文字表达式
+
+这些对应于三种不同的数据类型：简单，对象和数组。
+
+*Simple Literal*
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+123
+----
+
+*Object Literal*
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  message: "Hello"
+}
+----
+
+*Array Literal*
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+[ "My", "three", "words" ]
+----
+
+== 变量
+
+=== 输入变量
+
+输入指令允许您在全局变量中创建任意数量的输入源，然后可以在变换主体的任何部分中引用它们。要引用其中之一，您可以通过您在指令中定义的名称来调用它。
+请记住，变换本身就是一个表达式，所以变换的整个主体可以被写为输入文档的简单变量引用。
+考虑下面的例子，它将传入的JSON文档转换为XML，并且输出XML结构模仿输入JSON结构。
+
+。输入
+[source, json,linenums]
+----
+{
+  "document" : {
+    "language" : "English",
+    "text" : "Hello world"
+  }
+}
+----
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+payload
+----
+
+.OUTPUT
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<document>
+  <language>English</language>
+  <text>Hello world</text>
+</document>
+----
+
+=== 常量
+
+在DataWeave头文件中，将常量定义为指令，然后可以在变换主体的任何部分将这些变量引用为变量，就像您对输入变量所做的一样。
+以下内容创建一个XML文档并在输出语言元素中插入语言"Español"的常量值。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+%var language='Español'
+---
+{
+  document: {
+    language: language,
+    text: "Hola mundo"
+  }
+}
+----
+
+.OUTPUT
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<document>
+  <language>Español</language>
+  <text>Hola Mundo</text>
+</document>
+----
+
+=== 作用域变量
+
+变量标题中声明的变量总是具有全局范围，声明和初始化变量的范围是有限的，你可以在变换体的任何部分这样做。
+
+您可以使用文字表达式，变量引用表达式或函数表达式来初始化这些变量。他们可以在其初始化中引用任何其他范围变量或任何输入变量或常量。声明和初始化可以作为任何文字表达式的前缀，但是您必须意识到它们预先限定的范围。你不能在其范围之外引用一个变量。
+
+要在DataWeave正文中声明变量，支持以下语法：*using (<variable-name> = <expression>)*并且必须在定义其中存在的文字内容之前写入该语法。
+要引用一个已经初始化的变量，你可以用你为其定义的名称来调用它，就像其他变量一样，或者你也可以用*$<variable-name>*的形式写出它。
+
+考虑下面的例子：
+
+*Scoped to Simple literal*
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+using (x = 2) 3 + x # <1>
+----
+<1>结果仅为5
+
+*Scoped to Array literal*
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+using (x = 2) [1, x, 3]
+----
+
+*Scoped to Object literal*
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  person: using (user = "Greg", gender = "male") { # <1>
+    name: user, # <2>
+    gender: gender
+  }
+}
+----
+<1>声明和初始化。
+<2> *user*是一个有效的引用，因为它位于为其声明的对象*person*内。
+
+*Invalid Reference outside of Scope*
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+entry: using (firstName = "Annie", lastName = "Point") {
+  person: using (user = firstName, gender = "male") {
+    name: user,
+    gender: gender
+  },
+  sn: lastName, # <1>
+  gen: gender # <2>
+}
+----
+<1>参考*lastName*是有效的，因为它在范围内。
+<2>参考*gender*无效，因为性别是在*person*对象中声明的，并且此引用存在于该对象的范围之外。
+
+
+== 选择器
+
+=== 值选择器表达式
+
+对象和数组的复杂结构可以使用选择器表达式进行导航。每个选择器表达式都会返回一个对象，一个数组或一个简单类型。
+选择器总是在给定的上下文中运行，它可以是对变量，对象文本，数组文本或函数调用的引用。当DataWeave处理选择器时，会为其他选择器设置新的上下文，因此您可以使用选择器链来浏览数组和对象的复杂结构，而选择器的深度仅受当前上下文深度的限制。
+
+有4种类型的选择器表达式：
+
+*  *Single Value selector*。<key-name>
+*  *Multi Value selector*。* <key-name>
+*  *Descendants Selector* .. <key-name>
+*  *Indexed Selector* [<index>]
+
+应用*Single level Explicit Selector*，*Descendants Selector*或*Indexed Selector*将返回与表达式匹配的key：value对的值。
+
+*Note*：每个选择器表达式都支持'？'附加在链的末尾。这将表达式更改为一个查询，该查询检查密钥的存在。在这种情况下返回类型是一个布尔值true或false。
+
+=== 单值选择器
+
+此选择器返回键匹配表达式的第一个值，即*payload.name*，该键返回键匹配*name*的值。
+
+。输入
+[source, json,linenums]
+----
+{
+  "people": {
+    "size" : 1,
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  address: payload.people.person.address
+}
+----
+
+.OUTPUT
+[source, xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<address>
+  <street>
+    <name>Italia</name>
+    <number>2164</number>
+  </street>
+  <area>
+    <zone>San Isidro</zone>
+    <name>Martinez</name>
+  </area>
+</address>
+----
+
+=== 多值选择器
+
+这个选择器返回一个数组，其中的键值与表达式相匹配。
+
+。输入
+[source, json,linenums]
+----
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+</users>
+----
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  users: payload.users.*user
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "users": [
+    "Mariano",
+    "Martin",
+    "Leandro"
+  ]
+}
+----
+
+=== 索引选择器
+
+该选择器可以应用于字符串文字，数组和对象。在对象的情况下，返回在索引处找到的key：value对的值。
+该指数是基于零的。
+
+. 如果索引大于或等于0，则从头开始计数。
+. 如果索引是负数，则从-1开始计数的最后一个元素开始计数。
+
+。输入
+[source, json,linenums]
+----
+{
+  "people": [
+        {
+          "name": "Nial",
+          "address": "Martinez"
+        },
+        {
+          "name": "Coty",
+          "address": "Belgrano"
+        }
+    ]
+}
+----
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+payload.people[1]
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  name: Coty,
+  address: Belgrano
+}
+----
+
+当使用带字符串的索引选择器时，字符串被分解为一个数组，其中每个字符都是一个索引。
+
+。转变
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%output application/json
+---
+{
+  name: "MuleSoft"[0]
+}
+--------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "M"
+}
+--------------------------------------------------------
+
+=== 范围选择器
+
+范围选择器将输出限制为仅限特定顺序范围指定的元素。这个选择器允许你切割一个数组，甚至将其反转。
+
+。转变
+[source,DataWeave, linenums]
+------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  slice: [0,1,2][0..1],
+  last: [0,1,2][-1..0]
+}
+------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------
+{
+  "slice": [
+    0,
+    1
+  ],
+  "last": [
+    2,
+    1,
+    0
+  ]
+}
+-----------------------------------------------------------
+
+
+=== 属性选择器表达式
+
+为了查询对象上的属性，使用语法*.@<key-name>*。如果您只是使用*.@*（不带<key-name>），它会返回一个包含每个键：值对的对象。
+
+。输入
+[source, xml,linenums]
+----
+<product id="1" type="tv">
+  <brand>Samsung</brand>
+</product>
+----
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  item: {
+    type : payload.product.@type,
+    name : payload.product.brand,
+    attributes: payload.product.@
+  }
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  item: {
+    type: tv,
+    name: Samsung,
+    attributes: { # <1>
+      id: 1,
+      type: tv
+    }
+  }
+}
+----
+<1>此输出中的第三个元素检索一个包含所有属性的对象，在本例中为id和类型。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  item: {
+    attributes : payload.product.@,
+    name : payload.product.brand
+  }
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  item: {
+    attributes: {
+      id: 1,
+      type: tv
+    },
+    name: Samsung
+  }
+}
+----
+
+=== 将选择器应用于数组
+
+当选择的上下文是一个数组时，结果总是一个数组。查询上下文Array上的每个元素以查找匹配的key：value对。
+在每种情况下，只返回key：value对的*value*。
+
+。输入
+[source,DataWeave, linenums]
+----
+{
+  "people": [ # <1>
+    {
+      "person": {
+        "name": "Nial",
+        "address": {
+          "street": {
+            "name": "Italia",
+            "number": 2164
+          },
+          "area": {
+            "zone": "San Isidro",
+            "name": "Martinez"
+          }
+        }
+      }
+    },
+    {
+      "person": {
+        "name": "Coty",
+        "address": {
+          "street": {
+            "name": "Monroe",
+            "number": 323
+          },
+          "area": {
+            "zone": "BA",
+            "name": "Belgrano"
+          }
+        }
+      }
+    }
+  ]
+}
+----
+<1>由于'人'是一个数组，因此它设置了跨'人'实例搜索的上下文。这个结果总是一个数组。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+payload.people.person.address.street
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+[ # <1>
+  {
+    name: Italia,
+    number: 2164
+  },
+  {
+    name: Monroe,
+    number: 323
+  }
+]
+----
+<1>由于上下文是一个数组，输出始终是一个数组。即使只有一个匹配值，也会返回一个数组。
+
+==== 选择键值对
+
+由于选择器只返回key：value对的值，为了同时获得键和值，可以使用对象的类型转换。
+
+。输入
+[source, json,linenums]
+----
+{
+  "name": "Mariano",
+  "lastName" : "Doe"
+}
+----
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+user: payload.name as :object <1>
+----
+<1>使用*as :object*将值转换为包含键和值的对象。如果没有对此对象的转换，则返回的XML正文将仅为<user> Mariano </user>。
+
+.OUTPUT
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<user>
+  <name>Mariano</name>
+</user>
+----
+
+
+=== 后代选择器
+
+此选择器使用格式*..<field-name>*应用于上下文，并检索当前上下文中子树中所有匹配的键：值对的值。无论这些字段是按照层次结构组织的，它们都被放置在输出中的同一级别。
+
+。输入
+[source, json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  names: payload.people..name <1>
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "names": [
+    "Nial",
+    "Italia",
+    "Martinez"
+  ]
+}
+----
+<1>在此示例中，所有与键"name"匹配的字段都放在名为"names"的列表中，而不管它们在输入数据树中的基数。
+
+==== 选择所有后代键值对
+
+。输入
+[source, json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  names: payload.people..name as :object<1>
+}
+----
+<1> *as: object*使表达式返回一个对象而不是数组（默认情况下会返回）。这意味着每个值都有一个键。如果没有这种转换，那么在XML中，返回的数组将是由一个由所有三个名称合并为一个的长字符串组成。
+
+.OUTPUT
+[source, xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<names>
+  <name>Nial</name>
+  <name>Italia</name>
+  <name>Martinez</name>
+</names>
+----
+
+=== 选择器修饰符
+
+有两个选择器修饰符：？和！
+无论键是否存在于结构上，问号都会返回true或false。
+感叹号评估选择，如果任何键不存在则失败。
+
+=== 密钥存在
+
+如果指定的键存在于对象中，则返回true。
+
+。输入
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "Annie"
+}
+--------------------------------------------------------
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+present: payload.name?
+--------------------------------------------------------
+
+。输出：
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<present>true</present>
+--------------------------------------------------------
+
+在上例中，如果输入中存在“名称”键，则返回*true*。
+
+该操作也适用于属性：
+
+。输入
+[source, xml,linenums]
+----
+<product id="1" type="tv">
+  <brand>Samsung</brand>
+</product>
+----
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  item: {
+    typePresent : payload.product.@type?
+  }
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  item: {
+    typePresent: true
+  }
+}
+----
+
+您也可以将此验证操作用作过滤器的一部分：
+
+。输入
+[source,xml,linenums]
+--------------------------------------------------------
+<users>
+  <name>Mariano</name>
+  <name>Luis</name>
+  <name>Mariano</name>
+</users>
+--------------------------------------------------------
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+users: payload.users.*name[?($ == "Mariano")]
+--------------------------------------------------------
+
+.OUTPUT
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<users>
+  <name>Mariano</name>
+  <name>Mariano</name>
+</users>
+--------------------------------------------------------
+
+上面的示例选择值为"Mariano" => {名称：Mariano，名称：Mariano}的键值对
+
+== 断言存在
+
+如果找不到任何指定的键，则返回异常。
+
+。输入
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "Annie"
+}
+--------------------------------------------------------
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+present: payload.lastName!<1>
+--------------------------------------------------------
+<1>抛出异常"There is no key named 'lastName'"。
+
+来自骡子信息的=== 参考元素
+
+通常情况下，您希望使用Mule消息中到达变换中的DataWeave Transformer的不同元素。以下部分向您展示了如何引用每个这些。
+
+==== 骡信息的有效载荷
+
+您可以将到达DataWeave变换器的Mule消息的*Payload*并将其用于变换主体中。
+
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  a: payload
+}
+----
+
+您也可以通过点语法`payload.user`来引用有效负载的子元素。
+
+[TIP]
+如果Studio的内部内容的元数据已知，则自动完成功能可帮助您解决问题。
+
+您也可以选择将有效负载定义为标题中的输入指令，尽管这不是必需的。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%input payload application/xml
+%output application/xml
+---
+{
+  a: payload
+}
+---------------------------------------------------------------------
+
+来自Mule消息的==== 入站属性
+
+您可以将来自Mule消息的*Inbound Properties*带到DataWeave转换器，并在转换体中使用它们。要引用其中之一，只需通过匹配来调用它
+link:/mule-user-guide/v/3.7/mule-expression-language-mel[骡子表达语言（MEL）]表达。
+
+在MEL中，有两种支持语法来调用入站属性：
+
+*  `inboundProperties.name`
+*  `inboundProperties[’name’]`
+
+[IMPORTANT]
+第一种方法仅适用于变量名不包含任何句号或空格的情况。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+{
+  a: inboundProperties.userName
+}
+---------------------------------------------------------------------
+
+[TIP]
+如果有关这些入站属性的元数据是Studio已知的，则自动完成功能可帮助您解决问题。
+
+您也可以选择将入站属性定义为标题中的常量指令，尽管这不是必需的。
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%var inUname = inboundProperties['userName']
+---------------------------------------------------------------------
+
+来自Mule消息的出站属性==== 
+
+您可以将Mule消息中的任何*Outbound Properties*到达DataWeave变换器并将其用于变换主体。要引用它，只需通过匹配的 link:/mule-user-guide/v/3.7/mule-expression-language-mel[骡子表达语言（MEL）]表达式来调用它。
+
+在MEL中，有两种支持的语法来调用出站属性：
+
+*  `outboundProperties.name`
+*  `outboundProperties[’name’]`
+
+[IMPORTANT]
+第一种方法仅适用于变量名不包含任何句号或空格的情况。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+{
+  a: outboundProperties.userName
+}
+---------------------------------------------------------------------
+
+[TIP]
+如果Studio知道有关这些出站属性的元数据，则自动完成功能可以帮助您解决问题。
+
+您也可以选择将出站属性定义为标题中的常量指令，尽管这不是必需的。
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%var outUname = outboundProperties['userName']
+---------------------------------------------------------------------
+
+
+来自Mule消息的流==== 变量
+
+您可以使用到达DataWeave变换器的Mule消息中的任何*Flow Variable*，并在变换体中使用它。要引用它，只需通过匹配来调用它
+link:/mule-user-guide/v/3.7/mule-expression-language-mel[骡子表达语言（MEL）]表达。
+
+在MEL中，有两种支持的语法来调用流变量：
+
+*  `flowVars.name`
+*  `flowVars[’name’]`
+
+[IMPORTANT]
+第一种方法仅适用于变量名不包含任何句号或空格的情况。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+{
+  a: flowVars.userName
+}
+---------------------------------------------------------------------
+
+[TIP]
+如果有关这些流变量的元数据是Studio已知的，则自动完成功能可帮助您解决问题。
+
+您也可以选择将流变量定义为标题中的常量指令，尽管这不是必需的。
+
+[source,DataWeave]
+---------------------------------------------------------------------
+%var uname = flowVars['userName']
+---------------------------------------------------------------------
+
+== 算
+
+=== 地图
+
+==== 在数组上使用映射
+
+返回一个数组，该数组是将转换函数（lambda）应用于每个元素的结果。
+使用两个参数调用lambda：*index*和*value*。
+如果这些参数未命名，则索引默认定义为*$$*，值为*$*。
+
+。转变
+[source,DataWeave, linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+users: ["john", "peter", "matt"] map  upper $
+---------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+---------------------------------------------------------------------
+{
+  "users": [
+  "JOHN",
+  "PETER",
+  "MATT"
+  ]
+}
+---------------------------------------------------------------------
+
+在下面的示例中，为映射操作的索引和值参数定义了自定义名称，然后用于构造返回的值。
+在这种情况下，值被定义为*firstName*，并且其数组中的索引被定义为*position*。
+
+。转变
+[source,DataWeave, linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+users: ["john", "peter", "matt"] map ((firstName, position) -> position ++ ":" ++ upper firstName)
+---------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+---------------------------------------------------------------------
+{
+  "users": [
+    "0:JOHN",
+    "1:PETER",
+    "2:MATT"
+  ]
+}
+---------------------------------------------------------------------
+
+
+==== 在对象上使用贴图
+
+使用将变换函数（lambda）应用于对象中每个值的结果返回一个数组。原始对象的键都被该操作忽略，并且该对象被视为一个数组。要访问密钥，可以使用操作*mapObject*。
+使用两个参数调用lambda：*index*和*value*。
+如果这些参数未命名，则索引默认定义为*$$*，值为*$*。索引是指将对象当作数组对待时的键：值对的位置。
+
+。输入
+[source,xml,linenums]
+--------------------------------------------------------
+<prices>
+    <basic>9.99</basic>
+    <premium>53</premium>
+    <vip>398.99</vip>
+</prices>
+--------------------------------------------------------
+
+.Mapping
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+%var conversionRate=13.45
+---
+priceList: payload.prices map (
+  '$$':{
+    dollars: $,
+    localCurrency: $ * conversionRate
+  }
+)
+--------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "priceList": [
+    {
+      "0": {
+        "dollars": "9.99",
+        "localCurrency": 134.3655
+      }
+    },
+    {
+      "1": {
+        "dollars": "53",
+        "localCurrency": 712.85
+      }
+    },
+    {
+      "2": {
+        "dollars": "398.99",
+        "localCurrency": 5366.4155
+      }
+    }
+  ]
+}
+--------------------------------------------------------
+
+[TIP]
+请注意，当您使用参数填充输出的某个键时（例如在本例中为$$的情况）时，您必须将其放在引号或括号中。 '$$'或（$$）同样有效。
+
+在上面的示例中，由于未定义键和值，因此它们由占位符*$$*和*$*标识。
+对于输入中的每个键：值对，都会创建一个对象并将其放入一个对象数组中。每个对象都包含两个属性：
+其中一个直接使用该值，另一个将该值乘以在头中定义为指令的常量。
+
+下面的映射执行完全相同的转换，但它为操作的属性定义了自定义名称，而不是使用$和$$。这里，`position`被定义为引用数组索引，`money`被定义为该索引中的值。
+
+.Mapping
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+%var conversionRate=13.45
+---
+priceList: payload.prices map ((money, position) ->
+  '$position':{
+    dollars: money,
+    localCurrency: money * conversionRate
+  }
+)
+--------------------------------------------------------
+
+[TIP]
+请注意，当您使用参数填充输出的其中一个键时（如本例中`position`的情况），您必须将其括在括号中或将其放在括号中并在其中添加$，否则该属性的名称将被视为文字字符串。 '$头寸'或（头寸）都是同样有效的。
+
+=== 地图对象
+
+与Map类似，但它不是处理一个对象的值，而是处理键和值，而不是返回一个数组，其结果是通过lambda处理这些值，它返回一个带有键值对的对象通过lambda处理对象的键和值。
+
+使用两个参数调用lambda：*key*和*value*。
+如果这些参数未命名，则默认将密钥定义为*$$*，并将该值定义为*$*。
+
+。输入
+[source,xml,linenums]
+--------------------------------------------------------
+<prices>
+    <basic>9.99</basic>
+    <premium>53</premium>
+    <vip>398.99</vip>
+</prices>
+--------------------------------------------------------
+
+.Mapping
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+%var conversionRate=13.45
+---
+priceList: payload.prices mapObject (
+  '$$':{
+    dollars: $,
+    localCurrency: $ * conversionRate
+  }
+)
+--------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "priceList": {
+    "basic": {
+      "dollars": "9.99",
+      "localCurrency": 134.3655
+    },
+    "premium": {
+      "dollars": "53",
+      "localCurrency": 712.85
+    },
+    "vip": {
+      "dollars": "398.99",
+      "localCurrency": 5366.4155
+    }
+  }
+}
+--------------------------------------------------------
+
+[TIP]
+请注意，当您使用参数填充输出的某个键时（例如在本例中为$$的情况）时，您必须将其放在引号或括号中。 '$$'或（$$）同样有效。
+
+在上面的示例中，由于未定义键和值，因此它们由占位符*$$*和*$*标识。
+对于输入中的每个键：值对，键都被保留并且该值成为具有两个属性的对象：
+其中一个是原始值，另一个是将该值乘以一个定义为标题中指令的常量的结果。
+
+下面的映射执行完全相同的转换，但它为操作的属性定义了自定义名称，而不是使用$和$$。在这里，'category'被定义为引用对象中的原始密钥，'money'代表该密钥中的值。
+
+.Mapping
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+%var conversionRate=13.45
+---
+priceList: payload.prices mapObject ((money, category) ->
+  '$category':{
+    dollars: money,
+    localCurrency: money * conversionRate
+  }
+)
+--------------------------------------------------------
+
+[TIP]
+请注意，当您使用参数填充输出的其中一个键时（如本例中*category*的情况），您必须将其括在括号中或将其放在括号中并在其中添加$，否则该属性的名称将被视为文字字符串。 '$ category'或（类别）都是同样有效的。
+
+=== 普吕克
+
+Pluck对于将对象映射到数组非常有用。 Pluck是mapObject的替代映射机制。
+像mapObject一样，pluck在其处理对象中的每个键：值对上执行lambda，
+但不是返回一个对象，而是返回一个数组，该数组可以根据对象中的值或键构建。
+
+使用两个参数调用lambda：*key*和*value*。
+如果这些参数未命名，则默认将密钥定义为*$$*，并将该值定义为*$*。
+
+。输入
+[source,xml,linenums]
+--------------------------------------------------------
+<prices>
+    <basic>9.99</basic>
+    <premium>53</premium>
+    <vip>398.99</vip>
+</prices>
+--------------------------------------------------------
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+result: {
+  keys: payload.prices pluck $$,
+  values: payload.prices pluck $
+}
+--------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "result": {
+    "keys": [
+      "basic",
+      "premium",
+      "vip"
+    ],
+    "values": [
+      "9.99",
+      "53",
+      "398.99"
+    ]
+  }
+}
+--------------------------------------------------------
+
+=== 过滤
+
+==== 在对象上使用过滤器
+
+返回具有通过在lambda中定义的接受条件的key：value对的对象。
+如果这些参数未命名，则默认将密钥定义为*$$*，并将该值定义为*$*。
+
+.Mapping
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+filtered: {
+  aa: "a", bb: "b", cc: "c", dd: "d"
+} filter $ == "d" <1>
+--------------------------------------------------------
+<1>筛选值为"d" => {dd：d}的所有键：值对
+
+。结果
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<filtered>
+  <dd>d</dd>
+</filtered>
+--------------------------------------------------------
+
+==== 在数组上使用过滤器
+
+返回仅包含那些通过lambda中指定的条件的数组。使用两个参数调用lambda：*index*和*value*。
+如果这些参数未命名，则索引默认定义为*$$*，值为*$*。
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  biggerThanTwo: [0, 1, 2, 3, 4, 5] filter $ > 2
+}
+-----------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "biggerThanTwo": [3,4,5]
+}
+-----------------------------------------------------------------
+
+
+=== 删除
+
+==== 在对象上使用移除
+
+在对象上运行时，它将返回指定键被删除的另一个对象。
+
+。转变
+[source,DataWeave,linenums]
+-------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+myObject: {aa: "a", bb: "b"} - "aa"
+-------------------------------------------------------
+
+.OUTPUT
+[source,xml,linenums]
+-------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<myObject>
+  <bb>b</bb>
+</myObject>
+-------------------------------------------------------
+
+上面的示例从{aa："a"，bb："b"} => {bb："b"}中移除包含键'aa'的键值对
+
+==== 在数组上使用Remove
+
+在数组上运行时，它将返回另一个数组，其中匹配的索引将被删除。
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  aa: ["a", "b", "c"] - "b"
+}
+-----------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------------------
+{
+  "aa": [a, c]
+}
+-----------------------------------------------------------------------
+
+=== 缺省
+
+如果在输入字段中找不到值，则指定一个默认值。
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+    currency: payload.currency default "USD"
+}
+-----------------------------------------------------------------------
+
+=== 随机
+
+分配一个介于0和1之间的随机值
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  price: random * 1000
+}
+-----------------------------------------------------------------------
+
+
+=== 何时或以其他方式
+
+关键字*when*有条件地评估您的DataWeave代码的一部分，具体取决于表达式计算结果为true还是false。您可以制作一行条件文件，或将整个部分放在大括号中。如果*when*表达式的计算结果为*false*，则代码的相应部分将被忽略，并执行对应于*otherwise*表达式的代码。
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  currency: "USD"
+} when payload.country == "USA"
+otherwise
+{
+      currency: "EUR"
+}
+-----------------------------------------------------------------------
+
+您还可以将多个*otherwise*个表达式链接在一起，如下例所示：
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+	currency: "USD"
+} when payload.country =="USA"
+otherwise
+{
+	currency: "GBP"
+} when payload.country =="UK"
+otherwise
+{
+	currency: "EUR"
+}
+----
+
+=== 除非另有说明
+
+关键字*unless*有条件地评估您的DataWeave代码的一部分，具体取决于表达式计算结果为true还是false。您可以制作一行条件文件，或将整个部分放在大括号中。如果*unless*表达式的计算结果为*true*，则代码的相应部分将被忽略，并执行对应于*otherwise*表达式的代码。
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  currency: "EUR"
+} unless payload.country == "USA"
+otherwise
+{
+      currency: "USD"
+}
+-----------------------------------------------------------------------
+
+===  AND
+
+表达式*and*（小写）可以用于链接多个条件，它的使用意味着所有链接条件必须对整个表达式计算为true，以评估为true。
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  currency: "USD"
+} when payload.country == "USA" and payload.currency == "local"
+otherwise
+{
+      currency: "EUR"
+}
+-----------------------------------------------------------------------
+
+在上例中，货币为"EUR"，除非有效负载满足两个条件。
+
+===  OR
+
+表达式*or*（小写）可用于链接多个条件。它的使用意味着任何一个或所有的连接条件必须评估为真，才能将整个表达式评估为真。
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  currency: "EUR"
+} when payload.country == "Italy" or payload.country == "Germany" or payload.country == "Spain" or payload.country == "Portugal" or payload.country == "France" or payload.country == "Greece"
+otherwise
+{
+      currency: "USD"
+}
+-----------------------------------------------------------------------
+
+在上面的示例中，货币为"EUR"，仅当其中一个条件的计算结果为true时。
+
+=== 的毗连
+
+concat运算符使用两个加号来定义。你必须在它们的两边都有空格。
+
+==== 在对象上使用Concat
+
+返回连接两个现有对象的结果对象。
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+concat: {aa: "a"} ++ {cc: "c"}
+--------------------------------------------------------
+
+.OUTPUT
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<concat>
+  <aa>a</aa>
+  <cc>c</cc>
+</concat>
+--------------------------------------------------------
+
+上面的例子将对象{aa：a}和{cc：c}连接在一起=> {aa：a，cc：c}
+
+==== 在数组上使用Concat
+
+使用数组时，它返回连接两个现有数组的结果数组。
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: [0, 1, 2] ++ [3, 4, 5]
+}
+----------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+----------------------------------------------------------------------
+{
+  "a": [0, 1, 2, 3, 4, 5]
+}
+----------------------------------------------------------------------
+
+==== 在字符串上使用Concat
+
+字符串被视为字符数组，因此该操作与字符串的作用相同。
+
+。转变
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  name: "Mule" ++ "Soft"
+}
+--------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": MuleSoft
+}
+--------------------------------------------------------
+
+===  IS
+
+评估一个条件是否为true并返回一个布尔值。条件可能包括`and`和`or`个运算符。
+
+。输入
+[source,xml,linenums]
+--------------------------------------------------------
+<root>
+    <order>
+      <items> 155 </items>
+    </order>
+    <order>
+      <items> 30 </items>
+    </order>
+    <order>
+        null
+    </order>
+</root>
+--------------------------------------------------------
+
+。转变
+[source,DataWeave, linenums]
+-----
+%dw 1.0
+%output application/xml
+---
+ROOT: payload.root.*order mapObject (
+  ORDER:{
+    itemsCollectionPresent: $ is :object and $.items?
+  }
+)
+-----
+
+.OUTPUT
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version='1.0' encoding='UTF-8'?>
+<ROOT>
+  <ORDER>
+    <itemsCollectionPresent>true</itemsCollectionPresent>
+  </ORDER>
+  <ORDER>
+    <itemsCollectionPresent>true</itemsCollectionPresent>
+  </ORDER>
+  <ORDER>
+    <itemsCollectionPresent>false</itemsCollectionPresent>
+  </ORDER>
+</ROOT>
+--------------------------------------------------------
+
+=== 包含
+
+评估一个数组或列表是否至少在其索引之一中包含一个validate为true且返回布尔值的值。您可以搜索文字值，也可以匹配正则表达式。
+
+=== 在数组中使用包含
+
+您可以评估数组中的任何值是否与给定条件匹配：
+
+
+。输入
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+    <order>
+      <items>155</items>
+    </order>
+    <order>
+      <items>30</items>
+    </order>
+    <order>
+      <items>15</items>
+    </order>
+    <order>
+      <items>5</items>
+    </order>
+    <order>
+      <items>4</items>
+      <items>7</items>
+    </order>
+    <order>
+      <items>1</items>
+      <items>3</items>
+    </order>
+    <order>
+        null
+    </order>
+</root>
+--------------------------------------------------------
+
+。转变
+[source,DataWeave, linenums]
+-----
+%dw 1.0
+%output application/json
+---
+ContainsRequestedItem: payload.root.*order.*items contains "3"
+-----
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "ContainsRequestedItem": true
+}
+--------------------------------------------------------
+
+
+
+
+=== 在字符串上使用包含
+
+你也可以使用contains来从较大的字符串中评估一个子字符串：
+
+
+。输入
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <mystring>some string</mystring>
+</root>
+--------------------------------------------------------
+
+。转变
+[source,DataWeave, linenums]
+-----
+%dw 1.0
+%output application/json
+---
+ContainsString: payload.root.mystring contains "me"
+-----
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "ContainsString": true
+}
+--------------------------------------------------------
+
+除了搜索文字子字符串外，还可以再次匹配正则表达式：
+
+
+。输入
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <mystring>A very long string</mystring>
+</root>
+--------------------------------------------------------
+
+。转变
+[source,DataWeave, linenums]
+-----
+%dw 1.0
+%output application/json
+---
+ContainsString: payload.root.mystring contains /s[t|p]ring/`
+
+[
+-----
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "ContainsString": true
+}
+--------------------------------------------------------
+
+
+
+
+===  AS（类型强制）
+
+将给定的值强制为指定的类型。 DataWeave默认尝试在失败之前转换值的类型，因此使用此运算符进行转换有时不是必需的，但仍然建议使用。
+
+==== 胁迫字符串
+
+任何简单的类型都可以被强制转换为字符串。如果需要格式（例如数字或日期），则可以使用格式模式属性。
+
+日期和数字格式模式基于Java link:https://docs.oracle.com/javase/8/docs/api/java/time/format/DateTimeFormatter.html[DateTimeFormatter]和 link:https://docs.oracle.com/javase/8/docs/api/java/text/DecimalFormat.html[DecimalFormat的]。
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: 1 as :string {format: "##,#"},
+  b: now as :string {format: "yyyy-MM-dd"},
+  c: true as :string
+}
+----------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----
+{
+  "a": "1",
+  "b": "2015-07-07",
+  "c": "true"
+}
+-----
+
+==== 强制编号
+
+一个字符串可以被强制编号。如果给定的数字具有特定的格式，则可以使用模式属性。
+
+link:https://docs.oracle.com/javase/8/docs/api/java/text/DecimalFormat.html[DecimalFormat的]接受的任何格式模式都是允许的。
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: "1" as :number
+}
+----------------------------------------------------------------------
+
+.OUTPUT
+[source, json,linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  "a": 1
+}
+----------------------------------------------------------------------
+
+===== 将日期强制编号
+
+当强制一个日期到一个数字时，你可以添加一个额外的参数 - “单位” - 指定使用什么单位时间，
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  mydate1: |2005-06-02T15:10:16Z| as :number {unit: "seconds"},
+  mydate2: |2005-06-02T15:10:16Z| as :number {unit: "milliseconds"}
+}
+----------------------------------------------------------------------
+
+.OUTPUT
+[source, json,linenums]
+----------------------------------------------------------------------
+{
+  "mydate1": 1117725016,
+  "mydate2": 1117725016000
+}
+----------------------------------------------------------------------
+
+[NOTE]
+只有“秒”和“毫秒”的值才能在'unit'参数中使用。
+
+
+迄今==== 强制
+
+日期类型可以从字符串或数字进行强制转换。
+
+link:https://docs.oracle.com/javase/8/docs/api/java/time/format/DateTimeFormatter.html[DateTimeFormatter]接受的任何格式模式都是允许的。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+ a: 1436287232 as :datetime,
+ b: "2015-10-07 16:40:32.000" as :localdatetime {format: "yyyy-MM-dd HH:mm:ss.SSS"}
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "2015-07-07T16:40:32Z",
+  "b": "2015-10-07 16:40:32.000"
+}
+----
+
+
+==== 胁迫到对象
+
+您可以将输入强制转换为您想要的任何类的自定义对象类型。
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  payload as :object {class : "soa.sfabs.SOAResponseInfoType\$ServiceInfo"}
+}
+----------------------------------------------------------------------
+
+[NOTE]
+请记住，如果类名包含任何'$'字符，则必须使用反斜线（\）进行转义。
+
+
+=== 类型
+
+返回提供的元素的类型（例如：“":string"”，“":number"”）
+
+
+。输入
+[source,json,linenums]
+----------------------------------------------------------------------
+{
+  "mystring":"a string"
+}
+----------------------------------------------------------------------
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+isString: typeOf payload.mystring
+----------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+----------------------------------------------------------------------
+{
+  "isString": ":string"
+}
+----------------------------------------------------------------------
+
+
+
+=== 拼合
+
+如果你有一个数组数组，这个函数可以将它变成一个简单的数组。
+
+。输入
+[source,json,linenums]
+----------------------------------------------------------------------
+[
+   [3,5],
+   [9,5],
+   [154,0.3]
+]
+----------------------------------------------------------------------
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+flatten payload
+----------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+----------------------------------------------------------------------
+[
+  3,
+  5,
+  9,
+  5,
+  154,
+  0.3
+]
+----------------------------------------------------------------------
+
+===  Zip和解压缩
+
+如果您有两个或更多单独的列表，则可以使用zip函数将它们合并到一个连续的n元组列表中。设想两个输入列表，每个列表都是拉链的一侧：与拉链的互锁牙齿类似，zip函数每次输入每个输入列表中的每个元素，每次输入一个元素。
+
+。输入
+[source,json,linenums]
+----------------------------------------------------------------------
+{
+  "list1": ["a", "b", "c", "d"],
+  "list2": [1, 2, 3],
+  "list3": ["aa", "bb", "cc", "dd"],
+  "list4": [["a", "b", "c"], [1, 2, 3, 4], ["aa", "bb", "cc", "dd"]]
+}
+----------------------------------------------------------------------
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+payload.list1 zip payload.list2
+----------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+----------------------------------------------------------------------
+[
+  [
+    "a",
+    1
+  ],
+  [
+    "b",
+    2
+  ],
+  [
+    "c",
+    3
+  ]
+]
+----------------------------------------------------------------------
+
+这是带有两个以上输入列表的zip函数的另一个示例。
+
+。输入
+[source,json,linenums]
+----------------------------------------------------------------------
+{
+  "list1": ["a", "b", "c", "d"],
+  "list2": [1, 2, 3],
+  "list3": ["aa", "bb", "cc", "dd"],
+  "list4": [["a", "b", "c"], [1, 2, 3, 4], ["aa", "bb", "cc", "dd"]]
+}
+----------------------------------------------------------------------
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+payload.list1 zip payload.list2 zip payload.list3
+----------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+----------------------------------------------------------------------
+[
+  [
+    "a",
+    1,
+    "aa"
+  ],
+  [
+    "b",
+    2,
+    "bb"
+  ],
+  [
+    "c",
+    3,
+    "cc"
+  ]
+]
+----------------------------------------------------------------------
+
+解压缩的工作方式与zip相似，只是输入是由两个或更多嵌入式元素列表组成的单个列表。
+
+。输入
+[source,json,linenums]
+----------------------------------------------------------------------
+{
+  "list1": ["a", "b", "c", "d"],
+  "list2": [1, 2, 3],
+  "list3": ["aa", "bb", "cc", "dd"],
+  "list4": [["a", "b", "c"], [1, 2, 3, 4], ["aa", "bb", "cc", "dd"]]
+}
+----------------------------------------------------------------------
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+unzip payload.list4
+----------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+----------------------------------------------------------------------
+[
+  [
+    "a",
+    1,
+    "aa"
+  ],
+  [
+    "b",
+    2,
+    "bb"
+  ],
+  [
+    "c",
+    3,
+    "cc"
+  ]
+]
+----------------------------------------------------------------------
+
+=== 大小
+
+返回数组中元素的数量（或任何可以转换为数组的元素）
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+----
+{
+  arraySize: sizeOf [1,2,3],
+  textSize: sizeOf "MuleSoft",
+  objectSize: sizeOf {a:1,b:2}
+}
+
+-----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "arraySize": 3,
+  "textSize": 8,
+  "objectSize": 2
+}
+-----------------------------------------------------------------
+
+=== Push
+
+Pushes a new element to the end of an array.
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+aa: [0, 1, 2] + 5
+----------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+----------------------------------------------------------------------
+{
+  "aa": [0, 1, 2, 5]
+}
+----------------------------------------------------------------------
+
+=== Reduce
+
+Applies a reduction to the array. The lambda is invoked with two parameters:
+the accumulator (*$$*) and the value (*$*).
+Unless specified, the accumulator by default takes the first value of the array.
+
+.Tranfrom
+[source,DataWeave, linenums]
+--------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+sum: [0, 1, 2, 3, 4, 5] reduce $$ + $
+--------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+--------------------------------------------------------------------
+{
+  "sum": 15
+}
+--------------------------------------------------------------------
+
+.Transform
+[source,DataWeave, linenums]
+--------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+concat: ["a", "b", "c", "d"] reduce $$ ++ $
+--------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+--------------------------------------------------------------------
+{
+  "concat": "abcd"
+}
+--------------------------------------------------------------------
+
+In some cases, you may want to not use the first element of the array as the initial value of the accumulator. To set the accumulator to be something else, you must define this in a lambda.
+
+.Transform
+[source,DataWeave, linenums]
+--------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+concat: ["a", "b", "c", "d"] reduce ((val, acc = "z") -> acc ++ val)
+--------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+--------------------------------------------------------------------
+{
+  "concat": "zabcd"
+}
+--------------------------------------------------------------------
+
+
+=== Join By
+
+Merges an array into a single string value, using the provided string as a separator between elements.
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+aa: ["a","b","c"] joinBy "-"
+----------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+----------------------------------------------------------------------
+{
+  "aa": "a-b-c"
+}
+----------------------------------------------------------------------
+
+=== Split By
+
+Performs the opposite operation as Join By. It splits a string into an array of separate elements, looking for instances of the provided string and using it as a separator.
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+split: "a-b-c" splitBy "-"
+----------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+----------------------------------------------------------------------
+{
+  "split": ["a","b","c"]
+}
+----------------------------------------------------------------------
+
+=== Order By
+
+Returns the provided array ordered according to the value returned by the lambda. The lambda is invoked with two parameters: *index* and the *value*.
+If these parameters are not named, the index is defined by default as *$$* and the value as *$*.
+
+.Transform
+[source,DataWeave, linenums]
+--------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+orderByLetter: [{ letter: "d" }, { letter: "e" }, { letter: "c" }, { letter: "a" }, { letter: "b" }] orderBy $.letter
+--------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+--------------------------------------------------------------------
+{
+  "orderByLetter": [
+    {
+      "letter": "a"
+    },
+    {
+      "letter": "b"
+    },
+    {
+      "letter": "c"
+    },
+    {
+      "letter": "d"
+    },
+    {
+      "letter": "e"
+    }
+  ]
+}
+--------------------------------------------------------------------
+
+
+[TIP]
+====
+The *orderBy* function doesn't have an option to order in descending order instead of ascending. What you can do in these cases is simply invert the order of the resulting array.
+
+.Transform
+[source,DataWeave, linenums]
+--------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+orderDescending: ([3,8,1] orderBy $)[-1..0]
+--------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+--------------------------------------------------------------------
+{ "orderDescending": [8,3,1] }
+--------------------------------------------------------------------
+
+====
+
+
+=== Group By
+
+Partitions an array into a Object that contains Arrays, according to the discriminator lambda you define.
+The lambda is invoked with two parameters: *index* and the *value*.
+If these parameters are not named, the index is defined by default as *$$* and the value as *$*.
+
+.Input
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "langs": [
+    {
+      "name": "Foo",
+      "language": "Java"
+    },
+    {
+      "name": "Bar",
+      "language": "Scala"
+    },
+    {
+      "name": "FooBar",
+      "language": "Java"
+    }
+  ]
+}
+-----------------------------------------------------------------
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+"language": payload.langs groupBy $.language
+-----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "language": {
+    "Scala": [
+        {"name":"Bar", "language":"Scala"}
+      ],
+    "Java": [
+        {"name":"Foo", "language":"Java"},
+        {"name":"FooBar", "language":"Java"}
+      ]
+  }
+}
+-----------------------------------------------------------------
+
+
+=== Distinct By
+
+Returns only unique values from an array that may have duplicates.
+The lambda is invoked with two parameters: *index* and *value*.
+If these parameters are not defined, the index is defined by default as $$ and the value as $.
+
+.Input
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "title": "XQuery Kick Start",
+  "author": [
+    "James McGovern",
+    "Per Bothner",
+    "Kurt Cagle",
+    "James Linn",
+    "Kurt Cagle",
+    "Kurt Cagle",
+    "Kurt Cagle",
+    "Vaidyanathan Nagarajan"
+  ],
+  "year":"2000"
+}
+-----------------------------------------------------------------
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+
+  	book : {
+      title : payload.title,
+      year: payload.year,
+      authors: payload.author distinctBy $
+    }
+}
+-----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "book": {
+    "title": "XQuery Kick Start",
+    "year": "2000",
+    "authors": [
+      "James McGovern",
+      "Per Bothner",
+      "Kurt Cagle",
+      "James Linn",
+      "Vaidyanathan Nagarajan"
+    ]
+  }
+}
+-----------------------------------------------------------------
+
+
+=== Replace
+
+Replaces a section of a string for another, in accordance to a regular expression, and returns a modified string.
+
+.Transform
+[source,DataWeave, linenums]
+------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+b: "admin123" replace /(\d+)/ with "ID"
+------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+------------------------------------------------------------------
+{
+  "b": "adminID"
+}
+------------------------------------------------------------------
+
+=== Matches
+
+Matches a string against a regular expression, and returns *true* or *false*.
+
+.Transform
+[source,DataWeave, linenums]
+------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+b: "admin123" matches /(\d+)/
+------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+------------------------------------------------------------------
+{
+  "b": false
+}
+------------------------------------------------------------------
+
+=== Match
+
+Match a string against a regular expression. Match returns an array that contains the entire matching expression, followed by all of the capture groups that match the provided regex.
+
+.Transform
+[source,DataWeave, linenums]
+------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+  hello: "anniepoint@mulesoft.com" match /([a-z]*)@([a-z]*).com/
+------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+------------------------------------------------------------------
+{
+  "hello": [
+    "anniepoint@mulesoft.com",
+    "anniepoint",
+    "mulesoft"
+  ]
+}
+------------------------------------------------------------------
+
+In the example above, we see that the search regular expression describes an email address. It contains two capture groups, what's before and what's after the @. The result is an array of three elements: the first is the whole email address, the second matches one of the capture groups, the third matches the other one.
+
+=== Scan
+
+Returns an array with all of the matches in the given string. Each match is returned as an array that contains the complete match, as well as any capture groups there may be in your regular expression.
+
+.Transform
+[source,DataWeave, linenums]
+------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+  hello: "anniepoint@mulesoft.com,max@mulesoft.com" scan /([a-z]*)@([a-z]*).com/
+------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+------------------------------------------------------------------
+{
+  "hello": [
+    [
+      "anniepoint@mulesoft.com",
+      "anniepoint",
+      "mulesoft"
+    ],
+    [
+      "max@mulesoft.com",
+      "max",
+      "mulesoft"
+    ]
+  ]
+}
+------------------------------------------------------------------
+
+In the example above, we see that the search regular expression describes an email address. It contains two capture groups, what's before and what's after the @. The result is an array with two matches, as there are two email addresses in the input string. Each of these matches is an array of three elements, the first is the whole email address, the second matches one of the capture groups, the third matches the other one.
+
+=== Similar
+
+Evaluates if two values are similar, regardless of their type. For example, the string "1234" and the number 1234 aren't equal, but they are recognized as similar.
+
+.Transform
+[source,DataWeave, linenums]
+------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+    a: "1234" == 1234,
+    b: "1234" ~= 1234,
+    c: "true" == true,
+    d: "true" ~= true
+}
+------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+------------------------------------------------------------------
+{
+  "a": false,
+  "b": true,
+  "c": false,
+  "d": true
+}
+------------------------------------------------------------------
+
+
+=== Trim
+
+Returns the provided string with leading and trailing spaces removed.
+
+.Transform
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+    a: "  this string has spaces before and after    ",
+    b: trim "  this string has been trimmed    "
+}
+--------------------------------------------------------
+
+.Output
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "a": "  this string has spaces before and after    ",
+  "b": "this string has been trimmed"
+}
+--------------------------------------------------------
+
+
+=== Upper
+
+Returns the provided string in uppercase characters.
+
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  name: upper "mulesoft"
+}
+--------------------------------------------------------
+
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": MULESOFT
+}
+--------------------------------------------------------
+
+
+=== Lower
+
+Returns the provided string in lowercase characters.
+
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  name: lower "MULESOFT"
+}
+--------------------------------------------------------
+
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": mulesoft
+}
+--------------------------------------------------------
+
+
+=== Camelize
+
+Returns the provided string in camel case.
+
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: camelize "customer",
+  b: camelize "customer_first_name",
+  c: camelize "customer name"
+}
+--------------------------------------------------------
+
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "a": "customer",
+  "b": "customerFirstName",
+  "c": "customer name"
+}
+--------------------------------------------------------
+
+=== Capitalize
+
+Returns the provided string with every word starting with a capital letter and no underscores.
+
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: capitalize "customer",
+  b: capitalize "customer_first_name",
+  c: capitalize "customer NAME"
+}
+--------------------------------------------------------
+
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "a": "Customer",
+  "b": "Customer First Name",
+  "c": "Customer Name"
+}
+--------------------------------------------------------
+
+=== Dasherize
+
+Returns the provided string with every word separated by a dash.
+
+[NOTE]
+This function also sets all characters in the strng to lower case.
+
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: dasherize "customer",
+  b: dasherize "customer_first_name",
+  c: dasherize "customer NAME"
+}
+--------------------------------------------------------
+
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "a": "customer",
+  "b": "customer-first-name",
+  "c": "customer-name"
+}
+--------------------------------------------------------
+
+=== Underscore
+
+Returns the provided string with every word separated by an underscore.
+
+[NOTE]
+This function also sets all characters in the strng to lower case.
+
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: underscore "customer",
+  b: underscore "customer-first-name",
+  c: underscore "customer NAME"
+}
+--------------------------------------------------------
+
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "a": "customer",
+  "b": "customer_first_name",
+  "c": "customer_name"
+}
+--------------------------------------------------------
+
+
+=== Ordinalize
+
+Returns the provided numbers set as ordinals.
+
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: ordinalize 1,
+  b: ordinalize 8,
+  c: ordinalize 103
+}
+--------------------------------------------------------
+
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "a": "1st",
+  "b": "8th",
+  "c": "103rd"
+}
+--------------------------------------------------------
+
+=== Pluralize
+
+Returns the provided string transformed into its plural form.
+
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: pluralize "box",
+  b: pluralize "wife",
+  c: pluralize "foot"
+}
+--------------------------------------------------------
+
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "a": "boxes",
+  "b": "wives",
+  "c": "feet"
+}
+--------------------------------------------------------
+
+=== Singularize
+
+Returns the provided string transformed into its singular form.
+
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: singularize "boxes",
+  b: singularize "wives",
+  c: singularize "feet"
+}
+--------------------------------------------------------
+
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "a": "box",
+  "b": "wife",
+  "c": "foot"
+}
+--------------------------------------------------------
+
+
+=== Basic Math Operations
+
+==== Sum
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+plus : 2 + 2.5
+----------------------------------------------------------
+
+==== Minus
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+minus : 2.5 - 2
+----------------------------------------------------------
+
+==== Multiply
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+multiply : 2.5 * 2
+----------------------------------------------------------
+
+==== Division
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+division : 10 / 2
+----------------------------------------------------------
+
+==== Max
+
+Returns the highest number in an array or object.
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: max [1..1000],
+  b: max [1, 2, 3],
+  d: max [1.5, 2.5, 3.5]
+}
+----------------------------------------------------------
+
+.Output
+[source,json,linenums]
+----
+{
+  "a": 1000,
+  "b": 3,
+  "d": 3.5
+}
+----
+
+==== Min
+
+Returns the lowest number in an array or object.
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: min [1..1000],
+  b: min [1, 2, 3],
+  d: min [1.5, 2.5, 3.5]
+}
+----------------------------------------------------------
+
+.Output
+
+[source,json,linenums]
+----
+{
+  "a": 1,
+  "b": 1,
+  "d": 1.5
+}
+----
+
+=== Date Time Operations
+
+
+==== Now
+
+Returns a time stamp.
+
+.Transform
+
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: now,
+  b: now.day,
+  c: now.minutes
+}
+-----------------------------------------------------------------
+
+.Output
+
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "a": "2015-12-04T18:15:04.091Z",
+  "b": 4,
+  "c": 15
+}
+-----------------------------------------------------------------
+
+[TIP]
+See <<Accessors>> for a list of possible selectors to use here.
+
+==== Append Time Zone
+
+Appends a time zone to a date type value.
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+a: |2003-10-01T23:57:59| ++ |-03:00|
+-----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "a": "2003-10-01T23:57:59-03:00"
+}
+-----------------------------------------------------------------
+
+==== Shift Time Zone
+
+Shift a date time to the specified timezone.
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+a: |2014-01-01T14:00-03:00| >> |-08:00|
+-----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "a": "2014-01-01T09:00-08:00"
+}
+-----------------------------------------------------------------
+
+==== Adding a Period of Time
+
+Add or subtract a period of time from a given date.
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+c: |2003-10-01T23:57:59Z| + |P1Y|
+----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+----------------------------------------------------------------
+{
+  "c": "2004-10-01T23:57:59Z"
+}
+----------------------------------------------------------------
+
+==== Global MEL Functions
+
+Your DataWeave code can call any function you define as a global link:/mule-user-guide/v/3.7/mule-expression-language-mel[Mule Expression Language (MEL)] function, as long as it is correctly defined in the Mule Project where your Transform Message element sits.
+
+Refer to link:/anypoint-studio/v/5/using-dataweave-in-studio#calling-global-mel-functions-from-dataweave-code[Using DataWeave in Studio].
+
+== Object
+
+*Type* => ':object'
+
+Objects are represented as a collection of key:value pairs.
+
+. Object: { 'Key' : Value }
+. Key : 'Qualified Name' @('Qualified Name'= Value,...)
+. Qualified Name: 'namespace prefix#name' where the 'namespace prefix#' part is optional
+. Name: String that represents the name.
+
+[TIP]
+Strings must be double quoted to be recognized as strings.
+
+
+=== Special Types of Objects
+
+==== Single Value Objects
+
+If an Object has only one key:value pair, the enclosing curly brackets { } are not required:
+
+.Example
+
+[source,DataWeave,linenums]
+---------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+name: "Annie"
+---------------------------------------------------------
+
+==== Conditional Elements
+
+Objects can define conditional key:value pairs based on a conditional expression.
+
+[source,DataWeave,linenums]
+---------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+file: {
+  name: "transform",
+  (extension: "zip") when payload.fileSystem?
+}
+---------------------------------------------------------
+
+This example outputs an additional field called "extension" only when the fileSystem property is present in payload (this field may contain any value, not just "true").
+
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<file>
+  <name>transform</name>
+  <extension>zip</extension>
+</file>
+--------------------------------------------------------
+
+If absent:
+
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<file>
+  <name>transform</name>
+</file>
+--------------------------------------------------------
+
+==== Dynamic Elements
+
+Dynamic elements allow you to add the result of an expression as key:value pairs of an object.
+
+.Transform
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: "a",
+  (["b","c","d"] map {'$': $})
+}
+--------------------------------------------------------
+
+It is important to note that the expression between the _parentheses_ should return an array of objects. All of objects in that array get merged together. They are also merged with the contained object. So the output looks like this:
+
+.Output
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "a": "a",
+  "b": "b",
+  "c": "c",
+  "d": "d"
+}
+--------------------------------------------------------
+
+== String
+
+*Type* => ':string'
+
+A string can be defined by the use of double quotes or single quotes.
+
+[source,DataWeave, linenums]
+--------------------------------------------------------
+{
+  doubleQuoted: "Hello",
+  singleQuoted: 'Hello',
+}
+--------------------------------------------------------
+
+=== String interpolation
+
+String interpolation allows you to embed variables or expressions directly in a string.
+
+.Transform
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+%var name = "Shoki"
+---
+{
+    Greeting: "Hi, my name is $name",
+    Sum: "1 + 1 = $(1 + 1)"
+}
+--------------------------------------------------------
+
+.Output
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "Greeting": "Hi, my name is Shoki",
+  "Sum": "1 + 1 = 2"
+}
+--------------------------------------------------------
+
+=== Selectors
+
+==== Index selector
+
+Selects the character at a given position using "[]".
+
+. If the index is bigger or equals to 0, it starts counting from the beginning.
+. If the index is negative, it starts counting from the end.
+
+.Transform
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  name: "Emiliano"[0]
+}
+--------------------------------------------------------
+
+.Output
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "E"
+}
+--------------------------------------------------------
+
+== Number
+
+*Type* => ':number'
+
+There is only one number type that supports both floating point and integer numbers.
+There is no loss of precision in any operation, the engine always stores the data in the most performant way that doesn't compromise precision.
+
+== Boolean
+
+*Type* => ':boolean'
+
+A boolean is defined by the keywords 'true' and 'false'.
+
+== Dates
+
+Dates in DataWeave follow the link:https://docs.oracle.com/javase/8/docs/api/java/time/format/DateTimeFormatter.html[ISO-8601 standard] and are defined between '|' characters.
+
+The date system supports:
+
+* DateTime
+* Local DateTime
+* Time
+* Local Time
+* Period
+* TimeZone
+* Date
+
+
+=== Date
+
+*Type* => ':date'
+
+Represented as 'Year'-'Month'-'Date'
+
+The type *Date* has no time component at all (not even midnight).
+
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+c: |2003-10-01|
+-----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "c": "2003-10-01"
+}
+-----------------------------------------------------------------
+
+
+=== Time
+
+*Type* => ':time'
+
+Represented as 'Hour':'Minutes':'Seconds'.'Milliseconds'
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+c: |23:59:56|
+-----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "c": "23:59:56"
+}
+-----------------------------------------------------------------
+
+=== TimeZone
+
+*Type* => ':timeZone'
+
+Timezones must include a + or a - to be defined as such. |03:00| is a time, |+03:00| is a timezone.
+
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+c: |-08:00|
+-----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "c": "-08:00"
+}
+-----------------------------------------------------------------
+
+=== DateTime
+
+*Type* => ':datetime'
+
+Date time is the conjunction of 'Date' + 'Time' + 'TimeZone'.
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+a: |2003-10-01T23:57:59-03:00|
+-----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "a": "2003-10-01T23:57:59-03:00"
+}
+-----------------------------------------------------------------
+
+=== Local Date Time
+
+*Type* => ':localdatetime'
+
+Date time is the conjunction of 'Date' + 'Time'. Local timezone to use.
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+a: |2003-10-01T23:57:59|
+-----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "a": "2003-10-01T23:57:59"
+}
+-----------------------------------------------------------------
+
+=== Period
+
+*Type* => ':period'
+
+Specifies a period of time. Examples |PT9M| => 9 minutes , |P1Y| => 1 Year
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+a: |23:59:56| + |PT9M|
+----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+----------------------------------------------------------------
+{
+  "a": "00:08:56"
+}
+----------------------------------------------------------------
+
+
+=== Accessors
+
+In order to access the different parts of the date, special selectors must be used.
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  day: |2003-10-01T23:57:59Z|.day,
+  month: |2003-10-01T23:57:59Z|.month,
+  year: |2003-10-01T23:57:59Z|.year,
+  hour: |2003-10-01T23:57:59Z|.hour,
+  minutes: |2003-10-01T23:57:59Z|.minutes,
+  seconds: |2003-10-01T23:57:59Z|.seconds,
+  offsetSeconds: |2003-10-01T23:57:59-03:00|.offsetSeconds,
+  nanoseconds: |23:57:59.700|.nanoseconds,
+  milliseconds: |23:57:59.700|.milliseconds,
+  dayOfWeek: |2003-10-01T23:57:59Z|.dayOfWeek,
+  dayOfYear: |2003-10-01T23:57:59Z|.dayOfYear
+}
+-----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "day": 1,
+  "month": 10,
+  "year": 2003,
+  "hour": 23,
+  "minutes": 57,
+  "seconds": 59,
+  "offsetSeconds": -10800,
+  "nanoseconds": 700000000,
+  "milliseconds": 700,
+  "dayOfWeek": 3,
+  "dayOfYear": 274
+}
+-----------------------------------------------------------------
+
+=== Changing the Format of a Date
+
+You can specify a date to be in any format you prefer through using *as* in the following way:
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+formatedDate: |2003-10-01T23:57:59| as :string {format: "YYYY-MM-dd"}
+----------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "formatedDate": "2003-10-01"
+}
+-----------------------------------------------------------------
+
+If you are doing multiple similar conversions in your transform, you might want to define a custom type as a directive in the header and set each date as being of that type.
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------------
+%dw 1.0
+%output application/json
+%type mydate = :string { format: "YYYY/MM/dd" }
+---
+{
+  formatedDate1: |2003-10-01T23:57:59| as :mydate,
+  formatedDate2: |2015-07-06T08:53:15| as :mydate
+}
+----------------------------------------------------------------
+
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "formatedDate1": "2003/10/01",
+  "formatedDate2": "2015/07/06"
+}
+-----------------------------------------------------------------
+
+== Regular Expressions
+
+*Type* => ':regex'
+
+Regular Expressions are defined between /. For example /(\d+)/ for represents multiple numerical digits from 0-9.
+These may be used as arguments in certain operations that act upon strings, like Matches or Replace, or on operations that act upon objects and arrays, such as filters.
+
+
+== Custom Types
+
+You can define your own custom types in the header of your transform, then in the body you can define an element as being of that type.
+
+To do so, the directive must be structured as following: `%type name = java definition`
+
+For example:
+
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%type currency = :number { format: "##"}
+%type user = :object { class: “my.company.User”}
+----
+
+[TIP]
+====
+Usually it's a good idea to extend an existing type rather than creating one from scratch.
+
+For example, above `:string` defines `currency` as extending the string type.
+====
+
+To then assign an element as being of the custom type you defined, use the operation `as :type` after defining a field:
+
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%type currency = :number { format: "##"}
+%type user = :object { class: “my.company.User”}
+---
+customer:payload.user as :user
+----
+
+=== Defining Types as a Hint for Developers
+
+In Anypoint Studio, it's easy to view metadata that describes the input and output data of every building block you're using. When defining a custom type for a particular input or output of your transform, this is represented in the DataWeave transformer's metadata.
+Exposing metadata helps you understand what it is you're integrating to in order to build up the rest of a system, as it lets you know what you need to provide and what you can expect in advance.
+
+==== Java
+
+===== Class
+
+Java developers use the 'class' metadata key as hint for what class needs to be created and sent in.
+If this is not explicitly defined, DataWeave tries to infer from the context or it assigns it the default values:
+
+
+ * java.util.HashMap for *objects*
+ * java.util.ArrayList for *lists*
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------------
+%dw 1.0
+%type user = :object { class: "com.anypoint.df.pojo.User"}
+%output application/xml
+---
+{
+  name : "Mariano",
+  age : 31
+} as :user
+
+-----------------------------------------------------------------------
+
+The above code defines your type as an instance of 'com.anypoint.df.pojo.User'.
+
+==== Xml
+
+===== CDATA
+
+Xml specifies a new type called *:cdata* that inherits from *:string*. Using this type outputs a CDATA structure.
+
+.Transform
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+{
+  users:
+  {
+    user : "Mariano" as :cdata,
+    age : 31 as :cdata
+  }
+}
+----------------------------------------------------------------------
+
+.Output
+[source,xml,linenums]
+----------------------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<users>
+  <user><![CDATA[Mariano]]></user>
+  <age><![CDATA[31]]></age>
+</users>
+----------------------------------------------------------------------
+
+
+=== Defining Types For Type Coercion
+
+
+==== Format
+
+The metadata 'format' key is used for formatting numbers and dates.
+
+.Input
+[source,xml,linenums]
+-----------------------------------------------------------------------
+<items>
+    <item>
+        <price>22.30</price>
+    </item>
+    <item>
+        <price>20.31</price>
+    </item>
+</items>
+-----------------------------------------------------------------------
+
+.Transform
+[source,DataWeave, linenums]
+-----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+%type currency = :number { format: "##"}
+---
+books: payload.items.*item map
+    book:
+        price: $.price as :currency
+-----------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+-----------------------------------------------------------------------
+{
+  "books": [
+    {
+      "book": {
+        "price": 22.30
+      }
+    },
+    {
+      "book": {
+        "price": 20.31
+      }
+    }
+  ]
+}
+-----------------------------------------------------------------------
+
+In Anypoint Studio, you can define several more values, like separators, quote characters and escape characters. See link:/anypoint-studio/v/5/using-dataweave-in-studio#configuring-the-csv-reader[Using DataWeave in Studio].
+
+== Functions and Lambdas
+
+There are two types of directives you can use to define a function, through `%var` (as with variables) using a lambda, or through `%function`.
+
+
+=== Lambdas
+
+Lambdas can be used inside operators such as map, mapObject, etc. or they can be assigned to a variable.
+When using lambdas with an operator, they can be either named or anonymous.
+
+==== Assign to a var
+
+.Transport
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+%var toUser = (user) -> {firstName: user.givenName, lastName: user.sn}
+---
+{
+  "user" : toUser({ givenName : "Annie", sn : "Point" })
+}
+----
+
+.Output
+[source, json,linenums]
+----
+{
+  "user": {
+    "firstName": "Annie",
+    "lastName": "Point"
+  }
+}
+----
+
+==== Named with an Operator
+
+.Input
+[source,DataWeave, linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+users: ["john", "peter", "matt"] map ((name) ->  upper name)
+---------------------------------------------------------------------
+
+.Transform
+[source,json,linenums]
+---------------------------------------------------------------------
+{
+  "users": ["JOHN","PETER","MATT"]
+}
+---------------------------------------------------------------------
+
+==== Anonymous with an Operator
+
+.Transform
+[source,DataWeave, linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+users: ["john", "peter", "matt"] map  upper $
+---------------------------------------------------------------------
+
+.Output
+[source,json,linenums]
+---------------------------------------------------------------------
+{
+  "users": ["JOHN","PETER","MATT"]
+}
+---------------------------------------------------------------------
+
+
+=== Functions
+
+You can declare functions in the Header and these can be invoked at any point in the Body. You refer to them as you do to any variable or constant: using the form *$<function-name>()* passing an expression as argument. The result of the expression that is passed as an argument is used in the execution of the function body.
+
+.Transform
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+%function toUser(user){firstName: user.givenName, lastName: user.sn}
+---
+{
+  "user" : toUser({ givenName : "Annie", sn : "Point" })
+}
+----
+
+.Output
+[source, json,linenums]
+----
+{
+  "user": {
+    "firstName": "Annie",
+    "lastName": "Point"
+  }
+}
+----
+
+=== Existing Functions
+
+==== Expressions that Call External Flows
+
+From a DataWeave transform, you can trigger the calling of a different flow in your Mule application, and whatever the flow returns is what the expression returns.
+
+You can do this through the following expression:
+
+`lookup(“flowName”,$)`
+
+Which takes two parameters:
+
+* The name of the flow that must be called
+* The payload to send to this flow, as a map
+
+.Transform
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: lookup("mySecondFlow",{b:"Hello"})
+}
+----
+
+.Mule Flow
+[source, xml,linenums]
+----
+<flow name="mySecondFlow">
+    <set-payload doc:name="Set Payload" value="#[payload.b + ' world!' ]"/>
+</flow>
+----
+
+.Output
+[source, json,linenums]
+----
+{
+  "a": "Hello world!"
+}
+----
+
+==== Accessing Properties
+
+You can reference any *Property* (System or Spring) that exists in the server while DataWeave is processing your transformation, to do so use the *p('prop_name')* function.
+
+[source,DataWeave,linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+{
+  a: p('userName')
+}
+---------------------------------------------------------------------
+
+== See Also
+
+*  link:/anypoint-studio/v/5/using-dataweave-in-studio[Using DataWeave in Studio]
+*  link:/mule-user-guide/v/3.7/dataweave-examples[DataWeave Examples]
+*  link:/mule-user-guide/v/3.7/dataweave-tutorial[DataWeave Tutorial]
+*  link:https://www.mulesoft.com/platform/studio[Anypoint Studio]

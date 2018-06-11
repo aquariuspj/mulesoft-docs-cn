@@ -1,0 +1,148 @@
+= 模块连接框架
+:keywords: mule, sdk, connection, connectivity, management, pooling, cached, provider, connection-provider
+
+连接的模块（连接器）可能是最常见的模块类型。
+
+连接框架从`ConnectionProvider`的概念开始。
+这是一个负责创建，断开连接和描述连接的接口，以便运行时可以正确处理它，同时从管理这些连接的问题中抽象出来。
+
+== 声明连接提供程序
+
+要声明新的`ConnectionProvider`，您应该创建一个实现了`ConnectionProvider`接口的新类。 `ConnectionProvider`接口是一种类型化的接口，它接收一个类型参数，用于指示`ConnectionProvider`处理的实例类。
+
+此示例声明了实现`ConnectionProvider`接口的`FooConnectionProvider`类：
+
+[source, java, linenums]
+----
+public class FooConnectionProvider implements ConnectionProvider<FooConnection> {
+
+  @Parameter
+  private String password;
+
+  public FooConnection connect() throws ConnectionException {
+    return new FooConnection(password);
+  }
+
+  public void disconnect(FooConnection connection) {
+    connection.invalidate();
+  }
+
+  public ConnectionValidationResult validate(FooConnection connection) {
+    return connection.isValid() ?
+      ConnectionValidationResult.success() :
+      ConnectionValidationResult.failure("Connection is not valid", new InvalidConnectionException());
+  }
+}
+----
+
+[NOTE]
+每个定义的`ConnectionProvider`必须是可实例化的，公共的，并且具有默认构造函数。
+
+需要访问连接的其他组件（例如操作或源）将通过`FooConnection`类的实例访问连接。
+
+上面的示例包含`@Parameter`以及这些方法：`connect()`，`disconnect()`和`validate()`。接下来的部分介绍它们中的每一个。
+
+=== 连接提供程序参数
+
+与任何其他`Module`元素一样，`ConnectionProvider`可以具有`@Parameters`。
+在`connect()`方法中，每个`ConnectionProvider` `@Parameters`都必须是实例化实际连接所需的可配置元素。
+
+[WARNING]
+多个操作所需的常用`@Parameters`必须*not*成为`ConnectionProvider`的一部分。这是<<configs#, Configurations>> `@Parameter`的常见情况。请参阅<<parameters#, `@Parameter` section>>。
+
+[[_connections_connect]]
+=== 连接
+
+`connect()`方法负责使用所有配置参数实例化实际连接。 *very important*知道返回的连接预计可以使用。
+
+返回的*connection*不需要实现接口或合同。它不一定引用套接字连接。它可以只是一个客户端或者类似的东西。
+
+=== 断开
+
+`disconnect(Connection)`方法接收实时连接并进行处理，释放所有分配的资源。
+
+=== 验证
+
+如<<_connections_connect, above>>所述，`ConnectionProvider` *must*中的`connect()`方法返回一个有效的，功能完整的连接。由于闲置时连接可能会过时，因此`ConnectionProvider`提供了`validate(Connection)`方法。在使用它之前调用这个方法来检查连接。
+
+如果验证失败，则连接将失效并且将采用新连接。
+
+==== 连接验证结果
+
+`validate(Connection)`方法将返回类型为`ConnectionValidationResult`的对象，这可能导致两种类型：`ConnectionValidationResult.success()`或`ConnectionValidationResult.failure()`。
+
+当`failure()`返回时，应向新的`failure()`提供描述性消息和失败的`Exception`（它提供了为什么连接无效的上下文）。或者，可以提供`ErrorType`来添加<<errors#, error handling>>功能。
+
+*  `failure(String, Exception)`
+*  `failure(String, ErrorType, Exception)`
+
+== 添加连接提供程序
+
+每个`ConnectionProvider`都绑定到可以没有，一个或多个`ConnectionProvider`的配置。
+
+要将`ConnectionProvider`实现添加到模块配置，您需要使用`@ConnectionProviders`注释。此注释声明了`Module`定义的每个`ConnectionProvider`。它可以在`@Extension`或`@Configuration`级别使用。
+
+如果附加信息包含多个`ConnectionProvider`，则需要使用`@Alias`为每个附加重要的名称。按照惯例，该连接提供者的名称将``  -  connection`后缀添加到提供的名称中。
+
+以`@Extension`级别声明的`ConnectionProvider`的示例：
+
+[source, java, linenums]
+----
+@Extension(name="foo")
+@Operations(Operations.class)
+@ConnectionProviders(FooConnectionProvider.class)
+public class FooModule {
+
+  @Parameter
+  private String someParameter;
+
+  public String getSomeParameter() {
+    return someParameter;
+  }
+}
+----
+
+带有示例`FooConnectionProvider`的此配置的XML示例：
+
+[source, xml, linenums]
+----
+<foo:config name="a-foo-config" someParameter="value">
+    <foo:connection password="aVeryDificultPassword"/>
+</foo:config>
+----
+
+== 连接管理
+
+您可以为a指定一些连接管理策略
+`ConnectionProvider`。
+
+=== 汇集策略
+
+连接汇集。连接缓存被维护，以便在将来的请求需要时可以重用它们。
+
+当连接创建成本高昂或不支持并发访问连接实例时，这非常有用。
+
+对于这种池化策略，池化配置文件配置会自动添加到连接中。请参阅链接：
+
+您可以通过实施`PoolingConnectionProvider`界面来启用池连接管理。
+
+=== 缓存策略
+
+对于每个配置实例，建立并缓存一个连接，以便一个特定的配置始终获得相同的连接。连接一直保持到配置本身停止。
+
+您可以通过实施`CachedConnectionProvider`界面来启用缓存连接管理。
+
+=== 没有策略
+
+运行时不会添加类似于共享案例的其他基础结构。
+`ConnectionProvider`负责提供整体的
+连接处理行为。每次需要连接时，需要连接的操作都会调用`connect()`方法，并且操作完成后会破坏连接。
+
+实施`ConnectionProvider`界面意味着没有策略。
+
+== 使用连接
+
+在Operations和Sources中使用连接是非常不同的，请参阅：
+
+*  <<operations#_using_connections, Using Connections in Operations>>
+*  <<sources-config-connection#, Using Connections in Sources>>

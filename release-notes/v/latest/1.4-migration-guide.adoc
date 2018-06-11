@@ -1,0 +1,84 @@
+=  1.4迁移指南
+:keywords: release notes, esb, migration
+
+根据你使用Mule的方式，1.4中有一些变化可能会破坏1.3的兼容性。以下介绍这些更改以及如何迁移。
+
+
+==  Xml配置更改
+
+=== 使用分割配置文件
+
+当 link:/mule-user-guide/v/3.2/team-development-with-mule[分裂Mule配置]文件在Mule 1.3.3中，可以将一个_ <mule-descriptor> _元素放在一个单独的mule XML配置文件中，例如：
+
+[source, xml, linenums]
+----
+<mule-configuration>
+    <mule-descriptor name="foo" className="org.Foo"/>
+</mule-configuration>
+----
+
+这不再适用于Mule 1.4，而必须声明_ <model> _元素中的所有_ <mule-descriptor> _元素。如：
+
+[source, xml, linenums]
+----
+<mule-configuration>
+    <model type="seda" name="main">
+          <mule-descriptor name="foo" className="org.Foo"/>
+    </model>
+</mule-configuration>
+----
+如果您希望跨多个配置文件对每个<mule-descriptor>使用相同的<model>，则可以在要处理的第一个文件中声明主模型（如上所述），然后在其他配置中使用_inherited_模型文件，如：
+
+[source, xml, linenums]
+----
+<mule-configuration>
+    <model type="inherited" name="main">
+          <mule-descriptor name="bar" className="org.Bar"/>
+    </model>
+</mule-configuration>
+----
+请注意，唯一区别是_ <model> _类型为*inherited*，而_ <model> _名称保持不变。
+
+=== 已弃用的配置元素
+
+一些配置元素和属性已被弃用。这些仍然可以在1.4中使用，但是对于Mule 2.0将会被删除。
+
+* 以下属性在_ <mule-descriptor> _元素上已被弃用：inboundEndpoint，outboundEndpoint，inboundTransformer，outboundTransformer和responseTransformer。 +
+这些应该在 link:/mule-user-guide/v/3.2/using-message-routers[这里]，即<inbound-router>和<outbound-router>元素中使用。
+*  _ <endpoint-identifier> _元素因使用<global-endpoint>元素而被删除，因为全局端点不仅允许您将逻辑名称与物理地址相关联，还可以将事务安全性和变换器信息。
+
+==  API更改
+
+=== 变形金刚和UMOMessage
+
+一些变换器（例如SerializableToByteArray）可以处理与其他对象不同的UMOMessage;通过设置公共属性`sourceType`可以打开此功能。结果令人困惑;只有那些实现此行为的变换器现在具有可以切换以启用/禁用额外功能的属性*acceptUMOMessage*。 `sourceType`属性已被删除。代替：
+[source, xml, linenums]
+----
+<property name="sourceType" value="UMOMessage" />
+----
+使用：
+[source, xml, linenums]
+----
+<property name="acceptUMOMessage" value="true"/>
+----
+配置变压器时。
+
+=== 传输更改
+
+整个传输层（即所有实现`UMOConnector/UMOMessageDispatcher`的类）都得到了正确性，易用性和可伸缩性方面的重大改进。最值得注意的是，现在不再可能通过编程访问连接器的消息分派器;以编程方式发送事件而不是使用：
+
+[source,java,linenums]
+----
+// assume ep is an UMOImmutableEndpoint
+ep.getConnector().getDispatcher(ep).dispatch(event);
+----
+请使用以下更简单的方法：
+
+[source,java,linenums]
+----
+// assume ep is an UMOImmutableEndpoint
+ep.dispatch(event);
+----
+不幸的是，并非所有API更改都可以针对1.4.0进行最终确定，这就是为什么我们建议拥有自定义传输的人暂缓迁移到1.4.1。将在专门的运输迁移/体系结构指南中提供更详细的更改和说明。
+
+link:/mule-user-guide/v/3.2/mule-application-architecture[Mule应用程序架构]

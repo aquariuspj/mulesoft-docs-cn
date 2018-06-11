@@ -1,0 +1,2768 @@
+=  DataWeave运算符
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+
+在 link:/mule-user-guide/v/3.8/dataweave[DataWeave]中，您可以对DataWeave变换的元素执行多种不同的操作。本文档可作为DataWeave语言中所有可用操作员的参考。参见 link:/mule-user-guide/v/3.8/dataweave-types#dataweave-operators-sorted-by-type[所有运营商按类型排序]
+
+* 有关该语言基本要素的介绍，请参阅 link:/mule-user-guide/v/3.8/dataweave-language-introduction[DataWeave语言介绍]
+* 有关DataWeave的可接受类型的信息，请参阅 link:/mule-user-guide/v/3.8/dataweave-types[DataWeave类型]
+* 有关所有可用运算符的索引，请按照需要提供的参数类型进行分类，请参阅 link:/mule-user-guide/v/3.8/dataweave-types#operators-sorted-by-type[DataWeave运算符按类型排序]。
+* 请参阅 link:/mule-user-guide/v/3.8/dataweave-types#functions-and-lambdas[函数和Lambdas]了解如何创建您自己的DataWeave函数。
+
+[TIP]
+检查 link:/mule-user-guide/v/3.8/dataweave-language-introduction#precedence-table[优先表]以查看编译DataWeave表达式的顺序。
+
+== 地图
+
+=== 使用映射返回数组
+
+。（'：array'，'：function'）=>：array
+
+返回一个数组，该数组是将转换函数（lambda）应用于每个元素的结果。
+使用两个参数调用lambda：*index*和*value*。
+如果这些参数未命名，则索引默认定义为*$$*，值为*$*。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+users: ["john", "peter", "matt"] map  upper $
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "users": [
+  "JOHN",
+  "PETER",
+  "MATT"
+  ]
+}
+----
+
+在下面的示例中，为映射操作的索引和值参数定义了自定义名称，然后用于构造返回的值。
+在这种情况下，值被定义为*firstName*，并且其数组中的索引被定义为*position*。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+users: ["john", "peter", "matt"] map ((firstName, position) -> position ++ ":" ++ upper firstName)
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "users": [
+    "0:JOHN",
+    "1:PETER",
+    "2:MATT"
+  ]
+}
+----
+
+
+=== 在对象上使用贴图
+
+。（'：object'，'：function'）=>'：array'
+
+使用将变换函数（lambda）应用于对象中每个值的结果返回一个数组。原始对象的键都被该操作忽略，并且该对象被视为一个数组。要访问密钥，可以使用操作*mapObject*。
+使用两个参数调用lambda：*index*和*value*。
+如果这些参数未命名，则索引默认定义为*$$*，值为*$*。索引是指将对象当作数组对待时的键：值对的位置。
+
+[TIP]
+请参阅 link:#map-object[地图对象]如果您想要处理键和值而不是仅处理值。
+
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+%var conversionRate=13.45
+---
+priceList: payload.prices map (
+  '$$':{
+    dollars: $,
+    localCurrency: $ * conversionRate
+  }
+)
+----
+
+
+
+
+。输入
+[source,xml,linenums]
+----
+<prices>
+    <basic>9.99</basic>
+    <premium>53</premium>
+    <vip>398.99</vip>
+</prices>
+----
+
+
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "priceList": [
+    {
+      "0": {
+        "dollars": "9.99",
+        "localCurrency": 134.3655
+      }
+    },
+    {
+      "1": {
+        "dollars": "53",
+        "localCurrency": 712.85
+      }
+    },
+    {
+      "2": {
+        "dollars": "398.99",
+        "localCurrency": 5366.4155
+      }
+    }
+  ]
+}
+----
+
+
+
+
+
+
+
+
+[TIP]
+请注意，当您使用参数填充输出的某个键时（例如在本例中为$$的情况）时，您必须将其放在引号或括号中。 '$$'或（$$）同样有效。
+
+在上面的示例中，由于未定义键和值，因此它们由占位符*$$*和*$*标识。
+对于输入中的每个键：值对，都会创建一个对象并将其放入一个对象数组中。每个对象都包含两个属性：
+其中一个直接使用该值，另一个将该值乘以在头中定义为指令的常量。
+
+下面的映射执行完全相同的转换，但它为操作的属性定义了自定义名称，而不是使用$和$$。这里，`position`被定义为引用数组索引，`money`被定义为该索引中的值。在这种情况下，对数组索引的引用（名为`position`）是可选的。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+%var conversionRate=13.45
+---
+priceList: payload.prices map ((money, position) ->
+  '$position':{
+    dollars: money,
+    localCurrency: money * conversionRate
+  }
+)
+----
+
+数组索引的引用是可选的。这也是一个有效的例子：
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+%var conversionRate=13.45
+---
+priceList: payload.prices map ((money) ->
+  {
+    dollars: money,
+    localCurrency: money * conversionRate
+  }
+)
+----
+
+[TIP]
+请注意，当您使用参数填充输出的其中一个键时（如本例中`position`的情况），您必须将其括在括号中或将其放在括号中并在其中添加$，否则该属性的名称将被视为文字字符串。 '$头寸'或（头寸）都是同样有效的。
+
+[[map-object]]
+== 地图对象
+
+。（'：object'，'：function'）=>'：object'
+
+与Map类似，但不是仅处理对象的值，而是将键和值作为元组处理。此外，不是返回一个数组，其结果是通过lambda处理这些值，而是返回一个对象，该对象由通过lambda处理对象的键和值的key：value对列表组成。
+
+使用两个参数调用lambda：*key*和*value*。
+如果这些参数未命名，则默认将密钥定义为*$$*，并将该值定义为*$*。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+%var conversionRate=13.45
+---
+priceList: payload.prices mapObject (
+  '$$':{
+    dollars: $,
+    localCurrency: $ * conversionRate
+  }
+)
+----
+
+
+
+
+。输入
+[source,xml,linenums]
+----
+<prices>
+    <basic>9.99</basic>
+    <premium>53</premium>
+    <vip>398.99</vip>
+</prices>
+----
+
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "priceList": {
+    "basic": {
+      "dollars": "9.99",
+      "localCurrency": 134.3655
+    },
+    "premium": {
+      "dollars": "53",
+      "localCurrency": 712.85
+    },
+    "vip": {
+      "dollars": "398.99",
+      "localCurrency": 5366.4155
+    }
+  }
+}
+----
+
+
+
+
+[TIP]
+请注意，当您使用参数填充输出的某个键时（例如在本例中为$$的情况）时，您必须将其放在引号或括号中。 '$$'或（$$）同样有效。
+
+在上面的示例中，由于未定义键和值，因此它们由占位符*$$*和*$*标识。
+对于输入中的每个键：值对，键都被保留并且该值成为具有两个属性的对象：
+其中一个是原始值，另一个是将该值乘以一个定义为标题中指令的常量的结果。
+
+下面的映射执行完全相同的转换，但它为操作的属性定义了自定义名称，而不是使用$和$$。在这里，'category'被定义为引用对象中的原始密钥，'money'代表该密钥中的值。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+%var conversionRate=13.45
+---
+priceList: payload.prices mapObject ((money, category) ->
+  '$category':{
+    dollars: money,
+    localCurrency: money * conversionRate
+  }
+)
+----
+
+[TIP]
+请注意，当您使用参数填充输出的其中一个键时（如本例中*category*的情况），您必须将其括在括号中或将其放在括号中并在其中添加$，否则该属性的名称将被视为文字字符串。 '$ category'或（类别）都是同样有效的。
+
+== 普吕克
+
+。（'：object'，'：function'）=>'：array'
+
+Pluck对于将对象映射到数组非常有用。 Pluck是mapObject的替代映射机制。
+像mapObject一样，pluck将其处理对象中的每个键：值对作为元组执行lambda，
+但不是返回一个对象，而是返回一个数组，该数组可以根据对象中的值或键构建。
+
+使用两个参数调用lambda：*key*和*value*。
+如果这些参数未命名，则默认将密钥定义为*$$*，并将该值定义为*$*。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+result: {
+  keys: payload.prices pluck $$,
+  values: payload.prices pluck $
+}
+----
+
+
+
+。输入
+[source,xml,linenums]
+----
+<prices>
+    <basic>9.99</basic>
+    <premium>53</premium>
+    <vip>398.99</vip>
+</prices>
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "result": {
+    "keys": [
+      "basic",
+      "premium",
+      "vip"
+    ],
+    "values": [
+      "9.99",
+      "53",
+      "398.99"
+    ]
+  }
+}
+----
+
+
+
+
+
+
+
+
+== 过滤
+
+=== 在数组上使用过滤器
+
+。（'：array'，'：function'）=>'：array'
+
+返回仅包含那些通过lambda中指定的条件的数组。使用两个参数调用lambda：*index*和*value*。
+如果这些参数未命名，则索引默认定义为*$$*，值为*$*。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  biggerThanTwo: [0, 1, 2, 3, 4, 5] filter $ > 2
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "biggerThanTwo": [3,4,5]
+}
+----
+
+
+=== 在对象上使用过滤器
+
+。（'：object'，'：function'）=>'：object'
+
+返回具有通过在lambda中定义的接受条件的key：value对的对象。
+如果这些参数未命名，则索引默认定义为*$$*，值为*$*。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+filtered: {
+  aa: "a", bb: "b", cc: "c", dd: "d"
+} filter $ == "d" <1>
+----
+<1>筛选值为"d" => {dd：d}的所有键：值对
+
+.OUTPUT
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<filtered>
+  <dd>d</dd>
+</filtered>
+----
+
+上面的用法是在变换块发生后执行过滤器操作，如果这不是要求，则可以在变换之前完成过滤器。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+filtered: (payload filter ($.*data contains "b") map {
+  data: $.data
+}) <2>
+----
+<2>在变换块发生之前，过滤所有具有"data"值"b" => {data：b}的键：值对。
+对于大型，复杂的转换，这比转换块发生后的过滤更有效。
+
+
+。输入
+[source,json,linenums]
+----
+[
+  {"data": "a"},
+  {"data": "b"},
+  {"data": "c"},
+  {"data": "d"}
+]
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "filtered": [
+    {
+      "data": "b"
+    }
+  ]
+}
+----
+
+[TIP]
+====
+如果您需要按键过滤，则需要使用 link:#map-object[MapObject的]和*when*。例如，要按键过滤最后一个示例：
+[source,xml,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+filtered: {
+  aa: "a", bb: "b", cc: "c", dd: "d"
+} mapObject ({ ($$): $ } when $$ as :string == "dd" otherwise {})
+----
+====
+
+== 删除
+
+=== 在数组上使用Remove
+。（'：array'，'：name'）=>'：array'
+
+在数组上运行时，它会返回除去指定值的另一个数组。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  aa: ["a", "b", "c"] - "b"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "aa": ["a", "c"]
+}
+----
+
+
+=== 在对象上使用移除
+。（'：object'，'：name'）=>'：object'
+
+在对象上运行时，它将返回指定键被删除的另一个对象。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+myObject: {aa: "a", bb: "b"} - "aa"
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "myObject": {
+    "bb": "b"
+  }
+}
+----
+
+上面的示例从{aa："a"，bb："b"} => {bb："b"}中移除包含键'aa'的键值对
+
+
+== 通过匹配键和值来删除
+。（'：object'，'：object'）=>'：object'
+
+与对象上的<<using remove on an object, remove>>一样工作，但只有在键与键+值对匹配时才会删除元素。它返回指定键被删除的另一个对象。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+myObject: {aa: "a", aa:"c", bb: "b"} -- { aa:"a"}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "myObject": {
+    "aa": "c",
+    "bb": "b"
+  }
+}
+----
+
+以上示例除去包含键“aa”和值"a"的键值对，但不包含仅包含匹配键但不包含值的键值对。
+
+
+==  AND
+
+表达式*and*（小写）可以用于链接多个条件，它的使用意味着所有链接条件必须对整个表达式计算为true，以评估为true。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  currency: "USD"
+} when payload.country == "USA" and payload.currency == "local"
+otherwise
+{
+      currency: "EUR"
+}
+----
+
+在上例中，货币为"EUR"，除非有效负载满足两个条件。
+
+[TIP]
+检查 link:/mule-user-guide/v/3.8/dataweave-language-introduction#precedence-table[优先表]以查看在此之前或之后编译的表达式。
+
+==  OR
+
+表达式*or*（小写）可用于链接多个条件。它的使用意味着任何一个或所有的连接条件必须评估为真，才能将整个表达式评估为真。本示例将*OR*与 link:/mule-user-guide/v/3.8/dataweave-language-introduction#when-otherwise[何时和否则]表达式结合使用。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  currency: "EUR"
+} when payload.country == "Italy" or payload.country == "Germany" or payload.country == "Spain" or payload.country == "Portugal" or payload.country == "France" or payload.country == "Greece"
+otherwise
+{
+      currency: "USD"
+}
+----
+
+在上面的示例中，货币为"EUR"，仅当其中一个条件的计算结果为true时。
+
+[TIP]
+检查 link:/mule-user-guide/v/3.8/dataweave-language-introduction#precedence-table[优先表]以查看在此之前或之后编译的表达式。
+
+==  IS
+
+。（'：any'，condition）=>'：boolean'
+
+评估一个条件是否为true并返回一个布尔值。条件可能包括`and`和`or`个运算符。
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+ROOT: payload.root.*order mapObject (
+  ORDER:{
+    itemsCollectionPresent: $ is :object and $.items?
+  }
+)
+----
+
+
+。输入
+[source,xml,linenums]
+----
+<root>
+    <order>
+      <items> 155 </items>
+    </order>
+    <order>
+      <items> 30 </items>
+    </order>
+    <order>
+        null
+    </order>
+</root>
+----
+
+.OUTPUT
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<ROOT>
+  <ORDER>
+    <itemsCollectionPresent>true</itemsCollectionPresent>
+  </ORDER>
+  <ORDER>
+    <itemsCollectionPresent>true</itemsCollectionPresent>
+  </ORDER>
+  <ORDER>
+    <itemsCollectionPresent>false</itemsCollectionPresent>
+  </ORDER>
+</ROOT>
+----
+
+
+== 的毗连
+
+concat操作符使用双加号来定义。你必须在它们的两边都有空格。
+
+
+=== 在数组上使用Concat
+
+。（'：array'，'：array'）=>'：array'
+
+
+使用数组时，它返回连接两个现有数组的结果数组。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: [0, 1, 2] ++ [3, 4, 5]
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": [0, 1, 2, 3, 4, 5]
+}
+----
+
+=== 在字符串上使用Concat
+
+。（'：string'，'：string'）=>'：string'
+
+字符串被视为字符数组，因此该操作与字符串的作用相同。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  name: "Mule" ++ "Soft"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "name": MuleSoft
+}
+----
+
+=== 在对象上使用Concat
+
+。（'：object'，'：object'）=>'：object'
+
+返回连接两个现有对象的结果对象。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+concat: {aa: "a"} ++ {cc: "c"}
+----
+
+.OUTPUT
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<concat>
+  <aa>a</aa>
+  <cc>c</cc>
+</concat>
+----
+
+上面的例子将对象{aa：a}和{cc：c}连接在一起=> {aa：a，cc：c}
+
+== 包含
+
+评估一个数组或列表是否至少在其索引之一中包含一个验证为true并返回布尔值的值。您可以搜索文字值，也可以匹配正则表达式。
+
+=== 在数组中使用包含
+。（'：array'，'：any'）=>'：boolean'
+
+您可以评估数组中的任何值是否与给定条件匹配：
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+ContainsRequestedItem: payload.root.*order.*items contains "3"
+----
+
+
+。输入
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+    <order>
+      <items>155</items>
+    </order>
+    <order>
+      <items>30</items>
+    </order>
+    <order>
+      <items>15</items>
+    </order>
+    <order>
+      <items>5</items>
+    </order>
+    <order>
+      <items>4</items>
+      <items>7</items>
+    </order>
+    <order>
+      <items>1</items>
+      <items>3</items>
+    </order>
+    <order>
+        null
+    </order>
+</root>
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "ContainsRequestedItem": true
+}
+----
+
+
+=== 在字符串上使用包含
+
+。（'：string'，'：string'）=>'：boolean'
+。（'：string'，'：regex'）=>'：boolean'
+
+你也可以使用contains来从较大的字符串中评估一个子字符串：
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+ContainsString: payload.root.mystring contains "me"
+----
+
+
+
+
+。输入
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <mystring>some string</mystring>
+</root>
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "ContainsString": true
+}
+----
+
+
+
+
+您也可以将其与正则表达式进行匹配，而不是搜索文字子字符串：
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+ContainsString: payload.root.mystring contains /s[t|p]ring/`
+----
+
+
+。输入
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <mystring>A very long string</mystring>
+</root>
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "ContainsString": true
+}
+----
+
+
+== 使用`as`键入强制
+
+将给定的值强制为指定的类型。
+
+[TIP]
+DataWeave默认尝试在失败之前转换值的类型，因此使用此运算符进行转换有时不是必需的，但仍然建议使用。
+
+[NOTE]
+查看 link:/mule-user-guide/v/3.8/dataweave-types#type-coercion-table[类型的强制表]，了解DataWeave允许哪些类型之间的转换。
+
+=== 胁迫字符串
+。（'：any'，'：type'）=>'：string'
+
+任何简单的类型都可以被强制转换为字符串。如果需要格式（例如数字或日期），则可以使用格式模式属性。
+
+日期和数字格式模式基于Java link:https://docs.oracle.com/javase/8/docs/api/java/time/format/DateTimeFormatter.html[DateTimeFormatter]和 link:https://docs.oracle.com/javase/8/docs/api/java/text/DecimalFormat.html[DecimalFormat的]。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: 1 as :string {format: "##,#"},
+  b: now as :string {format: "yyyy-MM-dd"},
+  c: true as :string
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "1",
+  "b": "2015-07-07",
+  "c": "true"
+}
+----
+
+=== 强制编号
+。（'：string'，'：type'）=>'：number'
+
+一个字符串可以被强制编号。如果给定的数字具有特定的格式，则可以使用模式属性。
+
+link:https://docs.oracle.com/javase/8/docs/api/java/text/DecimalFormat.html[DecimalFormat的]接受的任何格式模式都是允许的。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: "1" as :number
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  "a": 1
+}
+----
+
+==== 将日期强制编号
+。（'：time'，'：type'）=>'：number'
+
+当强制一个日期到一个数字时，你可以添加一个额外的参数 - “单位” - 指定使用什么单位时间，
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  mydate1: |2005-06-02T15:10:16Z| as :number {unit: "seconds"},
+  mydate2: |2005-06-02T15:10:16Z| as :number {unit: "milliseconds"}
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "mydate1": 1117725016,
+  "mydate2": 1117725016000
+}
+----
+
+[NOTE]
+只有“秒”和“毫秒”的值才能在'unit'参数中使用。
+
+迄今=== 强制
+。（'：string'，'：type'）/（'：number'，'：type'）=>'：date'
+
+日期类型可以从字符串或数字进行强制转换。
+
+link:https://docs.oracle.com/javase/8/docs/api/java/time/format/DateTimeFormatter.html[DateTimeFormatter]接受的任何格式模式都是允许的。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+ a: 1436287232 as :datetime,
+ b: "2015-10-07 16:40:32.000" as :localdatetime {format: "yyyy-MM-dd HH:mm:ss.SSS"}
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "2015-07-07T16:40:32Z",
+  "b": "2015-10-07 16:40:32.000"
+}
+----
+
+通过这个操作符，您还可以获取已经构建为日期的值，并将其转换为不同格式的日期，例如：
+
+。转变
+[source,DataWeave,linenums]
+----
+%output application/json
+---
+{
+    myDate: ((payload as :string) as :date {format: "yyyyMMdd"}) as :string {format: "MM-dd-yyyy"}
+}
+----
+
+=== 胁迫到对象
+。（'：any'，'：type'）=>'：object'
+
+您可以将输入强制转换为您想要的任何类的自定义对象类型。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  payload as :object {class : "soa.sfabs.SOAResponseInfoType\$ServiceInfo"}
+}
+----
+
+[NOTE]
+请记住，如果类名包含任何'$'字符，则必须使用反斜线（\）进行转义。
+
+
+== 类型
+。（'：any'）=>'：type'
+
+返回提供的元素的类型（例如：“":string"”，“":number"”）
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+isString: typeOf payload.mystring
+----
+
+
+
+。输入
+[source,json,linenums]
+----
+{
+  "mystring":"a string"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "isString": ":string"
+}
+----
+
+
+== 拼合
+。（'：array'）=>'：array'
+
+如果你有一个数组数组，这个函数可以将它变成一个简单的数组。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+flatten payload
+----
+
+
+
+。输入
+[source,json,linenums]
+----
+[
+   [3,5],
+   [9,5],
+   [154,0.3]
+]
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+[
+  3,
+  5,
+  9,
+  5,
+  154,
+  0.3
+]
+----
+
+
+
+== 大小
+。（'：array'）/（'：string'）/（'：object'）=>'：number'
+
+返回数组中元素的数量（或任何可以转换为数组的元素，如字符串）。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  arraySize: sizeOf [1,2,3],
+  textSize: sizeOf "MuleSoft",
+  objectSize: sizeOf {a:1,b:2}
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "arraySize": 3,
+  "textSize": 8,
+  "objectSize": 2
+}
+----
+
+== 数组推送
+。（：array'，'：any'）=>'：array'
+
+将新元素推到数组的末尾。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+aa: [0, 1, 2] + 5
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "aa": [0, 1, 2, 5]
+}
+----
+
+== 从数组中移除
+。（'：array'，'：any'）=>'：array'
+
+当它与指定的值匹配时从数组中移除一个元素。如果数组中的多个元素与该值匹配，则它们全部被删除。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: [0, 1, 1, 2] - 1,
+  b: [{a: "a"}] - {a: "a"}
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": [0,2],
+  "b": []
+}
+----
+
+== 从数组中删除匹配
+。（'：array'，'：array'）=>'：array'
+
+当基本数组中的元素与减法数组中的某个值匹配时，从数组中移除一组元素。如果数组中的多个元素匹配一个值，它们将全部被删除。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+a: [0, 1, 1, 2] -- [1,2]
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": [0],
+}
+----
+
+
+== 数组的平均值
+。（'：array'）=>'：number'
+
+创建数组中所有值的平均值并输出单个数字。该数组当然必须包含数值。
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: avg [1..1000],
+  b: avg [1, 2, 3]
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": 500.5,
+  "b": 2.0
+}
+----
+
+
+
+== 减少
+
+。（'：array'，'：function'）=>'：any'
+
+仅使用两个参数对数组应用缩减：
+累加器（*$$*）和值（*$*）。
+默认情况下，累加器从数组的第一个值开始。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+sum: [0, 1, 2, 3, 4, 5] reduce($$ + $)
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "sum": 15
+}
+----
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+concat: ["a", "b", "c", "d"] reduce($$ ++ $)
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "concat": "abcd"
+}
+----
+
+在某些情况下，您可能不希望将数组的第一个元素用作累加器。要将累加器设置为其他值，您必须在lambda中定义它。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+concat: ["a", "b", "c", "d"] reduce ((val, acc = "z") -> acc ++ val)
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "concat": "zabcd"
+}
+----
+
+
+== 加入者
+
+。（'：array'，'：string'）=>'：string'
+
+将数组合并成单个字符串值，使用提供的字符串作为元素之间的分隔符。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+aa: ["a","b","c"] joinBy "-"
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "aa": "a-b-c"
+}
+----
+
+== 拆分
+
+。（'：string'，'：string'）/（'：string'，'：'：regex'）=>'：array'
+
+以Join By方式执行相反的操作。它将一个字符串拆分为一个单独的元素数组，查找提供的字符串的实例并将其用作分隔符。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+split: "a-b-c" splitBy "-"
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "split": ["a","b","c"]
+}
+----
+
+== 顺序依据
+
+（'：array'，'：function'）/（'：object'，'：function'）=>'：array'/'：object'
+
+根据lambda返回的值返回提供的数组（或对象）。使用两个参数调用lambda：*index*和*value*。
+如果这些参数未命名，则索引默认定义为*$$*，值为*$*。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+orderByLetter: [{ letter: "d" }, { letter: "e" }, { letter: "c" }, { letter: "a" }, { letter: "b" }] orderBy $.letter
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "orderByLetter": [
+    {
+      "letter": "a"
+    },
+    {
+      "letter": "b"
+    },
+    {
+      "letter": "c"
+    },
+    {
+      "letter": "d"
+    },
+    {
+      "letter": "e"
+    }
+  ]
+}
+----
+
+[TIP]
+====
+*orderBy*函数没有选择以降序而不是升序排序。在这些情况下你可以做的只是反转结果数组的顺序。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+orderDescending: ([3,8,1] orderBy $)[-1..0]
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{ "orderDescending": [8,3,1] }
+----
+
+====
+
+
+== 分组依据
+
+。（'：array'，'：function'）=>'：object'
+
+根据您定义的鉴别器lambda，将数组分成包含数组的对象。
+使用两个参数调用lambda：*index*和*value*。
+如果这些参数未命名，则索引默认定义为*$$*，值为*$*。
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+"language": payload.langs groupBy $.language
+----
+
+
+
+。输入
+[source,json,linenums]
+----
+{
+  "langs": [
+    {
+      "name": "Foo",
+      "language": "Java"
+    },
+    {
+      "name": "Bar",
+      "language": "Scala"
+    },
+    {
+      "name": "FooBar",
+      "language": "Java"
+    }
+  ]
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "language": {
+    "Scala": [
+        {"name":"Bar", "language":"Scala"}
+      ],
+    "Java": [
+        {"name":"Foo", "language":"Java"},
+        {"name":"FooBar", "language":"Java"}
+      ]
+  }
+}
+----
+
+
+
+== 与众不同
+
+。（'：array'，'：function'）=>'：array'
+
+仅返回数组中可能有重复项的唯一值。
+使用两个参数调用lambda：*index*和*value*。
+如果这些参数未定义，则索引默认定义为$$，值定义为$。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+
+  	book : {
+      title : payload.title,
+      year: payload.year,
+      authors: payload.author distinctBy $
+    }
+}
+----
+
+
+
+。输入
+[source,json,linenums]
+----
+{
+  "title": "XQuery Kick Start",
+  "author": [
+    "James McGovern",
+    "Per Bothner",
+    "Kurt Cagle",
+    "James Linn",
+    "Kurt Cagle",
+    "Kurt Cagle",
+    "Kurt Cagle",
+    "Vaidyanathan Nagarajan"
+  ],
+  "year":"2000"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "book": {
+    "title": "XQuery Kick Start",
+    "year": "2000",
+    "authors": [
+      "James McGovern",
+      "Per Bothner",
+      "Kurt Cagle",
+      "James Linn",
+      "Vaidyanathan Nagarajan"
+    ]
+  }
+}
+----
+
+
+
+==  Zip数组
+
+。（'：array'，'：array'）=>'：array'
+
+给定两个或多个单独的列表，可以使用zip函数将它们合并到一个连续的n元组列表中。设想两个输入列表，每个列表都是拉链的一侧：与拉链的互锁牙齿类似，zip函数每次输入每个输入列表中的每个元素，每次输入一个元素。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: [0, 1, 2, 3] zip ["a", "b", "c", "d"],
+  b: [0, 1, 2, 3] zip "a",
+  c: [0, 1, 2, 3] zip ["a", "b"]
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": [
+    [0,"a"],
+    [1,"b"],
+    [2,"c"],
+    [3,"d"]
+    ],
+  "b": [
+    [0,"a"],
+    [1,"a"],
+    [2,"a"],
+    [3,"a"]
+  ],
+  "c": [
+    [0,"a"],
+    [1,"b"]
+  ]
+}
+----
+
+请注意，在示例b中，由于第二个数组中只提供了一个元素，因此它与第一个数组的每个元素相匹配。还要注意，在例子c中，由于第二个数组比第一个数组短，所以输出只有两个数组中的最短数。
+
+
+这是带有两个以上输入列表的zip函数的另一个示例。
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+payload.list1 zip payload.list2 zip payload.list3
+----------------------------------------------------------------------
+
+
+
+。输入
+[source,json,linenums]
+----------------------------------------------------------------------
+{
+  "list1": ["a", "b", "c", "d"],
+  "list2": [1, 2, 3],
+  "list3": ["aa", "bb", "cc", "dd"],
+  "list4": [["a", "b", "c"], [1, 2, 3, 4], ["aa", "bb", "cc", "dd"]]
+}
+----------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+----------------------------------------------------------------------
+[
+  [
+    "a",
+    1,
+    "aa"
+  ],
+  [
+    "b",
+    2,
+    "bb"
+  ],
+  [
+    "c",
+    3,
+    "cc"
+  ]
+]
+----------------------------------------------------------------------
+
+
+
+
+
+
+
+
+== 解压缩数组
+
+。（'：array'）=>'：array'
+
+执行<<zip arrays>>的相反功能，即：给定一个数组，其中每个索引包含一个包含两个元素的数组，其输出两个单独的数组，每个数组都包含一对元素中的一个。如果提供的数组中的索引包含具有两个以上元素的数组，那么这也可以被放大，输出将包含与每个索引的元素一样多的数组。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: unzip [[0,"a"],[1,"b"],[2,"c"],[3,"d"]],
+  b: unzip [ [0,"a"], [1,"a"], [2,"a"], [3,"a"]],
+  c: unzip [ [0,"a"], [1,"a","foo"], [2], [3,"a"]]
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+   "a":[
+      [0, 1, 2, 3],
+      ["a", "b", "c", "d"]
+    ],
+  "b": [
+      [0,1,2,3],
+      ["a","a","a","a"]
+    ],
+  "c": [
+      [0,1,2,3]
+    ]
+}
+----
+
+请注意，即使示例b可以被认为是<<zip array>>中示例b的反函数，但结果并不相似，因为它返回的是重复元素的数组而不是单个元素。还请注意，在示例c中，由于原始数组中每个组件的元素数量不一致，因此输出只会创建尽可能多的完整数组，在这种情况下，只能创建一个。
+
+
+== 替换
+
+。（'：string'，'：regex'，'：function'）=>'：string'
+
+根据正则表达式替换另一个字符串的一部分，并返回一个修改后的字符串。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+b: "admin123" replace /(\d+)/ with "ID"
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "b": "adminID"
+}
+----
+
+== 匹配
+
+。（'：string'，'：regex'）=>'：boolean'
+
+匹配正则表达式的字符串，并返回*true*或*false*。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+b: "admin123" matches /(\d+)/
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "b": false
+}
+----
+
+[TIP]
+有关需要输出或有条件处理匹配值的更高级用例，请参阅 link:/mule-user-guide/v/3.8/dataweave-language-introduction#pattern-matching[模式匹配]。
+
+== 以。开头
+
+。（'：string'，'：string'）=>'：boolean'
+
+根据字符串是否以提供的子字符串开头来返回true或false。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: "Mariano" startsWith "Mar",
+  b: "Mariano" startsWith "Em"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": true,
+  "b": false
+}
+----
+
+
+== 结束
+
+。（'：string'，'：string'）=>'：boolean'
+
+根据字符串是否以提供的子字符串结尾返回true或false。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: "Mariano" endsWith "no",
+  b: "Mariano" endsWith "to"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": true,
+  "b": false
+}
+----
+
+
+
+== 查找
+
+。（'：string'，'：string'）/。（'：string'，'：'：regex'）=>'：array'
+
+给定一个字符串，它返回匹配匹配的字符串中的索引位置。如果在字符串的多个部分中找到，它将返回一个包含各种idex位置的数组。您可以查找简单的字符串或正则表达式。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: "aabccde" find /(a).(b)(c.)d/,
+  b: "aabccdbce" find "a",
+  c: "aabccdbce" find "bc"
+}
+----
+
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": [[0,0,2,3]],
+  "b": [0,1],
+  "c": [2,6]
+}
+----
+
+
+== 匹配
+
+。（'：string'，'：regex'）=>'：string'
+
+匹配正则表达式的字符串。匹配返回一个包含整个匹配表达式的数组，然后是所有与提供的正则表达式匹配的捕获组。
+
+它可以应用于任何评估表达式的结果，并且可以返回任何评估的表达式。请参阅 link:/mule-user-guide/v/3.8/dataweave-language-introduction[DataWeave语言介绍]中的匹配运算符。
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+  hello: "anniepoint@mulesoft.com" match /([a-z]*)@([a-z]*).com/
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "hello": [
+    "anniepoint@mulesoft.com",
+    "anniepoint",
+    "mulesoft"
+  ]
+}
+----
+
+在上面的例子中，我们看到搜索正则表达式描述了一个电子邮件地址。它包含两个捕获组，之前和之后是什么。结果是一个由三个元素组成的数组：第一个是整个电子邮件地址，第二个匹配其中一个捕获组，第三个匹配另一个。
+
+
+== 扫描
+
+。（'：string'，'：regex'）=>'：array'
+
+返回给定字符串中包含所有匹配项的数组。每个匹配都以包含完整匹配的数组的形式返回，以及可能存在于正则表达式中的任何捕获组。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+  hello: "anniepoint@mulesoft.com,max@mulesoft.com" scan /([a-z]*)@([a-z]*).com/
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "hello": [
+    [
+      "anniepoint@mulesoft.com",
+      "anniepoint",
+      "mulesoft"
+    ],
+    [
+      "max@mulesoft.com",
+      "max",
+      "mulesoft"
+    ]
+  ]
+}
+----
+
+在上面的例子中，我们看到搜索正则表达式描述了一个电子邮件地址。它包含两个捕获组，之前和之后是什么。结果是有两个匹配的数组，因为输入字符串中有两个电子邮件地址。这些匹配中的每一个都是由三个元素组成的数组，第一个是整个电子邮件地址，第二个匹配其中一个捕获组，第三个匹配另一个。
+
+== 类似
+。（'：any'，'：any'）=>'：boolean'
+
+评估两个值是否相似，无论其类型如何。例如，字符串"1234"和数字1234不相等，但它们被识别为相似。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+    a: "1234" == 1234,
+    b: "1234" ~= 1234,
+    c: "true" == true,
+    d: "true" ~= true
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": false,
+  "b": true,
+  "c": false,
+  "d": true
+}
+----
+
+
+== 上
+。（'：string'）=>'：string'
+
+以大写字符返回提供的字符串。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  name: upper "mulesoft"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "name": MULESOFT
+}
+----
+
+
+== 下
+。（'：string'）=>'：string'
+
+以小写字符返回提供的字符串。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  name: lower "MULESOFT"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "name": mulesoft
+}
+----
+
+
+==  Camelize
+。（'：string'）=>'：string'
+
+以驼峰大小形式返回提供的字符串。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: camelize "customer",
+  b: camelize "customer_first_name",
+  c: camelize "customer name"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "customer",
+  "b": "customerFirstName",
+  "c": "customer name"
+}
+----
+
+== 大写
+。（'：string'）=>'：string'
+
+返回提供的字符串，每个字以大写字母开头并且没有下划线。它还用空格替换下划线，并在每个大写单词前放置一个空格。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: capitalize "customer",
+  b: capitalize "customer_first_name",
+  c: capitalize "customer NAME",
+  d: capitalize "customerName",
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "Customer",
+  "b": "Customer First Name",
+  "c": "Customer Name",
+  "d": "Customer Name"
+}
+----
+
+==  Dasherize
+。（'：string'）=>'：string'
+
+返回提供的字符串，每个单词用短划线分隔。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: dasherize "customer",
+  b: dasherize "customer_first_name",
+  c: dasherize "customer NAME"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "customer",
+  "b": "customer-first-name",
+  "c": "customer-name"
+}
+----
+
+== 下划线
+。（'：string'）=>'：string'
+
+返回提供的字符串，每个单词由下划线分隔。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: underscore "customer",
+  b: underscore "customer-first-name",
+  c: underscore "customer NAME"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "customer",
+  "b": "customer_first_name",
+  "c": "customer_NAME"
+}
+----
+
+
+
+== 以复数
+。（'：string'）=>'：string'
+
+返回提供的字符串转换为其复数形式。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: pluralize "box",
+  b: pluralize "wife",
+  c: pluralize "foot"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "boxes",
+  "b": "wives",
+  "c": "feet"
+}
+----
+
+==  Singularize
+。（'：string'）=>'：string'
+
+将提供的字符串转换为单数形式。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: singularize "boxes",
+  b: singularize "wives",
+  c: singularize "feet"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "box",
+  "b": "wife",
+  "c": "foot"
+}
+----
+
+== 修剪
+。（'：string'）=>'：string'
+
+删除字符串开头和结尾的多余空格。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  "a": trim "   my long text     "
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "my long text"
+}
+----
+
+
+== 使用*..*或*to*的子字符串
+。（'：string'）=>'：string'
+
+根据所需子字符串的第一个和最后一个字符在字符数组中占据的位置，从字符串中提取一组字符。如果使用负数，也可以反转字符的设置顺序。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  "a": "abcdefg"[0..4],
+  "b": "abcdefg"[-1..-4],
+  "d": "abcdefg"[0 to 4],
+  "e": "abcdefg"[-1 to -4]
+
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "abcde",
+  "b": "gfed",
+  "d": "abcde",
+  "e": "gfed"
+
+}
+----
+
+
+
+
+
+==  Ordinalize
+。（'：number'）=>'：string'
+
+返回提供的数字设置为序数。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: ordinalize 1,
+  b: ordinalize 8,
+  c: ordinalize 103
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "1st",
+  "b": "8th",
+  "c": "103rd"
+}
+----
+
+== 基本数学运算
+
+=== 萨姆
+。（'：number'，'：number'）=>'：number'
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+plus : 2 + 2.5
+----
+
+=== 减
+。（'：number'，'：number'）=>'：number'
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+minus : 2.5 - 2
+----
+
+=== 乘法
+。（'：number'，'：number'）=>'：number'
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+multiply : 2.5 * 2
+----
+
+=== 司
+。（'：number'，'：number'）=>'：number'
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+division : 10 / 2
+----
+
+== 最大
+
+。（'：array'）/（'：object'）=>'：number'
+
+返回数组或对象中最高的数字。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: max [1..1000],
+  b: max [1, 2, 3],
+  d: max [1.5, 2.5, 3.5]
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": 1000,
+  "b": 3,
+  "d": 3.5
+}
+----
+
+== 敏
+
+。（'：array'）/（'：object'）=>'：number'
+
+返回数组或对象中的最小数字。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: min [1..1000],
+  b: min [1, 2, 3],
+  d: min [1.5, 2.5, 3.5]
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": 1,
+  "b": 1,
+  "d": 1.5
+}
+----
+
+== 圆
+
+。（'：number'）=>'：number'
+
+将数字的值四舍五入为最接近的整数
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: round 1.2,
+  b: round 4.6,
+  c: round 3.5
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": 1,
+  "b": 5,
+  "c": 4
+}
+----
+
+== 的Sqrt
+
+。（'：number'）=>'：number'
+
+返回提供的数字的平方根
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: sqrt 4,
+  b: sqrt 25,
+  c: sqrt 100
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": 2.0,
+  "b": 5.0,
+  "c": 10.0
+}
+----
+
+== 的Pow
+
+。（'：number'，'：number'）=>'：number'
+
+将`a`的结果返回给`pow`运算符后面数字的幂。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: 2 pow 3,
+  b: 3 pow 2,
+  c: 7 pow 3
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": 8,
+  "b": 9,
+  "c": 343
+}
+----
+
+== 的Ceil
+
+。（'：number'）=>'：number'
+
+向上舍入一个数字，返回比所提供的第一个完整数字更高的数字。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+
+{
+  a: ceil 1.5,
+  b: ceil 2.2,
+  c: ceil 3
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": 2,
+  "b": 3,
+  "c": 3
+}
+----
+
+== 楼层
+
+。（'：number'）=>'：number'
+
+向下舍入一个数字，返回低于所提供的第一个完整数字。
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: floor 1.5,
+  b: floor 2.2,
+  c: floor 3
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": 1,
+  "b": 2,
+  "c": 3
+}
+----
+
+== 阿布斯
+
+。（'：number'）=>'：number'
+
+返回数字的绝对值，
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: abs -2,
+  b: abs 2.5,
+  c: abs -3.4,
+  d: abs 3
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": 2,
+  "b": 2.5,
+  "c": 3.4,
+  "d": 3
+}
+----
+
+== 模
+
+。（'：number'，'：number'）=>'：number'
+
+返回第一个数字除以第二个数字后的余数
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: 3 mod 2,
+  b: 4 mod 2,
+  c: 2.2 mod 2
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": 1,
+  "b": 0,
+  "c": 0.2
+}
+----
+
+== 现在
+
+用当前日期和时间返回一个日期时间对象。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  current_time: now
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "current_time": "2016-10-20T17:15:06.196Z"
+}
+----
+
+
+== 日期时间操作
+
+有几个运营商处理 link:/mule-user-guide/v/3.8/dataweave-types#dates[日期相关类型]，其中包括日期，时间，本地时间，日期时间，本地时间，周期，时区。
+
+=== 获取时间单位
+
+。（'：date'）/（'：time'）/（'：localtime'）/（'：datetime'）/（'：localdatetime'）/（'：period'）=>（'：date'） /（ '：时间'）/（ '：本地时间'）/（ '：周期'）
+
+您可以从任何与日期相关的类型中提取特定的时间单位，如下所示：
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: |2003-10-01|.day,
+  b: |2003-10-01|.month,
+  c: |2003-10-01|.year,
+  d: |2003-10-01T23:57:59Z|.hour,
+  e: |2003-10-01T23:57:59Z|.minutes,
+  f: |2003-10-01T23:57:59Z|.seconds,
+  g: |2003-10-01T23:57:59-03:00|.offsetSeconds,
+  h: |23:57:59Z|.hour,
+  i: |23:57:59.700|.nanoseconds,
+  j: |23:57:59.700|.milliseconds,
+  k: |2003-10-01T23:57:59Z|.dayOfWeek,
+  l: |2003-10-01T23:57:59Z|.dayOfYear,
+  m: |P3Y2M10D|.years
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": 1,
+  "b": 10,
+  "c": 2003,
+  "d": 23,
+  "e": 57,
+  "f": 59,
+  "g": -10800,
+  "h": 23,
+  "i": 700000000,
+  "j": 700,
+  "k": 3,
+  "l": 274,
+  "m": 3
+}
+----
+
+
+
+=== 轮班时区
+
+。（'：datetime'，'：timezone'）=>'：datetime'
+
+将日期时间移到指定的时区。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+a: |2014-01-01T14:00-03:00| >> |-08:00|
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "2014-01-01T09:00-08:00"
+}
+----
+
+=== 追加时间
+
+（'：date'，'：time'）/（'：date'，'：localtime'）/（'：time'，'：date'）/（'：localtime'，'：date'）=> （ '：本地时间'）/（ '：日期时间'）/（ '：localdatetime'）
+
+您可以将时间附加到时间（或本地时间）对象，以提供更精确的值。
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: |2003-10-01| ++ |23:57:59|,
+  b: |2003-10-01| ++ |23:57:59Z|
+}
+
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+    "a": "2003-10-01T23:57:59",
+    "b": "2003-10-01T23:57:59Z"
+}
+----
+
+
+请注意，添加这两个对象的顺序无关紧要，因此逻辑上'：date'+'：time'将与'＃：time'+'：date'相同。
+
+
+=== 追加时区
+
+。（'：datetime'，'：timezone'）/（'：time'，'：timezone'）/（'：localtime'，'：timezone'）/（'：localdatetime'，'：timezone'）=> （ '：本地时间'）/（ '：localdatetime'）
+
+将时区附加到日期类型值。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+a: |2003-10-01T23:57:59| ++ |-03:00|
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "2003-10-01T23:57:59-03:00"
+}
+----
+
+
+=== 添加一段时间
+
+（'：time'，'：period'）/（'：datetime'，'：period'）/（'：localtime'，'：period'）/（'：localdatetime'，'：period'）=> （ '：日期'）/（ '：时间'）/（ '：本地时间'）/（ '：日期时间'）/（ '：localdatetime'）
+
+从给定的日期或时间类型对象中添加或减去一段时间。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+a: |2003-10-01T23:57:59Z| + |P1Y|
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "2004-10-01T23:57:59Z"
+}
+----
+
+=== 减去一段时间
+
+（'：time'，'：period'）/（'：datetime'，'：period'）/（'：localtime'，'：period'）/（'：localdatetime'，'：period'）=> （ '：日期'）/（ '：时间'）/（ '：本地时间'）/（ '：日期时间'）/（ '：localdatetime'）
+
+逻辑上同样适用于从日期或时间类型对象中减去时间段。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: |2003-10-01| - |P1Y|,
+  b: |2003-10-01T23:57:59Z| - |P1Y|
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "2002-10-01",
+  "b": "2002-10-01T23:57:59Z"
+}
+----
+
+请注意，当减法操作包含时间对象和句点时，两个元素的放置顺序都是不明确的，因为从句点中减去日期是不可能的，所以`|2003-10-01| - |P1Y|`返回与{{1 }}。
+
+
+=== 减去两个日期
+
+（'：date'，'：date'）/（'：datetime'，'：datetime'）/（'＃：time'，'：time'）/（'：localtime'，'：localtime'）/ （'：localdatetime'，'：localdatetime'）=>'：period'
+
+当从另一个日期或时间类型对象中减去时，我们逻辑上得到的是以时间段表示的这些时间之间的差异。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: |23:59:56-03:00| - |22:59:56-00:00|,
+  b: |2003-10-01| - |2002-09-23|
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "PT-4H",
+  "b": "P-1Y-8D"
+}
+----
+
+=== 日期强制
+。（'：any'，'：type'）'：任何'
+
+您可以更改日期的格式以适应其他标准，请参阅<<Coerce to date>>。
+
+
+
+== 下一步
+
+* 有关该语言的高级概述，请参阅 link:/mule-user-guide/v/3.8/dataweave-language-introduction[DataWeave语言介绍]
+* 有关列表和您可以使用的所有类型的详细信息，请参阅 link:/mule-user-guide/v/3.8/dataweave-types[DataWeave类型]
+* 有关如何创建和使用您自己的功能的详细信息，请参阅 link:/mule-user-guide/v/3.8/dataweave-types#functions-and-lambdas[函数和Lambdas]
+* 在https://www.anypoint.mulesoft.com/exchange/?search=dataweave[Anypoint Exchange]中查看使用DataWeave的完整示例项目。
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.8/dataweave-quickstart[DataWeave快速入门指南]
+*  link:/anypoint-studio/v/6/transform-message-component-concept-studio[关于变换消息组件]
+*  link:/mule-user-guide/v/3.8/dataweave-language-introduction[DataWeave语言介绍]
+*  link:/mule-user-guide/v/3.8/dataweave-types[DataWeave类型]
+*  link:/mule-user-guide/v/3.8/dataweave-formats[DataWeave格式]
+*  link:/mule-user-guide/v/3.8/dataweave-selectors[DataWeave选择器]
+*  link:/mule-user-guide/v/3.8/dataweave-memory-management[DataWeave内存管理]
+*  link:/mule-user-guide/v/3.8/dataweave-examples[DataWeave示例]
+*  link:/mule-user-guide/v/3.8/mel-dataweave-functions[MEL DataWeave函数]

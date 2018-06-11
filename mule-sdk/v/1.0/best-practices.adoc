@@ -1,0 +1,101 @@
+= 最佳实践
+:keywords: mule, sdk, best, practices
+
+以下是SDK最佳做法的摘要。它包括在开发模块时推荐的提示和技巧。
+
+== 检查端到端体验
+
+在发布您的模块之前，请在Studio和Design Designer中尝试。确保它提供了良好的可用性和经验。一个工作但很难使用的模块并不完整。
+
+== 模块Java API
+
+SDK按包而不是按类输出。要确定要导出哪些软件包，SDK会反省每个配置，连接以及组件返回和输入类型以获取其软件包。因此，您需要确保您不想导出的任何类都保留在导出的包之外。导出的类不应与不想导出的类共享一个包。
+
+建议的软件包层次结构（在MuleSoft模块内部使用）：
+
+----
+org.mule.module
+\--> .api.*
+\--> .internal.*
+----
+
+*  `.api.*`包含Mule应用程序要导出和看到的所有类：返回类型，子类型，输入类型和连接接口。
+*  `.internal.*`包含用于模块特定行为的所有类：注释类，`Connection`和`Operation`实现以及内部类。
+
+[TIP]
+您应该*ONLY*导出已定义的模块。 *Never*从其他依赖库中打包导出。
+
+== 类型
+
+所有类型*must*都符合DataWeave。这意味着所有暴露的类型必须有一个空构造函数和一个getter方法，用于每个应该可用的字段。
+
+==  @ ErrorTypes
+
+*  Mule以错误而非例外的方式工作。每个操作都应该声明可以抛出哪些错误，并且每个模块定义自己的错误。
+* 使用`ModuleException`打包异常并使用自定义错误类型进行充实。
+* 异常类不应该导出到您的模块中。
+
+== 配置与ConnectionProvider
+
+*  Config具有控制模块工作方式的所有参数。
+*  `ConnectionProvider`具有生成连接所需的所有参数。
+
+== 表达式
+
+默认情况下，一切都接受表达式有时候，允许使用表达式来配​​置参数是没有意义的，所以你可以用下面的方法禁用该选项：
+
+[source, java, linenums]
+----
+@Expression(NOT_SUPPORTED)
+----
+
+== 不访问MuleContext
+
+模块需要访问`MuleContext`的唯一原因是获取某些运行时服务。改用`@Inject`来获取这些服务。
+
+不要使用这个：
+
+[source, java, linenums]
+----
+muleContext.getRegistry().lookupByType(MyClass.class)
+----
+
+改为使用它：
+
+[source, java, linenums]
+----
+public class MyComponent {
+    @Inject
+    MyClass myClass;
+}
+----
+
+== 交易
+非事务性操作不应该收到事务性连接。 SDK将使这些操作成为事务性的，并且在Studio中，您的用户将被错误地呈现为交易选项。
+
+== 使用Mule HTTP客户端
+
+* 请勿使用Jersey或类似的HTTP库。使用Mule HTTP服务。这将提供对HTTP请求者的所有功能的访问，包括非阻塞执行。
+* 特别注意需要TLS的端点。确保您正确初始化`TlsContextFactory`。
+
+== 使用Mule SOAP客户端
+
+* 不要使用CXF或类似的库来使用Web服务。使用Mule SOAP服务。这将提供对Web服务使用者的所有功能的访问。
+
+== 选择SDK版本
+
+通常，开发人员倾向于使用任何给定产品的最新版本。这不应该是SDK的情况。为了延长骡子，你应该：
+
+. 确定您需要的功能
+. 选择包含您所需功能的较低版本。
+
+有关选择正确SDK版本的更多信息，请参阅 link:choosing-version[选择SDK版本]。
+
+== 其他
+
+* 不要使用装箱的布尔值。只允许本地布尔人。所有`boolean`参数均被视为可选参数，默认为`false`。您可以使用`@Optional`注释来更改特定`boolean`的默认值，但您永远无法将其设置为必需的参数。
+* 对`List`或`Array`参数使用复数名称。
+* 只要您希望操作覆盖配置设置，请记住使用`@ConfigOverride`。
+* 使用`@DefaultEncoding`获取运行时的默认编码。
+*  `@Nullsafe`：只要有意义避免`NullPointerException`问题，请使用它。
+* 日期：请勿使用`java.util.Date`或`java.util.Calendar`。改用Java 8 `java.time.LocalDate`。

@@ -1,0 +1,80 @@
+= 示例：定义对象库
+:keywords: ObjectStore, global, define
+：TOC：
+：TOC标题：
+
+TOC :: []
+
+您可以在应用程序中全局定义对象存储，以便可以按名称引用并在多个组件之间共享，或者可以创建仅针对特定组件的对象存储。
+
+所有对象存储操作都可以引用全局对象存储。例如，假设您想要有一个审计流程来验证某些用户当前是否被授权。你可以这样做来引用你定义的对象存储：
+
+`<os:contains id="#[userId]" objectStore="tokensStore" />`
+
+[[global_os]]
+== 定义全局对象存储
+
+如果以下任何一个条件成立，您应该使用全局对象存储：
+
+* 您需要跨组件共享状态：因为Object Store可以按名称引用，所以多个组件可以使用它。假设您有两个以不同方式配置的Salesforce连接器实例。您可以将两个实例使用相同的标记，避免再次进行身份验证。
+* 您需要跨群集节点共享状态：当您在群集模式下使用Mule时，您可能希望获得群集中每个节点都可用的信息。全球对象商店是理想之选。
+* 您需要在应用程序逻辑中使用信息：对象存储连接器不仅可以定义该存储，还可以对其进行操作。
+
+全局对象存储被定义为具有其他组件可以引用它们的名称的顶级元素。例如，假设您要为访问令牌创建一个商店：
+
+[source, xml, linenums]
+----
+<os:object-store name="tokensStore"
+   entryTtl="1"
+   entryTtlUnit="HOURS"
+   maxEntries="100"
+   persistent="true"
+   expirationInterval="30"
+   expirationIntervalUnit="MINUTES" />
+----
+
+该示例定义了一个名为`tokensStore`的对象存储库，它具有以下功能：
+
+* 持久性（`persistent="true"`）：值存储在磁盘中，可以在系统重新启动后存活。将`persistent`设置为`false`将导致仅存储信息的瞬态存储。
+* 到期：到期线程每30分钟运行一次，并丢弃超出其生存时间（TTL）或其`maxEntries`限制的元素。
+*  1小时的TTL：由于访问令牌非常敏感，因此您可能不希望将它们保留一个多小时。比这更旧的每个条目都会自动删除。
+* 大小限制：如果商店增长到超过100个条目，则在到期线程运行时，超出的条目将被丢弃。
+
+请注意，上述示例仅用于解释目的，并不一定为存储访问权限的对象存储库提供推荐的配置。
+
+下一个示例通过OAuth配置Salesforce连接器身份验证，然后将该令牌存储在上例（`tokensStore`）中创建的对象库中：
+
+[source, xml, linenums]
+----
+<sfdc:config-with-oauth name="salesforce-oauth"
+  consumerKey="${salesforce.consumerKey}"
+  consumerSecret="${salesforce.consumerSecret}">
+    <sfdc:oauth-callback-config domain="localhost" localPort="8082"
+      remotePort="8082" path="callback" connector-ref="HTTP_HTTPS" />
+    <sfdc:oauth-store-config objectStore="tokensStore" />
+</sfdc:config-with-oauth>
+----
+
+[[private_os]]
+== 定义私人对象存储
+
+* 对于共享状态存在安全风险的情况，您应该使用私人对象存储。
+* 适用于您不希望任何人从连接器级别操作商店的情况。例如，您希望避免有人更改“清除”操作的配置，以便删除所有授权数据。
+
+您可以定义一个未定义为全局元素的私有对象存储，并且没有可参照的名称，例如：
+
+[source, xml, linenums]
+----
+<idempotent-message-validator idExpression="#[payload]"
+  valueExpression="#[payload]">
+    <os:private-object-store
+                entryTtl="20"
+                entryTtlUnit="MILLISECONDS"
+                maxEntries="20"
+                persistent="false"
+                expirationInterval="20"
+                expirationIntervalUnit="MILLISECONDS"/>
+</idempotent-message-validator>
+----
+
+该示例为幂等消息验证程序提供了只有它可以访问的自定义存储区。

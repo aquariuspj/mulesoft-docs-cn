@@ -1,0 +1,90 @@
+= 迁移重新连接策略
+
+从语法角度来看，Mule 3和Mule 4之间的重新连接并没有多大改变。然而，它们之间存在显着的不同。
+
+在Mule 3中，在每个连接器的配置元素上都指定了重新连接策略。这些策略有两个目的：
+
+* 当正在运行的应用程序失去与端点的连接时重新连接
+* 在部署应用程序时验证所有连接。
+
+所以，假设一个连接到mysql数据库的应用程序。如果在部署时无法建立连接，则部署将失败。这是为了保证所有部署的应用程序都处于运行状态。
+
+.Mule 3示例：重新连接设置（对于MySQL数据库）
+
+[source,xml, linenums]
+----
+<db:mysql-config ...>
+  <reconnect frequency="4000" count="4"/>`
+</db:mysql-config>
+
+<db:mysql-config ...>
+  <reconnect-forever frequency="4000"/>`
+</db:mysql-config>
+----
+
+但是，有些情况下，如果连接失败，您不一定希望部署失败。例如，您的应用程序可能有一个流量，每天凌晨3:00到达一台外部SFTP服务器。如果应用程序在上午8:00部署，那么如果SFTP服务器关闭，则无需部署失败。实际需要时，您仍然需要一整天来确保服务器已启动。
+
+要用Mule 3实现这一点，你必须使用`blocking="false"`选项，以便重新连接异步发生，部署不会中止。
+
+.Mule 3示例：异步重新连接设置（对于MySQL数据库）
+
+[source,xml, linenums]
+----
+<db:mysql-config ...>
+  <reconnect frequency="4000" count="4" blocking="false"/>`
+</db:mysql-config>
+----
+
+在Mule 4中，如果连接测试失败，您可以简单地指定部署是否失败：
+
+.Mule 4示例：重新连接设置（对于SQL数据库）
+[source,xml, linenums]
+----
+<!-- fail deployment is connection cannot be established -->
+<db:mssql-connection ...>
+  <reconnection failsDeployment="true">
+    <reconnect frequency="4000" count="4"/>
+  </reconnection>
+</db:mssql-connection>
+
+<!-- don't fail deployment is connection cannot be established -->
+<db:mssql-connection ...>
+  <reconnection >
+    <reconnect-forever frequency="4000" />
+  </reconnection>
+</db:mssql-connection>
+----
+
+默认情况下，建立连接失败只会在日志中生成警告。
+
+== 操作级别重新连接策略
+
+在Mule 3中，配置元素的相同重新连接策略在部署时和运行时均被使用。例如，如果与数据库的连接丢失而执行流程，则将使用相同的重新连接策略。
+
+在Mule 4中，这种行为默认保存，但您也有机会在操作或消息源级别指定不同的策略：
+
+.Mule 4示例：重新连接设置（对于SQL数据库）
+[source,xml, linenums]
+----
+<flow name="reconnectionDemo">
+  <http:listener path="test" config-ref="httpListener">
+    <reconnect count="1" frequency="5000"/>
+    <http:response>
+      <{{0}}</http:body>
+      <http:headers>
+          #[{{'content-type' : 'text/plain'}}]
+      </http:headers>
+    </http:response>
+  </http:listener>
+
+  <http:request path="undeliable/endpoint" config-ref="httpRequester" method="GET">
+    <reconnect count="1" frequency="1000"/>
+  </http:request>
+
+</flow>
+----
+
+== 另请参阅
+
+*  link:migration-patterns[迁移模式]
+*  link:migration-connectors[迁移连接器]

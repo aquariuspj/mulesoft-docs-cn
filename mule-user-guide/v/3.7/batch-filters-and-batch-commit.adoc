@@ -1,0 +1,240 @@
+= 批量过滤器和批量提交
+:keywords: filters, connectors, anypoint, studio, esb, batch
+
+*_Enterprise, CloudHub_*
+
+使用批处理，您可以改进批处理步骤对其处理的记录执行的工作。
+
+* 您可以在批处理步骤中设置*filters*，以便只接受一些要处理的记录。
+* 您可以*commit*以组的形式进行记录，并将它们作为批量upserts发送到外部来源或服务。
+
+本文档概述了如何以及何时使用批量过滤器和批量提交包装器。
+
+
+== 先决条件
+
+本文档假定您熟悉 link:/anypoint-studio/v/5/index[Anypoint Studio]，并且已经查看了 link:/mule-user-guide/v/3.7/batch-processing[批量处理]的概述和基本解剖结构，并了解了批处理作业如何处理 link:/mule-user-guide/v/3.7/batch-processing[记录失败处理]。您还应该考虑 link:/mule-user-guide/v/3.7/batch-streaming-and-job-execution#streaming-batch-commits[流式批量提交]。
+
+== 过滤器
+
+您可以将一个或多个过滤器作为属性应用于批作业中的任意批处理步骤。通过使批处理步骤仅接受一些记录进行处理，可以简化处理过程，以便Mule只关注与特定批处理步骤相关的数据。
+
+例如，可以将过滤器应用于批处理作业中的第二批处理步骤，以确保第二步仅尝试处理在第一批处理步骤中处理期间未失败的记录。为了把它放在用例的上下文中，设想一个批量作业，它使用它的第一批步骤来检查Salesforce联系人是否存在记录;第二批步骤会使用新信息更新每个现有Salesforce联系人。在这种情况下，您可以将过滤器应用于第二批步骤，以确保它仅处理在第一批步骤中未失败的记录。
+
+过滤器在批处理步骤中应用。使用*Accept Expression*仅处理那些相对于MEL表达式评估为true的记录;如果记录评估为false，则批处理步骤不处理记录。换句话说，那些过滤表达式解析为false的记录是Mule过滤器_out_。
+
+以下示例将筛选年龄小于21岁的所有记录;该批处理步骤不会处理这些记录。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:accept_expression.png[accept_expression]
+....
+[tab,title="XML Editor"]
+....
+Note that details in code snippet are abbreviated so as to highlight batch step attributes.
+
+[source, xml, linenums]
+----
+<batch:step name="adultsOnlyStep" accept-expression="#[payload.age > 21]">
+----
+....
+------
+
+使用*Accept Policy*仅处理相对于接受策略属性的值计算为true的记录。请参阅下表以获取接受策略的可用值列表。以下示例说明批处理作业中的第二批处理步骤，该步骤仅处理那些在前一步骤中处理失败的记录。在第一批步骤中，Mule检查每条记录，看它是否有现有的Salesforce联系人;第二批步骤为每个记录创建一个联系人，只处理失败的记录（即没有现有账户）。
+
+[%header%autowidth.spread]
+|===
+|接受政策 |评估为TRUE时
+| NO_FAILURES  | _ Default_ +
+批处理步骤仅处理在所有先前步骤中成功处理的记录
+| ONLY_FAILURES  |批处理步骤仅处理那些在之前的批处理步骤中进行了_failed_处理的记录
+|全部 |批处理步骤处理所有记录，而不管它们是否在前面的批处理步骤中处理失败
+|===
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:accept_policy.png[accept_policy]
+....
+[tab,title="XML Editor"]
+....
+Note that details in code snippet are abbreviated so as to highlight batch step attributes.
+
+[source, xml, linenums]
+----
+<batch:step name="Create_Contact" accept-policy="ONLY_FAILURES" doc:name="Create Contact">
+----
+....
+------
+
+==== 滤波器特性
+
+* 批处理过滤器仅适用于批处理步骤，这些批处理步骤只能在批处理作业的批处理阶段使用。您无法使用“输入”或“完成”阶段应用筛选器。
+
+* 如果您不向批处理步骤应用过滤器，那么批处理只处理在前面所有步骤中都成功处理的记录。换句话说，应用于所有批次步骤的默认接受策略是NO_FAILURES。
+
+* 当批处理作业实例超过其`max-failed-records`值时，无论批处理步骤中设置了哪个筛选器，该步骤都不会处理任何记录，只需将失败的批处理作业实例推送到“完成”阶段。详细了解 link:/mule-user-guide/v/3.7/batch-processing[批处理作业中的失败处理]。
+
+* 有关批次步属性的详细信息，请参阅 link:/mule-user-guide/v/3.7/batch-processing-reference[批参考]。
+
+* 如果您应用两种类型的过滤器，Mule会按以下顺序评估它们：
++
+. 接受政策
++
+. 接受表达式
+
+== 批量提交
+
+您可以在批处理步骤中使用*Batch Commit*作用域，以便将批量upsert中的记录子集累积到外部源或服务。例如，您可以将批处理中的每个联系人（即记录）分别插入到Google通讯录中，而不是将每个联系人（即记录）插入到Google通讯录中，而是可以配置批量处理以累积100条记录，然后将所有记录全部上传到Google联系人中。
+
+在批处理步骤中 - 您可以应用它的唯一位置 - 您使用批处理提交来打包出站消息源。看下面的例子。
+
+*Note:*另请参阅 link:/mule-user-guide/v/3.7/batch-streaming-and-job-execution#streaming-batch-commits[流式批量提交]。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:aggregator.png[aggregator]
+
+image:batch_commit.png[batch_commit]
+....
+[tab,title="XML Editor"]
+....
+Note that details in code snippet are abbreviated so as to highlight batch commit and its attributes.
+
+[source, xml, linenums]
+----
+<batch:step name="Step2">
+            <batch:commit size="100">
+                <google-contacts:/>
+            </batch:commit>
+        </batch:step>
+----
+....
+------
+
+==== 批量提交特性
+
+* 批量提交作用域只能在批处理步骤中存在，而这些批处理步骤只能在批处理作业的批处理阶段中使用。您不能在“输入”或“完成”阶段中使用批量落实。
+
+* 提交只能将最后一个元素包含在它所在的批处理步骤中。
+
+* 多个*Anypoint Connectors*有能力处理记录级错误，而不会失败整个批处理提交（即upsert）。在运行时，这些连接器会跟踪哪些记录被目标资源成功接受，哪些记录无法插入。因此，连接器不是在提交活动期间失败一组完整的记录，而是简单地插入尽可能多的记录，并跟踪任何通知失败。下面简要介绍一下这种连接器的情况：
+
+** 的Salesforce
+Google通讯录** 
+Google日历。** 
+** 的NetSuite
+** 数据库
+
+* 有关批次步属性的详细信息，请参阅 link:/mule-user-guide/v/3.7/batch-processing-reference[批参考]。
+
+* 批处理不支持作业实例范围的事务。您可以在批处理步骤中定义一个处理单独事务中的每个记录的事务。 （把它看作是一步之内的一步。）这样的事务必须在步骤的边界内开始和结束。
+
+{0}}您无法在步骤中存在的批次步骤和批次落实之间共享事务。批处理步骤开始的任何事务在批处理提交开始处理之前结束。换句话说，事务不能跨越批处理步骤与其包含的批处理提交之间的障碍。
+
+== 示例
+
+此示例使用批处理来处理用例，其中包含名称，生日和电子邮件地址的潜在客户逗号分隔值文件（CSV）的内容必须上传到Salesforce。为避免重复任何销售线索，批处理作业会在将数据上传到Salesforce之前检查是否存在潜在客户。
+
+有关更多信息，请参阅：
+
+*  link:/mule-user-guide/v/3.7/batch-processing[批量处理]，详细说明批处理作业在每个处理阶段中所采用的步骤。
+*  https://www.anypoint.mulesoft.com/exchange/?search=salesforce%20import%20leads [示例：将销售线索导入Salesforce]。
+
+`insert-lead`批处理步骤同时使用*Accept Expression*和*Batch Commit*（见下文）。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:example_batch.png[example_batch]
+....
+[tab,title="XML Editor"]
+....
+[NOTE]
+====
+If you copy and paste the code into your instance of Studio, be sure to enter your own values for the *global Salesforce connector*:
+
+* Username
+* Password
+* Security token
+
+*How do I get a Salesforce security token?*
+
+. Log in to your Salesforce account. From your account menu (your account is labeled with your name), select *Setup*.
+. In the left navigation bar, under the *My Settings* heading, click to expand the *Personal* folder. 
+. Click *Reset My Security Token*. Salesforce resets the token and emails you the new one.
+. Access the email that Salesforce sent and copy the new token onto your local clipboard.
+. In the application in your instance of Anypoint Studio, click the *Global Elements* tab. 
+. Double-click the Salesforce global element to open its *Global Element Properties* panel. In the *Security Token* field, paste the new Salesforce token you copied from the email. Alternatively, configure the global element in the XML Editor.
+====
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd">
+ 
+    <sfdc:config name="Salesforce" username="username" password="password" securityToken="SpBdsf98af9tTR3m3YVcm4Y5q0y0R" doc:name="Salesforce">
+        <sfdc:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sfdc:config>
+ 
+    <data-mapper:config name="new_mapping_grf" transformationGraphPath="new_mapping.grf" doc:name="DataMapper"/>
+    <data-mapper:config name="new_mapping_1_grf" transformationGraphPath="new_mapping_1.grf" doc:name="DataMapper"/>
+    <data-mapper:config name="leads_grf" transformationGraphPath="leads.grf" doc:name="DataMapper"/>
+    <data-mapper:config name="csv_to_lead_grf" transformationGraphPath="csv-to-lead.grf" doc:name="DataMapper"/>
+ 
+    <batch:job max-failed-records="1000" name="Create Leads" doc:name="Create Leads">
+        <batch:threading-profile poolExhaustedAction="WAIT"/>
+        <batch:input>
+            <file:inbound-endpoint path="src/test/resources/input" moveToDirectory="src/test/resources/output" responseTimeout="10000" doc:name="File"/>
+            <data-mapper:transform config-ref="csv_to_lead_grf" doc:name="CSV to Lead"/>
+        </batch:input>
+ 
+        <batch:process-records>
+            <batch:step name="lead-check" doc:name="Lead Check">
+                <enricher source="#[payload.size() &gt; 0]" target="#[recordVars['exists']]" doc:name="Message Enricher">
+                    <sfdc:query config-ref="Salesforce" query="dsql:SELECT Id FROM Lead WHERE Email = '#[payload[&quot;Email&quot;]]'" doc:name="Find Lead"/>
+                </enricher>
+            </batch:step>
+            <batch:step name="insert-lead"  doc:name="Insert Lead" accept-expression="#[recordVars['exists']]">
+                <logger message="Got Record #[payload], it exists #[recordVars['exists']]" level="INFO" doc:name="Logger"/>
+                <batch:commit size="200" doc:name="Batch Commit">
+                    <sfdc:create config-ref="Salesforce" type="Lead" doc:name="Insert Lead">
+                        <sfdc:objects ref="#[payload]"/>
+                    </sfdc:create>
+                </batch:commit>
+            </batch:step>
+            <batch:step name="log-failures" accept-policy="ONLY_FAILURES" doc:name="Log Failures">
+                <logger message="Got Failure #[payload]" level="INFO" doc:name="Log Failure"/>
+            </batch:step>
+        </batch:process-records>
+ 
+        <batch:on-complete>
+            <logger message="#[payload.loadedRecords] Loaded Records #[payload.failedRecords] Failed Records" level="INFO" doc:name="Log Results"/>
+        </batch:on-complete>
+    </batch:job>
+</mule>
+----
+....
+------
+
+== 另请参阅
+
+* 访问有关批处理的 link:/mule-user-guide/v/3.7/batch-processing-reference[参考细节]。
+
+* 阅读关于Mule批处理的 link:/mule-user-guide/v/3.7/batch-processing[基本的解剖学]。
+
+* 检查您可以为批处理作业，步骤和消息处理器配置的 link:/mule-user-guide/v/3.7/batch-processing-reference[属性]。
+
+* 详细了解如何设置和删除 link:/mule-user-guide/v/3.7/record-variable[记录级变量。]

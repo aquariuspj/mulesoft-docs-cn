@@ -1,0 +1,227 @@
+=  BPM模块参考
+:keywords: connectors, anypoint, studio,bpm
+
+BPM代表业务流程管理，简单地说可以被认为是一个自动化业务流程的系统。通常情况下，BPM系统具有图形界面，允许您以可视化的方式为业务流程建模，以便业务分析人员或其他非程序员可以轻松理解并验证他们确实反映了业务现实。
+
+Mule对BPM的支持允许您向正在运行的进程发送/接收消息。来自Mule的消息可以启动或前进一个进程，该消息可以作为进程变量存储，并且正在运行的进程可以将消息发送到Mule应用程序中的任何端点。
+
+Mule可以与多种BPM系统进行交互。集成可用于几种流行的实现，并且与新系统集成为<<Writing a BPMS Plug-in>>。
+
+== 注意事项
+
+如果您的Mule应用程序的业务逻辑相对简单，不会经常更改，并且大部分是无状态的，那么您最好使用Mule的编排功能（例如流，路由器和自定义组件）来实现它。
+
+但是，在下列情况下，您可能会考虑使用BPM来为您的业务逻辑建模：
+
+* 如果您的流程中的执行具有许多基于决策标准的离散步骤和/或多条路径，将其建模为一个流程可能有助于更好地对其进行可视化。
+
+* 如果您的业务逻辑始终处于不断变化之中，那么BPM可能是将逻辑与集成解耦的好方法。
+
+* 如果您的业务逻辑或流程需要由非程序员进行审查或更新，那么BPM可以实现这一点。
+
+* 如果一个流程在几分钟内从头到尾不会完成，那么它可能是BPM的一个很好的候选者，因为中间流程状态是持久的，因此它不需要保存在内存中。
+
+* 如果您的集成需要人工输入，BPM允许您通过任务管理和Web应用程序向您的流程添加人为步骤。
+
+* 如果您的应用程序需要循序渐进的审计跟踪，则BPM可能是一个不错的选择，因为流程历史记录会保存在数据库中。
+
+BPM引擎很可能会增加一些性能开销。如果高性能对您的应用程序至关重要，那么您应该考虑使用Mule的编排来建模您的过程。
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source, xml]
+----
+xmlns:bpm "http://www.mulesoft.org/schema/mule/bpm"
+----
+
+XML架构位置：
+
+[source]
+----
+http://www.mulesoft.org/schema/mule/bpm/3.6/mule-bpm.xsd
+----
+
+句法：
+
+[source, xml]
+----
+<bpm:process processName="myProcess" processDefinition="myProcess.xml" />
+----
+
+== 特点
+
+* 传入Mule事件可以启动新进程，提前或终止正在运行的进程。
+
+* 正在运行的进程可以向任何Mule端点发送同步或异步消息。
+
+*  Mule的同步响应会自动反馈到正在运行的进程中，并可以存储到进程变量中。
+
+*  Mule可以并行地与不同的正在运行的进程进行交互。
+
+== 用法
+
+按如下所示为该模块导入XML模式：
+
+[source, xml, linenums]
+----
+xmlns:bpm="http://www.mulesoft.org/schema/mule/bpm"
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/bpm  http://www.mulesoft.org/schema/mule/bpm/3.7/mule-bpm.xsd"
+----
+
+然后，您可以按如下方式使用`<bpm:process>`元素，通常在入站端点之前。请参阅下面的示例配置。
+
+[source, xml]
+----
+<bpm:process processName="myProcess" processDefinition="myProcess.xml" />
+----
+
+* 至少，在触发BPM流程时，您必须在`<bpm:process>`元素中指定`processName`和`processDefinition`属性。这些元素的语法特定于您正在使用的BPMS实现。
+
+* 传入的Mule消息和属性可以存储为流程变量，流程变量可以作为Mule消息发送。如何配置这取决于具体的BPMS及其过程定义语言。对于支持的实现，如jBPM，请参阅相关的模块文档。
+
+* 从Mule到BPMS的传入消息根据消息属性MULE_BPM_PROCESS_ID进行关联。如果一个进程已经存在这个ID，那么这个消息将现有进程前进一步。否则，将创建并开始一个新进程。该进程生成的任何传出消息都设置了MULE_BPM_PROCESS_ID。在异步响应的情况下，应用程序在响应消息中保留此属性以使其与正确的流程实例相关是非常重要的。如果您希望使用不同的消息属性来跟踪进程ID，则可以使用`processIdField`属性来指定它。
+
+* 正在使用的BPMS（任何实现下面描述的Javadoc接口的系统）必须在你的Mule配置的顶部声明。如果为自定义实现或集成提供了一个专用的XML元素（如`<bpm:jbpm>`）或Spring bean，那么这可能是一个专用的XML元素。如果您的应用程序中使用了多个BPMS，则必须在`<bpm:process>`元素上指定`bpms-ref`属性以消除歧义，否则将从Mule的对象注册表中自动找到BPMS（类似于{{ 4}}属性在`<endpoint>`上）。
++
+http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/module/bpm/BPMS.html[BPMS]
+
+=== 配置示例
+
+*Example configuration*
+
+[source, xml, linenums]
+----
+<mule ... xmlns:bpm="http://www.mulesoft.org/schema/mule/bpm"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/bpm     
+    http://www.mulesoft.org/schema/mule/bpm/3.6/mule-bpm.xsd" ...>
+ 
+  <spring:bean id="testBpms" class="com.foo.FooBPMS" /> ❸
+ 
+  <flow name="MessagesToProcess">
+      <jms:inbound-endpoint queue="queueA" /> ❶
+      <bpm:process processName="myProcess" processDefinition="myProcess.xml" /> ❷
+  </flow>
+ 
+  <flow name="SomeSynchronousService">
+      <inbound-endpoint ref="callService" exchange-pattern="REQUEST-RESPONSE" /> ❹
+      <component class="com.foo.SomeService" /> ❺
+  </flow>
+</mule>
+----
+
+在此配置中，JMS队列in上的入站消息会触发文件"myProcess.xml" defined定义的流程，其格式取决于基础BPMS。入站消息存储为一个过程变量。部署和运行流程的BPMS由类`com.foo.FooBPMS` defined定义。由于应用程序中只有一个实现，因此不需要明确的引用。流程定义中的一个步骤可能会向端点`callService` send发送消息，在这种情况下，`com.foo.SomeService` synchronous的同步响应也可以作为流程变量进行存储。请注意，由于此逻辑发生在流程定义中，因此它在Mule配置中不可见。
+
+*Multiple BPMS's*
+
+[source, xml, linenums]
+----
+<spring:bean id="bpms1" class="com.foo.FooBPMS" />
+ 
+<spring:bean id="bpms2" class="com.bar.BarBPMS" />
+ 
+<flow name="ProcessFlow1">
+    ...cut...
+    <bpm:process processName="process1" processDefinition="process1.def" bpms-ref="bpms1" ❶ />
+</flow>
+ 
+<flow name="ProcessFlow2">
+    ...cut...
+    <bpm:process processName="process2" processDefinition="process2.cfg" bpms-ref="bpms2" ❷ />
+</flow>
+----
+
+此配置片段说明如何使用`bpms-ref`属性来消除多个BPMS之间的歧义。如果只有一个BPMS可用，则该属性是不必要的。
+
+==  BPMS支持
+
+Mule发行版本包括原生支持 http://www.jboss.com/products/jbpm[JBoss jBPM]的流行可嵌入BPMS。有关信息，请参阅 link:/mule-user-guide/v/3.7/jboss-jbpm-module-reference[JBoss jBPM模块参考]。
+
+其他BPMS解决方案是：
+
+*  Apache http://www.activiti.org/[Activiti的]
+
+*  BonitaSoft http://www.bonitasoft.com/[博尼塔]
+
+Mule发行版中包含对 http://www.jboss.com/products/jbpm[JBoss jBPM]的支持，有关信息，请参阅 link:/mule-user-guide/v/3.7/jboss-jbpm-module-reference[JBoss jBPM模块参考]。
+
+== 编写一个BPMS插件
+
+Mule的基本设计原则之一是为用户提供最大的灵活性。基于此，用户理想情况下应该能够"plug in"任何BPM系统甚至他们自己的自定义BPMS实现与Mule一起使用。不幸的是，没有标准的JEE规范来实现这一点。因此，骡简单地定义了它自己的简单界面。
+
+[source, java, linenums]
+----
+public interface BPMS
+{
+    public Object startProcess(Object processType, Object transition, Map processVariables) throws Exception;
+ 
+    public Object advanceProcess(Object processId, Object transition, Map processVariables) throws Exception;
+ 
+    // MessageService contains a callback method used to generate Mule messages from your process.
+    public void setMessageService(MessageService msgService);
+}
+----
+
+任何实现接口（ http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/module/bpm/BPMS.html[org.mule.module.bpm.BPMS]）的BPM系统都可以通过BPM模块向Mule发送"plug in"。为现有的BPM系统创建连接器可以像创建将该接口映射到该系统的本机API的包装类一样简单。
+
+=== 配置参考
+
+无论文本是否支持此处目前缺少，并且不在网页上或在此语法分析页面上
+
+== 过程
+
+一个由BPMS支持的流程，如jBPM。
+
+<process...>的{​​{0}}属性
+
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+| bpms-ref  |对底层BPMS的可选引用。这用于在多个BPMS可用的情况下消除歧义。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| processName  |进程的逻辑名称。这用于从BPMS中查找正在运行的流程实例。
+
+*Type*：string +
+*Required*：是+
+*Default*：无
+| processDefinition  |包含流程定义的资源将用于将流程部署到BPMS。资源类型取决于正在使用的BPMS。
+
+*Type*：string +
+*Required*：是+
+*Default*：无
+| processIdField  |该字段用于将Mule消息与进程相关联。如果未指定，则默认为MULE_BPM_PROCESS_ID。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|===
+
+无<process...>的子元素
+
+
+===  XML架构
+
+完成 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_bpm/namespace-overview.html[模式参考文档]。
+
+=== 的Maven
+
+如果您使用Maven构建应用程序，请使用以下groupId和artifactId将此模块作为依赖项包含在内：
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-module-bpm</artifactId>
+</dependency>
+----
+
+== 注意事项
+
+* 该模块专为提供Java API的BPM引擎而设计。如果您需要与BPEL引擎集成，可以使用 link:/mule-user-guide/v/3.7/using-web-services[标准的Web服务]来完成。
+
+* 与BPM系统交互的推荐方式是通过`<bpm:process>`组件和消息处理器。
+

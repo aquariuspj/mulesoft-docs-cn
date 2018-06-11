@@ -1,0 +1,1407 @@
+=  Anypoint连接器DevKit教程
+:keywords: devkit tutorial, features, cookbook
+：imagesdir：./_images
+：resourcesDir：资源
+：教程：食谱
+：作者：MuleSoft Inc.
+
+== 教程目标
+
+了解如何使用Anypoint Connector DevKit创建到Web服务的连接器。
+
+DevKit可帮助您构建 link:/mule-user-guide/v/3.9/anypoint-connectors[Anypoint连接器]。本教程将向您展示如何编写连接器以支持身份验证，连接，服务操作等。这是连接器开发人员向连接器的最终用户公开的功能，他是Mule应用程序开发人员。
+
+== 什么是Anypoint连接器DevKit？
+
+link:/anypoint-connector-devkit/v/3.9/index[Anypoint连接器DevKit]是Anypoint平台中的一个重要开发工具，可使编码Anypoint连接器变得更加简单。 DevKit是一款基于Maven的工具，可让您构建可作为Mule应用程序的一部分运行的可重用组件，并可从 link:http://www.mulesoft.com/platform/mule-studio[Anypoint Studio]轻松进行配置。
+
+DevKit向连接器开发人员公开 link:http://docs.oracle.com/javase/tutorial/java/annotations/[Java注释]，生成代码和文件以与Mule运行时以及Anypoint Studio进行交互。生成的代码提供了连接器和Mule之间的接口，否则这些接口要求每个连接器开发人员都包含大量样板代码，以及在Anypoint Studio中与连接器交互所需的代码和文件。
+
+== 什么是连接器？
+
+Anypoint连接器是与Mule运行时和Anypoint Studio交互的可重用组件。连接器与目标资源通信并在资源和Mule之间传递信息，并将数据转换为Mule消息。
+
+Anypoint Connector DevKit抽象了Mule与外部服务或API之间发生的通信，并生成一个用户界面，以帮助开发人员最终在其应用程序中使用该连接器。
+
+在处理诸如分页，会话到期以及输入和输出元数据之类的任务时，开发良好的连接器使得Mule应用程序的开发更加简单。本教程将向您介绍如何创建设计良好的连接器。
+
+== 为什么使用DevKit构建连接器？
+
+这就是为什么你可能想要建立自己的连接器：
+
+* 您需要从Mule应用程序使用API​​，并且希望确保开发人员通过使用相同的连接器来保持一致性。
+{0}}您拥有一个API，并希望通过为开发人员提供一个连接器，为您的Web服务提供一个接口，为您的业务增添战略价值。
+* 您希望促进与SaaS和本地Web服务，应用程序和数据源的集成。
+* 您使用的API支持分页，批处理和/或具有SQL功能。
+* 您使用的API具有不同的实体类型和/或其结构更改，具体取决于API /服务操作。
+* 您想要扩展Mule核心。
+
+== 先决条件
+
+在开发连接器之前，您应该对Mule，Anypoint Studio和Java开发有一定的了解，特别是使用https://docs.oracle.com/javase/tutorial/java/annotations/basics.html[Java annotations ]。
+
+[NOTE]
+====
+有关软件设置和DevKit的信息，请参阅 link:/anypoint-connector-devkit/v/3.9/setting-up-your-dev-environment[设置你的开发环境]和 link:/anypoint-connector-devkit/v/3.9/index[Anypoint连接器DevKit]。
+
+*You can develop a connector on a Windows, Mac, or Linux machine.*
+====
+
+
+[[get-cookbook]]
+== 获取食谱
+
+获取存储在GitHub上的食谱教程：
+
+. 将 link:https://github.com/mulesoft/mule-cookbook[https://github.com/mulesoft/mule-cookbook]存储库复制到本地计算机中。例如，要克隆到所需的开发文件夹，请运行：
++
+[source,bash,linenums]
+----
+cd ~/dev
+git clone https://github.com/mulesoft/mule-cookbook.git
+----
++
+. 输入新创建的`mule-cookbook`目录并运行以下Maven命令：
++
+[source,bash,linenums]
+----
+mvn install eclipse:eclipse
+----
++
+////
+由于连接器尚未构建，您应该收到FAILURE来构建Mule Cookbook Anypoint连接器
+去做
+[INFO]反应堆摘要：
+[INFO]
+[INFO] mule-cookbook ...................................... SUCCESS [  1.002 s]
+[INFO] model .............................................. SUCCESS [  1.823 s]
+[INFO] webservice ......................................... SUCCESS [  2.161 s]
+[INFO] soap-server ........................................ SUCCESS [  9.675 s]
+[INFO] rest-server ........................................ SUCCESS [  2.729 s]
+[INFO] Mule Cookbook Server Application ................... SUCCESS [ 11.379 s]
+[INFO] sdk-client ......................................... SUCCESS [  6.066 s]
+[INFO] Mule Cookbook Anypoint Connector ................... FAILURE [ 12.956 s]
+[信息] mule-cookbook-service .............................. SKIPPED
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+////
+. 完成后，打开Anypoint Studio，将`mule-cookbook`目录作为现有项目导入。 *File*> *Import*> *Existing Projects into Workspace*。
++
+image::devkit-tutorial-30756.png[导入现有的骡子食谱]
+
+这应该会在Studio的工作区中的上述屏幕上创建几个文件夹，该文件夹在*Package Explorer*中可见。
+
+== 食谱说明
+
+在我们继续之前，让我们简单地提一下，Cookbook服务是一项Web服务，可帮助用户组织他们可能想要访问，存储或从Web更新的配料和配方。
+
+===  Cookbook API描述
+
+此API允许用户对单个和多个配方和配料使用创建，读取，更新和删除（CRUD）操作。该API还允许您查看最近添加的食谱。
+
+API暴露为：
+
+使用 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/resources/wsdl/IMuleCookBookService.wsdl[WSDL]文件的*  SOAP服务
+包含 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/api.raml[肾错构瘤]文件的*  REST API和
+*  Java link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/IMuleCookBookClient.java[SDK]。
+
+
+=== 认证
+
+该连接器支持以下认证机制：
+
+* 使用用户名和密码进行自定义身份验证，该身份验证提供一个令牌，作为请求的一部分与每个请求一起发送。
+
+*  link:http://oauth.net/2/[OAuthV2]
+
+==== 凭据
+
+===== 自定义身份验证：
+[%header,cols="2*"]
+|===
+| 用户名
+| 密码
+
+| 管理员
+| 管理员
+|===
+
+===== 的OAuth：
+[%header,cols="2*"]
+|===
+| 客户端ID
+| 客户端秘密
+
+|  ePU9CxyEVFIXF9nMoGH16s1lUGe5JYPPzClnnVBG
+|  YeKAsQCdr264tNmDdvTdJUAh9TQraJqZpwbEoTuz
+|===
+
+[[connecting-to-service]]
+=== 连接到服务
+
+Web服务可在线获得。
+
+* 要使用SOAP版本和SDK，请向地址`+http://devkit-cookbook.cloudhub.io/soap+`发送请求。
+
+* 其他基本网址是`+http://devkit-cookbook.cloudhub.io/rest+`
+
+**  OAuth授权网址是*/oauth/authorize*
+
+** 访问令牌网址是*/oauth/accessToken*
+
+[NOTE]
+====
+您也可以在本地运行它，因为我们提供了已准备好启动的服务器的源代码。
+
+只需执行com.cookbook.tutorial.service.MuleStoreServer类，即可从soap-server项目运行本地SOAP服务器。
+
+默认情况下，它会启动地址为`+http://localhost:9090/cook-book+`的服务器
+
+只需执行com.cookbook.tutorial.Main类即可从其余服务器项目运行本地REST服务器。
+
+默认情况下，它会启动地址为`+http://localhost/9091+`的服务器
+====
+
+== 构建Cookbook连接器的步骤
+
+要为{tutorial}服务构建基本连接器，我们需要执行以下步骤：
+
+. 创建一个Connector项目。
+. 添加包含我们将用于连接到服务的客户端的依赖项。
+. 添加可配置的网址，以便用户可以指定承载服务的网址。
+. 添加用户可以在Anypoint Studio中使用的操作。
+
+=== 创建{tutorial}连接器
+
+按照 link:#get-cookbook[以上]的指示将`mule-cookbook`目录作为现有项目导入到您的工作区中，即可开始创建连接器项目并开始编码。
+
+. 在Anypoint Studio中，点击*File*> *New*> *Anypoint Connector Project*或在包资源管理器中右键单击您的项目名称，然后点击*New*> *Anypoint Connector Project* ：
++
+image::new-connector-1.png[宽度= “500”]
++
+. 选择您想要创建的项目类型。在这种情况下，请选择*SDK Based*：
++
+image::new0.png[宽度= “500”]
++
+. 指定连接器的名称，并且不要忘记在单击*Finish*之前取消选中默认代：
++
+image:new1.png[宽度= “550”]
++
+这会生成一个包含结构和所有必需元素的项目，其中包括骨架连接器，图标，示例文档文件，但不会为您的连接器进行基本测试。
++
+image::new-connector-3.png[宽度= “600”， “新连接器-3”]
+
+[TIP]
+您可以通过单击顶部栏*Window*> *Show View*> *Other*启用DevKit视图，然后在*MuleSoft*下拉列表中查找DevKit。
+
+
+.DevKit视图显示了连接器的紧凑视图。
+image::enable-view.png[宽度= “300”]
+
+[[using-config]]
+== 连接配置
+
+在使用服务时，您可能需要配置不同的值来建立连接。
+
+为了便于开发连接配置策略，DevKit提供了一对注释，可让您将这些定义模块化到几个类中：
+
+* 您使用`@Connector`注释向用户公开的行为。
+* 与连接配置相关的代码将在您添加`@Config`注释的位置注入。您可以使用几种类型的配置，我们将在本教程中看到。
+
+[TIP]
+====
+当您使用`@Config`标记类时，DevKit可确保在Mule应用程序运行时以及向连接器发出请求时已设置初始化对象。
+====
+
+==== 在pom.xml中添加依赖关系
+
+我们通过创建一个连接器开始编码，该连接器允许您从Cookbook服务中获取最近添加的项目。
+
+由于我们不需要任何形式的认证来消费最近添加的配方，这是我们可以用来开始学习如何构建连接器的最佳操作。
+
+. 添加我们的客户端依赖项，以便我们可以在我们的连接器中使用它。这样我们就可以使用Java API连接到{tutorial}。
++
+在您的pom.xml文件中添加：
++
+[source,xml,linenums]
+----
+<dependencies>
+  <dependency>
+    <groupId>org.mule.modules</groupId>
+    <artifactId>sdk-client</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </dependency>
+</dependencies>
+----
+
+=== 添加代码以支持可配置字段
+
+在`ConnectorConfig.java`文件中，为{tutorial}服务所在的地址添加@Configurable注释：
+
+. 在连接器配置编辑器中键入*conf*，并使用`control` + `space`显示模板。
++
+image::config-field.png[宽度= “600”]
++
+. 在`@Configuration`注释的类中定义一个可配置的字段，其默认值为我们的客户端连接到的端点，例如`+@Default("http://devkit-cookbook.cloudhub.io/soap")+`
+. 标有`@Configurable`注释的任何字段必须具有该字段的getter和setter。
++
+查看完整的 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v1/ConnectorConfig.java[配置]源代码。
+
+=== 初始化客户端
+
+在`Connector.java`文件的`@Connector`注释类中，在方法上使用`@Start`注释来初始化客户端。
+
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v1/CookbookConnector.java[lines=30..35]
+----
+
+[NOTE]
+====
+Anypoint连接器可以完全了解Mule运行时的生命周期，而不需要实现任何Mule特定的接口。
+
+生命周期的四个阶段都有一个注释方法。
+
+当一个方法用这些注释之一进行注释时，DevKit会在注释表示的生命周期阶段调用它。
+====
+
+[[processor]]
+=== 添加@Processor方法
+
+. 从`Connector.java`文件中删除虚拟`@Processor`操作。
++
+. 要添加处理器，只需在Studio代码编辑器中键入`proc`，然后使用`ctrl` + `space`显示模板并选择简单的处理器。
++
+image::processor1.png[宽度= “600”]
++
+. 将其更改为反映`getRecentlyAdded`方法签名（请参阅示例实现 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v1/CookbookConnector.java#L46[这里]），此时您已有适当的代码来构建第一个连接器，然后准备好测试。
+. 运行 link:/anypoint-connector-devkit/v/3.9/creating-a-java-sdk-based-connector#generating-sources[生成来源]操作。
++
+查看完整的 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v1/CookbookConnector.java[连接器]源代码。
+
+[NOTE]
+右键单击Studio的包资源管理器中的连接器项目，解决任何包导入错误。 *Build Path*> *Add External Archives*。例如，添加适用的.jar文件，以便您的项目可以引用食谱`sdk-client`。这应该可以阻止以下任何导入错误：
+`import com.cookbook.tutorial.client.MuleCookBookClient;`
+`import com.cookbook.tutorial.service.Recipe;`
+
+您可以检查项目属性中的引用。
+
+image::devkit-tutorial-af283.png[食谱连接器项目的属性]
+
+此时，您可以<<install-guide,install>>此连接器，然后在Studio中尝试它。
+
+[IMPORTANT]
+====
+在修改连接器时，您可能会开始在生成的文件夹中看到错误标记。
+
+只要忽略它们。
+
+一旦重新生成源代码，错误将消失，因为生成的代码将被刷新。
+====
+
+==== 为连接器处理器定义示例代码
+
+[NOTE]
+使用DevKit 3.9构建的连接器支持采用不同格式的示例规范。请参阅https://docs.mulesoft.com/anypoint-connector-devkit/v/3.9/connector-reference-documentation[Connector参考文档]中的新规范和生成格式。
+
+请继续为操作添加示例用法（用`@Processor`注释）。
+
+如果文件不存在，则在`{@sample ...}`之后的`Connector.java`文件中创建代码块中引用的文件。
+
+----
+/**
+ * Returns the list of recently added recipes
+ *
+ * {@sample.xml ../../../doc/cookbook-connector.xml.sample
+ * cook-book:getRecentlyAdded}
+ *
+ * @return A list of the recently added recipes
+ */
+----
+
+[NOTE]
+添加示例时，请使用与指定文件中示例相同的名称。在它里面你必须举一个`@Processor`的例子。
+
+如果您启用了"Javadoc check"，DevKit插件会将缺失的示例标记为错误，并为我们快速修复以便轻松添加示例。
+
+否则，请打开文件并在编辑器中键入*<*，然后使用`control` + `space`显示模板并选择最适合我们操作的模板。
+
+image::sample1.png[宽度= “600”]
+
+我们的例子在这种情况下看起来像这样：
+
+[source,xml,linenums]
+----
+<!-- BEGIN_INCLUDE(cook-book:getRecentlyAdded) -->
+	<cook-book:get-recently-added/>
+<!-- END_INCLUDE(cook-book:getRecentlyAdded) -->
+----
+
+=== 在Mule应用程序中使用连接器
+
+制作一个在HTTP端点侦听的简单应用程序;当端点被击中时，应用程序将使用连接器从cookbook服务中检索最近添加的项目列表。
+
+. 在Studio中创建一个Mule应用程序并添加一个HTTP侦听器，并为该路径指定`/get-recently`。如果这是您的第一个Mule应用，请查看我们的 link:/getting-started/build-a-hello-world-application[Hello World应用程序]。
+. 将连接器放到画布上，并使用`admin`和`admin`作为凭据进行配置（这是针对非OAuth配置的）。
++
+image::devkit-tutorial-4cb84.png[]
++
+. 在连接器后面拖放一个*Object to JSON*转换器，然后运行该应用程序。 （播放图标或*Run As*> *Mule Application*）
++
+image::devkit-tutorial-1c0f8.png[]
++
+[source,xml,linenums]
+----
+include::{resourcesDir}/mule-app/first-mule-app.xml[]
+----
++
+如果您点击了网址`+http://localhost:8081/get-recently+`，则会看到类似于以下内容的回复：
++
+[source,json,linenums]
+----
+[
+   {
+      "created":1428678371866,
+      "id":2,
+      "lastModified":null,
+      "name":"Baked Apples",
+      "cookTime":20.0,
+      "directions":[
+         "Cut the Apples",
+         "Put them in the oven",
+         "Remove from the oven after 20.0 minutes"
+      ],
+      "ingredients":[
+         {
+            "created":1428678371866,
+            "id":1,
+            "lastModified":null,
+            "name":"Apple",
+            "quantity":0.0,
+            "unit":"UNIT"
+         }
+      ],
+      "prepTime":30.0
+   }
+]
+----
+
+
+要了解如何为连接器创建测试，请参阅：
+
+*  link:http://mulesoft.github.io/connector-certification-docs/advanced/index.html#_functional_tests_automation[测试自动化]文档。
+
+* 完整的 link:/anypoint-connector-devkit/v/3.9/developing-devkit-connector-tests[测试文档]。
+
+=== 添加连接管理
+
+`getRecentlyAdded`调用不需要认证 - 所有其他Cookbook操作都要求您为每个请求设置一个令牌。
+
+您正在使用的客户端提供了一个登录调用，用于初始化令牌并在随后的请求中使用它。
+
+[NOTE]
+====
+考虑到会话可能过期并导致连接器再次发出登录请求。
+====
+
+DevKit提供了一组注释来保持您的代码清洁并处理连接。
+
+. 在`Config.java`文件中，将`@Configuration`更改为`@ConnectionManagement`
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v2/ConnectorConfig.java[lines=29]
+----
++
+. 确保您已在`ConnectorConfig.java`中配置了`MuleCookbookClient`，并带有getter和setter。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v2/ConnectorConfig.java[lines=91..100]
+----
++
+. 如图所示实现这四个方法：
++
+*  *`@Connect`*  - 初始化客户端，如果登录失败，则抛出异常。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v2/ConnectorConfig.java[lines=41..50]
+----
++
+*  *`@Disconnect`*  - 释放连接。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v2/ConnectorConfig.java[lines=55..58]
+----
++
+*  *`@ValidateConnection`*  - 检查您的连接是否存在。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v2/ConnectorConfig.java[lines=63..66]
+----
++
+*  *`@ConnectionIdentifier`*  - 返回一个字符串值。这只会在调试时使用。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v2/ConnectorConfig.java[lines=71..74]
+----
++
+. 从`CookbookConnector.java`中移除`MuleCookBookClient`的声明，并移除实例化新的`MuleCookBookClient`客户端的方法。
++
+[source,java,linenums]
+----
+	private MuleCookBookClient client;
+
+	@Start
+	public void initialize() {
+		client = new MuleCookBookClient(config.getAddress());
+	}
+----
++
+. 在我们的`getRecentlyAdded`方法（注释为`@Processor`）中调用应该在`ConnectorConfig.java`中定义的`getclient`方法。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v2/CookbookConnector.java[lines=35..38]
+----
+
+看到：
+
+*  link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v2/CookbookConnector.java[连接器]源代码。
+
+*  link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v2/ConnectorConfig.java[配置]源代码。
+
+如果您安装此版本并尝试运行我们之前创建的Mule应用程序，则会看到"SAXParseException"失败，因为我们需要为我们的配置添加用户名和密码。
+
+只需打开连接器的全局配置并检查是否有两个新字段，即用户名和密码。配置它们，你可以再次运行应用程序。
+
+image::connection-management.png[宽度= “600”]
+
+这是更新的Mule应用程序XML：
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:cookbook="http://www.mulesoft.org/schema/mule/cookbook" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/cookbook http://www.mulesoft.org/schema/mule/cookbook/current/mule-cookbook.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <cookbook:config name="Cookbook__Configuration" doc:name="Cookbook: Configuration type config" password="admin" username="admin"/>
+    <flow name="mule-appFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/get-recently" doc:name="HTTP"/>
+        <cookbook:get-recently-added config-ref="Cookbook__Configuration" doc:name="Cookbook"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+</mule>
+----
+
+* 了解 link:http://mulesoft.github.io/connector-certification-docs/advanced/index.html#_test_connectivity[测试连接]。
+* 请参阅使用DevKit设置 link:/anypoint-connector-devkit/v/3.9/authentication[认证]的文档。
+
+== 改进异常和错误处理
+
+本节介绍如何改进异常处理和重新连接。
+
+=== 使用@Handler进行异常处理
+
+`@Handler`功能对于避免处理异常的重复代码很有用，并使您的代码更易于阅读。
+
+在处理从API中检索到的消息时，如果您看到该消息无信息且您知道如何改进它，请使用`@Handler`机制来丰富提供给用户的错误信息。
+
+要查看它的工作原理，让我们在Cookbook SDK `create()`调用引发的`InvalidEntityException`的连接器代码中创建一个处理程序：
+
+。`MuleCookBookClient.java`的{​​{0}}调用会引发`InvalidEntityException`
+[source,java,linenums]
+----
+@Override
+   public CookBookEntity create(CookBookEntity entity) throws InvalidEntityException,
+           SessionExpiredException {
+       Create request = factory.createCreate();
+       request.setEntity(entity);
+       try {
+           return port.create(request, token).getReturn();
+       } catch (InvalidTokenException e) {
+           logger.warn("Should never happen.", e);
+           throw new RuntimeException(e);
+       }
+     }
+----
+
+. 右键单击并导航到菜单中的该项目，或者通过*New*> *Other*创建一个新的*Anypoint Connector Component*，然后在向导中选择此选项。
++
+image::new-component.png[宽度= “600”]
++
+. 选择软件包，组件类型和类名，然后单击完成。
++
+image::new-component-2.png[宽度= “600”]
++
+. 在抛出`InvalidEntityException`时改进错误消息。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v3/CookbookHandler.java[lines=11..19]
+----
++
+查看完整的 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v3/CookbookHandler.java[源代码]。
++
+. 添加一个新处理器来创建配料，注意它如何引用我们包含的异常处理程序。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v3/CookbookConnector.java[lines=59..63]
+----
++
+查看完整的 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v3/CookbookConnector.java[源代码]。
+
+=== 处理会话过期
+
+用户无需在其Mule应用程序中添加自定义代码来处理会话过期。 DevKit提供了一个干净利落的机制。
+
+只需使用`@ReconnectOn`例外注释您的`@Processor`方法即可。
+
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v3/CookbookConnector2.java[lines=60..65]
+----
+
+查看完整的 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v3/CookbookConnector2.java[源代码]。
+
+在我们的Mule应用程序中，您可以配置重新连接策略，以便我们的Mule应用程序准备好处理会话过期。
+
+Cookbook连接器对话窗口的全局配置：
+
+image::reconnect.png[宽度= “500”]
+
+为Cookbook连接器配置元素生成的XML如下所示：
+[source,xml,linenums]
+----
+<cookbook:config-type doc:name="config" name="config" password="admin" username="admin">
+    <reconnect/>
+</cookbook:config-type>
+----
+
+== 添加DataSense
+
+=== 这是什么？
+
+DataSense通过使连接器能够确定目标资源的API来创建Mule应用程序，从而在设计时改善用户体验。
+
+尽管DataSense是可选的，但它的使用使连接器用户能够获取服务中实体的元数据。
+
+看到：
+
+*  link:/anypoint-connector-devkit/v/3.9/adding-datasense[添加DataSense]
+
+
+在本教程中，我们使用静态DataSense模型，这意味着这些实体是前期已知的，并且不会更改。该模型支持的字段也是固定的。
+
+=== 使用DataSense
+
+要在食谱中使用DataSense，请执行以下操作：
+
+. 分析{mule}服务中的实体。我们只有两个简单的实体，Recipe和Ingredient，都从CookBookEntity扩展而来。
+. 查看我们的createIngredient操作在Anypoint Studio中的外观，以及它如何与其他组件交互。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v3/CookbookConnector2.java[lines=60..65]
+----
+
+==== 处理配料
+
+我们定义了操作，以便它接收一个成分，并返回一个成分，其中包含从服务器填充的额外字段。
+
+让我们来处理这些成分：
+
+. 检查输入的元数据，看看预期的输出是POJO，我们的成分有预期的字段：
++
+image::datasense/datasense-expected-ingredients.png[宽度= “800”]
++
+. 确认输出的元数据是预期的：
++
+image::datasense/datasense-ingredients.png[宽度= “800”]
++
+. 将变换消息元素拖放到我们的连接器之后或之后。输入/输出结构自动收集：
++
+image::datasense/datasense-input.png[title="转换消息接收连接器输出", width="800"]
++
+
+由于DevKit自动生成静态元数据，因此DevKit会自动确保您的连接器知道如何传播元数据信息。
+
+==== 处理食谱
+
+我们没有配料，我们也有食谱，所以我们不需要为我们模型中的每个实体提供一种方法。
+
+修改您的连接器以与CookBookEntity类一起使用：
+
+. 创建一个操作：
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v4/CookbookConnector.java[lines=64..69]
+----
++
+.  *@RefOnly*注释用于告诉DevKit输入只能被指定为引用（由于DevKit对处理抽象类的限制）。
++
+我们来看看这会如何影响用户界面和用户体验。
++
+Studio，不能再确定输入或输出类型：
++
+image::datasense/ref-only-input.png[title="使用@RefOnly连接器输入",width="900"]
++
+image::datasense/ref-only-output.png[title="具有抽象类的连接器输出",width="900"]
+
+在下一节中，我们将回到DataSense友好的用户体验。
+
+具有创建，更新，获取和删除操作的连接器的完整源代码可用 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v4/CookbookConnector.java[这里]。
+
+=== 实现一个MetaDataCategory
+
+要使用@MetaDataCategory实现DataSense，您需要分两步分开实现，检索密钥并描述密钥。
+
+. 使用Anypoint DevKit组件向导创建一个新的MetaDataCategory
++
+image::datasense/new-metadatacategory.png[宽度= “600”]
++
+. 使用@MetaDataKeyRetriever修改方法注释以检索两个键，一个用于Recipe，另一个用于Ingredient。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v5/DataSenseResolver.java[lines=28..37]
+----
++
+. 使用@MetaDataRetriever修改方法批注，以检索描述。因为我们使用静态模型，所以我们可以创建一个POJO模型：
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v5/DataSenseResolver.java[lines=48..65]
+----
++
+查看完整的 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v5/DataSenseResolver.java[源代码]。
+
+要在我们的连接器中使用它，请修改我们的@Processors，以便用户可以选择这些实体。
+
+. 使用@MetaDataScope注释来注释我们的@Connector类。这设置每次用户选择具有@MetaDataKeyParam的@Processor时使用的默认MetaDataCategory。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v5/CookbookConnector.java[lines=35..37]
+----
++
+. 为了描述输入和输出，添加一个用*@MetaDataKeyParam*注释的字符串，并通过添加*affects=MetaDataKeyParamAffectsType.BOTH*来指定它影响输入和输出：
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v5/CookbookConnector.java[lines=69..75]
+----
++
+. 在您的get操作中，您需要指定影响仅适用于输出，因此我们稍微修改它：
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v5/CookbookConnector.java[lines=115..121]
+----
++
+. 检查我们在Studio中的新连接器。选择实体类型并保存后，我们有一个组合。这会自动刷新我们的元数据。
++
+image::datasense/datasense-static.png[宽度= “800”]
++
+现在即使是{dataWeave}也知道如何与我们的@Connector进行交互：
++
+image::datasense/datasense-static2.png[宽度= “800”]
+
+查看连接器完整源代码 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v5/CookbookConnector.java[这里]。
+
+==== 动态数据感知
+
+在上一节中，我们介绍了您的模型是静态的情况。让我们来看看更复杂的场景。
+
+有些API提供了一种动态获取实体定义的方法。 Salesforce，NetSuite只是其中的一些例子。
+
+在我们的例子中，我们的Cookbook提供了描述我们实体的操作，所以让我们用它来获取实体和结构：
+
+. 获取支持的实体，并生成一个我们稍后可以使用的密钥：
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v6/DataSenseResolver.java[lines=39..51]
+----
++
+. 使用我们可以动态修改的结构，在Mule中这样做的方法是使用+ Map <String,Object> +作为连接器的参数和/或返回类型。
++
+Mule提供了一个帮助我们为实体生成元数据的构建器。
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v6/DataSenseResolver.java[lines=60..87]
+----
++
+. 查看完整的 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v6/DataSenseResolver.java[源代码]。
++
+. 在我们的@Connector中，我们需要添加代码来从Map生成实体，并在我们所有的操作中返回Map。为什么这很重要？保持我们API的一致性。
++
+这就是我们的新建筑看起来的样子：
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v6/CookbookConnector.java[lines=73..88]
+----
++
+请注意，现在用户界面与之前不同，因为输入现在是地图。
++
+image::datasense/datasense-ui.png[宽度= “900”]
++
+. 在我们的Mule应用中，我们无法更新元数据并使用我们的连接器。而且，如你所见，请注意我们有一个地图结构而不是POJO：
++
+image::datasense/datasense-map.png[宽度= “900”]
+
+要了解如何测试DataSense，请查看我们的 link:http://mulesoft.github.io/connector-certification-docs/advanced/index.html#_testing_metadata[测试DataSense]指南。
+
+// 去做
+// ===添加@Query
+
+== 添加分页
+
+=== 实施分页
+为了显示此功能，您将添加一个处理器，该处理器将调用SDK的searchWithQuery操作。
+
+您需要做3件事才能进行分页操作：
+
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v8/CookbookConnector.java[lines=209..216]
+----
+<1>使用@Paged注释您的处理器。
+<2>返回一个ProviderAwarePagingDelegate
+<3>接收PagingConfiguration作为您的一个参数
+
+--
+在实现你的ProviderAwarePagingDelegate时，你需要指定两个元素：
+
+. 您将在每个页面中返回的列表的类型。在你的情况下，一个地图<String,Object>
+
+. 连接器的类型。
+
+要使用Anypoint DevKit组件向导创建它，请执行以下操作：
+
+. 指定要创建的包。在这个例子中*org.mule.cookbook.pagination*
+
+. 指定您想创建一个ProviderAwarePagingDelegate。
+
+. 将类名设置为CookbookPagingDelegate
++
+image::pagination-component.png[宽度= “600”]
+
+之后，您只需要实现处理新页面请求所需的方法。
+
+您可以找到 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v8/CookbookPagingDelegate.java[CookbookPagingDelegate]的完整源代码。
+--
+注意：如果您有重新连接策略，DevKit会自动重新连接并重新尝试获取页面。处理PagingDelegate的状态以确保重试未检索的最后一页非常重要。
+
+看到：
+
+*  link:/anypoint-connector-devkit/v/3.9/adding-query-pagination-support[添加查询分页支持]。
+
+=== 在您的Mule App中使用分页
+
+例如，您可以在分页处理器前使用foreach：
+
+[tabs]
+------
+[tab,title="Mule App"]
+....
+image::pagination-example.png[width="600"]
+....
+
+[tab,title="XML"]
+....
+[source,xml,linenums]
+----
+include::{resourcesDir}/mule-app/pagination-example.xml[]
+----
+....
+------
+
+[[install-guide]]
+== 安装连接器
+
+=== 使用Anypoint DevKit插件
+
+安装连接器与安装任何Eclipse插件基本相同。
+
+[[steps-to-install]]
+从DevKit插件安装连接器：
+
+. 在包资源管理器中右键单击您的项目名称，然后点击*Anypoint Connector*> *Install Or Update*。
++
+image::install/install1.png[宽度= “500”]
++
+这会触发DevKit Maven构建工具，该工具会生成一个 link:http://help.eclipse.org/luna/index.jsp?topic=%2Forg.eclipse.pde.doc.user%2Fconcepts%2Fupdate_site.htm[更新网站]文件夹。
++
+这些文件将被复制到与AnypointStudio可执行文件位于同一目录中的*dropins*文件夹下，并且无需重新启动AnypointStudio即可进行安装。
++
+. 您现在可以在Mule应用程序中使用您的连接器。
++
+image::install/install2.png[宽度= “600”]
+
+[TIP]
+====
+要卸载连接器，您可以使用UI中的快捷方式或从*dropins*目录中删除文件夹，然后重新启动AnypointStudio
+
+image::install/uninstall.png[宽度= “400”]
+====
+
+=== 从UpdateSite.zip进行安装
+
+通过选择由DevKit生成的更新站点，可以手动安装连接器：
+
+. 打开命令提示符或终端，并将目录更改为项目的pom.xml文件（在Eclipse工作区中）的位置。
+. 运行*mvn clean package*。这会建立连接器。如果构建成功，您应该可以看到连接器"UpdateSite.zip"的生成目录，这通常是您指向Studio的目标。
+. 点击*Help*> *Install New Software...*。
++
+image::install/install-updatesite.png[宽度= “600”]
++
+. 点击*Add*，然后在新对话框中查找文件夹。
+. 点击项目目标文件夹下生成的UpdateSite文件。
++
+image::install/install-updatesite2.png[宽度= “600”]
++
+您可以选择名为UpdateSite.zip的压缩文件或文件夹更新站点。
++
+image::install/install-updatesite3.png[宽度= “600”]
++
+弹出窗口将打开显示执行的任务。
+[[install-dialog]]
+image::install/install12.png[宽度= “500”]
++
+. 查看安装和更新项目，并接受许可协议。
++
+. 点击*Finish*，然后重新启动Studio以使更改得到识别，并更新您的调色板。
++
+注意：JAR文件在此运行过程中未被签名，因此您将看到一个弹出窗口。
++
+image::security-warning.png[宽度= “600”]
++
+. 您现在可以在Mule应用程序中使用您的连接器。
++
+image::install/install2.png[宽度= “600”]
+
+== 更新连接器
+
+要更新连接器，您可以重复为<<steps-to-install,installing>>所做的步骤。
+
+AnypointStudio会检测到它是更新并执行相​​应的操作。
+
+== 调试连接器
+
+成功安装连接器后，您可以开始在Mule应用程序中使用连接器。
+您可以在连接器的源代码中添加断点以对其进行调试。
+如果您的连接器是社区连接器，则源代码会自动在已安装的连接器中提供。
+如果您的连接器是企业连接器，则需要手动附加JAR的源代码。
+
+警告：要正确调试您的代码，请考虑到您正在运行的Mule应用程序正在使用最新安装的版本，因此如果您进行了更改并且要调试Mule应用程序，则需要重新安装连接器。
+
+运行测试时调试连接器与调试任何Java类一样简单。
+
+你只需要在你的连接器代码中设置一个断点。
+
+== 共享我的连接器
+
+连接器可以作为"update site"安装在Anypoint Studio中。
+
+更新站点用于组织和导出功能，以便它们可以作为组件/软件包安装到Eclipse应用程序中。
+
+更新站点生成意味着所包含的功能（以及这些功能的所有插件部分）都会导出为可安装的表单。导出的插件和功能放在两个文件夹中："plug-ins"和"features"。还会生成另外两个文件"content.xml"和"artifacts.xml"，其中包含导出文件的元数据，以便于安装。这些文件和"site.xml"一起构成Eclipse更新站点。要使更新站点可供他人使用，您必须在共享目录或网站中提供所有这些文件。
+
+在构建连接器时，DevKit会为您生成必要的资源，因此您无需担心自己生成它。
+
+您可以使用Anypoint DevKit插件将连接器安装到当前Studio上，或者将其作为更新站点导出供其他人使用。
+
+
+[[connector-structure]]
+== 连接器结构
+
+为了了解所有组件如何相关，我们来创建一个Hello World连接器：
+
+. 在Anypoint Studio中，点击*File*> *New*> *Anypoint Connector Project*或在包资源管理器中右键单击您的项目名称，然后点击*New*> *Anypoint Connector Project* ：
++
+image::new-connector-1.png[宽度= “500”]
++
+. 选择您想要创建的连接器类型。在这种情况下，请选择*SDK Based*：
++
+image::new0.png[宽度= “500”]
++
+. 指定连接器的名称，然后点击*Finish*：
++
+image::new-connector-2.png[宽度= “500”]
++
+这将生成一个项目，其中包含结构和所有必需元素，包括连接器的骨架连接器，图像，示例文档和基本测试。
++
+image::new-connector-3.png[宽度= “600”]
++
+. 通过点击顶部栏*Window* *Show view*> *Other*来启用DevKit视图，并在列表中查找DevKit。
++
+image::enable-view.png[宽度=“300”，高度=“400”]
+
+您的连接器最初由消息处理器和用户界面元素组成。用户可以在Anypoint Studio中配置UI元素。
+
+DevKit可以很容易地在Studio中安装连接器。在Studio中安装后，用户可以搜索连接器并将其拖入Mule流中。
+
+安装仅需要在Studio的包资源管理器中右键单击连接器的名称，然后单击*Anypoint Connector*> *Install or Update*，完成提示并重新启动Studio，如您在<<install-guide,install section>>中所见。您可以在编码过程中随时安装。你甚至可以安装开始的骨架连接器。
+
+我们来检查一下骨架连接器的结构。
+
+在这张图片中，您可以看到大部分代码如何映射到UI元素。
+
+// TODO：使用默认布局的截图2张图片
+
+image::split-1-high.png[caption="Figure 1: ", title="查看结构和用户界面", alt="Image1", width="800", "split-1-high.png"]
+
+在这个例子中，你可以检查代码如何匹配XML和其他UI元素。
+
+// TODO：使用默认布局的截图2张图片
+
+image::split-2-high.png[caption="Figure 2: ", title="查看配置和XML", alt="Image2", width="800", "split2"]
+
+[NOTE]
+====
+不推荐使用`@ConnectionStrategy`注释。用户应该使用`@Config`。
+====
+
+[[configurable]]
+==  @可配置参数修饰符
+
+可选参数或可配置参数是不需要的元素，因此，用户不需要指定值。
+
+您可以在连接器配置类中指定可配置字段（使用`@Configurable`），也可以在`@Connector`类中指定`@Processor`方法的参数。
+
+[source,java,linenums]
+----
+import org.mule.api.annotations.Configurable;
+import org.mule.api.annotations.Processor;
+import org.mule.api.annotations.param.Optional;
+
+//Inside the Configuration class
+
+/**
+ * Optional Field documentation
+ */
+@Configurable
+@Optional
+private String  optionalField;
+//Getter and Setter of the field are required
+
+//Inside your @Connector
+
+/**
+ * Optional parameter
+ */
+@Processor
+public String sayHi(String firstName,@Optional String lastName ) {
+    return "Hi "+firstName+" "+((lastName==null) ? "":lastName);
+}
+----
+
+==  @默认
+
+当您需要可选参数或可配置时，您可以避免使用`@Optional`，只使用`@Default`注释。
+
+[source,java,linenums]
+----
+import org.mule.api.annotations.Configurable;
+import org.mule.api.annotations.Processor;
+import org.mule.api.annotations.param.Default;
+
+//Inside the Configuration class
+
+/**
+ *  Field with Default
+ */
+@Configurable
+@Default("Hi")
+private String  greeting;
+//Getter and Setter of the field are required
+
+//Inside your @Connector
+
+/**
+ * Default parameter
+ */
+@Processor
+public String sayHi(String firstName,@Default("Unknown") String lastName ) {
+    return greeting+" "+firstName+" "+lastName;
+}
+----
+
+`@Default`注释的另一个非常重要的用途是构建具有DataSense的连接器。
+
+== 添加OAuthV2
+
+服务器还可以使用OAuth 2.0提供令牌，而不是执行登录请求。
+
+为了在您的连接器中使用OAuth，您只需使用`@OAuth2`批注注释您的策略。
+
+如果您只有OAuth2配置，则您的`Config.java`将如下所示：
+
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v9/OAuth2StandAloneConfig.java[]
+----
+
+现在我们所有的操作都需要用@OAuthProtected标记，即使是我们的@Source。
+
+在我们的连接器中，例如，您将看到：
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v9/CookbookConnector.java[lines="113..129"]
+----
+
+检查 link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v9/CookbookConnector.java[完整的来源]代码。
+
+看到：
+
+*  link:/anypoint-connector-devkit/v/3.9/authentication[认证]文档。
+*  link:/anypoint-connector-devkit/v/3.9/oauth-v2[OAuth V2]。
+*  <<mutiple-connection-strategies,Supporting Multiple Connection Strategies>>。
+
+[[mutiple-connection-strategies]]
+
+== 多个配置
+
+如果你想有多个连接配置，有两件事情需要考虑：
+
+* 所有配置或者需要实现相同的接口或者具有共同的父类。
+* 连接器Config字段需要声明为接口或公共父类。
+
+如果您的配置具有公共字段，则可以在父类中定义它们。
+
+在我们的连接器中，重构之后类将如下所示：
+
+image::model.png[UML模型]
+////
+[plantuml,model,png]
+----
+title Multiple Configurations
+
+ConnectorConfig <|-- ConnectionManagementConfig
+ConnectorConfig <|-- OAuthConfig
+CookBookConnector *- ConnectorConfig : config
+
+
+abstract class ConnectorConfig {
+- MuleCookBookClient client
+- String endpoint
+}
+
+class CookBookConnector {
+
+}
+
+class ConnectionManagementConfig {
+}
+
+class OAuthConfig {
+-String consumerKey
+-String consumerSecret
+-String accessToken
+}
+----
+////
+
+看到：
+
+*  link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v9/CookbookConnector.java[连接器]源代码。
+
+*  link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v9/ConnectorConfig.java[基本配置]源代码。
+
+*  link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v9/ConnectionManagementConfig.java[连接管理配置]源代码。
+
+*  link:https://github.com/mulesoft/mule-cookbook-tutorial/blob/master/src/main/asciidoc/resources/java/v9/OAuthConfig.java[OAuth2配置]源代码。
+
+== 添加@Source
+
+=== 什么是来源？
+在某些情况下，需要创建消息源而不是消息处理器。
+
+基本上，消息源接收或生成要由Mule处理的新消息。
+消息源的其中一个用例是实现Streaming API。 `@Source`注释将`@Connector`注释类中的方法标记为可从Mule流中调用，并且能够生成Mule事件。每个标记的方法都会生成一个消息源。该方法必须接收SourceCallback作为其代表链中下一个消息处理器的参数之一。只要它存在于方法签名中，该参数的显示顺序无关紧要。
+
+== 实现一个消息源
+
+作为一个例子，我们将使用GetRecentlyAdded方法。
+
+. 在`@Connector`类型的来源内使用Ctrl +空格键显示模板。
++
+image::source/source-template.png[宽度= “600”]
+
+. 创建一个`@Source`，使用回调消除连接器上最近更新的Get
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v7/CookbookConnector.java[lines=73..90]
+----
+
+. 安装这个新版本
+
+. 在您的流程中，现在只需拖放Cookbook连接器，您将在生成流程时自动看到该流程。
++
+image::source/source-example.png[宽度= “600”]
+
+. 添加一个记录器并进行调试以查看有效载荷现在有您的配方。
++
+[tabs]
+------
+[tab,title="Mule App"]
+....
+image::source/source-debug.png[width="600"]
+....
+
+[tab,title="XML"]
+....
+[source,xml,linenums]
+----
+include::{resourcesDir}/mule-app/source-example.xml[]
+----
+....
+------
+
+== 关于添加变形器
+
+变形金刚将信息有效载荷转换为其目的地预期的格式。 Mule ESB提供了许多标准转换器，用户可以使用Mule XML配置文件中的元素和属性进行配置。
+
+有时候建立你自己的定制变压器很有用。
+
+用@Transformer注释一个方法会指示DevKit将方法功能导出为变换器。您需要在用@Module或@Connector注解的类中声明Transformers，并且可以在单个类中声明多个变换器。可以在同一个类中声明变换器，消息处理器和消息源。
+
+一个`@Transformer`注释的方法必须：
+
+* 是静态的
+* 公开
+* 不返回void
+* 不返回java.lang.Object
+* 只接收一个参数
+* 使用`@Connector`注释的类内
+
+=== 创建一个Transformer
+
+在我们的例子中，我们正在创建一个将+ List <Recipe> +转换为+ List <Map<String,Object>> +的变换器，这样我们就不需要修改我们现有的操作，但是我们可以使用它在接收+ List <Map<String,Object>> +的操作中的输出。
+
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v6/CookbookConnector.java[lines=163..169]
+----
+
+=== 在Mule应用程序中使用您的变压器
+
+要使用您的变压器，只需从调色板拖放它并构建一个流程即可。
+
+* 这里我们明确地使用它来将食谱变换映射到一个Map中。
++
+[tabs]
+------
+[tab,title="Mule App"]
+....
+image::transformer/transformer-explicit.png[width="600"]
+....
+
+[tab,title="XML"]
+....
+[source,xml,linenums]
+----
+include::{resourcesDir}/mule-app/transformer-example.xml[]
+----
+....
+------
+
+* 只要找到一个变压器来解析类型，变形金刚也可以隐式使用。
+
+. 定义另一个可以将Recipe对象转换为Map <String,Object>的变换器
++
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v8/CookbookConnector.java[lines=226..232]
+----
++
+. 安装连接器。
++
+. 在你的mule应用程序中创建一个流，它接收列表中的第一项并在其后添加更新操作。不要使用变压器。
++
+[tabs]
+------
+[tab,title="Mule App"]
+....
+image::transformer/transformer-implicitly.png[width="600"]
+....
+
+[tab,title="XML"]
+....
+[source,xml,linenums]
+----
+include::{resourcesDir}/mule-app/transformer2-example.xml[]
+----
+....
+------
+
+. 运行该示例并查看该流程将成功执行。
+
+== 使用@Password
+
+在@ `Connect`参数中使用`@Password`时，它将在用户界面中生成一个屏蔽的输入字段。
+
+[source,java,linenums]
+----
+include::{resourcesDir}/java/v2/ConnectorConfig.java[lines=41..43]
+----
+
+在Studio中，这转化为：
+
+image::password.png[宽度= “500”]
+
+// ====使用@Placement
+
+//定义Anypoint Studio配置中可配置属性的位置。
+
+//去做
+
+== 为API构建连接器
+
+API以多种方式公开。要开始使用你的API，你应该设置一些东西，然后才能在连接器中使用它。
+
+===  SDK客户端
+
+如果你有一个SDK，你需要做的就是在你的jar文件中包含Maven依赖项
+
+例如在我们的例子中，为了使用Cookbook的SDK，我们可以添加依赖项。
+
+[source,xml,linenums]
+----
+<dependencies>
+  <dependency>
+    <groupId>foo.sdk.group.id</groupId>
+    <artifactId>foo.sdk.artifact.id</artifactId>
+    <version>${sdk.version}</version>
+  </dependency>
+</dependencies>
+----
+
+===  SOAP API
+
+如果您有wsdl，构建连接器的最简单方法是使用CXF link:http://cxf.apache.org/docs/wsdl-to-java.html[WSDL2Java的]创建客户端。
+
+您可以非常轻松地在您的`pom.xml`文件中配置CXF目标。完整的文档位于Apache link:http://cxf.apache.org/docs/maven-cxf-codegen-plugin-wsdl-to-java.html[CXF网站]。
+
+例如，在您的`pom.xml`文件中，您可以添加以下内容以及所有必需的依赖关系：
+[source,xml,linenums]
+----
+<build>
+  <plugins>
+    <!-- CXF Code generation -->
+    <plugin>
+      <groupId>org.apache.cxf</groupId>
+      <artifactId>cxf-codegen-plugin</artifactId>
+      <version>${cxf.version}</version>
+      <executions>
+        <execution>
+          <phase>clean</phase> <!-- This is required for it to work with DevKit -->
+          <goals>
+            <goal>wsdl2java</goal>
+          </goals>
+          <configuration>
+            <wsdlOptions>
+              <wsdlOption>
+                <wsdl>${basedir}/src/main/resources/wsdl/IMuleCookBookService.wsdl</wsdl>
+                <autoNameResolution>true</autoNameResolution>
+                <extendedSoapHeaders>false</extendedSoapHeaders>
+                <extraargs>
+                  <extraarg>-xjc-Xbg</extraarg>
+                   <extraarg>-xjc-Xcollection-setter-injector</extraarg>
+                  <extraarg>-p</extraarg>
+                  <extraarg>org.mule.modules.wsdl.api</extraarg>
+                </extraargs>
+              </wsdlOption>
+            </wsdlOptions>
+          </configuration>
+         </execution>
+      </executions>
+      <dependencies>
+        <!-- Boolean Getters -->
+        <dependency>
+          <groupId>org.apache.cxf.xjcplugins</groupId>
+          <artifactId>cxf-xjc-boolean</artifactId>
+          <version>${cxf.version.boolean}</version>
+        </dependency>
+        <!-- Collection Setters -->
+        <dependency>
+          <groupId>net.java.dev.vcc.thirdparty</groupId>
+          <artifactId>collection-setter-injector</artifactId>
+          <version>0.5.0-1</version>
+        </dependency>
+      </dependencies>
+    </plugin>
+  </plugins>
+</build>
+----
+
+如果您使用DevKit插件，它会为您开始生成所有内容，您只需在计算机上指定WSDL位置即可。
+
+===  REST API
+
+使用任何可帮助您制作HTTP请求的库来编写请求。
+
+我们推荐使用在Mule版本3.6.0及更高版本中提供的Jersey 2.11。
+
+为确保始终使用正确的版本，请将以下依赖项添加到您的连接器`pom.xml`。
+
+[source,xml,linenums]
+----
+<dependencies>
+    <dependency>
+        <groupId>org.mule.modules</groupId>
+        <artifactId>mule-module-jersey</artifactId>
+        <version>${mule.version}</version>
+        <scope>provided</scope>
+    </dependency>
+</dependencies>
+----
+
+示例GET请求：
+
+[source,java,linenums]
+----
+ClientConfig clientConfig = new ClientConfig();
+Client client = ClientBuilder.newClient(clientConfig);
+WebTarget webTarget = client.target("http://example.com/rest"); // # <1>
+WebTarget resourceWebTarget = webTarget.path("resource");
+WebTarget helloworldWebTarget = resourceWebTarget.path("helloworld"); // # <2>
+WebTarget helloworldWebTargetWithQueryParam =
+        helloworldWebTarget.queryParam("greeting", "Hi World!"); // # <3>
+
+Invocation.Builder invocationBuilder =
+        helloworldWebTargetWithQueryParam.request(MediaType.APPLICATION_JSON_TYPE); // # <4>
+
+Response response = invocationBuilder.get(); // # <5>
+System.out.println(response.getStatus());
+System.out.println(response.readEntity(String.class));
+----
+<1>客户已准备好向网址`+http://example.com/rest+`发送请求
+<2>为`+http://example.com/rest/resource/helloworld+`添加路径
+<3>配置查询参数。它看起来像`+http://example.com/rest/resource/helloworld?greeting=Hi+World%21+`
+<4>指定我们希望以JSON格式回复
+<5>发出GET请求
+
+===  REST Server for Cookbook
+
+如果测试Cookbook REST服务器中包含的三个资源，请将连接器设置为基于SDK并选择OAuth v2作为身份验证机制。
+
+有关更多信息，请参阅 http://repo1.maven.org/maven2/com/sun/jersey/jersey-documentation/1.6/jersey-documentation-1.6-user-guide.pdf[泽西岛客户]文档。

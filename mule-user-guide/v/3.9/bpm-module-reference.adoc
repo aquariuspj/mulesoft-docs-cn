@@ -1,0 +1,144 @@
+=  BPM模块参考
+:keywords: connectors, anypoint, studio, bpm
+
+BPM代表 link:https://en.wikipedia.org/wiki/Business_process_management[业务流程管理]，可以简单地将其视为一个自动化业务流程的系统。通常情况下，BPM系统具有图形界面，允许您以可视化的方式为业务流程建模，以便业务分析人员或其他非程序员可以轻松理解并验证他们确实反映了业务现实。
+
+Mule对BPM的支持允许您向正在运行的进程发送/接收消息。来自Mule的消息可以启动或前进一个进程，该消息可以作为进程变量存储，并且正在运行的进程可以将消息发送到Mule应用程序中的任何端点。
+
+*Important:* jBPM模块已从Mule 3.8.0及更高版本中移除。如果您需要使用BPMS或jBPM，请使用Mule 3.7或更早的版本。
+
+== 注意事项
+
+如果您的Mule应用程序的业务逻辑相对简单，不会经常更改，并且大部分是无状态的，那么您最好使用Mule的编排功能（例如流，路由器和自定义组件）来实现它。
+
+但是，在下列情况下，您可能会考虑使用BPM来为您的业务逻辑建模：
+
+* 如果您的流程中的执行具有许多基于决策标准的离散步骤和/或多条路径，将其建模为一个流程可能有助于更好地对其进行可视化。
+
+* 如果您的业务逻辑始终处于不断变化之中，那么BPM可能是将逻辑与集成解耦的好方法。
+
+* 如果您的业务逻辑或流程需要由非程序员进行审查或更新，那么BPM可以实现这一点。
+
+* 如果一个流程在几分钟内从头到尾不会完成，那么它可能是BPM的一个很好的候选者，因为中间流程状态是持久的，因此它不需要保存在内存中。
+
+* 如果您的集成需要人工输入，BPM允许您通过任务管理和Web应用程序向您的流程添加人为步骤。
+
+* 如果您的应用程序需要循序渐进的审计跟踪，则BPM可能是一个不错的选择，因为流程历史记录会保存在数据库中。
+
+BPM引擎很可能会增加一些性能开销。如果高性能对您的应用程序至关重要，那么您应该考虑使用Mule的编排来建模您的过程。
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source, xml]
+----
+xmlns:bpm "http://www.mulesoft.org/schema/mule/bpm"
+----
+
+XML架构位置：
+
+[source]
+----
+http://www.mulesoft.org/schema/mule/bpm/current/mule-bpm.xsd
+----
+
+句法：
+
+[source, xml]
+----
+<bpm:process processName="myProcess" processDefinition="myProcess.xml" />
+----
+
+== 特点
+
+* 传入的Mule事件可以启动新进程，提前或终止正在运行的进程。
+
+* 正在运行的进程可以向任何Mule端点发送同步或异步消息。
+
+*  Mule的同步响应会自动反馈到正在运行的进程中，并可以存储到进程变量中。
+
+*  Mule可以并行地与不同的正在运行的进程进行交互。
+
+== 用法
+
+按如下所示为该模块导入XML模式：
+
+[source, xml, linenums]
+----
+xmlns:bpm="http://www.mulesoft.org/schema/mule/bpm"
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/bpm  
+http://www.mulesoft.org/schema/mule/bpm/current/mule-bpm.xsd"
+----
+
+然后，您可以按如下方式使用`<bpm:process>`元素，通常在入站端点之前。请参阅下面的示例配置。
+
+[source, xml]
+----
+<bpm:process processName="myProcess" processDefinition="myProcess.xml" />
+----
+
+* 至少，在触发BPM流程时，您必须在`<bpm:process>`元素中指定`processName`和`processDefinition`属性。
+
+* 传入的Mule消息和属性可以存储为流程变量，流程变量可以作为Mule消息发送。
+
+=== 配置示例
+
+*Example configuration*
+
+[source, xml, linenums]
+----
+<mule ... xmlns:bpm="http://www.mulesoft.org/schema/mule/bpm"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/bpm     
+    http://www.mulesoft.org/schema/mule/bpm/current/mule-bpm.xsd" ...>
+ 
+  <spring:bean id="testBpms" class="com.foo.FooBPMS" /> //<3>
+ 
+  <flow name="MessagesToProcess">
+      <jms:inbound-endpoint queue="queueA" /> //<1>
+      <bpm:process processName="myProcess" processDefinition="myProcess.xml" /> //<2>
+  </flow>
+ 
+  <flow name="SomeSynchronousService">
+      <inbound-endpoint ref="callService" exchange-pattern="REQUEST-RESPONSE" /> //<4>
+      <component class="com.foo.SomeService" /> //<5>
+  </flow>
+</mule>
+----
+<1> JMS队列：在此配置中，JMS队列上的入站消息会触发由文件"myProcess.xml"定义的过程。
+<2>流程定义：JMS队列上的入站消息触发的过程。
+<3>存储过程变量：入站消息作为过程变量存储。
+<4> Exchange模式：由于应用程序中只有一个实现，因此不需要明确的引用。流程定义中的一个步骤可能会向端点`callService`发送消息。
+<5>组件类：＃4中的步骤向端点`callService`发送消息，在这种情况下，来自`com.foo.SomeService`的同步响应也可以作为进程变量存储。请注意，由于此逻辑发生在流程定义中，因此它在Mule配置中不可见。
+
+*Multiple BPM Sytems*
+
+[source, xml, linenums]
+----
+<spring:bean id="bpms1" class="com.foo.FooBPMS" />
+ 
+<spring:bean id="bpms2" class="com.bar.BarBPMS" />
+ 
+<flow name="ProcessFlow1">
+    ...cut...
+    <bpm:process processName="process1" processDefinition="process1.def"
+      bpms-ref="bpms1" /> //<1>
+</flow>
+ 
+<flow name="ProcessFlow2">
+    ...cut...
+    <bpm:process processName="process2" processDefinition="process2.cfg"
+      bpms-ref="bpms2" /> //<2>
+</flow>
+----
+<1>此配置片段说明如何使用＃1和＃2中的`bpms-ref`属性消除多个BPM系统之间的歧义。如果只有一个BPMS可用，则该属性是不必要的。
+<2>另一个消歧的BPM。
+
+
+
+== 注意事项
+
+* 该模块用于提供Java API的BPM引擎。如果您需要与BPEL引擎集成，可以使用 link:/mule-user-guide/v/3.9/using-web-services[标准的Web服务]来完成。
+
+* 与BPM系统交互的推荐方式是通过`<bpm:process>`组件和消息处理器。
+

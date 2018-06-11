@@ -1,0 +1,78 @@
+= 关于误差范围
+
+错误范围在错误处理程序中定义。他们定义它处理的错误类型或一组类型。因此，当发生错误时，错误处理程序组件会将Mule错误路由到与错误匹配的第一个错误范围。 +
+此时，错误可供检查，因此错误范围可以执行并相应地执行。
+
+Mule支持两种类型的On Error Scopes。两者都允许通过错误类型（或一组）或通过表达式（对于高级用例）进行匹配。每个范围定义了发生错误时的不同行为，这会影响
+它的所有者的结果（定义错误处理程序的流程或尝试范围）：
+
+[%header%autowidth.spread,cols='a,a']
+|===
+|在错误范围 |描述中
+//  | 默认错误处理
+//  | 默认情况下定义和隐式应用，以处理所有未由任何On Error作用域处理的消息传递错误。这相当于一个On Error Propagate，没有用于处理错误的子组件。
+//
+//  | 错误继续
+//  | 如果在Try范围内发生错误，则作用域中的任何其他组件都会被跳过，并且在作用域结束后立即继续执行。 +
+//如果正在处理一个事务，它就已经提交了。
+//
+// image:error-handling-f7bf0.png[]
+
+// COMBAK：错误重试不适用于测试版
+//  | 在错误重试上
+//  | 如果在Try范围内发生错误，则整个范围会再次尝试。 +
+//每个错误处理程序中只能有一个On Error Retry作用域。
+
+| 错误传播
+| 执行，但将错误传播到下一级，打破所有者的执行。 +
+如果交易正在处理中，则会回滚。
+
+image:error-handling-e77ec.png[]
+
+| 错误继续
+| 作为其所有者的结果，执行并使用执行结果，就好像所有者已成功完成执行一样。 +
+如果交易正在处理中，它也会被执行。
+|===
+
+每个错误范围可以设置为接受一组不同的错误类型。在Studio和Design Center中，您都可以从错误处理程序的所有者中使用的组件引发的错误列表中进行选择。
+
+您还可以设置一个接受*ANY*类型的路径，匹配其他路径未使用的所有错误类型。请注意，条件按顺序进行评估，因此要评估其他路径，*ANY*路径必须始终为最后一条。
+请记住，如果*ANY*没有明确的最终路径，则将应用默认的错误处理，并且错误将被记录并传播，这意味着它将像配置`on-error-propagate`一样继续传播。
+
+作为将路径映射到一组错误类型的替代方法，您可以将其映射到自由定义的条件。例如，您可以将路径映射到条件，方法是将“时”字段设置为：
+
+`#[error.cause.message contains "fatal"]`
+
+每个流只能包含一个错误处理程序，但是此错误处理程序可以包含尽可能多的On Error范围，因为您认为有必要。如前所述，默认情况下，传播未明确处理的错误。
+
+== 重用错误范围
+
+就像错误处理程序可以通过全局公开和引用它们来共享错误处理程序
+在流程和尝试范围中，错误范围也可以重用。你可以定义和命名
+全局错误范围，然后使用参考错误组件作为参考
+在下面的例子中。
+
+。示例：引用错误的XML配置
+[source,xml,linenums]
+----
+<on-error-propagate name="sharedPropagateHandler">
+  <logger message="An unhandled error has occurred."/>
+</on-error-propagate>
+
+<on-error-continue type="EXPRESSION" name="sharedContinueHandler">
+  <logger message="An expression failed to evaluate."/>
+</on-error-continue>
+
+<error-handler name="reusingHandlers">
+  <on-error ref="sharedContinueHandler"/>
+  <on-error-continue type="ROUTING">
+    <logger message="An expression failed to evaluate."/>
+  </on-error-continue>
+  <on-error ref="sharedPropagateHandler"/>
+</error-handler>
+----
+
+== 另请参阅
+
+*  link:mule-error-concept[关于骡子错误]
+*  link:try-scope-concept[关于尝试范围]

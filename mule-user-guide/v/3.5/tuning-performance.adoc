@@ -1,0 +1,616 @@
+= 调整效果
+
+Mule应用程序是一组流的协作。从概念上讲，消息由三个阶段的流程处理：
+
+. 入站连接器收到的消息
+. 正在处理的消息
+. 邮件通过出站连接器发送
+
+第一阶段总是排在第一位。阶段2和3可以交错，因为流可以混合消息处理器和出站端点。
+
+调整骡子的表现涉及分析和改善这三个阶段的每个流程。您可以先对所有流程应用相同的调整方法，然后根据需要进一步自定义每个流程的调整。
+
+== 关于Mule中的线程
+
+每个进入Mule的请求都在它自己的线程上处理。连接器的接收器有一个_thread pool_，它具有一定数量的线程可用于处理使用该连接器的入站端点上的请求。
+
+请记住，Mule可以异步或同步发送消息。消息是异步处理的，除非以下情况之一为真：
+
+* 流程使用同步处理策略
+* 流程参与交易
+* 接收到消息的入站端点使用请求 - 响应消息交换模式
+
+如果您正在使用*synchronous*处理，则使用同一个线程通过Mule传送消息。在处理消息时，如果需要将消息发送到出站端点，则适用下列之一：
+
+* 如果出站端点是单向的，则使用相同的线程发送消息。一旦它被发送，线程继续处理相同的消息。它不会等待远程端点收到消息。
+* 如果出站端点是请求 - 响应，则流线程将消息发送到出站端点并等待响应。当响应到达时，流程线程通过处理响应来恢复。
+
+如果您正在执行*asynchronous*处理，则接收者线程仅用于将消息放置在暂存的事件驱动架构（SEDA）队列中，此时消息将传输至_flow线程，并且接收者线程为释放回接收器线程池，以便它可以携带另一条消息。在处理消息时，如果需要将消息发送到出站端点，则适用下列之一：
+
+* 如果出站端点是单向的，则消息将被复制，并且由调度程序线程处理副本，而流线程将继续并行处理原始消息。
+* 如果出站端点是请求 - 响应，则流线程将消息发送到出站端点并等待响应。当响应到达时，流程线程通过处理响应来恢复。
+
+请注意，几种线程用于处理消息：
+
+* 最初接收消息的接收者线程：+
+** 处理整个流程（同步）或
+** 通过将消息写入SEDA队列（异步）
+* 流程线程处理大量的流程（异步）
+* 将消息发送到单向端点的分派器线程（异步）
+
+下图说明了这些线程。
+
+image:thread_pooling.png[thread_pooling]
+
+== 关于线程池和线程配置文件
+
+_thread pool_是可用线程的集合。每个接收者都有一个单独的线程池，流（由该流中的所有消息处理器共享）和调度程序。
+
+_threading profile_指定线程池在Mule中的行为方式。您可以为每个接收者线程池，流线程池和调度程序线程池指定单独的线程配置文件。其中最重要的设置是`maxThreadsActive`，它指定线程池中有多少个线程。下面的<<Calculating Threads>>部分描述了用于确定此设置应该是什么的方法，而<<Threading Profile Configuration Reference>>部分描述了可以为每个线程配置文件设置的选项。
+
+== 关于池化配置文件
+
+与单例组件不同，池组件（请参阅PooledJavaComponent）每个都有一个_component pool_，其中包含组件的多个实例以处理同时传入的请求。组件的_pooling profile_配置其组件池。最重要的设置是`maxActive`，它指定了Mule为处理同时请求而创建的组件的最大实例数。请注意，该数字应与接收器线程池上的`maxThreadsActive`设置相同，以便您有足够的组件实例可用于处理线程。您可以使用Mule Enterprise Console来监控组件池，并查看池中使用的最大组件数量，以帮助您调整组件和线程的数量。
+
+有关配置池化配置文件的更多信息，请参阅下面的<<Pooling Profile Configuration Reference>>。
+
+== 计算线程
+
+要计算要设置的线程数量，必须考虑以下因素。
+
+*  *Concurrent User Requests*：通常，并发用户请求数是Mule服务器在任何给定时间要同时处理的请求总数。对于*flow*，并发用户请求是流入站端点可以同时处理的请求数。在*connector*级别的并发用户请求是共享相同连接器的所有流的并发请求总数。通常，您可以从业务需求中获得并发用户请求总数。
+
+*  *Processing Time*：处理时间是Mule在连接器接收器开始执行直到完成时处理用户请求所需的平均时间（可选地，通过由连接器向调用者发回响应接收器在往返之后）。处理时间必须凭经验来计算。
+
+*  *Response Time*：如果流以*synchronous*模式运行，则响应时间是最终用户需要等待响应返回的实际时间量。如果流以*asynchronous*模式运行，它是从请求到达Mule到流完成处理之间的总时间。在线程池环境中，当请求到达时，不能保证线程将立即可用。在这种情况下，请求被放入内部线程池_work queue_中以等待下一个可用线程。因此，响应时间是以下函数：+
+ 响应时间=工作队列中线程池等待时间的平均值+处理时间的平均值+
+ 您的业务需求将决定应用程序所需的实际响应时间。
+
+*  *Timeout Time*：如果您的业务需求决定在超时之前等待响应的最长时间，这将成为您在下面计算中的一个重要因素。
+
+
+=== 计算流程线程
+
+即使您仅执行同步消息，您也必须计算流量线程，以便您可以正确计算接收者线程。本节介绍如何计算流量线程。
+
+您的业​​务需求决定每个流程必须能够同时处理多少个线程。例如，一个流可能需要一次处理50个请求，而另一个可能需要一次处理40个请求。通常，您使用此要求来设置流（`maxThreadsActive` = "40"）上的`maxThreadsActive`属性。
+
+如果您对同步处理的超时设置有要求，则必须为每个流程执行一些额外的计算。
+
+. 运行同步测试用例来确定响应时间。
+. 从您的业务需求规定的超时时间中减去响应时间。这是您的_最长等待时间_（最长等待时间=超时时间 - 响应时间）。
+. 将最大等待时间除以响应时间，以获取将在最大等待时间（批次=最大等待时间/响应时间）内完成所有并发请求的_batches_的数量。请求在队列中等待，直到第一批完成，然后第一批的线程被释放并由下一批使用。
+. 将并发用户请求除以批次数，以获取流`maxThreadsActive`设置（即`maxThreadsActive` =并发用户请求/处理批次）的线程大小。这是可以同时为此流执行的线程总数。
+
+总之，具有超时限制的同步处理公式为：
+
+* 最长等待时间=超时时间 - 响应时间
+* 批次=最长等待时间/响应时间
+*  `maxThreadsActive` =并发用户请求/批次
+
+=== 计算接收器线程
+
+连接器的接收器由所有在其入站端点上指定相同连接器的流共享。上一节描述了如何计算每个流的`maxThreadsActive`属性。要为接收方计算`maxThreadsActive`设置，即应该为连接器的接收方线程池分配多少个线程，请为在入站端点上使用该连接器的每个流计算`maxThreadsActive`设置：
+
+`maxThreadsActive` =Σ（流程1 `maxThreadsActive`，流程2 `maxThreadsActive` ...流程_n_ `maxThreadsActive`）
+
+例如，如果您有三个入站端点使用VM连接器的流，并且您的业务需求规定两个流一次处理50个请求，第三个流一次处理40个请求，请将{{0} }为虚拟机连接器的接收器线程配置文件中的140。
+
+=== 计算分派器线程
+
+调度程序线程仅用于异步外向处理（即，从异步流程中进行单向出站调度）。通常，将调度程序的`maxThreadsActive`设置为使用该调度程序的所有流的`maxThreadsActive`值之和。
+
+=== 其他注意事项
+
+您可以权衡队列大小和最大池大小。使用大队列和小池可以最大限度地减少CPU使用率，操作系统资源和上下文切换开销，但这会导致人为的低吞吐量。如果任务经常被阻塞（例如，如果它们是I / O绑定的），则系统可能会安排更多线程的时间，而不是您允许的时间。使用小队列通常需要更大的池大小，这会使CPU更繁忙，但可能会遇到不可接受的调度开销，这也会降低吞吐量。
+
+== 其他性能调整技巧
+
+* 在`conf`目录中的`log4j.properties`文件中，将日志记录设置为文件而不是控制台，这将绕过包装器日志记录并提高性能。为此，创建一个新的文件appender（org.apache.log4j.FileAppender），指定文件以及可选的布局和其他设置，然后将"console"更改为文件appender。例如：
++
+[source, code, linenums]
+----
+log4j.rootCategory=INFO, mulelogfile
+ 
+log4j.appender.mulelogfile=org.apache.log4j.FileAppender
+log4j.appender.mulelogfile.layout=org.apache.log4j.PatternLayout
+log4j.appender.mulelogfile.layout.ConversionPattern=%-22d{dd/MMM/yyyy HH:mm:ss} - %m%n
+log4j.appender.mulelogfile.file=custommule.log
+----
+
+* 如果在同一个Mule实例中有大量的流，如果组件的处理时间超过几秒，或者处理非常大的负载或使用较慢的传输，则应该增加`shutdownTimeout`属性（请参阅 link:/mule-user-guide/v/3.7/global-settings-configuration-reference[全局设置配置参考]）以启用正常关机。
+* 如果为连接器启用了轮询，则一个线程将被轮询使用，因此您应该将您的`maxThreadsActive`设置加1。轮询可用于扩展AbstractPollingMessageReceiver的连接器，例如File，FTP和STDIO。
+* 如果您使用VM在流之间传递消息，通常可以减少线程总数，因为VM速度非常快。
+* 如果您正在处理非常繁重的负载，或者您的端点具有不同的同时请求要求（例如，一个端点需要处理20个并发请求的能力，但使用相同连接器的另一个端点需要50个），则可能需要拆分连接器，以便每个端点都有一个连接器。
+
+== 线程配置文件配置参考
+
+以下是您为线程配置文件配置的元素。您可以在以下级别创建线程配置文件：
+
+*  <<Configuration Level>>
+*  <<Connector Level>>
+*  <<Flow Level>>
+
+本节的其余部分描述了您可以在每个级别设置的元素和属性。
+
+== 配置级别
+
+可以在<configuration>元素中设置<default-threading-profile>，<default-receiver-threading-profile>和<default-dispatcher-threading-profile>元素来为所有连接器设置默认线程配置文件。以下是这些元素的详细信息。
+
+=== 默认线程配置文件
+
+默认的线程配置文件，由组件和端点用于调度和接收（如果没有给出更具体的配置）。
+
+默认线程配置文件的属性：
+
+[%header,cols="25a,75a"]
+|===
+| {名称{1}}说明
+| maxThreadsActive  |要使用的最大线程数。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxThreadsIdle  |在销毁之前可以在池中的空闲或不活动线程的最大数量。
+
+类型：整数+
+必需：否+
+默认值：无
+| doThreading  |是否应该使用线程（默认为true）。
+
+类型：布尔+
+必需：否+
+默认值：true
+| threadTTL  |确定在废弃之前非活动线程保留在池中的时间。
+
+类型：整数+
+必需：否+
+默认值：无
+| poolExhaustedAction  |当最大池大小或队列大小有界时，此值确定如何处理传入任务。
+
+可能的值是：
+
+* 等待 - 等待一个线程变为可用;如果最小线程数为零，则不要使用此值，在这种情况下，线程可能永远不可用。
+*  DISCARD  - 丢弃当前请求并返回。
+*  DISCARD_OLDEST  - 丢弃最旧的请求并返回。
+*  ABORT  - 抛出RuntimeException。
+*  RUN  - 默认值;执行请求的线程会执行任务本身，这有助于防止锁定。
+
+类型：WAIT，DISCARD，DISCARD_OLDEST，ABORT，RUN +
+必需：否+
+默认值：RUN
+| threadWaitTimeout  |当池耗尽操作等待时，以毫秒为单位等待多久。如果该值为负值，则无限期等待。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxBufferSize  |确定当池处于最大使用容量并且池已用尽操作为WAIT时排队的请求数。在处理请求之前，缓冲区被用作创建线程的一种限制。 xref：mbsinfo [不读取这些警告时不要使用maxBufferSize]。
+
+任何BlockingQueue都可以用来传输和保存提交的任务。此队列的使用与池大小进行交互：
+
+* 如果少于corePoolSize线程正在运行，执行程序始终倾向于添加新线程而不是排队。 *Note*：corePoolSize是底层实现的一个属性。
+* 如果corePoolSize或更多的线程正在运行，那么Executor总是喜欢排队请求而不是添加新线程。
+* 如果请求无法排队，则会创建一个新线程，除非该值超过maximumPoolSize，在这种情况下，该任务将被拒绝。
+
+类型：整数+
+必需：否+
+默认值：无
+|===
+
+[[mbsinfo]]
+===  maxBufferSize警告
+
+除非MuleSoft客户支持指示，否则不要使用maxBufferSize。错误地使用这个参数会导致系统中断。
+
+线程配置和maxBufferSize的组合不正确
+值可能导致超时而没有明显的原因。与直觉相反，
+在没有完全填充的较低负载情况下，此问题更可能发生
+缓冲队列。这可能会导致中断。高负载测试
+应该使用低负载来查找和验证适当的配置。
+
+如果使用poolExhaustedAction = WAIT配置线程配置文件
+并且正值的maxBufferSize，则线程池不会
+从maxThreadsIdle（corePoolSize）朝向增长
+maxThreadsActive（maxPoolSize）_unless_队列被完全填满。
+
+
+=== 默认接收器线程配置文件
+
+默认接收线程配置文件，它修改默认线程配置文件值并由端点用于接收消息。这也可以在连接器上配置，在这种情况下使用连接器配置而不是此默认设置。
+
+default-receiver-threading-profile的属性：
+
+[%header,cols="25a,75a"]
+|===
+| {名称{1}}说明
+
+| maxThreadsActive  |要使用的最大线程数。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxThreadsIdle  |在销毁之前可以在池中的空闲或不活动线程的最大数量。
+
+类型：整数+
+必需：否+
+默认值：无
+| doThreading  |是否应该使用线程（默认为true）。
+
+类型：布尔+
+必需：否+
+默认值：true
+| threadTTL  |确定在废弃之前非活动线程保留在池中的时间。
+
+类型：整数+
+必需：否+
+默认值：无
+| poolExhaustedAction  |当最大池大小或队列大小有界时，此值确定如何处理传入任务。
+
+可能的值是：
+
+* 等待 - 等待一个线程变为可用;如果最小线程数为零，则不要使用此值，在这种情况下，线程可能永远不可用。
+*  DISCARD  - 丢弃当前请求并返回。
+*  DISCARD_OLDEST  - 丢弃最旧的请求并返回。
+*  ABORT  - 抛出RuntimeException。
+*  RUN  - 默认值;执行请求的线程会执行任务本身，这有助于防止锁定。
+
+类型：WAIT，DISCARD，DISCARD_OLDEST，ABORT，RUN +
+必需：否+
+默认值：RUN
+| threadWaitTimeout  |当池耗尽操作等待时，以毫秒为单位等待多久。如果该值为负值，则无限期等待。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxBufferSize  |确定当池处于最大使用容量并且池已用尽操作为WAIT时排队的请求数。该缓冲区被用作溢出。 xref：mbsinfo [不读取这些警告时不要使用maxBufferSize]。
+
+任何BlockingQueue都可以用来传输和保存提交的任务。此队列的使用与池大小进行交互：
+
+* 如果少于corePoolSize线程正在运行，执行程序始终倾向于添加新线程而不是排队。 *Note*：corePoolSize是底层实现的一个属性。
+* 如果corePoolSize或更多的线程正在运行，那么Executor总是喜欢排队请求而不是添加新线程。
+* 如果请求无法排队，则会创建一个新线程，除非该值超过maximumPoolSize，在这种情况下，该任务将被拒绝。
+
+类型：整数+
+必需：否+
+默认值：无
+|===
+
+=== 默认分派器线程配置文件
+
+默认调度线程配置文件，它修改默认线程配置文件值并由端点用于分派消息。这也可以在连接器上配置，在这种情况下使用连接器配置而不是此默认设置。
+
+default-dispatcher-threading-profile的属性：
+
+[%header,cols="25a,75a"]
+|===
+| {名称{1}}说明
+| maxThreadsActive  |要使用的最大线程数。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxThreadsIdle  |在销毁之前可以在池中的空闲或不活动线程的最大数量。
+
+类型：整数+
+必需：否+
+默认值：无
+| doThreading  |是否应该使用线程（默认为true）。
+
+类型：布尔+
+必需：否+
+默认值：true
+| threadTTL  |确定在废弃之前非活动线程保留在池中的时间。
+
+类型：整数+
+必需：否+
+默认值：无
+| poolExhaustedAction  |当最大池大小或队列大小有界时，此值确定如何处理传入任务。
+
+可能的值是：
+
+* 等待 - 等待一个线程变为可用;如果最小线程数为零，则不要使用此值，在这种情况下，线程可能永远不可用。
+*  DISCARD  - 丢弃当前请求并返回。
+*  DISCARD_OLDEST  - 丢弃最旧的请求并返回。
+*  ABORT  - 抛出RuntimeException。
+*  RUN  - 默认值;执行请求的线程会执行任务本身，这有助于防止锁定。
+
+类型：WAIT，DISCARD，DISCARD_OLDEST，ABORT，RUN +
+必需：否+
+默认值：RUN
+| threadWaitTimeout  |当池耗尽操作等待时，以毫秒为单位等待多久。如果该值为负值，则无限期等待。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxBufferSize  |确定当池处于最大使用容量并且池已用尽操作为WAIT时排队的请求数。该缓冲区被用作溢出。 xref：mbsinfo [不读取这些警告时不要使用maxBufferSize]。
+
+任何BlockingQueue都可以用来传输和保存提交的任务。此队列的使用与池大小进行交互：
+
+* 如果少于corePoolSize线程正在运行，执行程序始终倾向于添加新线程而不是排队。 *Note*：corePoolSize是底层实现的一个属性。
+* 如果corePoolSize或更多的线程正在运行，那么Executor总是喜欢排队请求而不是添加新线程。
+* 如果请求无法排队，则会创建一个新线程，除非该值超过maximumPoolSize，在这种情况下，该任务将被拒绝。
+
+类型：整数+
+必需：否+
+默认值：无
+|===
+
+== 连接器级别
+
+可以在<connector>元素中设置<receiver-threading-profile>和<dispatcher-threading-profile>元素来配置该连接器的线程配置文件。以下是这些元素的详细信息。
+
+=== 接收器线程配置文件
+
+连接器接收消息时使用的线程配置文件。
+
+接收器线程配置文件的属性：
+
+[%header,cols="25a,75a"]
+|===
+| {名称{1}}说明
+
+| maxThreadsActive  |要使用的最大线程数。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxThreadsIdle  |在销毁之前可以在池中的空闲或不活动线程的最大数量。
+
+类型：整数+
+必需：否+
+默认值：无
+| doThreading  |是否应该使用线程（默认为true）。
+
+类型：布尔+
+必需：否+
+默认值：true
+| threadTTL  |确定在废弃之前非活动线程保留在池中的时间。
+
+类型：整数+
+必需：否+
+默认值：无
+| poolExhaustedAction  |当最大池大小或队列大小有界时，此值确定如何处理传入任务。
+
+可能的值是：
+
+* 等待 - 等待一个线程变为可用;如果最小线程数为零，则不要使用此值，在这种情况下，线程可能永远不可用。
+*  DISCARD  - 丢弃当前请求并返回。
+*  DISCARD_OLDEST  - 丢弃最旧的请求并返回。
+*  ABORT  - 抛出RuntimeException。
+*  RUN  - 默认值;执行请求的线程会执行任务本身，这有助于防止锁定。
+
+类型：WAIT，DISCARD，DISCARD_OLDEST，ABORT，RUN +
+必需：否+
+默认值：RUN
+| threadWaitTimeout  |当池耗尽操作等待时，以毫秒为单位等待多久。如果该值为负值，则无限期等待。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxBufferSize  |确定当池处于最大使用容量并且池已用尽操作为WAIT时排队的请求数。该缓冲区被用作溢出。 xref：mbsinfo [不读取这些警告时不要使用maxBufferSize]。
+
+任何BlockingQueue都可以用来传输和保存提交的任务。此队列的使用与池大小进行交互：
+
+* 如果少于corePoolSize线程正在运行，执行程序始终倾向于添加新线程而不是排队。 *Note*：corePoolSize是底层实现的一个属性。
+* 如果corePoolSize或更多的线程正在运行，那么Executor总是喜欢排队请求而不是添加新线程。
+* 如果请求无法排队，则会创建一个新线程，除非该值超过maximumPoolSize，在这种情况下，该任务将被拒绝。
+
+类型：整数+
+必需：否+
+默认值：无
+|===
+
+=== 调度程序线程配置文件
+
+连接器调度消息时使用的线程配置文件。
+
+调度程序线程配置文件的属性：
+
+[%header,cols="25a,75a"]
+|===
+| {名称{1}}说明
+
+| maxThreadsActive  |要使用的最大线程数。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxThreadsIdle  |在销毁之前可以在池中的空闲或不活动线程的最大数量。
+
+类型：整数+
+必需：否+
+默认值：无
+| doThreading  |是否应该使用线程（默认为true）。
+
+类型：布尔+
+必需：否+
+默认值：true
+| threadTTL  |确定在废弃之前非活动线程保留在池中的时间。
+
+类型：整数+
+必需：否+
+默认值：无
+| poolExhaustedAction  |当最大池大小或队列大小有界时，此值确定如何处理传入任务。
+
+可能的值是：
+
+* 等待 - 等待一个线程变为可用;如果最小线程数为零，则不要使用此值，在这种情况下，线程可能永远不可用。
+*  DISCARD  - 丢弃当前请求并返回。
+*  DISCARD_OLDEST  - 丢弃最旧的请求并返回。
+*  ABORT  - 抛出RuntimeException。
+*  RUN  - 默认值;执行请求的线程会执行任务本身，这有助于防止锁定。
+
+类型：WAIT，DISCARD，DISCARD_OLDEST，ABORT，RUN +
+必需：否+
+默认值：RUN
+| threadWaitTimeout  |当池耗尽操作等待时，以毫秒为单位等待多久。如果该值为负值，则无限期等待。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxBufferSize  |确定当池处于最大使用容量并且池已用尽操作为WAIT时排队的请求数。该缓冲区被用作溢出。 xref：mbsinfo [不读取这些警告时不要使用maxBufferSize]。
+
+任何BlockingQueue都可以用来传输和保存提交的任务。此队列的使用与池大小进行交互：
+
+* 如果少于corePoolSize线程正在运行，执行程序始终倾向于添加新线程而不是排队。 *Note*：corePoolSize是底层实现的一个属性。
+* 如果corePoolSize或更多的线程正在运行，那么Executor总是喜欢排队请求而不是添加新线程。
+* 如果请求无法排队，则会创建一个新线程，除非该值超过maximumPoolSize，在这种情况下，该任务将被拒绝。
+
+类型：整数+
+必需：否+
+默认值：无
+|===
+
+== 流量级别
+
+流的线程配置文件可以使用任何异步处理策略，例如<queued-asynchronous-processing-strategy>。特别是，您可以设置属性：
+
+*  maxThreads  - 加载时使用的最大线程数。 （与maxThreadsActive相同）
+*  minThreads  - 没有负载时保留在池中的空闲线程数。 （与maxThreadsIdle相同）
+*  threadTTL  - 确定在废弃之前非活动线程保留在池中的时间。
+*  poolExhaustedAction  - 没有线程可用时采取的操作。
+*  threadWaitTimeout  - 等待线程变得可用的时间。
+*  maxBufferSize  - 当没有线程可用时，有多少个请求排队。 xref：mbsinfo [不读取这些警告时不要使用maxBufferSize]。
+
+== 排队异步处理策略
+
+使用队列分离从其处理中接收新消息。轮询队列并使用线程池在工作线程中异步处理消息处理器的管道。
+
+排队异步处理策略的属性：
+
+[%header,cols="25a,75a"]
+|===
+| {名称{1}}说明
+|名称 |用于标识处理策略的名称。
+
+类型：名称+
+必需：否+
+默认值：无
+| maxThreads  |加载时使用的最大线程数。
+
+类型：整数+
+必需：否+
+默认值：无
+| minThreads  |在没有负载时保留在池中的空闲线程数。
+
+类型：整数+
+必需：否+
+默认值：无
+| threadTTL  |确定在废弃之前非活动线程保留在池中的时间。
+
+类型：整数+
+必需：否+
+默认值：无
+| poolExhaustedAction  |当最大池大小或队列大小有界时，此值确定如何处理传入任务。
+
+可能的值是：
+
+* 等待 - 等待一个线程变为可用;如果最小线程数为零，则不要使用此值，在这种情况下，线程可能永远不可用。
+*  DISCARD  - 丢弃当前请求并返回。
+*  DISCARD_OLDEST  - 丢弃最旧的请求并返回。
+*  ABORT  - 抛出RuntimeException。
+*  RUN  - 默认值;执行请求的线程会执行任务本身，这有助于防止锁定。
+
+类型：WAIT，DISCARD，DISCARD_OLDEST，ABORT，RUN +
+必需：否+
+默认值：RUN
+| threadWaitTimeout  |当池耗尽操作等待时，以毫秒为单位等待多久。如果该值为负值，则无限期等待。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxBufferSize  |确定当池处于最大使用容量并且池已用尽操作为WAIT时排队的请求数。该缓冲区被用作溢出。 xref：mbsinfo [不读取这些警告时不要使用maxBufferSize]。
+
+任何BlockingQueue都可以用来传输和保存提交的任务。此队列的使用与池大小进行交互：
+
+* 如果少于corePoolSize线程正在运行，执行程序始终倾向于添加新线程而不是排队。 *Note*：corePoolSize是底层实现的一个属性。
+* 如果corePoolSize或更多的线程正在运行，那么Executor总是喜欢排队请求而不是添加新线程。
+* 如果请求无法排队，则会创建一个新线程，除非该值超过maximumPoolSize，在这种情况下，该任务将被拒绝。
+
+类型：整数+
+必需：否+
+默认值：无
+| queueTimeout  |从服务队列中获取消息时使用的超时。
+
+类型：整数+
+必需：否+
+默认值：无
+| maxQueueSize  |定义可以排队的最大消息数。
+
+类型：整数+
+必需：否+
+默认值：无
+|===
+
+
+排队异步处理策略的子元素：
+
+[%header,cols="34a,33a,33a"]
+|===
+| {名称{1}}基数 |说明
+|注解 | 0..1  | 
+|抽象队列商店 | 0..1  |用于存储队列元素的队列存储。如果未指定，则这是内存中的默认队列存储。队列存储元素的占位符。
+|===
+
+== 池配置文件配置参考
+
+每个池化组件都有自己的池化配置文件。您可以使用<pooled-component>元素上的<pooling-profile>元素来配置共享配置文件。
+
+=== 汇集配置文件
+
+共享资料的属性：
+
+[%header,cols="25a,75a"]
+|===
+| {名称{1}}说明
+| maxActive  |控制一次可从会话借用的Mule组件的最大数量。设置为负值时，一次可能有效的组件数量不受限制。当超过maxActive时，泳池据说耗尽。
+
+类型：字符串+
+必需：否+
+默认值：无
+| maxIdle  |随时控制池中闲置的最大Mule组件数量。当设置为负值时，一次可能闲置的Mule组件数量没有限制。
+
+类型：字符串+
+必需：否+
+默认值：无
+| initialisationPolicy  |确定应如何初始化池中的组件。
+
+可能的值是：
+
+*  INITIALISE_NONE  - 启动时不要将任何组件加载到池中。
+*  INITIALISE_ONE  - 启动时将一个初始组件加载到池中。
+*  INITIALISE_ALL  - 启动时加载池中的所有组件。
+
+类型：INITIALISE_NONE，INITIALISE_ONE，INITIALISE_ALL +
+必需：否+
+默认值：INITIALISE_ONE
+| exhaustedAction  |指定池耗尽时Mule组件池的行为。
+
+可能的值是：
+
+*  WHEN_EXHAUSTED_FAIL  - 引发NoSuchElementException。
+*  WHEN_EXHAUSTED_WAIT  - 通过调用Object.wait（long）来阻塞，直到有新的或空闲的对象可用。
+*  WHEN_EXHAUSTED_GROW  - 创建一个新的Mule实例并返回它，实质上使maxActive无意义。如果提供了正数maxWait值，则最多会阻塞很多毫秒，之后会引发NoSuchElementException。如果maxThreadWait为负值，则会无限期地阻止。
+
+类型：WHEN_EXHAUSTED_GROW，WHEN_EXHAUSTED_WAIT，WHEN_EXHAUSTED_FAIL +
+必需：否+
+默认值：WHEN_EXHAUSTED_GROW
+| maxWait  |指定当池耗尽且exhaustedAction设置为WHEN_EXHAUSTED_WAIT时，等待池组件可用的毫秒数。
+
+类型：字符串+
+必需：否+
+默认值：无
+| evictionCheckIntervalMillis  |指定对象逐出器运行之间的毫秒数。如果不是肯定的，则不执行任何对象清除程序。
+
+类型：字符串+
+必需：否+
+默认值：无
+| minEvictionMillis  |确定对象在符合驱逐条件之前可以在池中闲置的最少时间。如果是非积极的，由于空闲时间的原因，没有任何物体会从池中被清除。
+
+类型：字符串+
+必需：否+
+默认值：无
+|===
+
+没有儿童池的配置文件的元素。
+

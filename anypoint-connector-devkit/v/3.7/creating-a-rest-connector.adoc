@@ -1,0 +1,182 @@
+= 创建一个REST连接器
+:keywords: devkit, rest, connector, restcall, api
+
+Anypoint Connector DevKit提供了一组方便的批注，称为@RESTCall，用于为RESTful API创建连接器。
+
+您可以将@RestCall注释应用于连接器的@Connector类中的方法（@Processor），该类声明性地描述API上公开的资源的URL。
+
+@RestCall批注允许您通过其HttpMethod参数执行HTTP POST，GET，PUT和DELETE操作。
+
+在编译时，Anypoint Connector DevKit为所有操作生成客户端代码，并为这些方法提供大部分功能。对于定义良好的RESTful API，这可以成为快速生成连接器的便捷解决方案。
+
+== 先决条件
+
+本文假设您熟悉RESTful API以及Anypoint Connector基础知识中描述的DevKit连接器体系结构。
+
+基于RestCall的连接器体系结构== 
+
+DevKit处理"well-behaved" REST式Web服务，即那些需要干净的URL，正确的HTTP动词使用等的服务。
+
+客户端通过应用于@Connector类及其方法的一组注释（@RestCall注释）公开。有关更多信息，请参阅 link:/anypoint-connector-devkit/v/3.7/annotation-reference[注释参考]。
+
+以下是使用@RestCall注释构建的连接器的体系结构：
+
+image:rest-call-architecture.png[其余的呼叫架构]
+
+与大多数连接器相比，创建REST连接器需要编写很少的代码。您仍然使用属性和方法定义@Connector类;但在这种情况下，@Connector类及其方法都是抽象的。 （与其他连接器类型一样，传递给操作的实体类仍然是具体类。）对于每个操作，应用@RestCall注释以提供：
+
+* 目标资源的URI模板
+* 请求的HTTP动词
+* 将任何参数替换为URI或发送查询/ POST主体以对请求进行参数化
+
+DevKit在实现抽象方法的子类中生成整个REST客户端。开发人员看不到这个类。
+
+这种简单性是可能的，因为访问定义良好的RESTful API的模式非常一致。
+
+==  @ RestCall注释
+
+DevKit提供了一组注释来简化使用RESTful API的工作。这些注释处理所有必要的操作，生成每个REST调用并合并每个REST调用参数。
+
+===  @ RestCall
+
+与@Processor注释一起使用。指示在调用时，处理器发出RESTful请求。
+
+必需的参数：
+
+*  uri：要查询的REST资源的URI
+* 方法：使用HTTP方法
+
+生成的代码基于传递给@RestCall注释的参数创建URI，并使用由@RestCall的方法参数指定的动词发出请求。
+
+[source, code, linenums]
+----
+@Processor
+ @RestCall(uri = "{url}/list", method = org.mule.api.annotations.rest.HttpMethod.GET)
+ public abstract String showAll() throws IOException;
+----
+
+可选参数：
+
+*  *contentType*：来自此方法调用的响应的内容类型。
++
+[source, code, linenums]
+----
+@Processor
+ @RestCall(uri = "{url}/list", method = HttpMethod.POST, contentType = "application/json")
+----
+
+*  *exceptions*：抛出异常列表，通过配对异常类型和被评估的表达式进行配置。
++
+[source, code, linenums]
+----
+@Processor
+ @RestCall(uri = "{url}/list", method = HttpMethod.POST, contentType = "application/json", exceptions = {@RestExceptionOn(expression="#[message.inboundProperties['http.status'] != 200]", exception = AnimalNotFoundException.class)})
+----
+
+在这种情况下，@RestExceptionOn注释用于在指定的条件下抛出异常。在上例中，如果HTTP状态不是200，则会引发异常。
+
+===  @ RestURIParam
+
+允许您通过插入使用@RestUriParam批注注释的参数动态生成URI。
+
+将注释应用于@Processor方法时，通过用花括号括住占位符来指定URI中的占位符。
+
+其中一种方法是将此注释应用于@Processor方法参数，如下所示：
+
+[source, code, linenums]
+----
+@Processor
+@RestCall(uri = "http://localhost:8089/animals/{type}", method = HttpMethod.GET)
+   public abstract List<Animal> listAnimalsOfType(@RestUriParam("type") String type) throws IOException;
+----
+
+另一种方法是用@RestUriParam注释一个@Configurable变量，如下所示：
+
+[source, code, linenums]
+----
+@Configurable
+@RestUriParam("url")
+@Default("http://localhost:8089")
+private String url;
+ 
+@Processor
+@RestCall(uri = "{url}/listType", method =    org.mule.api.annotations.rest.HttpMethod.GET)
+  public abstract String getByType(@RestQueryParam("type") String type)
+   throws IOException;
+----
+
+===  @ RestQueryParam
+
+指定URI查询参数，这些参数被附加到URI的路径后面？或＆符号。您可以将此注释应用于@Processor方法参数或标记为@Configurable的连接器字段。这使您可以将动态生成的参数用作查询参数。
+
+必需参数：要追加的参数的名称的字符串表示形式。
+
+[source, code, linenums]
+----
+@Processor
+ @RestCall(uri = "{url}/listType", method = HttpMethod.GET)
+ public abstract String getByType(@RestQueryParam("type") String type)
+   throws IOException;
+----
+
+当以`mule`作为参数调用getByType消息处理器时，结果调用将为：http：// localhost：8089 / animals？type = mule
+
+===  @ RestHeaderParam
+
+允许您在HTTP请求中插入自定义标头。使用此注释时，您必须指定要包含在呼叫中的标题的名称。与@RestURIParam注释一样，您可以将此注释应用于@Processor方法参数或标记为@Configurable的连接器字段。
+
+使用@RestHeaderParam注释特定的可配置变量时，变量存在于所有HTTP请求中。
+
+[source, code, linenums]
+----
+@Configurable
+@RestHeaderParam(value = "emptyHeaderField", ignoreIfEmpty = true)
+private String emptyHeaderField;
+----
+
+在方法的特定参数上使用@RestHeaderParam时，只有在调用方法时才会包含标题。
+
+[source, code, linenums]
+----
+@Processor
+@RestCall(uri = "{url}/create", method = org.mule.api.annotations.rest.HttpMethod.POST)
+ public abstract String create(@RestHeaderParam("age") int age)
+throws IOException;
+----
+
+===  @ RestPostParam
+
+允许您在POST方法调用的主体中设置参数。使用@RestCall定义POST方法并使用@RestPostParam设置其参数。
+
+您可以将此注释应用于@Processor方法参数或标记为@Configurable的连接器字段。 DevKit确保您仅将此注释应用于POST方法。
+
+用@RestPostParam注解的处理器方法不能使用未注释的参数或@Payload注释的参数。
+
+例如：
+
+[source, code, linenums]
+----
+@Processor
+@RestCall(uri = "http://localhost:8089/product/{name}", method = HttpMethod.POST)
+  public abstract Result createProduct(
+    @RestPostParam("name") 
+    String name) 
+    throws IOException;
+----
+
+另一种方法是用@RestPostParam注释一个@Configurable变量，如下所示：
+
+[source, code, linenums]
+----
+@Configurable
+@RestPostParam("category")
+private String category;
+ 
+@Processor
+@RestCall(uri = "http://localhost:8089/product/", method = HttpMethod.POST)
+  public abstract Result createProduct(String name) throws IOException;
+----
+
+== 另请参阅
+
+* 有关如何实现@RestCall连接器的示例，请参阅 link:/anypoint-connector-devkit/v/3.7/creating-a-connector-for-a-restful-api-using-restcall-annotations[使用@RESTCall注解为RESTful API创建连接器]。

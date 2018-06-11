@@ -1,0 +1,313 @@
+=  Windows网关服务指南
+：imagesdir：./_images
+
+_选择_
+
+Windows网关服务提供了与Windows平台上专有功能的连接。
+
+== 先决条件
+
+在安装Mule的服务器上安装Java加密扩展。 JCE包需要允许连接器使用HTTPS进行安全通信。
+
+要在运行Windows Server 2008 R2的服务器上启用和协商TLS 1.2，必须在适当的子项（客户端，服务器）中创建DisabledByDefault条目并将其设置为"0"。该条目未出现在注册表中，默认情况下它设置为"1"。
+
+对于这些和其他链接，请查看本指南的另请参阅部分。
+
+
+== 安装Windows网关服务
+
+安装需要Windows 2008 Server，Windows 2008 R2 Server，Windows 2012 Server和.NET Framework 4.5及更高版本。
+
+安装步骤：
+
+. 下载另请参阅部分中列出的Windows网关服务安装程序
+本文件。
+. 解压缩软件分发。
+. 双击Anypoint-Windows-Gateway-Service.exe文件。
+. 单击“选项”更改安装位置，或者单击“安装”开始安装。
+. 要在网关上使用MSMQ连接器，请复制在Anypoint Studio中配置连接时显示的身份验证令牌，以备将来使用，否则请跳过此步骤。复制令牌后，单击安装。
+. 安装完成后，安装程序将为您提供查看readme.txt文件的附加说明选项。
+. 点击完成退出。
+. 安装程序会创建安装程序启动的Anypoint Gateway Windows服务。
+
+image:win-gw-anypoint-gateway.png[网关安装向导]
+
+要在Windows 7中查看正在运行的服务，当“控制面板查看方式”选项设置为“小图标”时，单击控制面板>管理工具>服务。该服务显示为：
+
+image:win-gw-services-tool.png[服务工具]
+
+== 配置Anypoint网关
+
+Windows服务的默认安装位置为`c:\Program Files(x86)\Anypoint Gateway for Windows`，除非您在安装时选择了其他文件夹。该文件夹包含Mule.SelfHost.exe可执行文件，Mule.SelfHost.exe.config配置文件和PowerShell脚本以自动执行配置任务。
+
+*Note:*如果配置文件未出现在文件夹中，则在Windows 7中，当控制面板查看方式选项设置为小图标时，单击控制面板>文件夹选项>查看>显示隐藏文件，文件夹和驱动器。
+
+可执行文件在端口9333（默认）启动一个新的Web服务器，该服务器只接受使用HTTPS的安全连接。您可以在Mule.SelfHost.exe.config配置文件中的以下位置更改网关侦听的端口号：
+
+[source, xml, linenums]
+----
+<appSettings>
+    <!-- Configure the service to listen on the following address. -->
+    <add key="OwinHostAddress" value="https://+:9333/"/>
+    ...
+</appSettings>
+ ...
+<system.serviceModel>
+    <services>
+      <service behaviorConfiguration="routing"
+          name="System.ServiceModel.Routing.RoutingService">
+        <host>
+          <baseAddresses>
+            <add baseAddress="https://*:9333/router"/>
+          </baseAddresses>
+    ...
+</system.serviceModel>
+----
+
+此Web服务器使用安装期间自动生成的自签名SSL证书。证书位于本地计算机证书存储的个人文件夹中：
+
+image:win-gw-local-computer-cert-store.png[本地计算机证书商店]
+
+由于Windows服务依赖于http.sys来自托管Web服务器，因此端口号或SSL证书的更改需要重新配置Windows。安装目录中的Register-SslCert.ps1 PowerShell脚本处理此任务。如果端口或证书发生更改，请从PowerShell控制台运行以下命令：
+
+[source,xml]
+----
+Register-SslCert.ps1 <certificate-thumbprint> <windows-account> <port>
+----
+
+*  `<certificate-thumbprint>`：SSL证书的指纹。它必须存储在本地商店帐户的个人文件夹中。
+*  `<windows-account>`：Windows用户或组获得注册端口的权限。模拟Windows服务或控制台应用程序的帐户必须是该组的一部分。
+*  `<port>`：HTTP端口 - 必须为9333（默认） - 或者您在配置文件中设置的端口。
+
+例：
+
+[source,xml]
+----
+Register-SslCert.ps1 a495cbf8c4af496f1ef81efb224c8097d039f922 everyone 9333
+----
+
+== 关于MSMQ连接器设置
+
+=== 关于安全注意事项
+
+对于运行在Mule Runtime中的MSMQ连接器，服务首先通过检查RFC 2616中指定的HTTP授权标头来认证该呼叫。
+
+身份验证通过MSMQ连接器使用的此唯一安全令牌完成。使用Mule方案将该令牌包含在对网关的每个HTTP请求中。以下示例显示了MSMQ如何利用网关连接到发送本节中指定的安全令牌的特定队列：
+
+[source, code, linenums]
+----
+GET: https://localhost:9333/msmq?count=50
+Authorization: mule 3nGdw7W+G1fSO2YBEHDmpo4N1Tg=
+Mule-Msmq-Queue-Name: .\private$\out
+Mule-Api-Version: 1.0
+----
+
+授权令牌应该在连接器和网关配置文件上匹配。以下配置设置显示了如何在网关配置文件Mule.SelfHost.exe.config中设置令牌：
+
+[source, xml, linenums]
+----
+<appSettings>
+    <!-- Token that must be sent by the Mule connector's client in the Authorization header when accessing the Rest Api. -->
+    <add key="mule-auth-token" value="3nGdw7W+G1fSO2YBEHDmpo4N1Tg="/>
+</appSettings>
+----
+
+当您配置在Mule运行时中运行的连接器时，请使用网关访问令牌配置设置（连接器的XML配置中的accessToken属性）设置授权令牌值。
+
+*Note*：Windows网关服务的安装程序在首次安装时会自动生成密码安全令牌以供调用者使用。该令牌在安装过程中显示并放置在剪贴板上，以便轻松复制到Mule应用程序中。
+
+=== 关于通过自定义HTTP头模拟Windows用户
+
+代表网关服务连接器执行呼叫的用户通过两个自定义HTTP标头（mule-impersonate-username和mule-impersonate-password）进行认证。
+
+这两个标题代表正在运行Windows Gateway服务的Active Directory林中的现有用户的Windows凭据，或代表托管该服务的计算机上的本地帐户。当HTTP请求中包含这些HTTP标头时，Windows网关服务会在执行连接器所需的操作之前对该用户进行身份验证和模拟。这提供了使用Windows凭证配置正确访问控制列表权限的功能。
+
+== 关于MSMQ连接器和网关的交互
+
+下图显示了MSMQ连接器与网关的交互以及使用的主要组件：
+
+image:msmq-windows-gateway.png[Windows网关]
+
+=== 关于配置设置
+
+在下表中，您可以找到仅与MSMQ连接器相关的配置设置：
+
+[%header,cols="30a,70a"]
+|===
+|属性 |用法
+| invalid-queue-name  |不可读邮件移动到的队列名称。
+| transaction-timeout  |处理由连接器检索到的消息的超时时间。当清除任务发现超时过期的消息时，它将消息移动到主队列以再次可用（有关详细信息，请参阅连接器指南中的两个阶段提交部分）。
+| invalid-message-timeout  |用不正确的格式化程序解析消息的有效内容时的无效消息超时。
+| cleanup-delay  |清理任务的延迟在检索到处理后开始查找过期消息（有关详细信息，请参阅连接器指南中的两个阶段提交部分）。
+| cleanup-username  |（可选）用户在运行清理任务时模拟。如果您选择将此设置保留为空，则将使用运行该服务的用户帐户。
+| cleanup-password  |（可选）用户在运行清理任务时模拟的密码。
+|===
+
+=== 关于通过远程队列模拟Windows用户
+
+当您的队列被标记为需要验证时，您可以按照上面的指定模拟呼叫者用户（在相同的常规部分中）。除此之外，如果您使用远程队列，则连接器有一个特定的头部来覆盖此行为。
+
+=== 关于负载平衡配置
+
+Windows网关服务支持以负载平衡配置运行，以实现容错。运行多个网关服务实例时，应将每个成员配置为以非重叠间隔执行MSMQ后台作业。
+
+默认情况下，MSMQ后台作业处理在每小时零分钟开始每10分钟执行一次。为了防止多个网关实例同时尝试在负载平衡配置中运行时对队列执行清理，应该在每个网关实例上指定一个名为cleanup-delay的设置。在每台机器上使用的推荐值是（10 / instanceCount）*（instanceNumber  -  1），其中instanceNumber是一个整数值1..n。
+
+例如，2台机器的集群将在机器1上使用清除延迟0，在机器2上使用5。由3台机器组成的群集将使用机器1,3上的清除延迟0，机器2上的清除延迟0以及机器3上的6机器时钟应该通过NTP或同等机制进行同步，以确保正确应用该偏移。
+
+清理延迟设置可在Mule.SelfHost.config文件中找到：
+
+[source, xml, linenums]
+----
+<appSettings>
+    <!-- MSMQ: Delay in minutes to launch the cleanup process for sub-queues -->
+    <add key="cleanup-delay" value="0"/>
+</appSettings>
+----
+
+*Note*：在LB配置中运行时，网关服务应该配置为在涉及的节点（MSMQ，网关）位于WORKGROUP下但未加入DOMAIN时以“管理员”身份运行。当加入到同一个DOMAIN时，每个涉及的节点和对象（队列）的权限应由域管理员正确设置。
+
+==  Windows网关服务疑难解答
+
+Windows网关服务利用内置的.NET跟踪系统。基本前提很简单，跟踪消息通过交换机发送给与特定存储介质相关的监听器。配置文件中提供了连接器使用的跟踪源的侦听器：
+
+[source, xml, linenums]
+----
+<sharedListeners>
+   <add name="console" type="System.Diagnostics.ConsoleTraceListener" />
+   <add name="file" type="System.Diagnostics.TextWriterTraceListener" initializeData="mule.gateway.log" />
+   <add name="etw" type="System.Diagnostics.Eventing.EventProviderTraceListener, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" initializeData="{47EA5BF3-802B-4351-9EED-7A96485323AC}" />
+</sharedListeners>
+ 
+<sources>
+    <source name="mule.gateway">
+        <listeners>
+            <clear />
+            <add name="console" />
+            <add name="etw"/>
+        </listeners>
+    </source>
+</sources> 
+----
+
+前面的示例为输出控制台，文件和Windows事件跟踪（ETW）配置了三个侦听器。连接器mule.gateway的跟踪源配置为仅将跟踪输出到控制台和ETW。
+
+=== 更改跟踪级别
+
+Windows网关服务配置为记录信息事件。这是在`<switches>`元素下配置的。如果您想记录所有内容，则应通过在下面显示的配置元素中更改它来使用详细级别。
+
+在配置文件中配置交换机级别的级别：
+
+[source,xml,linenums]
+----
+<switches>
+    <add name="mule.gateway" value="Information" />
+</switches>
+----
+
+其他可能的级别是：
+
+* 错误：输出错误处理消息
+* 警告：输出警告和错误处理消息
+* 信息：输出信息性消息，警告和错误处理消息
+* 关闭：禁用跟踪
+
+如果您想在Windows网关服务中跟踪或调试路由服务，可以启用一项设置，以获取有关在访问路由服务时生成的错误的更多详细信息。如果要在跟踪侦听器上获取此信息，请使用serviceDebug元素中的includeExceptionDetailInFaults属性启用它。要实现这一点，您需要将其值设置为true，如下所示：
+
+[source, xml, linenums]
+----
+<serviceBehaviors>
+  <behavior name="routing">
+    ...
+    <serviceDebug includeExceptionDetailInFaults="true" />
+  </behavior>
+</serviceBehaviors>
+----
+
+此设置扩展了服务返回的错误消息，并添加了原因的内部堆栈跟踪，在某些情况下可能会帮助您了解问题所在。
+
+=== 从命令行启用控制台跟踪
+
+解决问题的一种有用方法是启用控制台侦听器（默认情况下是，但如果没有，则应将其添加到上面显示的侦听器部分中），然后从命令行运行Windows网关服务。
+
+在控制台中，您可以看到正在追踪的实时信息，例如请求，响应以及一些警告或错误。这些对于查看连接器是否正确到达网关很有用，或者可能会导致故障的其他可能因素。
+
+. 要启用控制台侦听器（如果不是），请将其添加到侦听器集合中：
++
+[source, xml, linenums]
+----
+<sources>
+    <source name="mule.gateway">
+        <listeners>
+            <clear />
+            <add name="console" />
+            ...
+        </listeners>
+    </source>
+</sources>
+----
++
+. 要从命令行运行，请停止Anypoint Gateway服务。
+. 转至安装Anypoint Gateway服务的文件夹，默认为`c:\Program Files(x86)\Anypoint Gateway for Windows`。
+. 运行Mule.SelfHost.exe应用程序。这将开始运行控制台并实时显示其中的跟踪事件。
+. 完成故障排除后，请关闭此控制台并重新启动Windows服务。
+
+=== 启用Windows的事件跟踪
+
+Windows事件跟踪（ETW）是一种非常高效的内置发布和订阅机制，用于在内核级别执行事件跟踪。与依赖于I / O将痕迹存储在持久性存储中的其他传统跟踪解决方案（如文件或数据库）相比，使用此功能的开销不大。作为Windows中的内置机制，许多操作系统服务和组件也都使用此功能。因此，您不仅可以排除应用程序故障，还可以排除许多涉及相同执行的操作系统组件。
+
+在ETW中，应用程序通过ETW会话在队列（或提供程序）和其他应用程序中发布事件，这些应用程序通过这些队列实时地消耗事件。在提供者中发布事件时，除非有会话在该队列上收集事件，否则它将无处可用。 （事件不会持续）。
+
+.NET中的跟踪系统包括ETW的跟踪侦听器EventProviderTraceListener，您可以使用会话标识符配置ETW用于收集跟踪：
+
+[source, xml, linenums]
+----
+<sharedListeners>
+   <add name="etw"type="System.Diagnostics.Eventing.EventProviderTraceListener, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" initializeData="{47EA5BF3-802B-4351-9EED-7A96485323AC}"/>
+</sharedListeners>
+----
+
+在该示例中，会话与此标识符关联：+
+{47EA5BF3-802B-4351-9EED-7A96485323AC}
+
+=== 收集会话跟踪
+
+. 打开Windows控制台并运行以下命令启动新会话：
++
+[source]
+----
+logman start mysession -p {47EA5BF3-802B-4351-9EED-7A96485323AC} -o etwtrace.etl -ets
+----
++
+. 运行此命令停止会话：
++
+[source]
+----
+logman stop mysession -ets
+----
++
+这会生成跟踪会话数据的etwtrace.etl文件。
++
+. 运行此命令以生成可读文件：
++
+[source]
+----
+tracerpt etwtrace.etl
+----
+
+该命令将有用的信息传输到dumpfile.xml文本文件中。有关更多信息，请参阅Tracerpt。
+
+== 另请参阅
+
+*  https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.8 [RFC 2616]。
+*  https://repository-master.mulesoft.org/nexus/content/repositories/releases/org/mule/modules/anypoint-windows-gateway-service/1.12.0/anypoint-windows-gateway-service -1.12.0.zip [下载Windows网关服务]。
+*  http://www.oracle.com/technetwork/java/javase/downloads/[JCE下载]。
+*  http://technet.microsoft.com/en-us/library/cc732700.aspx[Tracerpt]。
+*  https://technet.microsoft.com/en-us/library/dn786418（v = ws.11）.aspx＃BKMK_SchannelTR_TLS12 [创建DisabledByDefault条目]。
+*  Windows网关服务利用以下技术和框架：
++
+http://www.asp.net/web-api[ASP.NET Web API]公开发送和接收原始消息的HTTP Web API。
++
+http://owin.org/[OWIN]提供HTTP层。用于.NET的开放式Web界面（OWIN）是一个开放的规范，用于将应用程序与Web服务器功能分离，为使所有HTTP关注独立于主机平台提供了一个层。
++
+http://www.asp.net/aspnet/overview/owin-and-katana[武士刀]提供了OWIN Microsoft实现，它可以处理OWIN应用程序的自我和IIS托管。

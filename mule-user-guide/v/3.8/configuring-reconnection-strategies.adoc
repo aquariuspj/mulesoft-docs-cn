@@ -1,0 +1,319 @@
+= 配置重新连接策略
+:keywords: anypoint, studio, on premises, on premise, reconnection strategies, retry policies, framework, retry, forever, non-blocking
+
+[NOTE]
+====
+在Mule 2.x中，*Reconnection Strategies*被称为"Retry Policies,"，因为底层类提供了一个通用框架来一次又一次地重试相同的操作。然而，这个术语在预期消息被重新传递并且消息交换被重新执行的用户之间产生了显着的混淆。
+
+为了防止进一步的误解，从Mule 3.x和更新版本开始，我们重新使用术语"Reconnection Strategies."
+====
+
+重新连接策略指定连接器在连接失败时的行为方式。您可以通过指定一些标准来控制Mule尝试重新连接的方式：
+
+* 异常的类型
+* 重新连接尝试的次数和频率
+* 生成的通知等等
+
+例如，如果FTP传输的连接断开，则相关联的轮询接收器将尝试每隔1000毫秒（或指定的任何间隔）连接。这会消耗资源并生成日益增大的日志文件，因为通常情况下，连接会继续失败，直到您手动停止重新连接过程。此外，此重新连接行为使系统处于不稳定状态，因为理论上连接器"connected,"即使重复失败，也就是说连续失败。
+
+通过重新连接策略，您可以更好地控制失败连接的行为，例如，每15分钟重新尝试连接一次，并在尝试30次后放弃连接。只要此重新连接策略生效，您也可以向IT管理员发送自动通知。您甚至可以定义一种仅在工作时间尝试重新连接的策略。如果您的服务器频繁关闭以进行夜间维护，则此类设置可能非常有用。
+
+对于使用同步入站和出站端点配置但没有重新连接策略的FTP传输，如果出站连接断开，所有入站邮件都会失败，因为入站端点会继续接收邮件。相比之下，采用重新连接策略后，系统会丢失第一条失败的消息（因为FTP不是事务性的），但是一旦重新连接策略生效，入站端点将不再接收消息（因此没有任何消息丢失），直到连接重新建立。
+
+[NOTE]
+对于Mule Enterprise和Community _比Mule 3.2_更新，您无需指定`mule-ee.xsd`架构，因为重新连接策略现在内置于核心架构中。
+
+Mule Enterprise在3.2_版之前提供了标准的重新连接策略，您可以使用mule-ee.xsd模式进行配置：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="iso-8859-1"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+----
+
+对于Mule社区_prior Mule 3.2_，您必须创建自己的策略并使用标准Spring语法而不是mule-ee.xsd模式来配置它们。
+
+
+== 使用XML配置重新连接策略
+
+本节介绍通过编辑Mule应用程序的XML配置文件来配置的重新连接策略。
+
+=== 重新连接
+
+重新连接策略允许用户配置尝试重新连接的次数以及尝试之间的等待时间。
+
+==== 重新连接的属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| `blocking`  |布尔值 |否 | true  |如果为false，则重新连接策略在单独的非阻塞线程中运行
+| `frequency`  | long  |否 | 2000  |重新连接的频率（以毫秒为单位）
+| `count`  |整数 |否 | 2  |多少次重新连接尝试
+|===
+
+重新连接的==== 子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| `abstract-reconnect-notifier`  | 0..1  |重新连接通知程序元素的占位符。 RetryNotifier接口是一个回调，允许在每次重新连接尝试后执行操作，例如，成功或失败时触发服务器通知事件。
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect count="5" frequency="1000"/>
+</jms:activemq-connector>
+----
+
+=== 重新连接Forever
+
+重新连接策略，以指定频率重试无限次。
+
+==== 重新连接的属性永远不变
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| `blocking`  |布尔值 |否 | true  |如果为false，则重新连接策略将在单独的非阻塞线程中运行。
+| `frequency`  |长 |否 | 2000  |重新连接的频率（以毫秒为单位）。
+|===
+
+重新连接的==== 子元素永远
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| `abstract-reconnect-notifier`  | 0..1  |重新连接通知程序元素的占位符。 RetryNotifier接口是一个回调，允许在每次重新连接尝试后执行操作，例如，成功或失败时触发服务器通知事件。
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect-forever frequency="5000"/>
+</jms:activemq-connector>
+----
+
+=== 重新连接自定义策略
+
+用户定义的重新连接策略。
+
+<reconnect-custom-strategy...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明 |
+| `blocking`  |布尔值 |否 | true  |如果为false，则重新连接策略将在单独的非阻塞线程中运行。
+| `class`  |类名 |是 |
+|===
+
+一个实现了`RetryPolicyTemplate`接口的类。
+
+重新连接 - 自定义策略的==== 子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| `abstract-reconnect-notifier`  | 0..1  |重新连接通知程序元素的占位符。 RetryNotifier接口是一个回调，允许在每次重新连接尝试后执行操作，例如，成功或失败时触发服务器通知事件。
+| `spring:property`  | 0 .. *  |
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect-custom-strategy class="org.mule.retry.test.TestRetryPolicyTemplate">
+        <spring:property name="fooBar" value="true"/>
+        <spring:property name="revolutions" value="500"/>
+    </reconnect-custom-strategy>
+</jms:activemq-connector>
+----
+
+=== 非阻塞重新连接
+
+默认情况下，重新连接策略会阻止Mule应用程序消息处理，直到它能够连接/重新连接。当您启用*non-blocking*重新连接时，应用程序无需等待所有终端重新连接，然后重新启动。此外，如果连接丢失，则重新连接发生在与应用程序线程分离的线程上。请注意，根据您的应用需求，这种行为可能是可取的，也可能不需要。
+
+只需设置属性`blocking="false"`，即可使任何重新连接策略无阻塞。例如：
+
+[source, xml, linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect frequency="3000" blocking="false" />
+</jms:activemq-connector>
+----
+
+如果未指定，则`blocking`属性默认为`"true"`。
+
+[NOTE]
+====
+在Mule 2.x中，属性`asynchronous`用于此目的。新属性`blocking`与`asynchronous`相反，因此为Mule 3.x指定`asynchronous="true"`的Mule 2.x配置应该改为`blocking="false"`。
+====
+
+=== 交易
+
+当正确配置 link:/mule-user-guide/v/3.8/transaction-management[交易]时，在重新连接策略生效时由Mule路由的任何消息都不会丢失。取而代之的是，事务回滚并且只有在传输通过重新连接策略成功重新连接后才会被提交。
+
+=== 重新连接通知程序
+
+为每次重新连接尝试调用重新连接通知程序，并且还可以进行配置。您可以创建实现`org.mule.api.retry.RetryNotifier`界面的自定义重新连接通知程序。
+
+每次重新连接尝试时，重连器通知器元素都会触发一次`ConnectionNotification`。
+notifier元素没有属性或子元素。
+
+例如：
+
+[source, xml, linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect>
+        <reconnect-notifier/>
+    </reconnect>
+</jms:activemq-connector>
+----
+
+==== 重新连接自定义通知程序
+
+用户定义的重新连接通知程序。
+
+==== 重新连接自定义通知程序的属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |说明
+| `class`  |类名 |是 |实现RetryNotifier接口的类。没有默认值。
+|===
+
+重新连接自定义通知程序的==== 子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数
+| `spring:property`  | 0 .. *
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<jms:activemq-connector name="AMQConnector">
+    <reconnect>
+        <reconnect-custom-notifier class="org.mule.retry.test.TestRetryNotifier">
+            <spring:property name="color" value="red"/>
+        </reconnect-custom-notifier>
+    </reconnect>
+</jms:activemq-connector>
+----
+
+=== 为入站和出站端点配置单独的连接器
+
+连接器重新连接策略用于入站和出站连接。如果您需要入站和出站连接的不同行为，则可以通过为每个策略配置不同的连接器，然后分别从入站和出站端点引用一个连接器来实​​现此目的。
+
+=== 默认重新连接策略
+
+默认重新连接策略用于没有明确配置重新连接的任何连接器。您可以使用`<configuration>`元素设置默认策略：
+
+[source, xml, linenums]
+----
+<configuration>
+    <reconnect count="3"/>
+</configuration>
+----
+
+=== 创建自定义重新连接策略
+
+要创建自定义重新连接策略，请实施接口RetryPolicy，其中方法`PolicyStatus applyPolicy(Throwable cause)`根据异常类型采取某些操作，然后返回策略状态以指示策略是否已用尽或应继续重试。您还创建了`RetryPolicyTemplate`，这就是您在连接器上实际配置的内容。通常，模板从AbstractPolicyTemplate继承，方法`RetryPolicy createRetryInstance()`返回您的自定义`RetryPolicy`的实例。在运行时，每次策略生效时都会创建`RetryPolicy`的新实例，从而重置其可能包含的任何状态信息，例如计数器。
+
+例如：
+
+[source, code, linenums]
+----
+package com.acme.retry;
+
+public class AstronomicalRetryPolicyTemplate extends AbstractPolicyTemplate
+{
+    int totalPlanets;
+
+    public RetryPolicy createRetryInstance()
+    {
+        return new AstronomicalRetryPolicy(totalPlanets);
+    }
+
+    protected static class AstronomicalRetryPolicy implements RetryPolicy
+    {
+        int totalPlanets;
+
+        public AstronomicalRetryPolicy(int totalPlanets) { this.totalPlanets = totalPlanets; }
+
+        public PolicyStatus applyPolicy(Throwable cause)
+        {
+            if (AstronomyUtils.getPlanetsAligned() == totalPlanets)
+            {
+                return PolicyStatus.policyExhausted(cause);
+            }
+            else
+            {
+                Thread.sleep(5000);
+                return PolicyStatus.policyOk();
+            }
+        }
+    }
+
+    public int getTotalPlanets() { return totalPlanets; }
+    public void setTotalPlanets(int totalPlanets) { this.totalPlanets = totalPlanets; }
+}
+----
+
+== 使用Studio配置重新连接策略
+
+在Anypoint Studio环境中，通常通过全局连接器为应用程序设置重新连接策略。在极少数情况下，您希望为流中的入站和出站端点设置_different_重新连接策略，MuleSoft建议您配置两个单独的全局连接器，然后将入站端点与出站端点关联。
+
+[TIP]
+====
+*Best Practice*
+
+除了在大多数连接器上设置重新连接策略（Ajax，文件和虚拟机是显着的例外）之外，您可以选择在全局端点上设置它们。 （再一次，Ajax代表一个主要的异常，这意味着您不能在Ajax上设置重新连接策略）。但是，MuleSoft建议您尽可能在全局连接器而不是全局端点上设置重新连接策略，因为此最佳实践通常允许您在所有流程和Mule项目中重复使用一次性编写的重新连接策略。
+
+MuleSoft建议在全局端点（而不是全局连接器）上配置重新连接策略的唯一情况是Jetty，其连接器不支持重新连接。这就是MuleSoft推荐Jetty全球端点的原因。
+====
+
+=== 关于重新连接策略选项卡
+
+几乎每个出现在Studio界面中的全局端点和全局连接器的*Properties*窗格都具有*Reconnection*选项卡，如下图所示：
+
+image:ReconnectionTab.png[ReconnectionTab]
+
+要显示与要配置的特定全局连接器或全局端点关联的重新连接选项卡，请完成以下步骤：
+
+. 启动Studio界面
+. 打开您希望为其设置重新连接策略的项目
+. 点击*Message Flow*画布下方的*Global Elements*标签
+. 选择要设置重新连接策略的全局连接器或全局端点，然后双击打开其*Properties*窗格。
+ 或者：+
+ 如果全局连接器或全局端点不存在，请点击*Global Mule Configuration Elements*窗格右侧的*Create*，然后浏览*Choose Global Type*弹出窗口，选择全局元素，然后点击*OK*打开其*Properties*窗格。
+. 点击*Reconnection*标签进行显示。
+
+默认情况下，选择*Do not use reconnection strategy*按钮;换句话说，连接器不会尝试重新连接，除非您告诉它。如果您选择其他单选按钮之一，则最终确定您不需要重新连接策略，只需单击"Do not use reconnection strategy."即可重置为默认设置
+
+为方便起见，您可以选择*Standard Reconnection*单选按钮，该按钮每2000毫秒尝试重新连接一次，直到尝试重新尝试总共两次。
+
+选择*Standard Reconnection*后，您可以更改*Frequency*和*Reconnection Attempts*的默认值，并且您可以检查*Reconnect Forever*选项，以便连接器或端点持续尝试连接，直到它成功了。然而，需要警告的是，大量（或无限）的间隔紧密的重新连接尝试会消耗大量资源并产生极长的日志文件_。
+
+通过检查标记为*Run the reconnection as a separate thread*的{​​{0}}选项卡底部附近的选项，可以防止重新连接尝试完全阻止主应用程序流程线程。
+
+*Custom Reconnection*允许高级用户实现它们以Java类形式自定义编码的重新连接策略。选择单选按钮激活此选项后，开始在标有*Class*的文本字段中输入自定义Java类的名称。输入足够的字母以唯一标识班级后，按*enter*接受该条目。显示*Class Browser*之后，再次点击*OK*以提交您的选择。
+
+在*Reconnection*标签上的*Properties*面板中，点击"plus"图标以选择并设置您的自定义重新连接策略公开的其中一个属性。对于您希望为此重新连接策略的特定实例配置的所有属性重复此操作。如果随后要编辑已分配给属性的值，请单击属性，然后单击铅笔图标以打开属性进行编辑。
+
+如果您对所选的重新连接类型以及为可配置属性指定的值感到满意，请单击*Reconnection*选项卡底部的*OK*。
+

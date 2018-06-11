@@ -1,0 +1,111 @@
+= 使用管理控制台API
+
+管理控制台提供了REST API，您可以通过它编程访问控制台的大部分功能。使用这些REST API，您可以：
+
+* 注册新服务器并管理现有服务器，包括重新启动服务器。
+* 管理服务器组。
+* 访问和管理服务器上的文件。
+
+有关这些操作的详细信息，请参阅 link:/mule-management-console/v/3.2/managing-servers-using-rest-apis[使用REST API管理服务器]。
+
+*[mmc:Mule 3.2]*另外，您可以使用REST API来：
+
+* 创建或删除群集并获取有关群集的信息，以及在群集上启动，停止和重新启动应用程序。有关详情，请参阅 link:/mule-management-console/v/3.2/managing-clusters-using-rest-apis[使用REST API管理群集]。
+* 查找，上传和删除存储库中的应用程序。有关详情，请参阅 link:/mule-management-console/v/3.2/managing-applications-using-rest-apis[使用REST API管理应用程序]。
+* 在服务器或集群内部署，取消部署，创建，更新和删除部署。有关详情，请参阅 link:/mule-management-console/v/3.2/managing-deployments-using-rest-apis[使用REST API管理部署]。
+* 管理流程，包括查找，启动和停止流程以及查找，启动和停止流程的端点。有关管理服务器中的流的详细信息，请参阅 link:/mule-management-console/v/3.2/managing-flows-in-a-server-using-rest-apis[使用REST API管理服务器中的流程]。有关管理群集中的流的详细信息，请参阅 link:/mule-management-console/v/3.2/managing-flows-in-a-cluster-using-rest-apis[使用REST API管理集群中的流程]。
+
+== 概述
+
+具象状态传输（REST）是一种软件体系结构。 REST中的一个重要概念是资源的存在，每个资源都可以使用全局标识符来引用。具体而言，数据和功能都被视为资源。通过使用REST API，您可以通过指定该功能的URL或链接来访问功能，这通常也称为方法。数据表示形式以JavaScript对象表示法（JSON）对象的形式传递给REST API方法。
+
+简而言之，以下是您如何使用REST API：
+
+* 设置可能需要传递给API的任何参数。您可以在JSON对象中设置参数值。
+* 构建请求。该请求包含资源的完整URL，以及任何参数及其值的名称。
+* 使用适当的HTTP方法调用请求：GET，PUT，DELETE或POST。
+* 获取回复。如果您检索信息，请解析您所需数据的响应。如果需要，您可以将响应数据用于进一步的API请求。
+
+您可以使用任何HTTP客户端来访问这些API。请注意，所有管理控制台API都使用JSON而不是XML作为数据格式。
+
+如果您使用Java编程，建议您使用[Jersey客户端。或者，对于JSON支持，请将 link:http://hc.apache.org/httpclient-3.x/index.html[HttpClient的]与高性能JSON处理器 link:https://github.com/FasterXML/jackson[杰克逊]一起使用。
+
+== 一个例子
+
+例如，下面是如何使用REST API执行与控制台相关的操作 - 在这种情况下，列出所有服务器。此资源（方法）的URL是`/mmc/api/servers`，调用请求的HTTP方法是GET。如果您使用命令行HTTP工具 link:http://curl.haxx.se/[卷曲]将其作为命令提交，请求将如下所示：
+
+[source]
+----
+curl --basic -u admin:admin http://localhost:8080/mmc/api/servers
+----
+
+你得到的响应是JSON格式，看起来像这样：
+
+[source, json, linenums]
+----
+{
+  "name" : "Test",
+  "id" : "local$b15ecba1-9f97-4b16-8127-9b137cdbb2e1",
+  "href" : "http://localhost:8080/mmc/api/servers/local$b15ecba1-9f97-4b16-8127-9b137cdbb2e1",
+  "agentUrl" : "https://localhost:7777/mmc-support",
+  "hostIp" : "192.168.0.13",
+  "muleServerId" : "d9505d40-2c5c-11df-b832-a32a5a09ec4e",
+  "started" : "Wed Mar 10 16:51:59 CET 2010",
+  "version" : "2.2.5",
+  "agents": [
+    {
+      "name" : "mmc-support",
+      "description" : "Mule Management Console Support (0.0.0.0:7777)"
+    },
+    {
+      "name" : "jmx-agent",
+      "description" : "JMX Agent"
+     }
+   ],
+  "groups" : [
+    {
+      "name" : "Development",
+      "href" : "http://localhost:8080/mmc/api/serverGroups/73d89173-290e-4cb3-a61c-e11deb74767d"
+    }
+  ],
+  "runningServices" : 3,
+  "pausedServices" : 0,
+  "stoppedServices": 0
+}
+----
+
+
+然后，您可以解析您所需数据的响应。
+
+== 状态和错误处理代码
+
+所有控制台REST API都返回相同的一组状态码。您可以期待对REST API的任何调用返回以下状态代码之一：
+
+[%header,cols="10,90"]
+|===
+|状态码 |说明
+| 200  |操作成功。
+| 201  |创建资源（例如服务器或服务器组）。响应中的位置标题包含资源的位置。
+| 404  |找不到资源。
+| 409  |当方法尝试创建资源（例如服务器或服务器组）时，操作失败，因为具有该名称的资源已存在。
+| 500  |操作失败。有关详细信息，请参阅HTTP正文。
+|===
+
+对于生成500状态码的错误，HTTP响应包含带有特定错误消息的JSON响应。检查HTTP响应中的JSON响应以确定导致错误的原因。例如：
+
+[source, code, linenums]
+----
+500
+Content-Type: application/json
+Server: Apache-Coyote/1.1
+Date: Sun, 08 Nov 2009 00:12:55 GMT
+
+{
+  message : "Could not connect to remote server."
+}
+----
+
+
+link:/mule-management-console/v/3.2/scripting-examples[<<上一页：*脚本示例*]
+
+link:/mule-management-console/v/3.2/managing-servers-using-rest-apis[Next：*使用REST API管理服务器*] >>

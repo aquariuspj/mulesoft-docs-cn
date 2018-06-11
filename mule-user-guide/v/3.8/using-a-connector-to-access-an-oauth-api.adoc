@@ -1,0 +1,401 @@
+= 使用连接器访问OAuth API
+:keywords: oauth, authentication, oauth 2, client authentication
+
+一些Mule连接器利用OAuth安全协议来管理用户身份。当您的Mule应用向请求身份验证的服务（如Github OAuth2服务器）发送请求时，请使用您在连接器中配置的身份验证。在这种情况下，您的Mule应用程序是客户端。另一方面，当您希望保护您的API或应用程序免受未经授权的访问时，请使用API​​ Manager策略。
+
+本文档介绍了如何在连接器中配置OAuth 2.0功能。
+
+== 在OAuth 2.0中使用连接器
+
+要解释如何配置连接器以使用OAuth 2.0，本文档使用通过OAuth Salesforce连接器构建Mule流的示例。
+
+=== 获取OAuth令牌
+
+要在连接器中配置OAuth 2.0，您必须首先从要连接的应用程序中获取*consumer key*和*consumer secret*。此过程因服务提供商而异，因此请查找软件服务提供商提供的文档。
+
+OAuth提供程序（在本例中为Salesforce）会要求您提供*callback URL*。回调URL是OAuth提供商在授权完成后与授权令牌一起调用的URL。请记住您在此设置的网址，因为它必须与您的应用使用的网址相匹配。
+
+==== 如何获取Salesforce的消费者密钥和秘密
+
+.  link:http://www.developerforce.com/events/regular/registration.php[注册一个Salesforce帐户]。
+. 完成注册后，点击确认电子邮件中的链接设置密码，然后登录到 link:http://developer.force.com/[Salesforce开发人员版]。
+. 将您的Salesforce帐户配置为使用OAuth从远程应用程序访问。在Salesforce开发者版用户界面上，点击用户名旁边屏幕顶部的*Setup*链接。
+. 查找*Connected Apps*部分，然后点击旁边的*New*按钮以连接新的应用
+. 为您的应用程序填写表单，确保启用标记为*Enable OAuth* *Settings*的复选框。然后提供一个回调URL并列出您的API应获得的权限。
+.  点击*Save*，然后在下一页注意*consumer key*和*consumer secret*。您可以使用这些值来配置连接器以访问Salesforce。
+
+=== 配置您的连接器
+
+在您的Mule应用程序中，使用以下数据创建并配置新连接器：
+
+* 您的消费者密钥
+* 您的消费者秘密
+*  OAuth回拨网址
+
+如果需要将这些参数部署到不同的环境（例如，生产，开发），请参阅 link:/mule-user-guide/v/3.8/deploying-to-multiple-environments[部署到多个环境]。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+ . If you haven't already done so, create a new Mule project, then click the *Global Elements* tab at the bottom of the canvas.
+. Click *Create*, then expand the *Connector Configurations* to show the available connectors.
+image:global-element-create-annot.png[create a new global element in studio]
+. Select the appropriate global type that matches your OAuth-enabled connector. Click *OK*. 
+. In the *Global Element Properties* panel, enter the *Consumer Key* and *Consumer Secret* with the information that the software service provider gave you.
++
+image:sfdcGE-ckcs.png[sfdcGE-ckcs]
+
+. On the *OAuth* tab, enter the callback URL's *Domain* , *Port* , and *Path* . The example below results in a callback URL of `http://localhost:8081/callback`.
++
+image:sfdc-oauth-config-oauth-tab.png[oauth callback]  
+
+[cols="20,80"]
+|===
+|*Field* |*Description*
+|*Domain*  |Should be the domain assigned to the listener at the start of your OAuth callback flow.  When in production, this is the domain on which your application is hosted.
+|*Local Port* |The port on which your authorization flow is hosted. This is the port configured on your HTTP listener, for example, `8081`
+|*Remote Port* |The domain and port of the listener at which your OAuth callback is hosted.
+|*Path* |The path of the listener at which your OAuth callback is hosted.
+|===
+
+
+=== Controlling Flow Processing
+
+You can define the behavior of a connector for situations when a user with no OAuth token attempts to utilize the service (that is, the user is not yet authenticated via OAuth). Use the *On No Token* field to select one of the following two options.
+
+[%autowidth.spread]
+|===
+|*STOP_FLOW* |Behaving like a filter, this option kills flow execution . This choice is ideal for keeping log files light as it doesn't create exceptions before you have had a chance to authorize your connector to access the OAuth provider.
+|*EXCEPTION* |(_Default_) Throws an exception advising the user that an OAuth token is required.
+|===
+
+image:box-on-no-token-field.png[box on no token exception]
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+. Configure a global Salesforce (OAuth) element according to the table below.
++
+[source,xml, linenums]
+----
+<sfdc:config-with-oauth name="salesforce" consumerKey="[insert key]" consumerSecret="[insert secret]" doc:name="Salesforce (OAuth)">
+ </sfdc:config-with-oauth>
+----
+
++
+
+[%header%autowidth.spread]
+|===
+|Global Element
+|`sfdc:config-with-oauth`
+|===
+
++
+
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*name* |`name of the global element`
+|*consumerKey* |`consumer key as provided by service provider `
+|*consumerSecret* |`consumer secret as provided by service provider `
+|*doc:name* |Studio only. Name of the global element. 
+|===
+
+. Add a child element to define the Callback URL. The example below results in a callback URL of `http://localhost:8081/callback`.
+
+[cols="4*"]
+|===
+|*Attribute* |*Example Value* | *Description*
+|*domain* |`localhost` |`${fullDomain}` |The domain of the listener on your OAuth callback flow.  When in production, this is the domain on which your application is hosted.
+|*localPort* |`8081`|The port you configured on the listener of the authorization flow
+|*remotePort* | `${putFullDomain}` |The port you configured on the listener of the OAuth callback.
+|*path* |`callback` | The path of the listener at which your OAuth callback is hosted.
+|*defaultAccessTokenId* |n/a | Not used in this example. Read more about <<Managing OAuth Tokens,Managing OAuth Tokens>>.
+|===
+
+=== Controlling Flow Processing
+
+You can configure your connector to define the behavior of a connector when a user with no OAuth token attempts to utilize the service (i.e. the user is not yet authenticated via OAuth). Use the *onNoToken* attribute to define one of the following two options. +
+
+[%autowidth.spread]
+|===
+|*STOP_FLOW* |Behaving like a filter, this option kills flow execution. This choice is ideal for keeping log files light as it doesn't create exceptions before you have had a chance to authorize your connector to access the OAuth provider.
+|*EXCEPTION* |(_Default_) Throws an exception advising the user that an OAuth token is required
+|===
+
+[source,xml, linenums]
+----
+<sfdc:config-with-oauth name="salesforce" consumerKey="[insert key]" consumerSecret="[insert secret]" doc:name="Salesforce (OAuth)" onNoToken="[STOP_FLOW]">
+    <sfdc:oauth-callback-config domain="localhost" remotePort="8082" path="callback"/>
+ </sfdc:config-with-oauth>
+----
+....
+------
+
+
+== 创建授权流程
+
+在最终用户应用程序可以通过服务提供商的API执行任何操作之前，它必须获得身份验证才能执行此操作。为了使认证成为可能，请在您的Mule应用程序中使用*authorization flow*。此授权流程请求，然后从OAuth提供程序获取身份验证令牌。它由一个HTTP侦听器和一个Salesforce连接器组成，该连接器使用您创建的全局Salesforce（OAuth）元素执行Salesforce的授权操作。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag processors onto the canvas to build a Mule flow. See the one below using the HTTP Listener and OAuth enabled Salesforce connector.
++
+image:sfdc-test-oauth-flow.png[sfdc oauth example flow]
+
+
+. Create a new connector configuration element for the HTTP connector, set the *Host* and *Port* to correspond to the callback URL that you set in your global element. (In the example, the callback URL is `http://localhost:8081/callback`.) In this case, also set the *Path* in the connector to `callback`.
+. Click the Salesforce connector to open its properties editor, then use the drop-down *Connector Configuration* to select the global Salesforce connector element you configured for OAuth in the previous section. 
+. Configure any additional fields required by the connector. See below for configuration details for this example.
++
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*Connector Configuration* |The name of the global element you created for your connector.
+|*Operation* |`Authorize`
+|*Access Token URL* |(_Optional_) See below. +
+ Example: `+https://na1.salesforce.com/services/oauth2/token+`
+|*Authorization URL* |(_Optional_) See below. +
+Example: `+https://na1.salesforce.com/services/oauth2/authorize+`
+|*Display* |`PAGE`
+|===
+
++
+image:sfdc-oauth-properties-window.png[sfdc oauth props]
++
+
+
+=== Access Token and Authorization URLs
+
+Some service providers expose unique URLs to acquire access tokens and perform authorization (For example, a service provider many expose one URL for sandbox development, and one URL for production).  +
+
+[%header,cols="2*"]
+|===
+|Attribute |Description
+|*Authorization URL* |_(Optional)_ Defined by the service provider, the URL to which the resource owner is redirected to grant authorization to the connector.
+|*Access Token URL* |_(Optional)_ Defined by the service provider, the URL to obtain an access token.
+|*Access Token Id* |_(Optional)_ (_Default value_: connector configuration name) +
+The OAuth accessTokenId within which Mule stores tokens.
+|===
+
+=== Scopes
+
+Depending on the service provider, you may have the option to define scopes . A *scope* gives you access to perform a set of particular actions, such as viewing contacts, posting items, changing passwords, etc. The Salesforce connector does not use scopes.
+
+Should a connectors require scope configuration, Studio includes the scopes as configurable fields in the properties editor. If the connector you wish to use makes use of scopes , refer to the link:http://www.mulesoft.org/connectors[connector's specific documentation] to determine which values are valid.
+....
+[tab,title="XML Editor or Standalone"]
+....
+. Create an authorization flow, starting with an HTTP listener. Set the values of attributes according to the tables below. 
++
+[%header%autowidth.spread]
+|===
+|Element
+|`http:listener`
+|===
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*config-ref* |`HTTP_Listener_Configuration`
+|*path* |`localhost`
+|===
++
+. Create a global configuration element for the HTTP Listener +
++
+[%header%autowidth.spread]
+|===
+|Element
+|`http:listener-config`
+|===
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*name* |`HTTP_Listener_Configuration`
+|*path* |`localhost`
+|*port ** |`8081`
+|===
++
+*The port _must_ correspond to the `remotePort` attribute in your `oauth-callback-config`.
+. Add a Salesforce connector to the flow. Set the values of attributes according to the tables below. 
++
+[%header%autowidth.spread]
+|===
+|Element
+|`sfdc:authorize`
+|===
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value
+|*config-ref* |The name of the global element you created for your connector.
+|*accessTokenUrl* |(_Optional_) See below. Example: `https://na1.salesforce.com/services/oauth2/token`
+|*authorizationUrl* |(_Optional_) See below. Example: `https://na1.salesforce.com/services/oauth2/authorize`
+|*display* |PAGE
+|===
+
+[source,xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"/>
+<flow name="OAuthTestFlow1" doc:name="OAuthTestFlow1">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP Connector"/>
+    <sfdc:authorize config-ref="Salesforce__OAuth_" display="PAGE" doc:name="Salesforce" accessTokenUrl="https://na1.salesforce.com/services/oauth2/token" authorizationUrl="https://na1.salesforce.com/services/oauth2/authorize"/>
+</flow>
+----
+
+=== Access Token and Authorization URLs
+
+Some service providers expose unique URLs to acquire access tokens and perform authorization (For example, a service provider many expose one URL for sandbox development, and one URL for production).
+
+[%header,cols="2*"]
+|===
+|Attribute |Description
+|*authorizationUrl* |_(Optional) _Defined by the service provider, the URL to which the resource owner is redirected to grant authorization to the connector.
+|*accessTokenUrl* |_(Optional)_ Defined by the service provider, the URL to obtain an access token.
+|*accessTokenId* |_(Optional)_ (_Default value_: connector configuration name.) +
+The OAuth accessTokenId within which Mule stores tokens.
+|===
+
+=== Scopes
+
+Depending on the service provider, you may have the option to define scopes. A *scope* gives you access to perform a set of particular actions, such as viewing contacts, posting items, changing passwords, etc. The Salesforce connector does not use scopes.
+
+Should a connectors require scope configuration, Studio includes the scopes as configurable fields in the properties editor. If the connector you wish to use makes use of scopes, refer to the link:http://www.mulesoft.org/connectors[connector's specific documentation] to determine which values are valid.
+....
+------
+
+=== 关于授权流程
+
+最终用户通过导航到Web浏览器中的HTTP侦听器地址来启动上述授权流程。触发后，此流程启动OAuth舞蹈，将用户引导至服务提供商的登录页面。 Mule还会创建一个*callback endpoint*，以便服务提供商可以在通过身份验证后将用户引导回Mule流。连接器从回调中提取信息，将其自身的内部状态设置为_authorized_，然后继续流程处理。此外，连接器会自动发出Mule在ObjectStore中存储的*access token identifier*。
+
+Mule管理访问令牌，为`accessTokenId`自动分配默认值以匹配全局连接器配置的名称（在本例中为全局Salesforce（OAuth）元素）。使用默认值允许连接器被许多用户授权。但是，由于CloudHub的ObjectStore功能行为稍有不同，因此如果您在*CloudHub in multitenancy mode*中运行项目，则每个访问令牌标识符对于每个用户都是唯一的。请注意，在*Mule Studio (October 2013)* *CloudHub Mule Runtime (October 2013)*之前的所有Mule版本中，您必须执行一些 link:/mule-user-guide/v/3.4/using-a-connector-to-access-an-oauth-api[额外的步骤]来管理`accessTokenId`的存储。
+
+认证后=== 
+
+在连接器设置为授权操作后向您的流中添加`Logger`元素。如果连接器尚未授权，Mule会延迟记录器的执行，直到收到回调。另一方面，如果用户在前一个请求中已经被授权并且连接器已经有了TokenId，那么Mule会继续流程执行并且记录器立即执行，而不是等待回调。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag a *Logger* message processor from the palette to the canvas and place it after the Salesforce connector.
++
+image:testOauthFlowandLog.png[testOauthFlowandLog sfdc]
++
+
+. Open the Logger's properties, then add a message for the Logger to output. For example: "The connector has been properly authorized." +
+
++
+image:logger-example-msg.png[logger says connector authorized]
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+. Add a `logger` element into your flow, including a `message` attribute, the value of which indicates the Logger's output.
+
+[source,xml, linenums]
+----
+<logger message="The connector has been properly authorized." level="INFO" doc:name="Logger"/>
+----
+
+==== Full Example
+
+[source,xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"/>
+<flow name="OAuthTestFlow1" doc:name="OAuthTestFlow1">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP Connector"/>
+    <sfdc:authorize config-ref="Salesforce__OAuth_" display="PAGE" accessTokenUrl="https://na1.salesforce.com/services/oauth2/token" authorizationUrl="https://na1.salesforce.com/services/oauth2/authorize"/>
+    <logger message="The connector has been properly authorized." level="INFO" doc:name="Logger"/>
+</flow>
+----
+....
+------
+
+== 管理OAuth令牌
+
+*Token IDs*存储在Mule环境中的Object Store变量中。或者，您可以通过三种不同的方式定义这个变量的名称：
+
+使用连接器配置`name`（*_Default_*）的. 
+. 使用表达式集作为`defaultAccessTokenId`属性的值
+image:box-default-access-token-id-field.png[盒默认的访问令牌-ID字段]
+. 使用`accessTokenId`属性的值设置操作
+
++
+
+image:box-access-token-id-field.png[箱访问令牌ID场]
+
+以下列表解释了这些行为中的每一种。
+
+.  Mule默认使用连接器的配置名称。如果您的配置如下例所示，跟踪令牌ID的Object Store变量也使用名称*Box_Connector*。无论是在CloudHub上运行还是在处于单一租户模式下，此功能都可用。
++
+
+[source,xml, linenums]
+----
+<box:config name="Box_Connector" clientId="123" clientSecret="123" doc:name="Box"  >
+    <box:oauth-callback-config domain="localhost" localPort="8081" path="box_callback" remotePort="8082"/>
+</box:config>
+ 
+<flow name="BoxOauthFlow">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+    <box:authorize config-ref="Box_Connector" doc:name="Box" accessTokenId="asda3gasdga24" accessTokenUrl="accesstokenurl" authorizationUrl="authurl" state="statevalue"/>
+
+    <box:upload-stream config-ref="Box_Connector" filename="file" doc:name="Box"/>
+</flow>
+----
++
+
+[WARNING]
+====
+在运行本地实施时，如果多个用户访问该服务，将该变量的名称保留为默认值可能会导致令牌覆盖。如果你有十个用户，那么你不能在同一个变量名下存储他们的十个唯一的令牌ID。在这种情况下，您必须为每个变量创建新的变量。
+
+但是，在CloudHub上以多租户模式运行时，此问题不会显示。在CloudHub中，每个租户都有自己独立的Object Store分区，这是其他租户无法访问的分区。例如，如果您有十个客户，那么这十个令牌位于对象存储的不同分区中，因此密钥不会重叠。
+====
++
+. 如果您在连接器配置中设置了`defaultAccessTokenId`参数，Mule会使用它的值。您可以将此参数设置为表达式以避免覆盖令牌ID。
++
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:box-default-access-token-id-field.png[box-ge]
+....
+[tab,title="XML Editor"]
+....
+[source,xml, linenums]
+----
+<box:config name="Box_Connector" clientId="123" clientSecret="123" doc:name="Box"  >
+<box:oauth-callback-config domain="localhost" localPort="8081" path="box_callback" remotePort="8082" defaultAccessTokenId="#[message.inboundProperties.tenantId]" connector-ref="HTTP_Configuration"/>
+</box:config>
+ 
+<flow name="flow1">
+    <box:authorize />
+    <box:upload-stream />
+</flow>
+----
+....
+------
+
++
+. 在`accessTokenId`属性中设置操作以覆盖此操作的其他所有内容。请记住，该属性仅影响当前的操作;除非另有说明，否则相同连接器的其他操作将使用默认操作。
+
++
+
+[source,xml, linenums]
+----
+<flow name="flow1">
+    <box:authorize accessTokenId="#[flowVars.myTenantId]"/>
+    <box:upload-stream accessTokenId="#[flowVars.myTenantId]"/>
+</flow>
+----
+
+== 另请参阅
+
+*  link:https://blogs.mulesoft.com/dev/mule-dev/oauth-2-just-got-a-bit-easier/[有关使用OAuth连接器的博客]
+*  link:/mule-user-guide/v/3.8/authentication-in-http-requests[HTTP请求中的身份验证]
+*  link:/api-manager/external-oauth-2.0-token-validation-policy[使用外部提供者的OAuth 2.0访问令牌实施]政策
+*  link:/mule-user-guide/v/3.8/object-store-module-reference[对象存储模块参考]

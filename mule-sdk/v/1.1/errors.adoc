@@ -1,0 +1,164 @@
+= 错误定义
+:keywords: error, sdk, error handling, operations, try, catch, on error, propagate
+
+在Mule中，错误是一种沟通方式，表明出现错误并提供有意义的信息，以便用户可以根据抛出的错误类型采取纠正措施。
+
+有关更多详细信息，请参阅 link:/mule4-user-guide/v/4.1/error-handling[关于错误处理]。
+
+
+== 定义模块错误
+
+第一步是定义模块可以抛出的所有错误。为此，您需要定义一个实现`ErrorTypeDefinition`接口的`enum`。
+此`enum`中定义的每个值都被认为是错误。
+
+[source, java, linenums]
+----
+public enum SimpleError implements ErrorTypeDefinition<SimpleError> {
+      INVALID_PARAMETER,
+      TIME_OUT,
+      NOT ALLOWED
+}
+----
+
+=== 错误层次结构
+
+// TODO添加链接到mule错误处理文档
+//如<<_the_mule_doc_that_talks_about_mule_errors#erew, Mule Errors>>所述，
+//错误的层次结构与定义Java异常的方式相同，
+//模块错误可以在`ErrorTypeDefinition`枚举中定义该层次结构。
+
+模块错误只能从相同模块（相同`enum`的值）或Mule错误的错误继承。 Mule错误被定义
+在`org.mule.runtime.extension.api.error.MuleErrors`中。
+
+请注意，任何未定义父错误的错误都会自动从`MULE:ANY`继承。
+
+[source, java, linenums]
+----
+public enum HierarchalError implements ErrorTypeDefinition<HierarchalError> {
+    INVALID_PARAMETER,
+    TIME_OUT,
+    NOT_ALLOWED,
+    ILLEGAL_ACTION(NOT_ALLOWED),
+    BAD_CREDENTIALS(MuleErrors.CONNECTIVITY);
+
+    private ErrorTypeDefinition<? extends Enum<?>> parent;
+
+    HierarchalError(ErrorTypeDefinition<? extends Enum<?>> parent) {
+        this.parent = parent;
+    }
+
+    HierarchalError() {
+    }
+
+    @Override
+    public Optional<ErrorTypeDefinition<? extends Enum<?>>> getParent() {
+        return Optional.ofNullable(parent);
+    }
+}
+----
+
+=== 在模块中注册错误
+
+`@Extension`注释类应使用`@Error`进行注释，以指示模块处理哪些错误。此注释引用包含已定义错误的`ErrorTypeDefinition` `enum`。
+
+[source, java, linenums]
+----
+@Extension(name = "Foo")
+@ErrorTypes(HierarchalError.class)
+@Xml(prefix = "test-connector")
+public class FooExtension {
+  // Content
+}
+----
+
+== 指定可能引发的错误
+
+在模块中声明所有可能的错误之后，您需要提供
+将错误与可引发它们的操作绑定在一起的信息。
+
+要做到这一点，你需要实现一个`ErrorTypeProvider`，这是一个类
+传达操作可能抛出的错误。
+
+[source, java, linenums]
+----
+public class ExecuteErrorsProvider implements ErrorTypeProvider {
+    @Override
+    public Set<ErrorTypeDefinition> getErrorTypes() {
+        HashSet<ErrorTypeDefinition> errors = new HashSet<>();
+        errors.add(HierarchalErrors.INVALID_PARAMETER);
+        errors.add(HierarchalErrors.BAD_CREDENTIALS);
+        errors.add(HierarchalErrors.ILLEGAL_ACTION);
+        return errors;
+    }
+}
+----
+
+定义`ErrorTypeProvider`之后，您必须将其与正确的绑定
+操作。您可以使用操作级别的`@Throws`注释来绑定它，例如：
+
+[source, java, linenums]
+----
+@Throws(ExecuteErrorsProvider.class)
+public void execute(){
+  // operation body
+}
+----
+
+在Studio或Flow Designer中，使用带有`@Throws`注释的Operation注释的操作将向用户提供有关操作可能抛出的错误的提示：
+
+image:errors/studio_errors.gif[ALIGN = “中心”]
+
+XML看起来像这样：
+
+[source, xml, linenums]
+----
+<flow name="flowName">
+  <try>
+    <test-connector:execute/>
+    <error-handler >
+      <on-error-continue type="TEST-CONNECTOR:ILLEGAL_ACTION">
+        <logger level="INFO" message="#[error]"/>
+      </on-error-continue>
+    </error-handler>
+  </try>
+</flow>
+----
+
+== 抛出错误
+
+错误是绑定到特定错误的Java异常的Mule表示。
+
+错误和异常之间没有静态绑定。沟通一个
+错误，操作应抛出`org.mule.runtime.extension.api.exception.ModuleException`或
+子类的异常，在构造函数中指示要抛出的`ErrorTypeDefinition`。
+
+[source, java, linenums]
+----
+@Throws(ExecuteErrorsProvider.class)
+public void execute(){
+  try {
+      throw new IllegalStateException();
+  } catch (IllegalStateException e){
+      throw new ModuleException(HierarchalErrors.ILLEGAL_ACTION, e);
+  }
+}
+----
+
+此外，推荐的做法是将此逻辑封装在新的异常类中：
+
+[source, java, linenums]
+----
+public final class IllegalActionException extends ModuleException {
+
+  public IllegalActionException(Exception cause) {
+    super(HierarchalErrors.ILLEGAL_ACTION, cause);
+  }
+}
+----
+
+警告：抛出未在`ErrorTypeProvider`中声明的错误
+操作将导致意外错误异常。操作不允许抛出未声明的错误。
+
+// TODO：将链接改为mule错误处理程序
+// ===更多信息
+//要了解如何在流程中发现错误并采取措施，请前往<<_the_mule_doc_that_talks_about_mule_errors#erew, Mule Error Handling>>

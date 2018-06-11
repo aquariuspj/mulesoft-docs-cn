@@ -1,0 +1,383 @@
+=  SFTP传输参考
+:keywords: anypoint studio, connectors, files transfer, ftp, sftp, endpoints
+：imagesdir：./_images
+
+安全外壳（SSH）文件传输协议（SFTP）传输允许通过SFTP从文件夹读取和写入文件。与虚拟文件系统（VFS）传输不同，它可以处理大型文件，因为它可以传输消息有效负载。 SFTP传输可以用作入站或出站端点。可以从SFTP服务器检索文件并将其作为Mule消息处理，或者可以将Mule消息作为文件上载到SFTP服务器。 Mule使用 link:http://www.jcraft.com/jsch/[JCraft图书馆]作为SFTP SSH。
+
+*Notes*：
+
+*  Mule 3.7和更新版本支持SFTP重试。
+* 在本指南的代码示例中，`spring-beans-current.xsd`是一个占位符。要找到正确的版本，请参阅http://www.springframework.org/schema/beans/  -  Mule 3.7和更新的版本支持Spring 4.1.6。
+
+[%header%autowidth.spread]
+|===
+|运输 | image:check.png[复选标记图标]
+|文档 | image:check.png[复选标记图标]
+|入站 | image:check.png[复选标记图标]
+|外向 | image:check.png[复选标记图标]
+|要求 | image:check.png[复选标记图标]
+|交易 | image:error.png[错误图标]
+|流 | image:check.png[复选标记图标]
+|重试 | image:error.png[复选标记图标]
+| MEP  | `one-way`，`request-response`
+|默认MEP  | `one-way`
+| Maven工件 | org.mule.transports：mule-transport-sftp
+| SFTP  | http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/sftp/package-summary.html[的JavaDoc] http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_sftp/namespace-overview.html[SchemaDoc]
+|===
+
+== 命名空间和语法
+
+本节列出名称空间，模式和连接器语法信息。
+
+===  XML命名空间
+
+[source, code, linenums]
+----
+xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp"
+----
+
+===  XML模式位置
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/3.7/mule-sftp.xsd
+----
+
+=== 架构
+
+您可以查看SFTP传输 link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_sftp/namespace-overview.html[这里]的完整模式。
+
+=== 连接器语法
+
+[source, xml, linenums]
+----
+<sftp:connector name="sftp-default" archiveDir="" archiveTempReceivingDir="/tmp/get"
+                archiveTempSendingDir="/tmp/send" autoDelete="true"
+                duplicateHandling="throwException" fileAge="60000"
+                identityFile="/home/test/.ssh/id_rsa" keepFileOnError="false"
+                outputPattern="#[message.inboundProperties.originalFilename]" passphrase="passPhrase"
+                pollingFrequency="10000" sizeCheckWaitTime="30000"
+                tempDirInbound="/tmp/inbound" tempDirOutbound="/tmp/outbound"
+                useTempFileTimestampSuffix="true" />
+----
+
+=== 端点语法
+
+您可以通过两种不同的方式来定义您的端点：
+
+. 前缀端点：
++
+[source, xml, linenums]
+----
+<sftp:inbound-endpoint user="mule" password="test123" path="/tmp/sftp"
+                       host="myhost.com"
+                       pollingFrequency="500"
+                       name="inboundEndpoint1"/>
+<sftp:outbound-endpoint user="mule" password="test123" path="/tmp/sftp"
+                        host="myhost.com" name="outboundEndpoint2"
+                        keepFileOnError="false"/>
+----
++
+. 没有前缀的URI：
+
+[source, xml, linenums]
+----
+<inbound-endpoint address="sftp://mule:test123@myhost.com/tmp/sftp"/>
+<outbound-endpoint address="sftp://mule:test123@myhost.com/tmp/sftp"/>
+----
+
+
+== 注意事项
+
+您可以使用SFTP传输从SFTP下载或上载到可通过SFTP访问的受保护资源。此传输目前不支持交易策略。 SFTP传输的一些用途是将数据下载到数据库中，然后拾取文件并通过SFTP上传它们。您可以使用此传输来实施文件传输企业集成模式。如 http://www.eaipatterns.com[EIP书]所述，文件传输模式允许将两个应用程序松散地耦合在一起，并延迟处理时间。如果您的集成时间敏感，您可能需要考虑使用 link:/mule-user-guide/v/3.7/jms-transport-reference[JMS运输]实现消息传递模式，这可以让您更接近实时处理。
+
+[NOTE]
+您需要拥有连接器指向的文件夹和文件的适当权限。如果不是，则会引发异常，并且在第一次失败尝试后不再处理任何文件。
+
+通过使用SFTP传输，您可以选择对较大的文件使用流式支持，并通过SFTP端点异步并同步链接其他端点。它还允许您在Mule应用程序中使用Mule强大的错误处理功能。
+
+本页中的示例显示了如何在Mule应用程序中定义SFTP入站和出站端点。
+
+== 特点
+
+* 流式支持资源
+* 对于入站端点，以指定的时间间隔轮询资源
+* 对于出站端点，有关如何处理重复文件的选项：throw和exception，覆盖，将序列号附加到文件名
+
+== 用法
+
+要在您的配置中包含SFTP传输：
+
+. 定义这些命名空间：
++
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="utf-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core
+        http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/sftp
+        http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd">
+----
++
+. 定义连接器：
++
+[source, xml]
+----
+<sftp:connector name="sftp-default"/>
+----
++
+. 定义入站和/或出站端点：
++
+* 如果您希望在SFTP站点上找到新文件来触发Mule流，请使用入站端点
+* 如果要将文件上载到SFTP站点，请使用出站端点。这些文件通常以Mule消息开头并转换为文件。
++
+[source, xml, linenums]
+----
+<sftp:inbound-endpoint
+                    name="inboundEndpoint1"
+                    connector-ref="sftp"
+                    address="sftp://user:password@host/~/data1"/>
+<sftp:outbound-endpoint
+                    address="sftp://user:password@host/~/data"
+                    outputPattern="#[function:count]-#[function:systime].dat"/>
+----
+
+
+=== 使用传输的规则
+
+在连接器上，您可以定义连接池大小以及入站和出站临时目录。端点是您定义验证信息，轮询频率，文件名称模式等的位置。请参阅下面的完整配置选项列表。
+
+支持单向和请求 - 响应交换模式。如果交易模式未定义，则“单向”是默认值。
+
+这是一个民意调查运输。 SFTP的入站端点使用轮询来查找新文件。缺省值是每秒检查一次，但可以通过入站端点上的“pollingFrequency”属性更改。
+
+流传输由SFTP传输支持，并且默认启用。事务目前不受支持。
+
+== 示例配置
+
+以下示例将在远程SFTP服务器上找到的任何文件保存到本地目录。这演示了使用SFTP入站端点和文件出站端点。
+
+*Important*：在运行此示例之前，请创建一个SFTP属性文件：
+
+. 在您的类路径中创建**sftp.properties**属性文件或将您的PATH变量设置为文件的位置。有关使用Anypoint Studio为用户名，密码，主机和端口指定SFTP服务器访问信息的信息，请参阅 link:/mule-user-guide/v/3.7/sftp-connector[SFTP连接器]。
+. 提供这些参数：
++
+[source, code, linenums]
+----
+sftp.user=user
+sftp.host=host
+sftp.port=port
+sftp.password=password
+----
++
+使用SFTP访问信息将每个值替换为等号右侧。
+例如：
++
+[source, code, linenums]
+----
+sftp.user=memyselfandi
+sftp.host=localhost
+sftp.port=8081
+sftp.password=icannottellyou
+----
+
+=== 示例SFTP到文件流程
+
+*Downloading files from SFTP using a Flow*
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+          http://www.springframework.org/schema/beans 
+          http://www.springframework.org/schema/beans/spring-beans-current.xsd
+          http://www.mulesoft.org/schema/mule/sftp 
+          http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+          http://www.mulesoft.org/schema/mule/file 
+          http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+          http://www.mulesoft.org/schema/mule/core 
+          http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+ 
+    <!-- This placeholder bean lets you import the properties from the sftp.properties file. -->
+    <spring:bean id="property-placeholder" 
+      class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <spring:property name="location" value="classpath:sftp.properties"/> ❶
+    </spring:bean>
+ 
+    <flow name="sftp2file">
+        <sftp:inbound-endpoint host="${sftp.host}" port="${sftp.port}" 
+        path="/home/test/sftp-files" user="${sftp.user}" password="${sftp.password}"> ❷
+                    <file:filename-wildcard-filter pattern="*.txt,*.xml"/> ❸
+                </sftp:inbound-endpoint>
+        <file:outbound-endpoint path="/tmp/incoming" 
+        outputPattern="#[message.inboundProperties.originalFilename]"/> ❹
+    </flow>
+</mule>
+----
+
+保存SFTP服务器登录凭证的属性文件在defined上定义。接下来在❷声明一个SFTP入站端点，默认情况下每隔一秒检查一次`/home/test/sftp-files`目录是否有新文件。 ❸定义一个文件过滤器，仅将以`.txt`或{{}}结尾的文件发送到出站端点。然后，在入站端点上找到的任何符合的文件将被写入`/tmp/incoming`本地目录，其中的文件名与sftp服务器上的文件名相同。
+
+以下示例将在本地目录中找到的文件上载到SFTP服务器。这演示了使用文件入站端点和SFTP出站端点。
+
+*Uploading files via SFTP using a Flow*
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+          http://www.springframework.org/schema/beans 
+          http://www.springframework.org/schema/beans/spring-beans-current.xsd
+          http://www.mulesoft.org/schema/mule/sftp 
+          http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+          http://www.mulesoft.org/schema/mule/file 
+          http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+          http://www.mulesoft.org/schema/mule/core 
+          http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+ 
+    <!-- This placeholder bean lets you import the properties from the sftp.properties file. -->
+    <spring:bean id="property-placeholder" 
+      class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <spring:property name="location" value="classpath:sftp.properties"/> ❶
+    </spring:bean>
+ 
+    <flow name="file2sftp">
+        <file:inbound-endpoint path="/tmp/outgoing"> ❷
+            <file:filename-wildcard-filter pattern="*.txt,*.xml"/> ❸
+        </file:inbound-endpoint>
+        <sftp:outbound-endpoint host="${sftp.host}" port="${sftp.port}" 
+        path="/home/test/sftp-files" user="${sftp.user}" password="${sftp.password}"/> ❹
+    </flow>
+</mule>
+----
+
+保存SFTP服务器登录凭证的属性文件在defined上定义。接下来在❷声明一个文件入站端点，默认情况下每隔一秒对`/tmp/outgoing`目录检查新文件。 ❸定义一个文件过滤器，仅将以`.txt`或{{}}结尾的文件发送到出站端点。然后，入站端点上找到的任何符合的文件将被写入`/home/test/sftp-files`远程SFTP目录，其文件名与本地文件系统上的文件名相同。
+
+== 交通模式和交通特征
+
+请参阅 link:/mule-user-guide/v/3.7/transports-reference[传输矩阵]。
+
+== 配置参考
+
+== 连接器
+
+SFTP连接。
+
+=== 连接器元素的属性
+
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+| `preferredAuthenticationMethods`  |类型：字符串。要求：不。由SFTP客户端使用的以逗号分隔的身份验证方法列表。有效值为：gssapi-with-mic，publickey，键盘交互和密码。
+| `maxConnectionPoolSize`  |类型：整数。要求：不。默认值：禁用。如果指定了活动连接的数量，则使用一个连接池，活动连接达到此数字。使用负值无限制。如果该值为零，则不使用连接池。
+| `pollingFrequency`  |类型：long。要求：不。默认值：1000毫秒。应该检查读取目录的频率（以毫秒为单位）。请注意，读取目录由监听组件的端点指定。
+| `autoDelete`  |类型：布尔值。要求：不。默认值：true。是否在成功读取文件后删除文件。
+| `fileAge`  |类型：long。要求：不。默认值：禁用。要处理的文件的最小年龄（以毫秒为单位）。这在消耗大文件时非常有用。它告诉Mule在消耗文件之前等待一段时间，以便在处理文件之前完全写入文件。警告：如果Mule和sftp服务器运行的服务器具有同步时间，`fileAge`属性才能正常工作。 *Note*：请参阅属性`sizeCheckWaitTime`，以获取确定传入文件是否已准备好处理的替代方法。
+| `sizeCheckWaitTime`  |类型：long。要求：不。默认值：禁用。等待大小检查之间的时间（以毫秒为单位）以确定文件是否已准备好进行处理。如果未设置或设置为负值，则禁用。此功能对于避免处理尚未完全写入的文件（例如，消耗大文件）可能很有用。它告诉Mule做两次大小检查，等待两次大小调用之间的指定时间。如果这两个尺寸调用返回相同的值Mule认为该文件准备好处理。 *Note*：请参阅属性fileAge了解确定传入文件是否已准备好处理的替代方法。
+| `archiveDir`  |类型：字符串。要求：不。默认值：禁用。在运行mule的文件系统上的指定目录中存档该文件的副本。存档文件夹必须在Mule启动之前创建，并且用户Mule在其下运行必须具有读取和写入文件夹的权限。
+| `archiveTempReceivingDir`  |类型：字符串。要求：不。默认值：禁用。如果指定，则在此文件夹中接收要存档的文件，然后将其移至archiveTempSendingDir，同时发送至出站端点。该文件夹创建为archiveDir的子文件夹。 *Note*：必须与archiveTempSendingDir和archiveDir属性一起指定。
+| `archiveTempSendingDir`  |类型：字符串。要求：不。默认值：禁用。如果指定，则要归档的文件将从此文件夹发送到出站端点。该文件夹创建为archiveDir的子文件夹。该文件由出站端点或组件本身使用后（即底层InputStream关闭时）将其移至归档文件夹。 *Note*：必须与archiveTempReceivingDir和archiveDir属性一起指定。
+| `outputPattern`  |类型：字符串。要求：不。默认值：消息ID，例如`ee241e68-c619-11de-986b-adeb3d6db038`。
+将文件写入磁盘时使用的模式。这可以使用为此连接器配置的文件名解析器所支持的模式。默认情况下
+link:/mule-user-guide/v/3.7/file-transport-reference[文件传输参考]
+用来。有关如何覆盖默认解析器的信息，请参阅相同的文档部分。
+| `keepFileOnError`  |类型：布尔值。要求：不。默认值：true。如果为true，则在写入出站端点时发生错误时，不会删除入站端点上的文件。 *Note*：这假定入站和出站端点都使用SFTP传输。
+| `duplicateHandling`  |类型：duplicateHandlingType。要求：不。缺省值：throwException。确定如果文件已经存在于具有指定名称的出站端点上，该如何处理。
+`throwException`：如果文件已经存在，则抛出异常。
+`overwrite`：覆盖现有文件。
+`addSeqNo`：向目标文件名添加一个序列号，使文件名具有唯一性，从1开始，并增加数字，直到找到唯一文件名默认行为是抛出异常。
+| `identityFile`  |类型：字符串。要求：不。默认值：禁用。 PKI私钥的identityFile位置。
+| `passphrase`  |类型：字符串。要求：不。默认值：禁用。如果需要，identityFile的密码（密码）。
+| `tempDirInbound`  |类型：字符串。要求：不。默认值：禁用。如果指定，则Mule会尝试在端点文件夹中创建临时目录（如果它尚不存在）。确保用户Mule配置为使用访问SFTP服务器有权创建临时文件夹（如果需要）！对于入站端点：下载发生处的ftp服务器上的临时目录。该文件被移到（在本地的sftp服务器上）tempDir，标记下载正在进行，下载开始之前。 *Note*：入站端点的tempDir中的文件始终正确（仅在sftp服务器上本地移动），因此可用于重新启动发生故障的文件传输。
+| `tempDirOutbound`  |类型：字符串。要求：不。默认值：禁用。如果指定，则Mule会尝试在端点文件夹中创建临时目录（如果尚不存在）。确保配置为用来访问SFTP服务器的用户Mule有权创建临时文件夹（如果需要）。
+对于出站端点：首先将sftp服务器上传到的文件的临时目录。当文件完全上传时，文件将被移至其最终目的地。 tempDir被创建为端点的子目录。 *Note*：出站端点的tempDir中的文件可能不正确（因为上载发生在此文件夹中），因此不能用于重新启动失败的文件传输。
+| `useTempFileTimestampSuffix`  |类型：布尔值。要求：不。默认值：禁用。与tempDir  - 属性一起使用，可以根据文件移动到tempDir时的本地时间，为tempDir中的文件提供保证的唯一名称。
+|===
+
+连接器的=== 子元素
+
+元素：`file:abstract-filenameParser` +
+基数：0..1
+
+== 入站端点
+
+入站端点元素的=== 属性
+
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+| `path`  |类型：字符串。要求：不。文件位置。
+| `user`  |类型：字符串。要求：不。用户名。
+| `password`  |类型：字符串。要求：不。密码。
+| `host`  |类型：字符串。要求：不。 IP地址（例如，`www.mulesoft.com`，localhost，127.0.0.1）。
+| `port`  |类型：端口号。要求：不。一个端口号。
+| `pollingFrequency`  |类型：long。要求：不。默认值：1000毫秒。应该检查读取目录的频率（以毫秒为单位）。请注意，读取目录由监听组件的端点指定。
+| `fileAge`  |类型：long。要求：不。默认值：禁用。年龄（以毫秒为单位）要处理的文件。这在消耗大文件时非常有用。它告诉Mule在消耗文件之前等待一段时间，以便在处理文件之前完全写入文件。警告：只有在Mule和sftp服务器运行的服务器有同步时间的情况下，fileAge属性才能正常工作。 *Note*：请参阅属性sizeCheckWaitTime了解确定传入文件是否已准备好处理的备用方法。
+| `sizeCheckWaitTime`  |类型：long。要求：不。默认值：禁用。等待大小检查之间的时间（以毫秒为单位）以确定文件是否已准备好进行处理。如果未设置或设置为负值，则禁用。此功能对于避免处理尚未完全写入的文件（例如在消耗大文件时）非常有用。它告诉Mule做两次大小检查，等待两次大小调用之间的指定时间。如果这两个尺寸调用返回相同的值Mule认为该文件准备好处理。 *Note*：请参阅属性fileAge了解确定传入文件是否已准备好处理的替代方法。
+| `archiveDir`  |类型：字符串。要求：不。默认值：禁用。在运行mule的文件系统上的指定目录中存档该文件的副本。存档文件夹必须在Mule启动之前创建，并且用户Mule在其下运行必须具有读取和写入文件夹的权限。
+| `archiveTempReceivingDir`  |类型：字符串。要求：不。默认值：禁用。如果指定，则在此文件夹中接收要存档的文件，然后将其移至archiveTempSendingDir，同时发送至出站端点。该文件夹创建为archiveDir的子文件夹。 *NOte*：必须与archiveTempSendingDir和archiveDir属性一起指定。
+| `archiveTempSendingDir`  |类型：字符串。要求：不。默认值：禁用。如果指定，则要归档的文件将从此文件夹发送到出站端点。该文件夹创建为archiveDir的子文件夹。该文件由出站端点或组件本身使用后（即底层InputStream关闭时）将其移至归档文件夹。 *Note*：必须与archiveTempReceivingDir和archiveDir属性一起指定。
+| `identityFile`  |类型：字符串。要求：不。默认值：禁用。 PKI私钥的identityFile位置。
+| `passphrase`  |类型：字符串。要求：不。默认值：禁用。如果需要，identityFile的密码（密码）。
+| `tempDir`  |类型：字符串。要求：不。默认值：禁用。如果指定，则Mule会尝试在端点文件夹中创建临时目录（如果它尚不存在）。确保用户Mule配置为用来访问sftp服务器有权创建临时文件夹（如果需要）！对于入站端点：下载发生地点的sftp服务器上的临时目录。该文件被移到（在本地的sftp服务器上）tempDir，标记下载正在进行，下载开始之前。 *Note*：入站端点的tempDir中的文件始终正确（仅在sftp服务器上本地移动），因此可用于重新启动发生故障的文件传输。对于出站端点：首先将sftp服务器上传到的文件的临时目录。当文件完全上传时，文件将被移至其最终目的地。 tempDir被创建为端点的子目录。 *Note*：出站端点的tempDir中的文件可能不正确（因为上载发生在此文件夹中），因此不能用于重新启动失败的文件传输。
+| `useTempFileTimestampSuffix`  |类型：布尔值。要求：不。默认值：禁用。与tempDir  - 属性一起使用，可以根据文件移动到tempDir时的本地时间，为tempDir中的文件提供保证的唯一名称。
+|===
+
+`inbound-endpoint`没有子元素。
+
+== 出站端点
+
+=== 出站端点的属性
+
+[%header,cols="30a,70a"]
+|===
+| {名称{1}}说明
+| `path`  |类型：字符串。要求：不。文件位置。
+| `user`  |类型：字符串。要求：不。用户名。
+| `password`  |类型：字符串。要求：不。密码。
+| `host`  |类型：字符串。要求：不。一个IP地址（例如，www.mulesoft.com，localhost，127.0.0.1）。
+| `port`  |类型：端口号。要求：不。一个端口号。
+| `outputPattern`  |类型：字符串。要求：不。默认值：消息ID，例如，ee241e68-c619-11de-986b-adeb3d6db038将文件写入磁盘时使用的模式。这可以使用为此连接器配置的文件名解析器所支持的模式。默认情况下
+link:/mule-user-guide/v/3.7/file-transport-reference[文件传输参考]
+用来。有关如何覆盖默认解析器的信息，请参阅相同的文档部分。
+| `keepFileOnError`  |类型：布尔值。要求：不。默认值：true。如果为true，则在写入出站端点时发生错误时，不会删除入站端点上的文件。 *Note*：这假定入站和出站端点都使用SFTP传输。
+| `duplicateHandling`  |类型：duplicateHandlingType。要求：不。默认值：`throwException`。确定如果文件已经存在于具有指定名称的出站端点上，该如何处理。 `throwException`：如果文件已经存在，则抛出异常。 `overwrite`：覆盖现有的文件。
+`addSeqNo`：向目标文件名添加一个序列号，使文件名具有唯一性，从1开始，并增加数字，直到找到唯一文件名默认行为是抛出异常。
+| `identityFile`  |类型：字符串。要求：不。默认值：禁用。 PKI私钥的`identityFile`位置。
+| `passphrase`  |类型：字符串。要求：不。默认值：禁用。如果需要，identityFile的密码（密码）。
+| `tempDir`  |类型：字符串。要求：不。默认值：禁用。如果指定，则Mule会尝试在端点文件夹中创建临时目录（如果它尚不存在）。确保用户Mule配置为使用访问SFTP服务器有权创建临时文件夹（如果需要）！对于入站端点：下载发生处的ftp服务器上的临时目录。该文件被移到（在本地的sftp服务器上）tempDir，标记下载正在进行，下载开始之前。 *Note*：入站端点的tempDir中的文件始终正确（仅在sftp服务器上本地移动），因此可用于重新启动发生故障的文件传输。对于出站端点：首先将sftp服务器上传到的文件的临时目录。当文件完全上传时，文件将被移至其最终目的地。 tempDir被创建为端点的子目录。 *Note*：出站端点的tempDir中的文件可能不正确（因为上载发生在此文件夹中），因此不能用于重新启动失败的文件传输。
+| `useTempFileTimestampSuffix`  |类型：布尔值。要求：号码默认值：禁用。与tempDir  - 属性一起使用，可以根据文件移动到tempDir时的本地时间，为tempDir中的文件提供保证的唯一名称。
+|===
+
+`outbound-endpoint`没有子元素。
+
+==  Javadoc API参考
+
+http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transport/sftp/package-summary.html[用于SFTP传输的Javadoc]
+
+== 的Maven
+
+该传输是以下Maven模块的一部分：
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-sftp</artifactId>
+</dependency>
+----
+
+== 最佳实践
+
+将您的SFTP登录凭据放在一个文件中，并在Mule配置中引用该文件。

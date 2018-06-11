@@ -1,0 +1,104 @@
+= 非阻塞操作
+:keywords: mule, sdk, operation, non, blocking, non-blocking
+
+Mule 4执行引擎基于反应流。这意味着最高级别的非阻塞支持
+操作。默认情况下，所有操作都被阻止。正如你可能注意到的那样，所有操作的语义
+您看到<<operations#, before>>的示例本质上是阻塞的：运行时调用一个方法并获取响应值。那是
+适用于CPU密集程度高于IO密集型操作的操作，或适用于使用API​​的操作
+不能以非阻塞方式使用，例如JDBC（为数据库连接器供电的API）。
+
+HTTP是支持这个的协议之一。能够执行非阻塞HTTP请求是关键
+网关代理的可扩展性。任何使用REST API的连接器都可以从中受益。
+
+这个简化的HTTP请求示例显示了SDK如何允许您开发非阻塞操作：
+
+[source, Java, linenums]
+----
+public void request(String url, @Connection HttpClient client, @Content String body, // <1>
+    CompletionCallback<InputStream, HttpAttributes> callback ) { // <2>
+ client.send(url, body, new HttpResponseCallback() {
+   void onResponse(HttpResponse response) {
+     callback.success(Result.<InputStream, HttpAttributes>builder() // <3>
+                          .output(response.getBody())
+                          .attributes(toAttributes(response))
+                          .build());
+   }
+
+   void onError(Exception e) {
+     callback.error(e); // <4>
+   }
+ });
+}
+----
+
+<1>与阻塞操作不同，返回类型不是通过方法的返回类型指定的。非阻塞操作
+总是需要通过void方法来指定。
+<2>当一个操作具有`CompletionCallback`类型的参数时，操作变为非阻塞操作。该界面使用泛型
+指定操作的返回类型。第一个泛型是输出有效载荷的类型，第二个泛型是类型
+输出属性。这些泛型是强制性的。
+<3>返回值通过`CompletionCallback`的`success(Result)`方法传递。有关更多信息，请参阅<<_result, Result>>
+有关`Result`对象的信息
+<4>非阻塞操作不应该抛出异常。任何错误都应通过回调中的`error()`方法传递。
+
+[TIP]
+请注意，在本例中，`CompletionCallback`是从`HttpResponseCallback`之间消耗的。第二次回调
+由支持异步响应的`HttpClient`提供。如前所述，为了做到非阻塞，你需要使用一个允许这样做的API。
+
+此代码的结果是一个非阻塞操作，它将`InputStream`作为有效内容返回，并将`HttpAttributes`对象作为消息属性返回。
+
+== 无效操作
+
+有可能有一个无效的非阻塞操作。这个用例是一个IO操作，它不返回任何内容，比如写入文件：
+
+[source, Java, linenums]
+----
+public void write(String path, @Content byte[] bytes, CompletionCallback<Void, Void> callback) {
+ writeAsync(result -> callback.success());
+}
+----
+
+正如您在这里看到的那样，您可以使用Java的`Void`类型来指示该操作是无效的。
+
+=== 疑难杂症
+
+您也可以执行一项操作来设置有效负载（但*NOT*属性），如下所示：
+
+[source, Java, linenums]
+----
+public void foo(CompletionCallback<String, Void> callback) {
+ ...
+}
+----
+
+== 执行类型
+
+如上所述，Mule 4现在拥有一个被动执行引擎。与Mule 3.x不同的是，每个流都有自己的线程池，SEDA队列等，Mule 4运行时有几个全局执行程序，通过它可以运行所有任务。
+
+要正确计划任务，运行时需要知道每个操作要执行哪种处理。不同的处理类型是：
+
+*  CPU_INTENSIVE：强化处理，如复杂，耗时的计算或转换。请注意，SDK永远不会推断`CPU_INTENSIVE`类型。请参阅<<specify_execution_type, Specifying Execution Types>>。
+*  CPU_LITE：既不阻止也不占用CPU的处理，如消息传递，过滤，路由或非阻塞IO。
+*  BLOCKING：阻止执行阻止IO操作的处理，`Thread.sleep(long)`，`Lock.lock()`或在处理期间阻止当前线程的任何其他技术。虽然这种类型包含`Thread.sleep`，但使用它是一种不好的做法，应该避免。
+
+=== 自动推断执行类型
+
+SDK遵循这些规则来对执行类型进行最佳猜测，以便您不必显式指定它：
+
+* 操作需要连接并且处于阻止状态：`BLOCKING`
+* 操作需要连接并且是非阻塞的：`CPU_LITE`
+* 以上都不是：`CPU_LITE`
+
+如果操作对应的执行类型与最佳猜测不匹配，则应指定正确的执行类型。否则会对使用您的模块的任何应用程序的性能产生负面影响。
+
+[[specify_execution_type]]
+=== 指定执行类型
+
+您可以通过`@Execution`批注手动指定操作的执行类型，例如：
+
+[source, Java, linenums]
+----
+@Execution(CPU_INTENSIVE)
+public void computeFlightPlan() {
+  ...
+}
+----

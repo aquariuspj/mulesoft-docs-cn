@@ -1,0 +1,1454 @@
+=  XML SDK
+:keywords:
+
+：TOC：
+
+XML SDK是更高级的基于Java的Mule SDK的替代品。 XML SDK用于创建自定义模块，类似于您创建Mule应用程序的方式。实际上，您可以使用模块中现有的Mule组件。该框架只是简单地添加了一些句法习语作为包含模块主要部分的XML元素，如`<module>`，`<operation>`和`<parameter>`元素。例如，此代码段在`Hello XML SDK`中定义了一个单独的操作：
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="Hello XML SDK"  ...>
+  <operation name="say-hello" doc:description="Greets you!">
+    <body>
+      <mule:set-payload value="Hello World!"/>
+    </body>
+    <output type="string"/>
+  </operation>
+</module>
+----
+
+您在Mule流程中使用Mule SDK组件的方式与您使用任何其他组件的方式相同。在此示例中，按照操作`<hello-smart-connector:say-hello>`中的定义，流`"random-flow"`的执行将有效负载设置为`"Hello World!"`。
+
+[source,xml,linenums]
+----
+<flow name="random-flow">
+  <hello-smart-connector:say-hello>
+</flow>
+----
+
+请注意，XML SDK是强类型的，因此每个操作的定义参数的数据类型都是为输入和输出静态设置的。
+
+==  XML SDK基础
+
+XML SDK组件由一些关键元素组成，这些元素描述了其行为以及运行时与之交互的方式：
+
+* 操作
+* 属性
+* 封闭模块
+
+
+=== 操作
+
+一个`<operation>`元素定义了一组输入参数和一个输出。就像一个函数一样，它有输入参数，执行动作（在主体中描述），并有一个输出。与函数不同，如果存储值或引用外部源，则操作的行为可能会有所不同。
+
+* 输入参数（`<parameter>`）：声明调用操作时要输入的类型。
++
+请记住，这些参数是`<body>`作用域中消息处理器可以访问的唯一数据。
++
+* 正文（`<body>`）：定义要执行的组件链，与流相似。
+* 输出（`<output>`）：声明XML SDK模块的输出类型。这是由`<body>`处理后的有效载荷的类型。
+* 错误：声明XML SDK可以在`<body>`内引发（或映射）的错误类型。
+
+以下XML SDK模块以两个数字作为参数，并具有将它们相加在一起的单个操作：
+
+[source,xml,linenums]
+----
+<module name="Math XML SDK"...>
+  ...
+  <operation name="sum" doc:description="Takes two numbers and returns the sum of them">
+    <parameters>
+      <parameter name="numberA" type="number"/>
+      <parameter name="numberB" type="number"/>
+    </parameters>
+    <body>
+      <mule:set-payload value="#[vars.numberA + vars.numberB]"/>
+    </body>
+    <output type="number"/>
+  </operation>
+</module>
+----
+
+要在Mule应用程序中使用XML SDK模块，只需将其添加到Mule流中，例如：
+
+[source,xml,linenums]
+----
+<flow name="mule-flow">
+  <math-smart-connector:sum numberA="10" numberB="5"/>
+  <!-- payload here is 15 -->
+</flow>
+----
+
+。<parameter>的属性
+[%header,cols="20,20,30,70a"]
+|===
+|姓名 | 使用 | 默认值 | 说明
+
+|  `name`
+| 需要
+|  NA
+|  `<parameter>`的名称
+
+|  `defaultValue`
+| 可选
+|  NA
+| 如果您不提供其他值，`<operation>`将使用默认值。
+
+|  `use`
+| 需要
+|  `AUTO`
+| 可能的值：
+
+*  `REQUIRED`：参数必须存在。如果参数有`defaultValue`，则不需要。
+*  `OPTIONAL`：参数不是必需的。
+*  `AUTO`：如果`defaultValue`不存在，则在运行时默认为`REQUIRED`。否则，它被标记为`OPTIONAL`。
+
+|  `type`
+| 需要
+|  NA
+| 定义`<parameter>`的数据类型。您可以使用任何基本类型，例如`string`，`boolean`，`datetime`，`date`，`number`，`time`，在<<xml_sdk_catalog, catalog>>中定义的任何类型。
+
+|  `password`
+| 可选
+|  `false`
+| 在用户界面中用`\****`标记`<parameter>`。
+
+|  `role`
+| 需要
+|  `BEHAVIOUR`
+| 给定参数的已定义角色集，用于修改为当前`<parameter>`生成的XSD。
+
+*  `BEHAVIOUR`呈现一个属性。
+*  `CONTENT`意味着支持DataWeave作为子元素。
+*  `PRIMARY`的工作方式与`CONTENT`类似，但默认情况下会映射到有效内容。
+
+请参阅 link:https://docs.mulesoft.com/mule-sdk/v/1.1/content-parameters[更多有关角色的信息]。
+
+|  `summary`
+| 可选
+|  NA
+| 向`<parameter>`添加一个小工具提示。
+
+|  `example`
+| 可选
+|  NA
+| 为此参数添加一个简短的数据类型示例。
+
+|  `displayName`
+| 可选
+|  NA
+| 提供UI标签。如果没有`displayName`，则默认值为`name`属性的连字版本。
+
+|  `order`
+| 可选
+|  NA
+| 定义在UI中呈现每个元素的顺序。
+
+|  `tab`
+| 可选
+|  NA
+| 定义`<parameter>`必须属于UI的组（或选项卡）。
+
+|  `doc:description`
+| 可选
+|  NA
+|  `<parameter>`的文档。
+|===
+
+
+。<output>的属性
+[%header,cols="20,20,30,70a"]
+|===
+|姓名 | 使用 | 默认值 | 说明
+|  `type`
+| 可选
+|
+| 输出有效负载的数据类型。请注意，您可以通过删除元素将其设置为`void`。这可防止`<operation>`修改Mule事件，即使其行为涉及修改有效内容。
+
+|===
+
+当您使用`<output-attributes>`元素时，`<operation>`元素支持属性类型定义。
+
+。<output-attributes>的属性
+[%header,cols="20,20,30,70a"]
+|===
+|姓名 | 使用 | 默认值 | 说明
+|  `type`
+| 可选
+|
+| 输出属性的数据类型。请注意，您可以通过删除元素将其设置为`void`。这可防止`<operation>`修改Mule事件，即使其行为涉及修改有效内容。
+
+|===
+
+两个输出（`<output>`和`<output-attributes>`）都成为控件返回调用者时创建的`MuleMessage`的一部分。
+
+。*<error>*的属性
+[%header,cols="20,20,30,70a"]
+|===
+|姓名 | 使用 | 默认值 | 说明
+|  `type`
+| 需要
+|
+| 抛出（或重新映射）到`<body>`中的错误代码的类型。有关 link:/mule4-user-guide/v/4.1/mule-error-concept[骡子错误概念]的更多信息。
+
+|===
+
+=== 属性
+
+`<property>`是由XML SDK组件的最终用户定义的字段。它用作整个Mule项目的全局配置。
+
+属性与操作公开的参数类似，但它们的作用级别会影响项目中XML SDK组件的所有实例，而不是特定的操作。像操作中的参数一样，属性通常是具有默认值的简单类型。
+
+[TIP]
+为避免混淆XML SDK模块的最终用户，只能公开他们可能需要编辑的属性。例如，不要暴露他们不能或不应该改变的内部值。
+
+以下XML SDK模块将请求发送至 link:https://developer.github.com/v3/users/#get-the-authenticated-user[GitHub API V3]以检索经过身份验证的用户：
+
+////
+TODO：验证这项工作
+
+TODO：验证httpn是正确的，而不是http
+////
+
+[source,xml,linenums]
+----
+<module name="Github"  ...>
+  <property name="username" type="string" doc:description="Username credential."/>
+  <property name="password" type="string" password="true" doc:description="Password credential"/>
+
+  <http:request-config name="github-httpreq-config" basePath="/">
+    <http:request-connection host="api.github.com" protocol="HTTPS" port="443">
+      <http:authentication>
+        <{{0}}" password="#[vars.password]"/>
+      </http:authentication>
+    </http:request-connection>
+  </http:request-config>
+
+  <operation name="get-user" doc:description="Lists public and private profile information when authenticated.">
+    <body>
+      <httpn:request config-ref="github-httpreq-config" path="#['user/' ++ vars.username]" method="GET"/>
+    </body>
+    <output type="string" doc:description="User information if logged properly."/>
+  </operation>
+</module>
+----
+
+该示例引用了在模块中定义的`<property>`：
+
+* 在全局元素中作为`request-config`的值。
+* 作为`http-request`中`config-ref`属性值的操作。
+
+以下Mule应用程序使用XML SDK模块。请注意，`github`前缀（例如`github:get-user`）来自模块的`name`。
+
+[source,xml,linenums]
+----
+<mule ...>
+  <github:config name="lautaro-github-config" username="fernandezlautaro" password="****"/>
+  <flow name="test-github-flow">
+    <github:get-user config-ref="lautaro-github-config"/>
+  </flow>
+</mule>
+----
+
+每次执行`"test-github-flow"`都会返回经过身份验证的用户的GitHub信息：
+
+[source,json,linenums]
+----
+{
+  "login": "fernandezlautaro",
+  "id": 4719511,
+  "avatar_url": "https://avatars1.githubusercontent.com/u/4719511?v=3",
+  "gravatar_id": "",
+  "url": "https://api.github.com/users/fernandezlautaro",
+  ...
+}
+----
+
+请注意，不正确的凭证从GitHub返回此错误响应：
+
+[source,json,linenums]
+----
+{
+  "message": "Requires authentication",
+  "documentation_url": "https://developer.github.com/v3"
+}
+----
+
+。<property>属性
+[%header,cols="20,20,30,70a"]
+|===
+|姓名 | 使用 | 默认值 | 说明
+
+|  `name`
+| 需要
+|  NA
+|  `<property>`的名称。
+
+|  `defaultValue`
+| 可选
+|  NA
+| 如果您不提供其他值，`<property>`将使用默认值。
+
+|  `use`
+| 需要
+|  `AUTO`
+| 可能的值：
+
+*  `REQUIRED`：属性必须存在。如果参数有`defaultValue`，则不需要。
+*  `OPTIONAL`：属性不是必需的。
+*  `AUTO`：如果`defaultValue`不存在，则在运行时默认为`REQUIRED`。否则，它被标记为`OPTIONAL`。
+
+|  `type`
+| 需要
+|  NA
+| 定义`<property>`的数据类型。您可以使用任何基本类型，例如`string`，`boolean`，`datetime`，`date`，`number`，`time`，在<<xml_sdk_catalog, catalog>>中定义的任何类型。
+
+|  `password`
+| 可选
+|  `false`
+| 在输入时隐藏UI中属性值的值（使用`\****`）。
+
+|  `summary`
+| `可选
+|  NA
+| 向`<property>`添加一个小工具提示。
+
+|  `example`
+|  `optional`
+|  NA
+| 为此属性添加一个简短的数据类型示例。
+
+|  `displayName`
+|  `optional`
+|  NA
+| 为UI提供更好的标签，通过将此属性留空，默认值将为超{{}}属性。
+
+|  `displayName`
+| 可选
+|  NA
+| 提供UI标签。如果没有`displayName`，则默认值为`name`属性的连字版本。
+
+|  `order`
+| 可选
+|  NA
+| 定义在UI中呈现每个元素的顺序。
+
+|  `tab`
+| 可选
+|  NA
+| 定义`<property>`必须属于UI的组（或选项卡）。
+
+|  `doc:description`
+| 可选
+|  NA
+|  `<property>`的文档。
+|===
+
+=== 模块
+
+`<module>`元素是XML SDK模块的根。它包含属于该模块的所有属性和操作。
+
+。<module>属性
+[%header,cols="20,20,30,70a"]
+|===
+|姓名 | 使用 | 默认值 | 说明
+
+|  `name`
+| 需要
+|  NA
+|  `<module>`的名称。
+
+|  `vendor`
+| 可选
+|  `"MuleSoft"`
+|  XML SDK模块的供应商。
+
+|  `prefix`
+| 可选
+|  NA
+| 生成模式时使用的模块前缀。如果为空，则使用`name`的带连字符的版本。
+
+|  `namespace`
+| 可选
+|  NA
+| 在模式生成期间用于模块的名称空间。否则，默认值为+ `http://www.mulesoft.org/schema/mule/<prefix>` +，其中`<prefix>`是`prefix`属性值。
+
+|  `doc:description`
+| 可选
+|  NA
+|  `<module>`的文档。
+|===
+
+您可以使用`namespace`属性将XML SDK架构导入Mule应用程序。 XML模式是动态生成的。下表显示`namespace`，`prefix`和`name`属性如何一起工作。
+
+。<module>提供了`name`，`prefix`和`namespace`
+|===
+| 提供的值 | 生成的值
+
+|  `name="hello with spaces"`
+|  `name="hello with spaces"`
+
+|  `prefix="hello-prefix"`
+|  `prefix="hello-prefix"`
+
+|  `namespace="http://www.mulesoft.org/schema/a/different/path/mule/hello"`
+|  `namespace="http://www.mulesoft.org/schema/a/different/path/mule/hello"`
+|===
+
+生成的模式位置：
+
++ `http://www.mulesoft.org/schema/a/different/path/mule/hello/current/mule-hello-prefix.xsd` +
+
+。<module>提供`name`和`prefix`
+|===
+|提供的值 | 生成的值
+
+|  `name="hello with spaces"`
+|  `name="hello with spaces"`
+
+|  `prefix="hello-prefix"`
+|  `prefix="hello-prefix"`
+
+|  NA
+|  `namespace=http://www.mulesoft.org/schema/mule/hello-prefix`
+|===
+
+生成的模式位置：+ `http://www.mulesoft.org/schema/mule/hello-prefix/current/mule-hello-prefix.xsd` +
+
+。<module>仅提供`name`
+|===
+|提供值 | 生成的值
+
+|  `name="hello with spaces"`
+|  `name="hello with spaces"`
+
+|  NA
+|  `prefix="hello-with-spaces"`
+
+|  NA
+|  `namespace=http://www.mulesoft.org/schema/mule/hello-with-spaces`
+|===
+
+生成的模式位置是`http://www.mulesoft.org/schema/mule/hello-with-spaces/current/mule-hello-with-spaces.xsd`
+
+以下模块仅具有`name`属性`name="hello with spaces"`。这意味着其`prefix`动态生成为`hello-with-spaces`，其`namespace`动态生成为`http://www.mulesoft.org/schema/mule/hello-with-spaces/current/mule-hello-with-spaces.xsd` +。这也意味着Mule应用程序必须有一个模式位置（`schemaLocation`），该位置指向与该值匹配的引用。
+
+[source,xml,linenums]
+----
+<module name="hello with spaces"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation=" ... ">
+  <operation name="an-operation" />
+</module>
+----
+
+上面的`hello with spaces`模块可以用在Mule应用中，例如：
+
+[source,xml,linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:hello-with-spaces="http://www.mulesoft.org/schema/mule/hello-with-spaces"
+      xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/hello-with-spaces http://www.mulesoft.org/schema/mule/hello-with-spaces/current/mule-hello-with-spaces.xsd">
+
+    <flow name="some-flow">
+        <hello-with-spaces:an-operation/>
+    </flow>
+</mule>
+----
+
+== 创建并测试XML SDK项目
+
+要创建XML SDK模块：
+
+
+. 使用Maven（`mvn`）执行以下命令：
++
+[source,Maven,linenums]
+----
+mvn archetype:generate                                       \
+  -DarchetypeGroupId=org.mule.smart.connector                \
+  -DarchetypeArtifactId=smart-connector-project-archetype    \
+  -DarchetypeVersion=1.0.0                                   \
+  -DgroupId=org.mule.smart.connector                         \
+  -DartifactId=hello-smart-connector                         \
+  -DmuleConnectorName=Hello
+----
++
+. 当系统提示您指示值是否正确时，请按`enter`继续。
++
+Maven原型为XML SDK模块创建了一个具有最少量代码的存根项目，并使用功能测试来运行它。该项目的结构如下所示：
++
+[source,output,linenums]
+----
+➜  ~ tree hello-smart-connector
+hello-smart-connector
+├── pom.xml
+├── smart-connector
+│   ├── pom.xml
+│   └── src
+│       └── main
+│           └── resources
+│               └── module-Hello.xml // <1>
+└── smart-connector-it
+    ├── mule-application.json
+    ├── pom.xml
+    └── src
+        ├── main
+        │   └── mule
+        │       └── mule-config.xml
+        └── test
+            └── munit
+                └── assertion-munit-test.xml // <2>
+
+10 directories, 7 files
+➜  ~
+----
++
+（1）`hello-smart-connector/smart-connector/src/main/resources/module-Hello.xml`：定义XML SDK根元素。
++
+（2）`hello-smart-connector/smart-connector-it/src/test/munit/assertion-munit-test.xml`：调用XML SDK操作的断言操作。
++
+. 运行`/hello-smart-connector`中的`mvn clean install`为`Hello XML SDK`模块创建插件。
++
+该命令还通过MUnit运行该套件以进行模块中定义的操作。
++
+[source,ouput,linenums]
+----
+➜  hello-smart-connector mvn clean install
+ ...
+ ..
+ .
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary:
+[INFO]
+[INFO] Parent POM Hello XML SDK and Mule App integration test SUCCESS [  0.142 s]
+[INFO] Hello XML SDK .............................. SUCCESS [  4.540 s]
+[INFO] Hello XML SDK Mule Application Integration Test SUCCESS [ 33.389 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: 39.166 s
+[INFO] Finished at: 2017-06-14T22:07:42-03:00
+[INFO] Final Memory: 61M/928M
+[INFO] ------------------------------------------------------------------------
+➜  hello-smart-connector
+----
+
+== 从XML SDK模块中消费Mule插件
+
+从XML SDK模块中使用Mule插件：
+
+. 将依赖关系添加到XML SDK模块的POM文件中。
++
+例如，要让XML SDK模块使用HTTP连接器和OAuth模块，POM需要包含以下依赖项：
++
+[source,xml,linenums]
+----
+<dependencies>
+  <dependency>
+    <groupId>org.mule.connectors</groupId>
+    <artifactId>mule-http-connector</artifactId>
+    <version>1.2.1</version>
+    <classifier>mule-plugin</classifier>
+    <scope>compile</scope>
+  </dependency>
+  <dependency>
+    <groupId>org.mule.modules</groupId>
+    <artifactId>mule-oauth-module</artifactId>
+    <version>1.1.2</version>
+    <classifier>mule-plugin</classifier>
+    <scope>compile</scope>
+  </dependency>
+</dependencies>
+----
++
+. 将架构位置添加到`<module>`根元素，例如：
++
+[source,xml,linenums]
+----
+<module name="Hello XML SDK" prefix="module-hello"
+    ...
+    xmlns:httpn="http://www.mulesoft.org/schema/mule/http"
+    xmlns:oauth="http://www.mulesoft.org/schema/mule/oauth"
+    xsi:schemaLocation=" ...
+ http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+ http://www.mulesoft.org/schema/mule/oauth http://www.mulesoft.org/schema/mule/oauth/current/mule-oauth.xsd">
+ ...
+  <!-- use of the HTTP and OAuth connector -->
+</module>
+----
+
+== 重复使用操作
+在某些情况下，操作会有重复的消息处理器，如果它们被封装在一个新的操作中并从其他地方调用它，我们可以依赖这些消息处理器。
+
+如果操作没有循环依赖性，则`<module>`中定义的每个`<operation>`都可以在_same_ `<module>`中重用。
+
+例如，假设`<module>`在执行插入和更新之前验证输入参数。请注意，下一个示例中的验证会在操作`validate-and-insert`和`validate-and-update`中重复。
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-calling-operations-within-module"
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <operation name="validate-and-insert">
+        <parameters>
+            <parameter name="name" type="string"/>
+        </parameters>
+        <body>
+            <!-- validate the 'name' != null -->
+            <!-- validate the 'name' wasn't already added -->
+            <!-- validate the 'name' matches some criteria -->
+            <!-- validate the 'name' ... and so on -->
+            <db:insert config-ref="dbConfig..">
+                <db:sql>INSERT INTO PLANET(NAME) VALUES (:name)</db:sql>
+                <db:input-parameters>#[{ 'name' : vars.name }]</db:input-parameters>
+            </db:insert>
+        </body>
+    </operation>
+
+    <operation name="validate-and-update">
+        <parameters>
+            <parameter name="originalName" type="string"/>
+            <parameter name="newName" type="string"/>
+        </parameters>
+        <body>
+            <!-- validate the 'newName' and 'originalName' != null -->
+            <!-- validate the 'newName' and 'originalName' wasn't already added -->
+            <!-- validate the 'newName' and 'originalName' matches some criteria -->
+            <!-- validate the 'newName' and 'originalName' ... and so on -->
+            <db:update config-ref="dbConfig..">
+                <db:sql>update PLANET set NAME= :newName where NAME=':originalName'</db:sql>
+                <db:input-parameters>#[{'originalName' : vars.originalName, 'newName' : vars.newName}]</db:input-parameters>
+            </db:update>
+        </body>
+    </operation>
+</module>
+----
+
+为了简化前面示例中的此过程，您可以添加您从其他操作调用的`validate`操作，例如：
+
+[source,xml,linenums]
+----
+    <operation name="validate">
+        <parameters>
+            <parameter name="aParameter" type="string"/>
+        </parameters>
+        <body>
+            <!-- validate the 'aParameter' != null -->
+            <!-- validate the 'aParameter' wasn't already added -->
+            <!-- validate the 'aParameter' matches some criteria -->
+            <!-- validate the 'aParameter' ... and so on -->
+        </body>
+    </operation>
+----
+
+要从`<module>`内使用其他操作：
+
+. 向`<module>`添加一个XML名称空间`xmlns:tns`属性和一个新值到`schemaLocation`。
++
+请注意，该值必须映射当前模块的目标名称空间。
++
+. 使用`tns`前缀调用操作，后跟操作的名称。完整的模块如下所示：
++
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-calling-operations-within-module"
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:tns="http://www.mulesoft.org/schema/mule/module-calling-operations-within-module"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+           http://www.mulesoft.org/schema/mule/module-calling-operations-within-module http://www.mulesoft.org/schema/mule/module-calling-operations-within-module/current/mule-module-calling-operations-within-module.xsd">
+
+    <operation name="validate-and-insert">
+        <parameters>
+            <parameter name="name" type="string"/>
+        </parameters>
+        <body>
+            <tns:validate aParameter="#[vars.name]"/>
+            <db:insert config-ref="dbConfig..">
+                <db:sql>INSERT INTO PLANET(NAME) VALUES (:name)</db:sql>
+                <db:input-parameters>#[{ 'name' : vars.name }]</db:input-parameters>
+            </db:insert>
+        </body>
+    </operation>
+
+    <operation name="validate-and-update">
+        <parameters>
+            <parameter name="originalName" type="string"/>
+            <parameter name="newName" type="string"/>
+        </parameters>
+        <body>
+            <tns:validate aParameter="#[vars.originalName]"/>
+            <tns:validate aParameter="#[vars.newName]"/>
+            <db:update config-ref="dbConfig..">
+                <db:sql>update PLANET set NAME= :newName where NAME=':originalName'</db:sql>
+                <db:input-parameters>#[{'originalName' : vars.originalName, 'newName' : vars.newName}]</db:input-parameters>
+            </db:update>
+        </body>
+    </operation>
+
+    <operation name="validate">
+        <parameters>
+            <parameter name="aParameter" type="string"/>
+        </parameters>
+        <body>
+            <!-- validate the 'aParameter' != null -->
+            <!-- validate the 'aParameter' wasn't already added -->
+            <!-- validate the 'aParameter' matches some criteria -->
+            <!-- validate the 'aParameter' ... and so on -->
+        </body>
+    </operation>
+</module>
+----
+
+请注意，不包含`config-ref`，因为这是对_same_模块的引用，这意味着所有全局实例将在操作之间共享。
+
+== 提供测试连接
+
+在设计时，当全局元素的属性提供错误的值，如错误的用户名或密码，错误的URL等等时，提供反馈会很有帮助。为了提供这样的反馈，您的模块需要包含支持连接测试的全局元素。
+
+例如，通过将`file:connection`元素合并到模块中，XML SDK模块`<module name="module-using-file">`可能会使用文件连接器中的连接测试功能。默认情况下，模块将从文件配置中选取并支持连接测试功能。
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-using-file"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:file="http://www.mulesoft.org/schema/mule/file"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+
+    <property name="workingDir" type="string"/>
+    <file:config name="fileConfig">
+        <file:connection workingDir="#[vars.workingDir]"/>
+    </file:config>
+</module>
+----
+
+在UI中，连接测试委托给由`fileConfig`封装的全局元素。
+
+如果一个模块包含两个或多个提供测试连接的全局元素，则在构建模块时将出现错误，除非您标记要与`xmlns:connection="true"`属性一起使用的全局元素，例如：
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-using-file"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:file="http://www.mulesoft.org/schema/mule/file"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+
+    <property name="workingDir" type="string"/>
+
+    <!-- notice how the following global element is marked for test connection -->
+    <file:config name="fileConfig" xmlns:connection="true">
+        <file:connection workingDir="#[vars.workingDir]"/>
+    </file:config>
+
+    <file:config name="anotherFileConfig">
+        <file:connection workingDir="#[vars.workingDir]"/>
+    </file:config>
+</module>
+----
+
+== 处理错误
+
+在某些情况下，`<body>`抛出的错误代码中的操作不应按原样传播。在这种情况下，您需要将代码重新映射到对最终用户更有意义的内容。在其他情况下，这些问题可能与`<operation>`中的条件有关。
+
+XML SDK依赖于 link:/mule4-user-guide/v/4.1/mule-error-concept#about-error-mappings[错误映射]。对于后者，使用 link:/mule4-user-guide/v/4.1/raise-error-component-reference[引发错误分量]。
+
+此示例在划分两个数字的操作中执行错误映射：
+
+[source,xml,linenums]
+----
+<module name="Math XML SDK"...>
+  ...
+  <operation name="div" doc:description="Takes two numbers and returns the division of them">
+    <parameters>
+      <parameter name="numberA" type="number"/>
+      <parameter name="numberB" type="number"/>
+    </parameters>
+    <body>
+      <mule:set-payload value="#[vars.numberA / vars.numberB]"/>
+    </body>
+    <output type="number"/>
+  </operation>
+</module>
+----
+
+如果除数`numberB`为零，则`div`操作将导致`MULE:EXPRESSION`运行时错误，该错误不足以具体描述错误。
+
+要创建更具体的错误，可以使用错误映射使`div`操作产生`MATH-XML-SDK:DIVISION_BY_ZERO`错误，例如：
+
+[source,xml,linenums]
+----
+<module name="Math XML SDK"...>
+  ...
+  <operation name="div" doc:description="Takes two numbers and returns the division of them">
+    <parameters>
+      <parameter name="numberA" type="number"/>
+      <parameter name="numberB" type="number"/>
+    </parameters>
+    <body>
+      <mule:set-payload value="#[vars.numberA / vars.numberB]">
+        <mule:error-mapping targetType="DIVISION_BY_ZERO" sourceType="MULE:EXPRESSION"/>
+      </mule:set-payload>
+    </body>
+    <output type="number"/>
+  </operation>
+  <errors>
+    <error type="DIVISION_BY_ZERO"/>
+  </errors>
+</module>
+----
+
+在评估表达式`#[vars.numberA / vars.numberB]`之前，您可以通过执行验证来产生相同的错误。如果表达式失败，则会导致`MATH-XML-SDK:DIVISION_BY_ZERO`错误，例如：
+
+[source,xml,linenums]
+----
+<module name="Math XML SDK"...>
+  ...
+  <operation name="div" doc:description="Takes two numbers and returns the division of them">
+    <parameters>
+      <parameter name="numberA" type="number"/>
+      <parameter name="numberB" type="number"/>
+    </parameters>
+    <body>
+      <mule:choice>
+        <mule:when expression="#[vars.customError]">
+          <mule:raise-error type="MATH-XML-SDK:DIVISION_BY_ZERO" description="Division by zero"/>
+        </mule:when>
+      </mule:choice>
+      <mule:set-payload value="#[vars.numberA / vars.numberB]" />
+    </body>
+    <output type="number"/>
+  </operation>
+  <errors>
+    <error type="DIVISION_BY_ZERO"/>
+  </errors>
+</module>
+----
+
+[[xml_sdk_catalog]]
+==  XML SDK目录
+
+`<property>`和`<parameter>`的标准数据类型是原始类型：`string`，`boolean`，`number`，`date`，`datetime`， `localdatetime`，`time`，`localtime`，`timezone`，`binary`，`any`，`regex`。
+
+要定义比基本类型结构更复杂的类型，可以创建一个注入模块的数据类型的目录。本示例使用以下内容创建一个目录文件（`hello-smart-connector/smart-connector/src/main/resources/module-Hello-catalog.xml`）：
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<catalogs xmlns="http://www.mulesoft.org/schema/mule/types" >
+    <catalog name="PersonXsdType" format="application/xml">
+        <schema format="application/xml+schema" location="./person-schema.xsd" />
+    </catalog>
+    <catalog name="PersonJsonType" format="application/json">
+        <schema format="application/json+schema" location="./person-schema.json" />
+    </catalog>
+</catalogs>
+----
+
+目录文件引用XSD和JSON模式文件：
+
+*  `person-schema.xsd`，其中包含以下内容：
++
+[source,xml,linenums]
+----
+<xs:schema targetNamespace="http://uri" attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="Person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element type="xs:string" name="name"/>
+        <xs:element type="xs:string" name="lastName"/>
+        <xs:element type="xs:integer" name="age"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+----
++
+*  `person-schema.json`，其中包含以下内容：
++
+[source,json,linenums]
+----
+{
+  "type": "object",
+  "properties": {
+    "age": {
+      "type": "integer"
+    },
+    "name": {
+      "type": "string"
+    },
+    "lastname": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}
+----
+
+所以，`tree hello-smart-connector/smart-connector`文件夹的结构如下所示：
+
+[source,tree,linenums]
+----
+➜  ~ tree hello-smart-connector/smart-connector
+hello-smart-connector/smart-connector
+├── pom.xml
+└── src
+    └── main
+        └── resources
+            ├── module-Hello-catalog.xml
+            ├── module-Hello.xml
+            ├── person-schema.json
+            └── person-schema.xsd
+----
+
+模式准备就绪后，您可以使用它们通过引用相关目录（`PersonXsdType`和`PersonJsonType`）定义的类型，例如：
+
+[[example]]
+[source,xml,linenums]
+----
+<module name="Hello XML SDK" prefix="module-hello" ... >
+  ...
+  <operation name="person-xml-to-json" doc:description="Takes a Person in XML format and translates it to JSON">
+    <parameters>
+      <parameter name="content" type="PersonXsdType::{http://uri}Person"/>
+    </parameters>
+    <body>
+      <ee:transform>
+        <ee:set-payload><![CDATA[
+          %dw 2.0
+          %output application/json encoding='UTF-8'
+          ---
+          {
+            "name" : vars.content.person.name,
+            "lastname" : vars.content.person.lastName,
+            "age" : vars.content.person.age as Number
+          }
+          ]]></ee:set-payload>
+      </ee:transform>
+    </body>
+    <output type="PersonJsonType"/>
+  </operation>
+  <operation name="person-json-to-xml" doc:description="Takes a Person in JSON format and translates it to XML">
+    <parameters>
+      <parameter name="content" type="PersonJsonType"/>
+    </parameters>
+    <body>
+      <ee:transform>
+        <ee:set-payload><![CDATA[
+          %dw 2.0
+          %output application/xml
+          ---
+          person : vars.content
+          ]]></ee:set-payload>
+      </ee:transform>
+    </body>
+    <output type="PersonXsdType::{http://uri}Person"/>
+  </operation>
+<module/>
+----
+
+请注意，JSON模式的`type`属性值是包含该模式的目录的名称（`PersonJsonType`）。但是，对于XML模式，`type`属性的值会附加两个冒号`::`和对`Person`元素的qname（限定名称）引用：`PersonXsdType::{http://uri}Person`。
+
+要执行从JSON到XML的DataWeave转换（在`<ee:transform/>`中显示），需要将以下依赖项添加到POM文件，以便模块可以找到所需的模式（`mule-ee.xsd`）：
+
+[source,xml,linenums]
+----
+<dependency>
+    <groupId>com.mulesoft.mule.runtime.modules</groupId>
+    <artifactId>mule-module-spring-config-ee</artifactId>
+    <version>${mule.version}</version>
+    <scope>provided</scope>
+</dependency>
+----
+
+要在Mule应用中使用上述<<example, example>>中的操作，需要向它们提供值，例如：
+
+[source,xml,linenums]
+----
+<mule ...>
+  <flow name="person-xml-2-json-flow">
+    <!-- create a XML Person and store it in the payload -->
+    <ee:transform>
+      <ee:set-payload><![CDATA[
+        %dw 2.0
+        %output application/xml
+        ---
+        person : {
+          name : "Lautaro",
+          lastName: "Fernandez",
+          age : 54
+        }
+        ]]></ee:set-payload>
+    </ee:transform>
+    <!-- call the operation -->
+    <module-hello:person-xml-to-json content="#[payload]"/>
+    <!-- at this point, the payload is a JSON Person -->
+  </flow>
+
+  <flow name="person-json-2-xml-flow">
+    <!-- create a JSON Person and store it in the payload -->
+    <ee:transform>
+      <ee:set-payload><![CDATA[
+        %dw 2.0
+        %output application/json
+        ---
+        {
+          name : "Lautaro",
+          lastName: "Fernandez",
+          age : 54
+        }
+        ]]></ee:set-payload>
+    </ee:transform>
+    <!-- call the operation -->
+    <module-hello:person-json-to-xml content="#[payload]"/>
+    <!-- at this point, the payload is a XML Person -->
+  </flow>
+</mule>
+----
+
+在对非原始类型的值进行参数化时，定义的`<operation>`可以将它们声明为`role="CONTENT"`，因此不需要在`<flow>`中使用额外的处理器来调用操作。本示例中的`person-xml-to-json`操作将此属性添加到`content`参数中：
+
+[[example2]]
+[source,xml,linenums]
+----
+<module name="Hello XML SDK" prefix="module-hello" ... >
+  ...
+  <operation name="person-xml-to-json" doc:description="Takes a Person in XML format and translates it to JSON">
+    <parameters>
+      <parameter name="content" type="PersonXsdType::{http://uri}Person" role="CONTENT"/>
+    </parameters>
+    <body>
+      <ee:transform>
+        <ee:set-payload><![CDATA[
+          %dw 2.0
+          %output application/json encoding='UTF-8'
+          ---
+          {
+            "name" : vars.content.person.name,
+            "lastname" : vars.content.person.lastName,
+            "age" : vars.content.person.age as Number
+          }
+          ]]></ee:set-payload>
+      </ee:transform>
+    </body>
+    <output type="PersonJsonType"/>
+  </operation>
+  ...
+<module/>
+----
+
+要在Mule应用中使用上述<<example2, example>>中的操作，需要向它们提供值，例如：
+
+[source,xml,linenums]
+----
+<mule ...>
+  <flow name="person-xml-2-json-using-content-flow">
+    <!-- call the operation -->
+    <module-hello:person-xml-to-json>
+      </module-hello:content><![CDATA[
+        %dw 2.0
+        %output application/xml
+        ---
+        person : {
+          name : "Lautaro",
+          lastName: "Fernandez",
+          age : 54
+        }]]>
+      </module-hello:content>
+    </module-hello:person-xml-to-json>
+    <!-- at this point, the payload is a JSON Person -->
+  </flow>
+  ..
+</mule>
+----
+
+XML SDK模块的工作示例== 
+
+https://github.com/mulesoft-labs/smart-connectors-integration-tests
+包含以下目录：
+
+*  `apps-using-smart-connectors`：使用XML SDK模块的Mule应用程序
+*  `smart-connectors`：包含DataWeave，HTTP连接器，文件连接器，验证模块等的XML SDK模块。
+
+以下小节介绍其中的一些示例。
+
+[[module-using-core]]
+=== 示例：使用核心组件
+
+此示例合并核心组件，例如设置有效负载（`mule:set-payload`）。
+
+GitHub位置： link:https://github.com/mulesoft-labs/smart-connectors-integration-tests/tree/master/smart-connectors/smart-connector-using-core[智能连接器/使用智能连接器芯]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-using-core"
+        doc:description="This module relies entirely in runtime provided components (no other Plugin dependencies)"
+
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <operation name="set-payload-hardcoded" doc:description="Sets the payload to the String value 'Wubba Lubba Dub Dub'">
+        <body>
+            <mule:set-payload value="Wubba Lubba Dub Dub"/>
+        </body>
+        <output type="string" doc:description="Payload's output"/>
+    </operation>
+
+    <operation name="set-payload-hardcoded-two-times" doc:description="Sets the payload to the String value 'Wubba Lubba Dub Dub'">
+        <body>
+            <mule:set-payload value="Wubba Lubba Dub Dub"/>
+            <mule:set-payload value="#[payload ++ 'Dub Dub']"/>
+        </body>
+        <output type="string" doc:description="Payload's output"/>
+    </operation>
+
+ </module>
+----
+
+=== 示例：使用JSON自定义类型
+
+这个例子结合了JSON类型。
+
+GitHub位置： link:https://github.com/mulesoft-labs/smart-connectors-integration-tests/tree/master/smart-connectors/smart-connector-using-custom-types-json[智能连接器/使用定制类型的智能连接器，JSON]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-using-custom-types-json"
+        doc:description="This module relies entirely in runtime provided components (no other Plugin dependencies)"
+
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <operation name="set-payload-hardcoded" doc:description="Sets the payload to the String value 'Wubba Lubba Dub Dub'">
+        <body>
+            <mule:set-payload value="Wubba Lubba Dub Dub"/>
+        </body>
+        <output type="a-custom-type" doc:description="Payload's output"/>
+    </operation>
+ </module>
+----
+
+。目录
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<catalogs xmlns="http://www.mulesoft.org/schema/mule/types" >
+    <catalog name="a-custom-type" format="application/json">
+        <schema format="application/json+schema" location="./a-custom-type-schema.json" />
+    </catalog>
+</catalogs>
+----
+
+.Schema
+[source,json,linenums]
+----
+{
+  "type": "object",
+  "properties": {
+    "number": {
+      "type": "number"
+    },
+    "street_name": {
+      "type": "string"
+    },
+    "street_type": {
+      "type": "string",
+      "enum": [
+        "Street",
+        "Avenue",
+        "Boulevard"
+      ]
+    }
+  },
+  "additionalProperties": false
+}
+----
+
+=== 示例：使用自定义XML类型
+
+这个例子结合了自定义的XML类型。
+
+GitHub位置： link:https://github.com/mulesoft-labs/smart-connectors-integration-tests/tree/master/smart-connectors/smart-connector-using-custom-types-xsd[智能连接器/使用定制类型的智能连接器-XSD]`
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-using-custom-types-xsd"
+        doc:description="This module relies entirely in runtime provided components (no other Plugin dependencies)"
+
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <operation name="operation-with-custom-types">
+        <parameters>
+            <parameter name="value" type="XsdType1::Root"/>
+        </parameters>
+        <body>
+            <mule:set-payload value="hello world!"/>
+        </body>
+        <output type="string"/>
+    </operation>
+
+ </module>
+----
+
+。目录
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<catalogs xmlns="http://www.mulesoft.org/schema/mule/types" >
+    <catalog name="XsdType1" format="application/xml">
+        <schema format="application/xml+schema" location="./type1-schema.xsd" />
+    </catalog>
+</catalogs>
+----
+
+.Schema 1
+[source,xml,linenums]
+----
+<xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+    <xs:element name="Root">
+        <xs:complexType>
+            <xs:annotation>
+                <xs:documentation xml:lang="en">
+                    A user with all the information
+                </xs:documentation>
+            </xs:annotation>
+            <xs:sequence>
+                <xs:element type="xs:string" name="name"/>
+                <xs:element type="xs:string" name="lastName"/>
+                <xs:element type="xs:boolean" name="male"/>
+                <xs:element type="xs:integer" name="age"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>
+----
+
+=== 示例：使用DataWeave
+
+此示例通过使用Transform（`ee:transform`）组件合并DataWeave。
+
+GitHub位置： link:https://github.com/mulesoft-labs/smart-connectors-integration-tests/tree/master/smart-connectors/smart-connector-using-dw[智能连接器/使用-DW智能连接器]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-using-dw"
+        doc:description="This module relies entirely in runtime provided components (no other Plugin dependencies) and DW"
+
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+        xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+           http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <operation name="set-payload-through-dw" doc:description="Sets the payload to the String value 'Wubba Lubba Dub Dub'">
+        <body>
+            <ee:transform>
+                <ee:set-payload><![CDATA[
+                    %dw 2.0
+                    %output application/json encoding='UTF-8'
+                    ---
+                    'Wubba Lubba Dub Dub'
+            ]]></ee:set-payload>
+            </ee:transform>
+        </body>
+        <output type="string" doc:description="Payload's output"/>
+    </operation>
+ </module>
+----
+
+=== 示例：使用文件连接器
+
+位置`{{0}}`：取决于文件连接器，例如：`file:list`
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-using-file"
+
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:file="http://www.mulesoft.org/schema/mule/file"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+
+    <property name="workingDir" type="string"/>
+    <property name="filenamePattern" type="string"/>
+
+    <file:config name="file">
+        <file:connection workingDir="#[vars.workingDir]"/>
+    </file:config>
+    <file:matcher name="globalMatcher" directories="REQUIRE" filenamePattern="#[vars.filenamePattern]" />
+
+    <operation name="list">
+        <parameters>
+            <parameter name="path" type="string"/>
+        </parameters>
+        <body>
+            <file:list directoryPath="#[vars.path]" config-ref="file" matcher="globalMatcher"/>
+        </body>
+        <output type="string"/>
+    </operation>
+
+ </module>
+----
+
+=== 使用HTTP连接器
+
+本示例使用HTTP请求（`http:requester`）合并HTTP连接器。
+
+GitHub位置： link:https://github.com/mulesoft-labs/smart-connectors-integration-tests/tree/master/smart-connectors/smart-connector-using-http[智能连接器/智能连接器使用HTTP的]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-using-http"
+
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+        xmlns:httpn="http://www.mulesoft.org/schema/mule/http"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+           http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <property name="username" type="string" doc:description="the login user credential."/>
+    <property name="password" type="string" password="true" doc:description="the login password credential"/>
+
+    <httpn:request-config name="github-httpreq-config" basePath="/">
+        <httpn:request-connection host="api.github.com" protocol="HTTPS" port="443">
+            <httpn:authentication>
+                <httpn:basic-authentication username="#[vars.username]" password="#[vars.password]"/>
+            </httpn:authentication>
+        </httpn:request-connection>
+    </httpn:request-config>
+
+    <operation name="search-issues" doc:description="Get a list of Issue objects that match the specified filter data">
+        <parameters>
+            <parameter name="repo" type="string" doc:description="the repository name"/>
+            <parameter name="since" type="string" defaultValue="2017-02-06T09:29:49Z" doc:description="date from which restoring issues, sample: 2016-07-31T12:37:07Z"/>
+        </parameters>
+        <body>
+            <mule:logger level="ERROR" doc:name="Logger" message="#['repo:[' ++ vars.repo + '], since:[' + vars.since ++']']" />
+            <httpn:request config-ref="github-httpreq-config" path="search/issues" method="GET" >
+                <httpn:query-params>
+                    #[{q : 'repo: $(vars.repo) created:>=$(vars.since)', type: 'Issues'}]
+                </httpn:query-params>
+            </httpn:request>
+            <mule:set-payload value="#[payload]" mimeType="application/json" />
+        </body>
+        <output type="string" doc:description="List of issues"/>
+    </operation>
+
+ </module>
+----
+
+=== 示例：使用另一个XML SDK
+
+本示例使用XML SDK模块`module-using-core`（在<<module-using-core, Example: Using Core Components>>中进行了介绍）显示了一个XML SDK模块（`module-using-smart-connector`）。
+
+GitHub位置： link:https://github.com/mulesoft-labs/smart-connectors-integration-tests/tree/master/smart-connectors/smart-connector-using-smart-connector[智能连接器/使用智能连接器智能连接器]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-using-smart-connector"
+
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:module-using-core="http://www.mulesoft.org/schema/mule/module-using-core"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/module-using-core http://www.mulesoft.org/schema/mule/module-using-core/current/module-using-core.xsd">
+
+    <operation name="proxy-set-payload-hardcoded">
+        <body>
+            <module-using-core:set-payload-hardcoded/>
+        </body>
+        <output type="string"/>
+    </operation>
+
+ </module>
+----
+
+=== 使用验证模块
+
+此示例使用验证模块，具体为`validation:is-email`。
+
+GitHub位置： link:https://github.com/mulesoft-labs/smart-connectors-integration-tests/tree/master/smart-connectors/smart-connector-using-validation[智能连接器/使用智能连接器验证]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="module-using-validation"
+
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+
+    <operation name="is-really-email">
+        <parameters>
+            <parameter name="inputEmail" type="string"/>
+        </parameters>
+        <body>
+            <validation:is-email email="#[vars.inputEmail]"/>
+        </body>
+        <output type="boolean"/>
+    </operation>
+
+ </module>
+----
+
+==  XML SDK限制
+
+该SDK目前有以下限制：
+
+*  XML SDK仅提供出站操作，而不提供源（如`<scheduler>`）或路由器。
+* 操作不支持递归调用。

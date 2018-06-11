@@ -1,0 +1,197 @@
+=  CloudHub负载均衡器
+:keywords: cloudhub, runtime manager, arm, load balancing, vanity url, ssl, two way tls,
+
+image:logo-cloud-active.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-disabled.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-disabled.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+== 概述
+
+CloudHub具有后端负载均衡服务，旨在自动执行基础架构组件的供应。
+
+通过使用此服务代理您的CloudHub部署的应用程序，您可以：
+
+. 强制执行双向SSL身份验证
+. 使用自定义证书强制进行SSL身份验证
+. 轻松配置将应用程序映射到自定义域的代理规则，使您能够将所有内容托管在单个虚拟域
+. 在运行应用程序的不同CloudHub工作人员之间处理负载平衡
+
+[NOTE]
+--
+这是您的云基础架构的一项可选附加功能，在所有CloudHub计划中默认情况下都不包含这项功能。要启用它，您必须先拥有 link:/runtime-manager/virtual-private-cloud[虚拟私有云产品]。
+此服务旨在为每个VPC配备一个负载均衡器，尽管每个VPC仅支持一个域，但您可以在同一网络中拥有多个环境，这意味着您可以为不同的环境使用相同的负载均衡器。
+--
+
+== 使用负载均衡器
+
+尽管此功能最终将内置到运行时管理器用户界面中，但目前仅作为可通过 link:/runtime-manager/anypoint-platform-cli[Anypoint命令行界面]使用的服务或通过端点`anypoint.mulesoft.com/cloudhub/api/organizations/{orgid}/vpcs/{vpcId}/loadbalancers`和{{}}使用{{1} 3}}。
+
+[NOTE]
+====
+有关Anypoint-CLI命令及其各自用法的完整列表，请查看我们的 link:/runtime-manager/anypoint-platform-cli#List-of-commands[参考页面]。 +
+`loadbalancers`和`vpcs`端点的完整说明可用于访问您的 link:https://anypoint.mulesoft.com/apiplatform/anypoint-platform/#/portals[API门户]。
+
+在上面的链接中，搜索"CloudHub" API的其他Mule API并输入其最新版本。
+====
+
+
+=== 映射
+
+负载平衡器配置由<<mapping rules>>列表定义，该列表描述了如何将输入URL转换为对不同CloudHub应用程序的调用。
+当创建一个简单的匹配规则时，一个输入地址与定义的输出字面上相匹配：一个应用程序的端点。
+您也可以使用*Pattern*将类似变量的输入文本与端点进行匹配，而不是使用文字匹配。请参阅<<Pattern matching>>部分。
+
+通过使用代理规则，您可以将域或子域映射到在CloudHub中运行的其中一个Mule应用程序
+
+=== 模式匹配
+
+模式是一个字符串，它定义了用于匹配输入文本的模板。无论放入大括号（`{   }`）是作为变量处理。
+这些变量只能包含字母（a-z），不能包含任何其他字符，如数字，斜杠等。变量值可以包含以下字符'a-z0-1。＆？-_'，但不包含斜杠。
+
+==== 示例
+
+===== 定义一个简单的规则
+
+[source,Example,linenums]
+----
+‘app.example.com’ -> ‘app/example’
+----
+
+上面的例子直接绑定这两个地址进行重定向。
+
+===== 定义包含模式的规则
+
+[source,Example,linenums]
+----
+‘{mypattern}.example.com’ -> `app/{mypattern}`
+----
+
+上面的示例导致“bookings.example.com”和“sales.example.com”分别与`app/bookings`和`app/sales`匹配，因为变量`mypattern`拥有此值。对于input =“bookings.example.com”，可通过分配`_mypattern_=”bookings” and for input=` sales.example.com `, the pattern is resolved asignining ` _ mypattern _ =“sales”来解决该模式。
+
+根据您的设计，您可以选择利用模式或简单文字映射来将内部重定向用于端点。
+
+=== 映射规则
+
+映射规则是定义<<Input URL>>模式的一组字段（描述如下），以及根据上述模式描述<<Output URL>>的一组字段。
+
+首先定义的规则相对于之后定义的其他规则具有高优先级。这意味着将应用第一个匹配的规则。 +
+您可以创建，查看和删除现有规则。
+
+
+==== 规则示例
+
+下表包含一些规则示例：
+
+[%header,cols="10a,20a,20a,20a,20a,10a"]
+|===
+|规则＃3 + ^ |输入URL 2 + ^ | 输出URL
+|   |  *Subdomain*  |   *Domain*    |         *URI*         |        *appName*        |    *appURI*
+|  1  |  qaparm     |  {services.com {3}} {APPNAME} / {区域} /  |  {APPNAME}              |  {}区域
+|  2  |  API        |  mcd.com       |                      | 内部路由器代理 |
+|  3  |  {应用} .API  |  mcd.com       |                      |  {应用} -mcd              |
+|  4  |  api.cce    |  {mule.com {3}} / {基} / {版本} /  |  {基}                |  / {版}/
+|  5  |            |  example.com   |  / {应用} /              |  {应用}                  |  /
+|  6  | 预设   |  example.com   |                      | 缺省应用           |
+|===
+
+===== 输入网址
+
+_input URL_被描述为以下参数，可以由用户指定：
+
+.  *Subdomain*  - 定义负载平衡器域的子域值的字符串或模式。
+.  *Domain*  - 负载均衡器的域（对于相同的负载均衡器，此值应保持不变）
+.  *URI*  - 描述输入URI的字符串或模式。
+
+
+[source,Example,linenums]
+----
+subdomain={app}
+domain=example.com
+URI=/v1/
+----
+
+输入'echo.example.com/v1/api'与上面的字段匹配，在这种情况下变量app = echo。输入'echo.example.com/v2/api'无法与上述模式匹配，因为'v2'不在模式中。
+
+===== 输出网址
+
+_Output URL_由以下字段指定。 +
+用户可以使用输入URL中的变量模式。
+
+.  *appName*  - 输出将请求转发到的应用程序名称。
+.  *appURI*  - 传递给已解析应用程序的URI字符串。
+
+[source,Example,linenums]
+----
+appName={app}
+URI=/hello
+----
+
+==== 重定向网址
+
+设置应添加到代理服务器响应的“位置”和“刷新”标题字段中的URI文本部分。假设您的应用程序的代理服务器返回了标题字段“Location：http://example.com/two/some/uri/”。指令redirectURI =“/ hello”会将位置标题更改为：“位置：https：//example.com/hello/two/some/uri/”
+
+=== 规则顺序
+
+规则按照相同的子域名称分组。首先检查具有较长子域名的组。所以短子域名（数字或符号）的规则优先级较低。最后检查具有空子域名的组。
+
+在一个组中（具有相同子域的规则），首先检查具有较长inputURI表达式的规则，如果它们不匹配，则检查具有较短inputURI表达式的规则。
+
+
+[WARNING]
+--
+规则顺序至关重要。
+强烈建议在创建规则时注意规则的顺序，因为目前无法对其进行编辑。
+--
+
+==== 设置规则优先顺序
+
+您可以通过指定索引值，在Anypoint-CLI中使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-add-lb-rule[cloudhub加磅规则]命令创建规则时设置订单。
+
+使用API​​时，您无法指定优先顺序，但您可以向端点`anypoint.mulesoft.com/cloudhub/api/organizations/{orgid}/vpcs/{vpcId}/loadbalancers/{loadbalancerId}`发送`PUT`请求，并基于上述的顺序逻辑更新规则表达式以满足您的需求首先检查相同子域内的更长的URI）。
+
+[NOTE]
+--
+负载均衡器ID在您创建时提供给您。 +
+您还可以对您的端点/组织/ {orgid}} / vpcs / {vpcId} / loadbalancers执行`GET`请求以获取该ID。
+--
+
+=== 管理证书
+
+==== 证书验证
+
+Cloudhub负载平衡器提供双向SSL客户端身份验证。
+它允许您为负载均衡器提供`.pem`文件证书来验证客户端请求。
+
+负载均衡器使用以下http标题将证书数据传递给API：
+
+=====  X-​​SSL-客户验证
+
+此标题返回`SUCCESS`，`FAILED`或`NONE`
+只有在`SUCCESS`之后，客户端才会被验证。 +
+它在证书不存在时返回`NONE`，当发生其他验证问题时返回`FAILED`。
+
+=====  X-​​SSL的客户端-DN
+
+包含客户端证书的完整专有名称。
+
+=====  X-​​SSL-发行人
+
+包含颁发证书的完整专有名称。
+
+=====  X-​​SSL-客户串行
+
+包含CA用于识别客户端的序列号。
+
+==== 添加吊销列表
+
+如果您使用OCSP管理您的吊销列表，则吊销在您上传的证书中定义，因此您无需采取任何额外步骤。
+
+如果您使用CRL管理撤销，则可以在创建负载平衡器时在您的JSON中的`certificates`字段下添加`crlCert`字段，并在那里指定撤销信息。
+
+
+== 另请参阅
+
+*  link:/runtime-manager/anypoint-platform-cli[Anypoint Platform CLI]。
+*  link:/runtime-manager/runtime-manager-api[运行时管理器API]。
+*  link:https://anypoint.mulesoft.com/apiplatform/anypoint-platform/#/portals[API门户]

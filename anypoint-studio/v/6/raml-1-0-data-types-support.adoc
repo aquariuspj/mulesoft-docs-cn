@@ -1,0 +1,190 @@
+= 支持Datasense中的RAML 1.0数据类型
+
+Datasense现在支持 link:https://github.com/raml-org/raml-spec/blob/master/versions/raml-10/raml-10.md#raml-data-types[RAML 1.0数据类型]，并且可以解析此信息以显示在 link:/anypoint-studio/v/6/using-the-datasense-explorer[DataSense资源管理器]中。
+
+==  RAML 1.0数据类型
+
+RAML v1.0引入了*Data Types*，这是一种简洁而通用的方式，用于描述和验证API定义中的数据。 +
+您可以在RAML文件的开始处定义一个类型，稍后您可以根据需要引用相同类型来描述尽可能多的API请求或响应的正文。你甚至可以定义一个数据类型来在你的API中继承另一个类型的属性。 +
+将数据类型看作_define一次，使用类似于many_架构的定义。
+
+Datasense现在支持数据类型继承以及跨越您的RAML 1.0 API描述的XML和JSON模式传播，允许Datasense资源管理器正确显示由您的RAML文件生成的元数据，包括从类型声明继承的字段和类型。
+
+== 示例
+
+考虑一个简单的API示例，该API通过来自两种不同类型的联系人的联系信息来提供和填充资源：_companies_和_individuals_。 +
+使用数据类型，您可以定义具有属性*address*和*email*信息的*contact*类型。您还可以为每个联系人信息属性定义特定的属性。 +
+在RAML 1.0中，它看起来像这样：
+
+[source,RAML,linenums]
+----
+#%RAML 1.0
+
+title: Contact Information API
+mediaType: application/json
+
+types:
+
+  ###############
+  # Contacts Data:
+  ###############
+
+  Contact:
+   properties:
+     address:
+       type: Address
+     email:
+       type: Email
+
+  Address:
+    properties:
+      street:
+        type: string
+      city:
+        type: string
+      state:
+        type: string
+      country:
+        type: string
+
+  Email:
+    pattern: ^[_a-z0-9-]+(\.[_a-z0-9-]+)*@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,4})$
+----
+
+现在，您可以利用前面定义的数据类型中的联系人信息属性来定义_individuals_和_companies_：
+
+[source,RAML,linenums]
+----
+###############
+# Contacts:
+###############
+
+Individual:
+  properties:
+    name:
+      type: string
+    contact-information:
+      type: Contact
+
+Company:
+  properties:
+    company-name:
+      type: string
+    contact-information:
+      type: Contact
+----
+
+最后，对于API定义，您可以为两个资源（`/individuals`和`/ companies）定义`get`和`post`方法：
+
+[source,RAML,linenums]
+----
+###############
+# API:
+###############
+
+/individuals:
+  get:
+    responses:
+      200:
+        body:
+          type: Individual
+          example: |
+              {
+                "name": "Max",
+                "contact-information": {
+                  "address": {
+                    "street":"Market Street",
+                    "city":"San Francisco",
+                    "state":"California",
+                    "country":"United States"
+                    },
+                  "email":"max@mail.com"
+                 }
+              }
+  post:
+    body:
+        type: Individual
+    responses:
+      200:
+        body:
+          example: |
+              {
+                "name":"",
+                "contact-information": {
+                  "address": {
+                    "street":"",
+                    "city":"",
+                    "state":"",
+                    "country":""
+                   },
+                 "email": ""
+                }
+              }
+
+/companies:
+  get:
+    body:
+      type: Company
+    responses:
+      200:
+        body:
+          type: Company
+          example: |
+             {
+                "company-name": "MuleSoft",
+                "contact-information": {
+                  "address": {
+                    "street":"77 Geary St.",
+                    "city":"San Francisco",
+                    "state":"California",
+                    "country":"United States"
+                    },
+                  "email":"mulesoft@mail.com"
+                 }
+              }
+  post:
+   body:
+    type: Company
+   responses:
+    200:
+      body:
+        example: |
+              {
+                "company-name": "",
+                "contact-information": {
+                  "address": {
+                    "street":"",
+                    "city":"",
+                    "state":"",
+                    "country":""
+                    },
+                  "email":""
+                 }
+              }
+----
+
+如果您下载 link:/mule-user-guide/v/3.8/_attachments/contacts.raml[这个RAML定义的例子]，将其导入到Studio中，请在任何生成的流中添加记录器处理器并检查*DatasSnse explorer*显示的输入，您可以看到填充了元数据的类型定义和继承。
+
+这是检查`/companies`资源的`GET`方法时的外观：
+
+image::raml-1-0-data-types-support-8cf05.png[肾错构瘤-1-0-数据类型的支持，8cf05]
+
+DataSense甚至可以识别您是否将API的mediaType更改为`application/xml`：
+
+image::raml-1-0-data-types-support-4e17d.png[]
+
+Datasense甚至可以处理xml属性类型声明。如：+
+[source,RAML,linenums]
+----
+Company:
+  properties:
+    company-name:
+      type: string
+      xml:
+        attribute: true
+        name: xmlname
+    contact-information:
+      type: Contact
+----
+
+image::raml-1-0-data-types-support-b4cb0.png[]

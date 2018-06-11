@@ -1,0 +1,164 @@
+= 教程：创建VPC（Anypoint Platform CLI）
+：NOINDEX：
+
+本节介绍如何使用Anypoint Platform CLI创建和配置VPC。 +
+登录到您的组织并使用vpc create命令创建VPC：
+
+[source,Example]
+----
+cloudhub vpc create // <1>
+vpc-tutorial // <2>
+us-east-1 // <3>
+10.111.0.0/24 // <4>
+--default
+----
+
+在这个例子中：
+
+.  VPC被称为`vpc-tutorial`
+. 绑定到`us-east-1`区域
++
+[NOTE]
+--
+所有VPC都需要关联到CloudHub地区。
+--
++
+.  VPC大小为`10.111.0.0/24`。在CIDR表示法中，这从10.111.0.0到10.111.0.255授予256个IP地址。 +
+一旦创建VPC就不可能调整其大小。 +
+在这一点上了解如何确定VPC的大小至关重要。如果您不确定如何配置此功能，请务必遵循我们的 link:/runtime-manager/virtual-private-cloud#size-your-vpc[VPC大小]指南。 +
+为VPC选择的CIDR块理想情况下应来自私有IP空间，并且不得与公司网络中使用的任何其他VPC的CIDR块或任何CIDR块重叠。
+.  VPC被设置为默认值。这意味着此区域中与VPC无关的所有环境都将默认关联到此VPC。
+
+[CAUTION]
+--
+在这个例子中，我们是*not passing*：
+
+* 环境信息：+
+不设置特定环境会使部署到US-EAST的每个应用程序都与此VPC关联，而忽略其部署的环境。
+
+* 业务组信息：+
+通过这样做，我们将这个VPC与主要组织联系起来。
+--
+
+操作成功后，CLI将显示新创建的VPC的详细信息。
+
+[source,Example,linenums]
+----
+┌──────────────────────────────┬───────────────────┐
+│ Name                         │ vpc-tutorial      │
+├──────────────────────────────┼───────────────────┤
+│ Region                       │ us-east-1         │
+├──────────────────────────────┼───────────────────┤
+│ CIDR Block                   │ 10.111.0.0/24     │
+├──────────────────────────────┼───────────────────┤
+│ Inherited                    │ No                │
+├──────────────────────────────┼───────────────────┤
+│ Organization default         │ Yes               │
+├──────────────────────────────┼───────────────────┤
+│ Special domains              │                   │
+├──────────────────────────────┼───────────────────┤
+│ DNS Servers                  │                   │
+├──────────────────────────────┼───────────────────┤
+│ Firewall rules               │                   │
+├──────────────────────────────┼───────────────────┤
+│ Environments                 │                   │
+├──────────────────────────────┼───────────────────┤
+│ Business groups              │                   │
+├──────────────────────────────┼───────────────────┤
+│ Load balancers               │                   │
+└──────────────────────────────┴───────────────────┘
+----
+
+== 创建防火墙规则
+
+创建VPC时，默认设置四个防火墙规则。您可以使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-vpc-firewall-rules-describe[vpc防火墙规则描述]命令查看它们：
+
+[source,Example]
+----
+cloudhub vpc firewall-rules describe vpc-tutorial
+----
+
+该命令返回：
+
+[source,Example,linenums]
+----
+┌───────┬────────────────────┬──────────┬────────────┬──────────┐
+│ Index │ CIDR Block         │ Protocol │ From port  │ To port  │
+├───────┼────────────────────┼──────────┼────────────┼──────────┤
+│ 0     │ 10.111.0.0/24      │ TCP      │ 8091       │ 8092     │
+├───────┼────────────────────┼──────────┼────────────┼──────────┤
+│ 1     │ 0.0.0.0/0          │ TCP      │ 8081       │ 8082     │
+└───────┴────────────────────┴──────────┴────────────┴──────────┘
+----
+
+[TIP]
+--
+规则`0`允许来自本地VPC的端口*8091*和*8092*的入站连接，而规则`1`允许来自任何主机的流量通过端口8081和8082访问您的工作人员。
+--
+
+您可以使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-vpc-delete[vpc防火墙规则删除]命令删除任何默认规则，也可以使用 link:/runtime-manager/anypoint-platform-cli#cloudhub-vpc-firewall-rules-add[vpc防火墙规则添加]命令添加新规则。
+
+假设您希望通过VPC内的端口8090启用TCP流量。您需要运行以下内容：
+
+[source,Example]
+----
+cloudhub vpc firewall-rules add
+// <1>
+vpc-tutorial // <2>
+10.111.0.0/24 // <3>
+tcp // <4>
+8090
+----
+
+. 将`vpc-tutorial`设置为此新防火墙规则的目标VPC。
+. 通过设置`10.111.0.0/24`，将IP范围设置为允许所有只有主机插入您的VPC。 +
+在CIDR表示法中，这允许范围10.111.0.0到10.111.0.255。
+. 将白名单协议设置为`tcp`
+. 允许端口号`8090`
+
+当您创建新的防火墙规则时，Anypoint Platform CLI向您显示一条成功消息：
+
+[source,Example]
+----
+VPC firewall modified successfully
+----
+
+
+== 更新现有的VPC
+
+虽然无法通过Anypoint Platform CLI从VPC更新某些值，但可以使用 link:https://anypoint.mulesoft.com/apiplatform/anypoint-platform/#/portals/organizations/68ef9520-24e9-4cf2-b2f5-620025690913/apis/8617/versions/85955/pages/107964[Cloudhub API]以编程方式管理和更新VPC：
+
+. 登录到通过`+https://anypoint.mulesoft.com/accounts/login+`端点传递凭据的CloudHub服务。
+. 使用`organizations/{orgid}/vpcs/{vpcId}`端点更新您的VPC。
+
+[NOTE]
+您可以使用 link:https://anypoint.mulesoft.com/apiplatform/anypoint-platform/#/portals/organizations/68ef9520-24e9-4cf2-b2f5-620025690913/apis/8617/versions/85955/pages/107964[API参考]了解如何与API资源进行交互。
+
+例如，要更新VPC的环境，您需要使用JSON有效内容向`anypoint.mulesoft.com/cloudhub/api/organizations/{orgid}/vpcs/{vpcId}`端点发送`PUT`请求：
+
+[TIP]
+--
+您可以使用 link:/runtime-manager/anypoint-platform-cli#account-business-group-list[帐户业务组描述]命令查询您的`{orgid}`。
+
+您的`{vpcId}`值是通过运行 link:/runtime-manager/anypoint-platform-cli#cloudhub-vpc-describe-json[cloudhub vpc describe-json]命令列出的。
+--
+
+[source,json,linenums]
+----
+{
+	"associatedEnvironments": [
+		"<EnvironmentId>"
+	]
+}
+----
+
+[NOTE]
+--
+`<EnvironmentId>`需要替换为您希望关联此VPC的环境的ID。 +
+您可以为您的环境获取运行 link:/runtime-manager/anypoint-platform-cli#account-environment-list[帐户环境列表]命令的ID。
+--
+
+== 另请参阅
+
+* 了解如何在 link:/runtime-manager/dedicated-load-balancer-tutorial[负载平衡器教程]之后将负载均衡器与此VPC相关联。
+* 详细了解 link:/runtime-manager/anypoint-platform-cli[Anypoint Platform CLI]。

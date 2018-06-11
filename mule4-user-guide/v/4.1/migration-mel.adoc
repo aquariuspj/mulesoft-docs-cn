@@ -1,0 +1,395 @@
+//联系人/中小企业：Esteban Wasinger，Ana Felisatti
+= 将MEL迁移到DataWeave
+在Mule 4中，DataWeave表达式语言取代了Mule表达式语言（MEL）。
+本节提供有关将Mule应用程序中的MEL表达式迁移到的指南
+DataWeave（2.0及更高版本）。
+
+==  DataWeave一览
+DataWeave是一种特定于骡子的语言，可以轻松地作为一种语言使用
+表达式语言来简单地引用数值和评估条件，或作为一个
+脚本语言来构建包含函数的复杂数据转换
+和递归。
+
+与MEL不同，它支持不同的数据类型，如JSON，XML或CSV，
+这意味着在对表达式进行评估之前不再需要对数据进行转换。
+它还支持高级用例，如映射函数或筛选数据。
+
+重要的是要注意DataWeave中的主要数据选择器是`.`运算符。
+由于它与MEL共享大多数关键字，所以大多数情况下的语法是
+相同。例如，`#[message.payload.name]`在两种语言中都是相同的。
+
+MEL和DataWeave之间的主要区别在于DataWeave表达式具有
+无副作用。您可以使用DataWeave提取或生成数据，但不能对其进行修改。
+link:intro-java-integration[Java集成]例子解释了如何处理
+这些用例。
+
+////
+//这个部分只有在兼容性插件不可用时才有意义
+== 兼容模式
+
+当表达式使用`mel:`前缀时，MEL仍然支持兼容模式。
+实际上，对于访问入站和出站属性等兼容性用例，
+附件或异常有效载荷建议使用MEL。
+
+////
+
+==  MEL用法
+
+接下来的部分将展示如何调整MEL的某些用途以适应Mule 4。
+
+=== 访问上下文变量
+所有https://docs.mulesoft.com/mule-user-guide/v/3.9/mel-cheat-sheet#server-mule-application-and-message-variables[context变量]
+在DataWeave中保持不变，除了新的`attributes`变量和以下更改：
+
+[%header,cols="2,3a"]
+|===
+|  {MEL {1}} DataWeave
+
+| `flowVars`
+|重命名为`vars`
+
+| `sessionVars`
+|已移除：请参阅 link:intro-mule-message#session-properties[会话属性]。
+
+| `exception`
+|替换：流中的异常现在由您可以通过`error`变量访问的 link:error-handling[骡子错误]表示。
+
+| `message.inboundProperties`
+|已移除：请参阅 link:intro-mule-message#inbound-properties-are-now-attributes[入站属性现在是属性]。
+
+| `message.outboundProperties`
+|已移除：请参阅 link:intro-mule-message#outbound-properties[出站属性]。
+
+| `message.inboundAttachments`和`message.outboundAttachments`
+|已移除：请参阅 link:intro-mule-message#attachments[附件]。
+
+//这个部分只有在聚合器模块不在时才有意义
+// | `message.correlationId`
+// |重命名为：`correlationId`
+
+// | `message.correlationSequence`
+// |重命名为：`itemSequenceInfo.position`
+
+// | `message.correlationGroupSize`
+// |重命名为：`itemSequenceInfo.sequenceSize`
+
+| `message.id`，`message.rootId`和`message.replyTo`
+|移除。
+
+| `message.dataType`
+|重命名为`dataType`。
+
+| `server.dateTime`
+|删除：使用DataWeave的 link:dw-core-functions-now[`now`]函数
+
+|===
+
+[[extract_data]]
+=== 提取数据
+
+您可以使用 link:dataweave-selectors[DataWeave选择器]
+像对待MEL一样查询数据。只有现在，你不需要额外的转换
+当处理像JSON这样的类型时。
+
+下面的例子记录来自这个JSON有效载荷的ID：
+
+.JSON有效负载
+[source,json,linenums]
+----
+{
+  "name" : "Rachel Duncan",
+  "id": "779H41"
+}
+----
+
+.Mule 3示例
+[source,xml,linenums]
+----
+<json:json-to-object-transformer returnClass="java.util.Map" />
+<logger message="Updating health check record for subject '#[payload.id]'" level="INFO" />
+----
+
+.Mule 4示例
+[source,xml,linenums]
+----
+<logger message="Updating health check record for subject '#[payload.id]'" />
+----
+
+=== 分配值
+
+如前所述，DataWeave不支持以`expression-component`方式修改数据
+允许与MEL。要实现这些用例，您必须使用Scripting模块。
+
+考虑将<<extract_data,above>>描述为Java Map的有效载荷。这些示例修改了`name`属性。
+
+.Mule 3示例
+[source,xml,linenums]
+----
+<expression-component>
+  <![CDATA[
+    payload.name = 'R. Duncan'
+  ]]>
+</expression-component>
+----
+
+.Mule 4示例
+[source,XML,linenums]
+----
+<script:execute engine="groovy">
+  <script:code>
+    payload.put('name', 'R. Duncan')
+    return payload
+  </script:code>
+</script:execute>
+----
+
+要使用Scripting模块，只需使用Studio调色板将其添加到您的应用中，或者在您的`pom.xml`文件中添加以下依赖项：
+
+[source,XML,linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-scripting-module</artifactId>
+  <version>1.1.0</version> <!-- or newer -->
+  <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+=== 调用Java方法
+
+DataWeave可以用来调用静态方法。对于常规方法，您可以使用
+Java模块，它公开了一个操作和一个函数来调用Java
+方法。
+
+==== 静态方法
+
+以下示例在Mule 3和4中使用Java的区域设置`getDefault`静态方法。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<validation:is-time time="#[payload]" pattern="h:mm a" locale="#[java.util.Locale.getDefault().getLanguage()]"/>
+----
+
+.Mule 4的例子
+[source,XML,linenums]
+----
+<validation:is-time time="#[payload]" pattern="h:mm a" locale="#[java!java::util::Locale::getDefault().getLanguage()]"/>
+----
+
+请注意，DataWeave需要`java!`前缀来指示要搜索的Java静态方法
+它需要完全限定的Class名称（由`::`分隔，而不是`.`）。
+
+==== 实例方法
+
+以下示例显示了在Mule 3和4中使用Java的String `equalsIgnoreCase`方法。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<choice>
+  <when expression="#[payload.equalsIgnoreCase('error')]">
+    <logger message="An error message has been received." level="ERROR"/>
+  </when>
+  <otherwise>
+    <logger message="Message received: #[payload]" level="INFO"/>
+  </otherwise>
+</choice>
+----
+
+.Mule 4的例子
+[source,XML,linenums]
+----
+<choice doc:name="Choice">
+  <when expression="#[Java::invoke('java.lang.String', 'equalsIgnoreCase(String)', payload, {arg0: 'error'})]">
+		<logger message="An error message has been received." level="ERROR"/>
+	</when>
+	<otherwise >
+		<logger message="Message received: #[payload]" level="INFO"/>
+	</otherwise>
+</choice>
+----
+
+要使用Java模块，只需使用Studio调色板将其添加到您的应用程序，或将以下依赖项添加到您的`pom.xml`文件中：
+
+[source,XML,linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-java-module</artifactId>
+  <version>1.0.0</version> <!-- or newer -->
+  <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+=== 目标定义
+
+`enricher`已被删除，并由目前支持的目标变量取代
+通过每个操作。下面的例子显示了如何发送一个结果
+操作到Mule 3和4中的变量。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<enricher target="#[flowVars.response]">
+    <http:request config-ref="HTTP_Request_Configuration" path="/get" method="GET"/>
+</enricher>
+----
+
+.Mule 4的例子
+[source,XML,linenums]
+----
+<http:request config-ref="HTTP_Request_Configuration" path="/get" method="GET" target="response"/>
+----
+
+有关更多详情，请参阅 link:target-variables[利用目标变量丰富数据]。
+
+===  XPath函数
+
+DataWeave可用于使用其 link:dataweave-selectors[选择]查询XML内容，
+但是你也可以使用XML模块，它暴露了一个操作和一个函数
+执行XPath查询。
+
+以下示例显示如何从Mule 3和4中的变量中获取包含特定单词的行。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<set‐variable variableName="word" value="handkerchief"/>
+<expression‐transformer>
+   xpath3('//LINE[contains(.,$word)]',payload,'NODESET')
+</expression‐transformer>
+----
+
+.Mule 4的例子
+[source,XML,linenums]
+----
+<set‐variable variableName="word" value="handkerchief"/>
+<set-payload value="#[XmlModule::xpath('//LINE[contains(., \$word)]', payload, {'word': vars.word})]" />
+----
+
+要使用XML模块，只需使用Studio调色板将其添加到您的应用程序，或将以下依赖项添加到您的`pom.xml`文件中：
+
+[source,XML,linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-xml-module</artifactId>
+  <version>1.1.0</version> <!-- or newer -->
+  <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+=== 通配符和正则表达式函数
+
+DataWeave匹配函数`match`和`matches`（请参阅Core DataWeave函数）
+可以用来代替。下一个示例显示了如何在DataWeave中使用正则表达式来替换`wildcard` MEL函数的使用。
+// link:dw-functions-core[核心数据平面函数]）
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<choice>
+  <when expression="#[wildcard('Hello *')]">
+    <set-payload value="Hello, how can I help?"/>
+  </when>
+  <otherwise>
+    <set-payload value="Courtesy requires a greeting."/>
+  </otherwise>
+</choice>
+----
+
+.Mule 4的例子
+[source,XML,linenums]
+----
+<choice doc:name="Choice">
+  <when expression="#[payload matches /Hello\s[A-z]+/]">
+    <set-payload value="Hello, how can I help?"/>
+  </when>
+  <otherwise >
+    <set-payload value="Courtesy requires a greeting."/>
+  </otherwise>
+</choice>
+----
+
+== 另请参阅
+
+link:dataweave[关于DataWeave]
+
+https://blogs.mulesoft.com/dev/mule-dev/why-dataweave-main-expression-language-mule-4/ [为什么DataWeave是Mule 4 Beta中的主要表达式语言]
+
+https://docs.mulesoft.com/mule-user-guide/v/3.9/mule-expression-language-mel[Mule表达语言（MEL）]（3.9）
+
+
+////
+涵盖的主题：
+
+DataWeave 2.x（2.1？）中的*  MEL表达式
+* 初步计划是以Mule 3文档为例，并展示如何将它们迁移到4.0。请参阅https://docs.mulesoft.com/mule-user-guide/v/3.9/mule-expression-language-mel
+*  3个主要使用案例（来自Dan Feist）：
+ ** 从消息中提取值（用于日志记录或简单转换等）。
++
+例子：
++
+DW中的 ***  `#[payload]`相同。
+ ***  `#[message.payload]`到DW：`#[payload]`
+  // ** * * TODO *：`#[message.inboundProperties.'propertyName']`至DW：`#[attributes.'propertyName']`
+ ***  `#[<logger message="#[payload]" />]`相同的DW。
+// ** * * TODO *：`#[payload.methodCall(parameters)]`到DW：
+// ** * * TODO *：`#[xpath3('//root/element1')]`到DW：
+ ** 评估条件（用于验证，路由等）
+ ***  `#[payload.age > 21]`与DW相同。
+// ** * * TODO *：`#[message.inboundProperties.'locale' == 'en_us']`
+ ** 定义目标：
+Dan表示“主要只用于4.0版现在不支持的richter”。看起来这将在 link:migration-patterns[迁移模式]中进行介绍。
+现在通过目标变量处理 ***  `#[flowVars.output]`。见前面的链接。
++
+我们现在在4.0中使用目标变量
+
+.MEL表达
+----
+<choice>
+   <when expression="#[payload.getPurchaseType() == 'book']">
+        <jms:outbound-endpoint queue="bookPurchases" />
+    </when>
+   <when expression="#[payload.getPurchaseType() == 'mp3']">
+        <jms:outbound-endpoint queue="songPurchases" />
+    </when>
+ </choice>
+----
++
++
+.DataWeave表达式
+// *TODO: DW example needs to align better with MEL example*
+----
+<choice doc:name="Choice">
+  <when expression="#[vars.language == 'french']">
+    <set-payload value="Bonjour!" doc:name="Reply in French"/>
+  </when>
+  <when expression="#[var.language == 'spanish']">
+    <set-payload value="Hola!" doc:name="Reply in Spanish"/>
+  </when>
+  <otherwise >
+    <set-variable variableName="language" value="English" doc:name="Set Language to English"/>
+    <set-payload value="Hello!" doc:name="Reply in English"/>
+  </otherwise>
+</choice>
+----
++
+  **** 无法在MEL中指定DW中的值：需要为此使用Scripting模块。
+// *TODO: Need example.*
+
+
+来自ANA的博客：
+
+== 日期时间
+*  MEL：`#[payload.name ++ '.' ++ dataType.mimeType.subType]`
+*  DataWeave：`#[payload ++ { date : now() }]`
+////
+
+////
+  注意：
+   Mariano G.说大多数人使用MEL来访问有效载荷。对于简单的表达式，迁移工具将执行此操作，但我们必须帮助迁移复杂映射。迁移者没有日期，但是在GA之后是首要任务。在骡子的某个地方。
+
+  我们将尝试将一些最常用的MEL表达式映射到DW表达式，以便在后续版本的指南中根据需要添加到该列表中。
+////

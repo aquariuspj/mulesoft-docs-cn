@@ -1,0 +1,217 @@
+= 任意点连接器中的自动寻呼
+:keywords: paging, auto paging, connectors, anypoint, studio, esb, collections
+
+当流中的Anypoint Connector产生的输出非常大时，处理它可能会在应用程序中导致显着的性能延迟。为防止发生这种情况，您可以将连接器的输出分成几个"pages"以进行更高效的处理。在Mule中，Anypoint Connector中的这种行为被称为"auto-paging"，因为连接器会自动分页输出以防止内存问题。但是，如果内存使用不是问题，则可以放弃任何自动分页配置，并简单地将整个有效内容视为单个单元。
+
+== 假设
+
+本文档假定您熟悉 link:/anypoint-studio/v/5/index[Anypoint Studio Essentials]， link:/mule-user-guide/v/3.7/anypoint-connectors[Anypoint连接器]和 link:/mule-user-guide/v/3.7/global-elements[全球元素]。查看 link:/anypoint-studio/v/5/basic-studio-tutorial[Anypoint Studio入门]一章，了解有关使用Mule ESB图形用户界面进行开发的更多信息。
+
+== 配置自动寻呼
+
+下表列出了支持自动分页功能的 link:/mule-user-guide/v/3.7/anypoint-connectors[Anypoint连接器]。 （此外，您可以使用自动分页功能与任何支持自动分页功能的自定义连接器。）
+
+[%header,cols="2*"]
+|===
+具有自动寻呼功能的|连接器 |与Studio捆绑在一起
+| {箱{1}}
+| Google日历 | 
+| Google云端硬盘 | 
+| Google通讯录 | 
+| Google预测 | 
+| Google电子表格 | 
+| Google任务 | 
+| Microsoft Dynamics CRM（按需） | 
+| Microsoft Dynamics CRM（内部部署） | 
+| {NetSuite的{1}}
+| {QuickBooks的{1}}
+| {Salesforce的{1}}✔
+|===
+
+了解如何将 link:/anypoint-studio/v/5/installing-extensions[添加连接器]添加到您的Anypoint Studio实例。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. To make the *Paging* section visible, you must first select an *Operation* which outputs a collection, for example `Get groups`. Otherwise, Studio does not display the Paging section in the properties editor.
+
+. Enter an integer in the *Fetch Size* field to indicate the batch size of objects in a "page". For example, set the Fetch Size to `50` to return information in batches of 50 objects. +
++
+image:googlecontacts1.png[googlecontacts1]
++
+[%header%autowidth.spread]
+|===
+|Attribute |Default Value |Description
+|*Fetch Size* |100 |Specify the number of objects that Mule returns in each page.
+|===
+....
+[tab,title="XML Editor"]
+....
+. To the connector in your flow, add a `fetchSize` attribute.
+
+. Set the value of the attribute to an integer to indicate the batch size of objects in a "page". For example, set `fetchSize` to `50` to return information in batches of 50 objects.
++
+[source,xml, linenums]
+----
+<flow name="Flow1">
+    <google-contacts:get-groups config-ref="google" doc:name="paging" fetchSize="50"/>
+</flow>
+----
++
+[%header%autowidth.spread]
+|===
+|Property |Default Value |Description
+|`fetchSize` |100 |Specify the number of objects that Mule returns in each page.
+|===
+....
+------
+
+=== 处理自动分页输出
+
+当您使用使用分页的连接器时，Mule会创建一个迭代器对象，将负载分解为可管理的页面。无论页面大小如何，迭代器一次只推出一个对象，然后根据需要提取下一页。要处理分页输出，您必须在您的流程中使用可处理集合的元素，例如 link:/mule-user-guide/v/3.7/foreach[Foreach范围]，集合拆分器和 link:/mule-user-guide/v/3.7/dataweave[转换消息组件]等。因为Mule将页面集处理一页一次，它可以防止内存使用超出其限制。
+
+=== 示例
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an *HTTP* endpoint onto the canvas
+
+. Set its *Path* to `authenticate`. +
+Create a Connector Configuration element, set its host to *localhost* and its port to *8081*
+
+. Add a *Google Contacts* connector to the flow, then set its *Operation* to `Authorize.`
+
+. Create a *Google Contacts* *Global Element,* then configure its *Consumer Key* and *Consumer secret*.
+
+. Create a new flow with a new *HTTP* endpoint.
+
+. Set its *Path* to `get_contacts`.
+
+. Add a new *Google Contacts connector* in the new flow.
+
+. Set its *Operation* to `Get Contacts` and its *Fetch Size* to `50`.
++
+image:googlecontacts2.png[googlecontacts2] +
+
+. Add a *Foreach* *scope* after the Google Contacts connector.
+
+. Add a *Logger* inside the Foreach scope.
++
+image:autopaging+flow.png[autopaging+flow]
+
+When a message reaches the Google Contacts connector, the Logger outputs a separate message for each object. If there are more than 50 objects, Mule paginates the output.
+....
+[tab,title="XML Editor"]
+....
+. Create a *google-contacts* *Global Element,* then define its *Consumer Key* and *Consumer secret*.
++
+[source,xml, linenums]
+----
+<google-contacts:config-with-oauth name="Google_Contacts" consumerKey="" consumerSecret="" doc:name="Google Contacts" applicationName="Mule-GoogleContactsConnector">
+    <google-contacts:oauth-callback-config domain="localhost" path="auth" remotePort="8081"/>
+</google-contacts:config-with-oauth>
+----
+
+. Create an *HTTP* connector and set the value of its *Path* to `authenticate`.
++
+[source,xml, linenums]
+----
+<http:listener config-ref="listener-config" path="authenticate" doc:name="HTTP Connector"/>
+----
+
+. Outside the flow, create a configuration element that matches the name referenced by the connector. Set the host to *localhost* and the port to **8081**.
++
+[source,xml, linenums]
+----
+<http:listener-config name="listener-config" host="localhost" port="8081"/>
+----
+
+. Add a *Google Contacts connector* setting its *operation* to `authorize.`
++
+[source,xml, linenums]
+----
+<google-contacts:authorize config-ref="Google_Contacts" doc:name="Google Contacts"/> 
+----
+
+. Create a new flow with a new *HTTP* endpoint. Set the value of its *Path* to `get_contacts`, and reference the same configuration element as the other connector.
++
+[source,xml, linenums]
+----
+<http:listener config-ref="listener-config" path="get_contacts" doc:name="HTTP Connector"/>
+----
+
+. Add a new *Google Contacts connector* in the new flow setting its *operation* to `get-contacts` and *fetchSize* to `50`.
++
+[source,xml, linenums]
+----
+<google-contacts:get-contacts config-ref="Google_Contacts" doc:name="Google Contacts" fetchSize="50"/>
+----
+
+. After the Google Contacts connector, add a *Foreach* to the flow, then add a *Logger* as a child element inside Foreach element.
++
+[source,xml, linenums]
+----
+<foreach doc:name="For Each">
+    <logger message="#[message.payload.getEmailAddresses()]" level="INFO" doc:name="Logger"/>
+</foreach>
+----
+
+When a message reaches the Google Contacts connector, the Logger outputs a separate message for each object. If there are more than 50 objects, Mule paginates the output. See below for a <<Complete Example>>.
+....
+------
+
+== 附加的MEL表达式
+
+在流中使用分页输出时，可以使用MEL表达式来调用两个函数。
+
+[%header%autowidth.spread]
+|===
+|功能 |语法 |说明
+| *size*  | `#[payload.size()]`  |返回可用对象的总量。
+| *close*  | `#[payload.close()]`  |中止迭代。 +
+此功能可释放自动分页正在使用的资源。
+|===
+
+== 完整示例
+
+您可以在任何支持MEL的表达式中调用`size()`和`close()`函数。下面的简单示例说明了如何在记录器中调用`size()`，以便记录连接器输出的对象总量。
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:google-contacts="http://www.mulesoft.org/schema/mule/google-contacts" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/google-contacts http://www.mulesoft.org/schema/mule/google-contacts/1.7.4/mule-google-contacts.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+ 
+    <google-contacts:config-with-oauth name="Google_Contacts" consumerKey="" consumerSecret="" doc:name="Google Contacts" applicationName="Mule-GoogleContactsConnector">
+        <google-contacts:oauth-callback-config domain="localhost" path="auth" remotePort="8081"/>
+    </google-contacts:config-with-oauth>
+    <http:listener-config name="listener-config" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="authorizationAndAuthenticationFlow">
+        <http:listener config-ref="listener-config" path="authenticate" doc:name="HTTP Connector"/>
+        <google-contacts:authorize config-ref="Google_Contacts" doc:name="Google Contacts"/>
+    </flow>
+    <flow name="googleContactsTest" >
+        <http:listener config-ref="listener-config" path="get_contacts" doc:name="HTTP Connector"/>
+        <google-contacts:get-contacts config-ref="Google_Contacts" doc:name="Google Contacts" fetchSize="50"/>
+        <logger message="#[payload.size()]" level="INFO" doc:name="Log_Size"/>
+        <foreach doc:name="For Each">
+             <logger message="#[payload.getEmailAddresses()]" level="INFO" doc:name="Log_Size"/>
+        </foreach>
+    </flow>
+</mule>
+----
+
+== 另请参阅
+
+* 详细了解 link:/mule-user-guide/v/3.7/scopes[领域]。
+
+* 详细了解 link:/mule-user-guide/v/3.7/foreach[的foreach]范围。
+
+* 需要处理真正大的有效载荷？了解 link:/mule-user-guide/v/3.7/mule-high-availability-ha-clusters[Mule高可用性HA集群]。

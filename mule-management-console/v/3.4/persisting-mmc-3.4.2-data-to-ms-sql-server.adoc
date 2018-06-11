@@ -1,0 +1,280 @@
+= 持久化MMC 3.4.2数据到MS SQL Server
+
+*MMC Version 3.4.2 and Later*
+
+本页介绍如何设置和配置Mule管理控制台，以将环境和交易数据保存到 http://technet.microsoft.com/en-us/sqlserver/default[Microsoft SQL Server]。
+
+[WARNING]
+本文档介绍了如何使用Apache Tomcat将生产环境部署到管理控制台。所有说明也应与其他 link:/mule-user-guide/v/3.4/hardware-and-software-requirements[支持的应用服务器]一起使用，但尚未经过测试。
+
+== 假设
+
+本文档假定您已经安装：
+
+*  **MMC Version 3.4.2**。如果您需要升级到此版本，请从 http://www.mulesoft.com/support-login[客户门户]下载。
+*  *a* **Web application server such as Tcat, Tomcat, or JBoss**。有关硬件要求和支持的应用程序服务器，Java运行时环境和浏览器的最新信息，请参阅 link:/mule-user-guide/v/3.4/hardware-and-software-requirements[硬件和软件要求]。
+
+为了实际的目的，本文提到Tomcat作为servlet容器;但是，这里包含的说明也适用于Tcat或JBoss。如果使用Tcat或JBoss，请确保将Management Console .war文件解压到相应的目录中。有关其他信息，请参阅 link:/mule-management-console/v/3.4/installing-the-production-version-of-mmc[安装MMC的生产版本]。
+
+[WARNING]
+*Known Issue with MS SQL and Java 6, Update 29* +
+ +
+关于SSL配置，有一个 http://bugs.java.com/bugdatabase/view_bug.do?bug_id=7105007[已知问题]，其中涉及SSL配置，导致数据库连接尝试无限期地挂起，没有超时，从而阻止MMC启动。 MS SQL不能用于此Java版本。请升级到更高版本的JVM。
+
+== 先决条件
+
+=== 数据库连接
+
+MS SQL Server必须配置为允许使用用户名和密码进行日志记录，而不是仅使用集成身份验证（即安全选项需要指定SQL Server和Windows身份验证模式）。
+
+数据库必须可以从管理控制台驻留的主机访问。如有疑问，请确认使用管理控制台主机中的标准客户端可以使用该连接。
+
+[TIP]
+====
+使用telnet命令进行连接测试
+
+如果由于连接问题（而不是身份验证问题）导致使用标准客户端连接失败，请使用`telnet`命令确认连接（如果系统上可用）。
+
+从Management Console主机运行：
+
+[source, code, linenums]
+----
+telnet <database_host> <database_port>
+----
+
+如果连接成功，则应输出与以下类似的内容：
+
+[source, code, linenums]
+----
+telnet 192.168.56.2 1433
+Trying 192.168.56.2...
+Connected to 192.168.56.2.
+Escape character is '^]'.
+----
+
+以上输出表明连接成功。 "connection refused"错误通常表示没有任何内容正在侦听指定的主机和端口。任何其他输出或缺少输出都表示连接问题，如管理控制台主机和数据库主机之间的路由问题或防火墙阻止请求。
+
+telnet命令仅测试网络连接，而不是对数据库进行身份验证。
+====
+
+==  MMC配置
+
+配置管理控制台以使用MS SQL Server要求您将文件复制到管理控制台目录结构中，并修改其中包含的文件。此目录结构包含在用于将管理控制台部署到Tomcat的.war文件中。
+
+建议您将控制台.war文件的内容解压缩到Tomcat安装的`webapps`目录，并将配置应用于提取的内容。完整的步骤顺序是：
+
+. 确保Tomcat servlet容器未在运行。
+. 将管理控制台.war文件解压缩到Tomcat根目录下的`webapps`目录。提取后，.war文件的内容应位于`<TOMCAT_HOME>/webapps/mmc-3.4.2`中。例如，如果Tomcat根目录为`/var/lib/tomcat6`，则管理控制台的根目录应为`/var/lib/tomcat6/webapps/mmc-3.4.2`。
+. 执行此页面中描述的修改：复制`sqljdbc4.jar`文件并修改相应的配置文件。
+. 确保Tomcat目录树中的任何位置都没有名为`mmc-data`的目录。
+. 启动Tomcat，首次启动您的自定义管理控制台。
+
+以下各节介绍如何配置MS SQL Server的管理控制台，使用从原始Management Console .war文件中提取的文件。
+
+===  `sqljdbc4.jar`驱动程序库
+
+要在MS SQL Server中使用管理控制台，您需要将`sqljdbc4.jar`库添加到管理控制台。
+
+从 http://www.microsoft.com/en-us/download/details.aspx?displaylang=en&id=11774[Microsoft下载中心]下载库。您可以选择下载多个文件，包括Windows操作系统的可执行文件和Unix或基于Unix系统的gzipped tar归档文件。
+
+如果使用Windows：
+
+* 查找并运行`qljdbc_<version>_enu.exe`文件，然后按照安装向导进行操作
+
+如果使用Unix或基于Unix的系统：
+
+* 解压缩并解压文件`qljdbc_<version>_enu.tar.gz`文件
+在新创建的目录树中* ，找到`sqljdbc4.jar`文件
+
+在这两种操作系统上：
+
+将文件`sqljdbc4.jar`复制到以下目录：` <MMC_HOME>/WEB-INF/lib`。例如，`/var/lib/tomcat6/webapps/mmc-console-3.4.1/WEB-INF/lib`。
+
+[TIP]
+====
+解压缩压缩的tar文件
+
+要解压缩和解压缩.tar.gz文件，请打开终端并使用`cd`命令导航到包含该文件的目录。然后，运行以下命令：
+
+[source, code, linenums]
+----
+gunzip <file>
+----
+
+这将解压缩文件，其文件扩展名将从`.tar.gz`更改为`.tar`。使用`tar`命令解压文件，如下所示。
+
+[source, code, linenums]
+----
+tar xvf <file>
+----
+
+例如：
+
+[source, code, linenums]
+----
+cd Downloads
+gunzip sqljdbc_4.0.2206.100_enu.tar.gz
+tar xvf sqljdbc_4.0.2206.100_enu.tar
+----
+
+某些版本的`tar`实用程序允许您使用单个命令对文件进行解压缩和解压缩，如下所示。
+
+[source, code, linenums]
+----
+tar zxvf <file>
+----
+
+例如：
+
+[source, code, linenums]
+----
+cd Downloads
+tar zxvf sqljdbc_4.0.2206.100_enu.tar.gz
+----
+
+这将解压并解压当前目录中的文件内容。
+
+====
+
+环境数据的=== 配置
+
+配置MMC将数据存储在MS-SQL Server数据库中涉及两项基本任务：
+
+* 修改文件`web.xml`，告诉MMC使用MS-SQL Server而不是默认数据库
+* 修改文件`mmc-mssql.properties`以设置连接到MS-SQL Server数据库的参数
+
+===== 修改`web.xml`
+
+. 在`<MMC_HOME>/WEB-INF`目录中找到文件`web.xml`，然后打开它进行编辑。
+. 找到`spring.profiles.active`部分，如下所示。
++
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-derby</param-value>
+</context-param>
+----
+
+. 删除字符串`env-derby`，然后将其替换为`env-mssql`，如下所示。
++
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-mssql</param-value>
+</context-param>
+----
+
+. 如果您还计划将<<Configuration for Transaction Data>>添加到MS-SQL Server，请删除字符串`tracking-h2`并将其替换为`tracking-mssql`。
+
+[TIP]
+`web.xml`配置文件中的`spring.profiles.active`部分允许您定义用于存储环境和/或跟踪数据的外部数据库。有关所有支持的数据库服务器的快速说明，请参阅 link:/mule-management-console/v/3.4/configuring-mmc-3.4.2-for-external-databases-quick-reference[为外部数据库配置MMC 3.4.2  - 快速参考]。
+
+=====  {修改{1}}
+
+. 在`<MMC_HOME>/WEB-INF/classes/META-INF/databases`目录中找到文件`mmc-mssql.properties`，然后打开它进行编辑。
+. 下表列出了文件中包含的设置。根据需要修改值。一般而言，您需要修改的唯一值是`env.username`，`env.password`，`env.host`，`env.port`和`env.dbschema`。
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}说明 |缺省
+| `env.driver`  |用于连接数据库的驱动程序 | `com.microsoft.sqlserver.jdbc.SQLServerDriver`
+| `env.script`  |用于在目标数据库中创建表的脚本 | `sqlServer`
+| `env.username`  |数据库用户 | `mmc_status`
+| `env.password`  |数据库用户的密码 | `mmc123`
+| `env.host`  |数据库服务器正在侦听的主机名或IP地址 | `localhost`
+| `env.port`  |数据库服务器正在侦听的端口 | `1433`
+连接到数据库的| `env.url`  |网址 | `jdbc\:sqlserver\://${env.host}\:${env.port};databaseName=${env.dbschema}`
+| `env.dbschema`  |连接到 | `mmc_persistency_status`的数据库
+|===
+
+. 将修改后的文件保存（如果有的话）。
+
+=== 删除本地数据库文件
+
+要使配置更改生效，在启动MMC之前，您需要删除MMC默认使用的本地数据库文件。
+
+在Web应用程序服务器的根目录中，找到`mmc-data`目录（例如，`/var/lib/tomcat6/mmc-data`），然后删除`mmc-data`目录。
+
+[NOTE]
+在删除`mmc-data`之前，请制作此目录的备份副本并将其保存在安全的位置。如果您的新数据库配置出现问题，您可以使用`mmc-data`在测试环境中排除新数据库配置时恢复旧数据库配置。
+
+此时，将MMC配置为将环境数据存储在您指定的外部MS-SQL Server数据库上。
+
+交易数据的=== 配置
+
+配置MMC以将Business Events数据存储在MS-SQL Server数据库中涉及两项基本任务：
+
+* 修改文件`web.xml`，告诉MMC使用MS-SQL Server而不是默认数据库
+* 修改文件`tracking-persistence-mssql.properties`以设置连接到MS-SQL Server数据库的参数
+
+===== 修改`web.xml`
+
+. 在`<MMC_HOME>/WEB-INF`目录中找到文件`web.xml`，然后打开它进行编辑。
+. 找到`spring.profiles.active`部分，如下所示。
++
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-derby</param-value>
+</context-param>
+----
+
+. 删除字符串`tracking-h2`，然后将其替换为`tracking-mssql`，如下所示。
++
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-mssql,env-derby</param-value>
+</context-param>
+----
+
+. 如果您还计划将<<Configuration for Environment Data>>添加到MS-SQL Server，请删除字符串`env-derby`并将其替换为`env-mssql`。
+
+[TIP]
+`web.xml`配置文件中的`spring.profiles.active`部分允许您定义用于存储环境和/或跟踪数据的外部数据库。有关所有支持的数据库服务器的快速说明，请参阅 link:/mule-management-console/v/3.4/configuring-mmc-3.4.2-for-external-databases-quick-reference[为外部数据库配置MMC 3.4.2  - 快速参考]。
+
+==== 修改`tracking-persistence-mssql.properties`
+
+. 在`<MMC_HOME>/WEB-INF/classes/META-INF/databases`目录中找到文件`tracking-persistence-mssql.properties`，然后打开它进行编辑。
+. 根据下表根据需要修改包含的设置。一般而言，您需要修改的唯一值是`mmc.tracking.db.username`，`mmc.tracking.db.password`，`mmc.tracking.db.host`，`mmc.tracking.db.port`和`mmc.tracking.db.dbname`。
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}说明 |缺省
+| `mmc.tracking.db.events.query.deleteOlderThan`  | *Do not change this value.*这是MS-SQL数据库的清理脚本查询。 | `DELETE p FROM EVENT_PROPERTIES p where p.id in (select e.id from EVENTS e where e.transaction_id in (select t.id from TRANSACTION_SUMMARIES t where t.timestamp < ?1))`
+| `mmc.tracking.db.platform`  |连接到 |的数据库服务器的类型`org.apache.openjpa.jdbc.sql.SQLServerDictionary`
+| `mmc.tracking.db.driver`  |用于连接数据库的驱动程序 | `com.microsoft.sqlserver.jdbc.SQLServerDriver`
+| `mmc.tracking.db.host`  |数据库服务器正在侦听的主机名或IP地址 | `localhost`
+| `mmc.tracking.db.port`  |数据库服务器正在侦听的端口 | `1433`
+连接到数据库的| `mmc.tracking.db.url`  |网址 | `jdbc:sqlserver://${mmc.tracking.db.host}:${mmc.tracking.db.port};databaseName=${mmc.tracking.db.dbname}`
+| `mmc.tracking.db.username`  |数据库用户 | `mmc_tracking`
+| `mmc.tracking.db.password`  |数据库用户的密码 | `mmc123`
+| `mmc.tracking.db.dbname`  |连接到 | `persistency`的数据库
+| `mmc.max.events.exception.details.length`  | Business Events异常中将存储在跟踪数据库中的字符数。允许的最大数量为261120。 | `8000`
+|===
+
+. 将修改后的文件保存（如果有的话）。
+
+=== 删除本地数据库文件
+
+要使配置更改生效，在启动MMC之前，您需要删除MMC默认使用的本地数据库文件。
+
+在Web应用程序服务器的根目录中，找到`mmc-data`目录（例如，`/var/lib/tomcat6/mmc-data`），然后删除`mmc-data`目录。
+
+[NOTE]
+在删除`mmc-data`之前，请制作此目录的备份副本并将其保存在安全的位置。如果您的新数据库配置出现问题，您可以使用`mmc-data`在测试环境中排除新数据库配置时恢复旧数据库配置。
+
+此时，MMC配置为将跟踪数据存储在您指定的外部MS-SQL Server数据库上。
+
+== 另请参阅
+
+* 详细了解 link:/mule-management-console/v/3.4/setting-up-mmc[MMC设置]。
+* 查看 link:/mule-management-console/v/3.4/architecture-of-the-mule-management-console[Mule管理控制台的架构]。

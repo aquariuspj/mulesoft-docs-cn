@@ -1,0 +1,40 @@
+= 使用Mule了解编排
+:keywords: anypoint studio, studio, mule esb, orchestration
+
+协调是Mule如何通过基于流的Mule实现来移动数据的过程。编排可以被看作是结合服务调用来创建更高层次，更有用的组合服务，并且意味着实施业务级别的流程，在应用程序和信息系统中结合业务特定的服务。
+
+== 编排和流程
+
+编排包括解耦点对点集成，以支持发送到终端的消息链，这些终端可以随着系统或业务需求的变化而重用或更改。它涉及到将模式转移到基于服务的框架之外，其中您将多个组件与端点进行封装，以将它们与协议和路由要求分离，从而使多个服务能够在实现要求需求时一起工作。易于编排流程的一些常见用例包括简单集成，预定数据处理，连接云和内部部署应用程序以及必须组合和同时运行多个服务的事件处理。
+
+== 流程如何实现业务流程的实施
+
+Flow支持新的方法来协调服务中介 - 例如，您可以组合任意数量的端点，路由器，变换器和协同工作的组件，以实现实施要求。 Flow使您能够基于特定于流的路由器编排新的数据移动形式。协调使您能够创建和重用子流，将多个组件链接在一个流中，并将端点或连接器集成到流中的任何位置。
+
+== 何时使用业务流程
+
+当您需要合并现有服务以满足业务需求时，您可以使用编排。例如，当您添加需要在薪资系统和HR系统中输入的新员工时，请使用编排。在另一个使用协调的例子中，您可以在接受订单时使用它，确保订单在库存系统中，使用信用检查系统确保您信任客户的信用，然后将订单存入结算系统，最后，将订单放入运输系统。
+
+== 编排示例
+
+下面的编排示例使用流来接受XML文件中的书籍订单，并将文件内容转换为包含一个或多个特定订单的标准格式。接下来，这些订单被拆分成单独处理，并且任何非订单都被过滤掉。现在调用两项服务：一项用于检查图书是否在我们的库存中，另一项用于创建客户订单。这是通过电子邮件发送给客户并存储在数据库中的。如果此进程中的任何内容失败，则将该消息放入失败订单的JMS队列中，可以在该位置进行检查，修正任何错误并最终重新提交。
+
+[source,xml, linenums]
+----
+<flow>
+    <file:inbound-endpoint path="/myDirectory">
+        <file:filename-filter name="*.xml"/>
+    </file:inbound-endpoint>
+    <xml:xslt-transformer xsl-file="createBbookOrdersTransformation.xsl"/>
+    <splitter expression="xpath://order"/>
+    <!-- The following message processors will be invoked for each order in the xml file -->
+    <expression-filter expression="xpath://order[@type='book']"/>
+    <component class="org.my.BookInventoryChecker"/>
+    <component class="org.my.BookCustomerOrderProcessor"/>
+    <smtp:outbound-endpoint subject="Order Confirmation" to="#{xpath://customer/email]"/>
+    <jdbc:outbound-endpoint queryKey="storeOrder"/>
+    <default-exception-strategy>
+        <jms:outbound-endpoint queue="failedOrders"/>
+    </default-exception-strategy>
+</flow>
+----

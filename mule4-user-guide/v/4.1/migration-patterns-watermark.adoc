@@ -1,0 +1,109 @@
+= 迁移水印
+
+//一般地解释Mule 3和Mule 4之间如何以及为什么会发生变化。
+例如，在轮询传统资源以检索新数据并将其与其他目标端点同步时，水印通常用于执行数据同步。加水印技术存储和检索下次执行定期同步时恢复的点。水印是通常使用的alonside ObjectStore。
+
+对于Mule 3方法，请参阅MuleSoft博客： link:https://blogs.mulesoft.com/dev/anypoint-platform-dev/data-synchronizing-made-easy-with-mule-watermarks/[数据同步使水印变得轻松]。
+
+
+以下是该博客中的Mule 3水印示例：
+
+.Mule 3示例：轮询Salesforce联系人使用水印
+[source,xml, linenums]
+----
+<flow name="syncWithWatermark" processingStrategy="synchronous">
+  <poll>
+    <fixed-frequency-scheduler frequency="1" timeUnit="HOURS" />
+      <watermark variable="timestamp"
+       default-expression="#[server.dateTime.format(&quot;yyyy-MM-dd'T'HH:mm:ss.SSS'Z'&quot;)]"
+       selector="MAX"
+			 selector-expression="#[payload.LastModifiedDate]" />
+    <sfdc:query config-ref="Salesforce" query="select Id, LastModifiedDate from Contact where LastModifiedDate &amp;gt; #[flowVars['timestamp']]" />
+  </poll>
+  <flow-ref name="doYourSyncMagic" />
+</flow>
+----
+
+
+随着Anypoint平台的发展和我们的用例变得更加复杂，Mule 3方法开始出现局限性：
+
+* 尽管旧的`<watermark>`组件确实允许设置自定义的ObjectStore，但是没有简单的方法来创建它。这是我们在本文中已解决的问题，并且知道新的ObjectStore连接器修复程序
+*  `<watermark>`元素需要`<poll>`组件（现在替换为`<scheduler>`）才能返回可迭代的有效内容。此外，您需要完全迭代该有效负载以获取新的水印值。不这样做导致价值被错误地更新或根本不更新。
+* 在流程抛出错误的情况下，没有办法使用意外值更新水印。
+* 价值更新的方式和时间对于非专家用户来说并不完全清楚。
+
+当我们坐下来想出如何改进这个用例时，我们意识到问题的真正根源在于，实际上根本不需要<watermark>。它的存在只是其他组件局限性的结果：
+
+* 水印的人工迭代只是一种补偿许多数据集只能迭代一次的方式，特别是在处理二进制流或连接器进行自动分页时。由于可重复的流媒体功能，Mule 4现在修复了这个问题
+* 组件对ObjectStore的自动处理只是为了补偿旧的ObjectStore支持上的用户体验问题。如果新连接器提供更简单的语义，则根本不需要。
+
+在Mule 4中，您可以执行上面的Mule 3博客文章中描述的用例，如下所示：
+
+[source, xml, linenums]
+----
+<os:object-store name="watermarkStore" persistent="true"/>
+
+<flow name="watermark">
+  <os:retrieve key="watermark" objectStore="watermarkStore" target="watermark">
+    <os:default-value>2017-09-11T00:00:00.000Z</os:default-value>
+  </os:retrieve>
+  <sfdc:query config-ref="config">
+    <sfdc:salesforce-query>
+      <![CDATA[
+        #["Select Id, Name, BillingCity,Phone,Website,LastModifiedDate from account WHERE LastModifiedDate > " ++ vars.watermark]
+      ]]>
+    </sfdc:salesforce-query>
+  </sfdc:query>
+  <flow-ref name="doYourIntegrationLogic" />
+  <os:store key="watermark" failIfPresent="false" failOnNullValue="false" objectStore="watermarkStore">
+    <os:value>#[max(payload map $.LastModifiedDate)]</os:value>
+  </os:store>
+</flow>
+----
+
+让我们一步一步地打破这个例子：
+
+* 首先，这个流程是通用的。它不需要以任何特定的方式触发。它可以从另一个流程中调用，您可以向其添加`<scheduler>`，这并不重要。您现在可以实现水印语义而不强制任何类型的触发器。
+* 此配置首先为水印定义一个自定义ObjectStore。这不是必需的。你无法定义一个ObjectStore并只使用每个应用程序隐含的ObjectStore。但为了这个例子，我们将在这里使用我们自己的。
+* 流程从检索操作开始，以获取最后的水印值。请注意：
+** 检索操作指定一个默认值。这是因为，当流程第一次运行且尚未计算水印时，您仍然可以获得可用值。这避免了`<choice>`  - > `<contains>`种模式的需要。
+** 目标参数用于告诉连接器不要用水印覆盖消息有效载荷，而是将其放入一个变量中。因为这对消息没有副作用，所以流程现在可以重复使用并且更易于维护，因为您可以在检索操作之前添加任何类型的操作，所有操作都不会中断。
+* 然后我们执行查询，其中我们使用水印来过滤获得的结果
+* 然后我们做任何需要的处理。这可以是任何东西，从发送到另一个系统，转换，没关系。
+* 最后，我们更新水印值。关于这一步还有很多要说的：
+** 新的水印值应该是最大更新的时间戳。我们使用DataWeave表达式来获取该值
+** 请注意，由于可重复的流式传输功能，我们现在不关心集成逻辑是什么。即使查询操作是自动分页的（它就是！），这个特性保证我们仍然可以迭代结果集。
+**  `failIfPresent`参数设置为false。否则，该操作只会在第一次运行，如果水印已经存在于对象存储区中，则操作将失败。通过将其设置为false，该值将被更新（如果存在）
+** 最后，`failOnNullValue`参数设置为false。为什么？因为如果查询返回为空，则查找最大值的DW表达式将返回null，因为没有值。通过将其设置为true，连接器将自动跳过空值，从而保存用户使用`<choice>`路由器检查条件
+
+== 自动水印
+
+上面的内容比我们在Mule 3中的功能强大而且功能强大，但我们想让它变得更简单。这就是为什么一些连接器已经包含了能够自动进行水印处理的消息源，而无需您采取上述任何步骤。在撰写本文档时，File，Ftp，Sftp，Database和Salesforce连接器具有此功能，但我们将继续在其他连接器中添加对此的支持。
+
+让我们使用文件连接器来查看如何工作的示例：
+
+.Mule 4示例：文件conector中的自动水印
+[source,xml, linenums]
+----
+<flow name="onNewInvoice">
+  <file:listener config-ref="file" directory="invoices" autoDelete="false" watermarkMode="CREATED_TIMESTAMP">
+      <scheduling-strategy>
+          <fixed-frequency frequency="1000"/>
+      </scheduling-strategy>
+  </file:listener>
+  <flow-ref name="onNewInvoice"/>
+</flow>
+----
+
+在这个例子中，我们使用文件的创建时间作为过滤标准来获得自动加水印。如果我们想要监听修改后的文件，或者`DISABLED`，如果我们根本不需要任何水印，则`watermarkMode`参数也可以设置为`MODIFIED_TIMESTAMP`。
+
+我们只建议在以下情况下采用第一个示例中描述的"the long way"：
+
+* 您的用例非常自定义
+* 您正在使用不支持自动加水印的连接器。
+
+在任何其他情况下，我们建议使用自动加水印作为处理这些用例的最佳方式。
+
+== 另请参阅
+
+*  link:/connectors/object-store-connector[对象存储连接器文档]

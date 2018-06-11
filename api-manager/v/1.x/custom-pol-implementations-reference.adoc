@@ -1,0 +1,95 @@
+= 自定义策略参考实现
+
+您可以使用以下最小策略配置文件来开始构建自定义策略：
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<policy xmlns="http://www.mulesoft.org/schema/mule/policy"
+        id="{{policyId}}"
+        policyName="IP whitelist"  
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:api-platform-gw="http://www.mulesoft.org/schema/mule/api-platform-gw"
+        xsi:schemaLocation="http://www.mulesoft.org/schema/mule/policy http://www.mulesoft.org/schema/mule/policy/current/mule-policy.xsd
+                            http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+                            http://www.mulesoft.org/schema/mule/api-platform-gw http://www.mulesoft.org/schema/mule/api-platform-gw/current/mule-api-platform-gw.xsd">
+ 
+    <before>
+        <mule:set-payload value="PRE" />
+    </before>
+ 
+    <after>
+        <mule:set-payload value="POST" />
+    </after>
+ 
+    <pointcut>
+       <api-platform-gw:api-pointcut apiName="{{ apiName }}" apiVersion="{{ apiVersionName }}"/>
+    </pointcut>
+ 
+</policy> 
+----
+
+== 策略配置文件的完整示例
+
+下面是一个策略配置文件的例子，它实现了一个与先前的YAML示例相匹配的IP白名单过滤器。这个XML文件引用了大括号中的几个变量，YAML文件定义了它，并且在Mule 3.8.4和更高版本中支持资源级策略。
+
+IP白名单过滤器策略添加验证，该验证要求所有请求都包含基于配置的IP的有效IP地址的有效IP地址。
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<policy online="true"
+        id="{{policyId}}"
+        policyName="IP whitelist"
+        xmlns="http://www.mulesoft.org/schema/mule/policy"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:spring="http://www.springframework.org/schema/beans"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:ip-filter-gw="http://www.mulesoft.org/schema/mule/ip-filter-gw"
+        xsi:schemaLocation="http://www.mulesoft.org/schema/mule/policy http://www.mulesoft.org/schema/mule/policy/current/mule-policy.xsd
+                            http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+                            http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+                            http://www.mulesoft.org/schema/mule/ip-filter-gw http://www.mulesoft.org/schema/mule/ip-filter-gw/current/mule-ip-filter-gw.xsd">
+ 
+    <!-- This section is for building response messages when the policy fails. -->
+    <mule:processor-chain name="{{policyId}}-build-response">
+        <mule:set-property propertyName="http.status" value="403"/> <!-- Set HTTP status code to 403 -->
+        <mule:set-property propertyName="Content-Type" value="application/json"/>
+        <mule:set-payload value="#[_ipViolationMessage]"/> <!-- Set the payload to the description of the violation -->
+    </mule:processor-chain>
+ 
+    <!-- This is the element that gets injected at the beginning of every flow. According to the pointcut specified below. -->
+    <before>
+        <ip-filter-gw:filter ipAddress="{{ipExpression}}" onUnaccepted="{{policyId}}-build-response">   <!-- If failed, the mule:processor-chain above is executed -->
+            <ip-filter-gw:whitelist>
+                {{#ips}}
+                <ip-filter-gw:ip>{{.}}</ip-filter-gw:ip>
+                {{/ips}}
+            </ip-filter-gw:whitelist>
+        </ip-filter-gw:filter>
+    </before>
+ 
+    <!-- Pointcuts specify where this policy takes effect-->
+    {{#pointcutData.length}}
+      {{#pointcutData}}
+        <pointcut>
+          <api-platform-gw:api-pointcut apiName="{{apiName}}" apiVersion="{{apiVersionName}}"/>
+          <resource methodRegex="{{methodRegex}}" uriTemplateRegex="{{uriTemplateRegex}}"/>
+        </pointcut>
+      {{/pointcutData}}
+    {{/pointcutData.length}}
+    {{^pointcutData.length}}
+      <pointcut>
+        <api-platform-gw:api-pointcut apiName="{{apiName}}" apiVersion="{{apiVersionName}}"/>
+      </pointcut>
+    {{/pointcutData.length}}
+</policy>
+----
+
+== 另请参阅
+
+*  link:/api-manager/v/1.x/custom-policy-reference[自定义策略参考]
+*  link:/api-manager/v/1.x/custom-pol-config-xml-props-reference[自定义策略属性参考]
+*  link:/api-manager/v/1.x/pointcuts-reference[切入点参考]
+*  link:/api-manager/v/1.x/cust-pol-exception-blocks-reference[自定义策略例外块参考]

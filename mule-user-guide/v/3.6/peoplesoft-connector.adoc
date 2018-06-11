@@ -1,0 +1,610 @@
+=  PeopleSoft连接器
+:keywords: anypoint studio, connector, endpoint, peoplesoft
+
+_Premium_
+
+== 介绍
+
+用于PeopleSoft的Anypoint Connector提供实时连接，以使用称为组件接口的通用集成接口查询和更新所有PeopleSoft模块。
+
+该连接器是为PeopleSoft v9.2和PeopleTools v8.53.02或更高版本开发的，这使它仅与运行在Java v1.7上的Mule或Runtime Manager实例兼容。
+
+下载JRE 1.7。
+
+在PeopleTools的Oracle站点上查看信息。
+
+*Release Notes:* link:/release-notes/peoplesoft-connector-release-notes[PeopleSoft连接器发行说明]。
+
+== 先决条件
+
+由于连接器与PeopleSoft的紧密结合程度如何，因此本文档假设您拥有：
+
+*  PeopleSoft的工作知识。
+* 阅读PeopleTools版本的组件接口和集成方案的相关文档。
+
+[NOTE]
+此处使用的PeopleSoft术语和概念的定义和详细说明可在PeopleSoft安装的PeopleBooks文档集中免费获得。
+
+本文档假定您熟悉Mule， link:/mule-user-guide/v/3.6/anypoint-connectors[Anypoint连接器]和 link:/anypoint-studio/v/6/index[Anypoint Studio Essentials]。为提高您对Studio的熟悉度，请考虑完成一个或多个 link:/getting-started/anypoint-connector[Anypoint连接器快速入门]。此外，本页假定您对 link:/mule-user-guide/v/3.6/elements-in-a-mule-flow[骡流]和 link:/mule-user-guide/v/3.6/global-elements[骡全球元素]有基本的了解。
+
+该文件还假定您熟悉 http://maven.apache.org/[Apache Maven]。
+
+要使用PeopleSoft连接器，您需要：
+
+*  *Anypoint Studio*。如果您不使用Anypoint Studio进行开发，请按照 http://mulesoft.github.io/mule-peoplesoft-connector/[安装PeopleSoft Maven依赖项]中的说明将其放入您的pom.xml文件中。
+
+*  *Apache Maven 3.x*：如果您想使用Maven创建Mule应用程序。
+
+*  *Java 7*：除非您使用JRE 1.7，否则PeopleSoft连接器不起作用。下载JRE 1.7。
+
+*  *Component Interface*：必须使用应用程序设计器在PeopleSoft实例内创建并公开至少一个组件接口。
+
+*  *PeopleSoft Java Object Adapter JAR File (psjoa.jar)*：psjoa.jar库由PeopleSoft管理员编译并提供，对于PeopleSoft的每次安装都是唯一的。
+
+== 兼容性
+
+PeopleSoft连接器兼容：
+
+[%header,cols="2*"]
+|===
+一个|
+应用程序/服务
+
+ 为|
+版
+
+| *PeopleTools*  | 8.53.02或更高版本
+| *PeopleSoft*  | 9.2
+| *Mule Runtime*  | 3.6.0或更高版本
+| *Java*  | 1.7.0_x
+|===
+
+==  PeopleSoft组件接口
+
+PeopleSoft组件接口（CI）是PeopleSoft数据库实例的“单向”实时接口。 PeopleSoft中的组件是代表完整业务交易的PeopleSoft页面的逻辑分组，如Employee Onboarding。组件接口公开了PeopleSoft组件使用的底层API，因此确保验证，默认和业务逻辑不受这些组件的原始定义的影响。
+
+Component Interfaces允许您查询PeopleSoft的特定记录，更新数据并创建新记录实例。
+
+==== 组件接口属性和体系结构
+
+组件接口具有以下四个主要属性：
+
+image:CI+archtecture.jpeg[CI +杜彦武]
+
+*   *Component Interface Name*：每个组件接口都需要一个唯一的名称。调用组件的程序使用组件接口的名称来访问属性和方法。
+*   **Keys (Get keys, Create keys, and Find keys)**：键是包含值的特殊属性，用于检索组件接口的实例（获取键）或实例列表（查找键）。您可以在PeopleSoft Application Designer中添加，删除或更改密钥。创建组件界面时，会自动创建键。 +
+**  *Get keys:*映射到Components Search记录中标记为搜索关键字的字段。
+**  *Create keys:*当组件属性对话框中的使用选项卡允许添加操作时，在CI中生成。
+**  *Find keys:*映射到组件搜索记录中标记为备用搜索关键字和搜索关键字的字段。
+*   *Properties and Collections (Fields and Records):*属性提供对组件数据和组件接口设置的访问。一个属性可以对应一个字段或一个滚动（集合）。组件接口集合是一种特殊类型的属性，对应于一个滚动并包含其基础组件中定义的字段和从属滚动。有两种类型的属性：+
+在创建组件接口时自动分配**  *Standard properties*。
+**  *User-defined properties*映射到PeopleSoft组件上的记录字段，并显示在PeopleSoft应用程序设计器中。
+*   *Methods:*方法是在运行时对组件接口执行特定任务的函数。有两种主要的方法：标准和用户定义的**.** +
+**   *Standard methods*是那些适用于所有组件接口的组件。以下是连接器支持的标准方法：
++
+[%header,cols="2*"]
+|===
+| {方法{1}}说明
+| *Create*  |将组件接口的新实例添加到PeopleSoft数据库。这与单击添加并通过PeopleSoft Web UI输入相关密钥类似。
+| *Cancel*  |取消组件接口的实例。这与使用特定组件时Web UI中的取消操作相同。
+| *Find*  |搜索与提供的搜索键匹配的组件的任何实例。这将返回可能的匹配列表。
+| *Get*  |检索与您提供的特定键匹配的实例。这将返回单个记录或根本没有记录。
+| *Save* a |
+保存对组件，新的或现有的更改。
+
+[WARNING]
+保存操作尝试在创建新记录之前更新现有记录。对于新记录，连接器会使用PeopleSoft实例提供的默认值自动填充键，从而减少用户提供缺省键/值对的需求。
+
+|===
++
+在PeopleSoft应用程序设计器中创建**  *User-defined methods*，为组件界面提供附加功能。
+
+在组件接口上查看Oracle站点的信息。
+
+== 安装和配置
+
+=== 安装
+
+您可以使用 link:/mule-user-guide/v/3.6/installing-connectors[从Anypoint Exchange安装连接器]中的说明"test drive" Anypoint Studio中的PeopleSoft连接器。
+
+要在生产环境中使用PeopleSoft连接器，您必须具有：
+
+* 使用Mule的企业许可证
+* 运行时管理器入门，专业或企业帐户
+
+请联系mailto：info@mulesoft.com [MuleSoft销售团队]获取其中任何一个。
+
+=== 创建一个新项目
+
+要在Mule应用程序项目中使用PeopleSoft连接器，请执行以下操作：
+
+. 在Anypoint Studio中，单击文件>新建> Mule项目。
+
+. 为您的新项目输入一个名称，并将其余选项保留为默认值。确保没有选择*Use Maven*选项。
++
+image:PS_0001_installing.png[PS_0001_installing]
++
+. 选择*Create a .gitignore file*复选框。
+. 点击*Next*，确认Java 1.7已设置为您的默认JRE。
++
+image:JRE1.7.png[JRE1.7]
++
+. 点击*Finish*创建项目。 +
+
+=== 在项目中使用Maven
+
+使用Maven在Studio中构建Mule应用程序：
+
+. 在Anypoint Studio中，单击文件>新建> Mule项目。
+. 为新项目输入一个名称，然后选择*Use Maven*复选框。定义*Group Id*，*Artifact Id*和*Version*。
++
+如果*Use Maven*选项处于非活动状态，则显示_Maven目前处于禁用状态，*configure Maven* _消息，请单击*Configure Maven*链接浏览并选择本地驱动器上的*Maven installation home directory*。 link:/mule-user-guide/v/3.6/maven-support-in-anypoint-studio[详细了解如何在Anypoint Studio中设置Maven首选项]。
++
+image:PS_0001C_installing_maven.png[PS_0001C_installing_maven]
++
+. 选择*Create a .gitignore file*复选框。
+. 点击*Next*，确认Java 1.7已设置为您的默认JRE。
++
+image:JRE1.7.png[JRE1.7]
++
+. 点击*Finish*。 Studio自动构建您的Maven项目并显示_Build Success_消息。
+. 接下来，将您的psjoa.jar文件添加到构建路径（了解如何编译psjoa.jar文件），如下所示：
+
+.. 在本地安装psjoa.jar文件。
++
+[source, code, linenums]
+----
+mvn install:install-file -Dfile=psjoa.jar -DgroupId=peoplesoft -DartifactId=psjoa -Dversion=1.0 -Dpackaging=jar
+----
++
+点击以下链接以了解关于第三方JAR的更多信息：http：//maven.apache.org/guides/mini/guide-3rd-party-jars-local.html._ _
+.. 根据上述命令，将以下依赖项添加到项目的**pom.xml**中：
++
+[source, xml, linenums]
+----
+<dependency>            
+<groupId>peoplesoft</groupId>
+<artifactId>psjoa</artifactId>
+<version>1.0</version>
+</dependency>
+----
+
+
+== 配置全局元素
+
+. 在Anypoint Studio中，点击画布底部的*Global Elements*标签。
+. 在Global Mule配置元素屏幕上，点击*Create*。
+. 在选择全局类型向导中，展开*Connector Configuration*，然后选择**PeopleSoft: Configuration**。 +
+   image:ConnectorCfgPS.png[ConnectorCfgPS]
+
+. 点击*Ok*。
+. 根据以下说明配置参数。 +
+image:PS_0002_globalelement.png[PS_0002_globalelement]
++
+[%header,cols="2*"]
+|===
+| {字段{1}}说明
+|  *Name*  |为稍后可以引用的配置输入一个名称。
+|  *Server*  |输入从哪里访问服务的服务器的URL。它以Server_Name：Server_Port的形式输入。 +
+|  *Username*  |输入用户名登录到PeopleSoft。
+|  *Password*  |输入密码。
+|  *Required Dependencies* a |
+单击*Add File*将从PeopleSoft实例编译的psjoa.jar文件附加到项目的构建路径。了解如何编译psjoa.jar文件。
+
+image:PS_0003_globalelement_success.png[PS_0003_globalelement_success]
+
+psjoa.jar文件附加后，它会出现在项目根文件夹的lib / peoplesoft目录中。
+
+image:PS_0004_globalelement_libsfolder.png[PS_0004_globalelement_libsfolder]
+
+如果您提供错误的文件（无效的psjoa.jar或完全不同的库），Studio将显示以下错误消息：
+
+image:PS_0005_globalelement_invalidlibs.png[PS_0005_globalelement_invalidlibs]
+
+[NOTE]
+====
+对于PeopleSoft的每次安装，psjoa.jar文件都是唯一的。它由PeopleSoft管理员编译和提供。
+如果没有提供psjoa.jar，请按照以下步骤构建组件接口绑定：
+
+. 启动PeopleSoft应用程序设计器并打开任何组件接口定义。
+. 选择*Build*> *PeopleSoft APIs*启动Build PeopleSoft API绑定对话框。
+. 在*Java Classes*组框下，选中*Build*复选框。指定要在其中创建Java类源文件的目标目录。
+. 点击*OK*生成选定的绑定。构成绑定的文件将构建在您指定的位置。如果操作成功，则PeopleSoft应用程序设计器生成窗口中将显示_Done_消息。
+. 使用以下命令编译生成的API：
++
+[source, code, linenums]
+----
+For Windows:
+ 
+cd %PS_HOME%\class\PeopleSoft\Generated\CompIntfc
+javac −classpath %PS_HOME%\class\psjoa.jar *.java
+ 
+cd c:\pt8\class\PeopleSoft\ Generated\ PeopleSoft
+javac −classpath %PS_HOME%\class\psjoa.jar *.java
+----
++
+[source, code, linenums]
+----
+For Mac/Linux:
+
+cd $PS_HOME/class/PeopleSoft/Generated/CompIntfc
+javac classpath $PS_HOME/class/psjoa.jar *.java
+
+cd $PS_HOME/class/PeopleSoft/Generated/PeopleSoft
+javac classpath $PS_HOME/class/psjoa.jar *.java
+----
+
+|===
+
+. 保留*Pooling Profile*和*Reconnection*标签的默认条目。 +
+. 点击*Test Connection*以接收_Connection Successful_消息。如果您收到错误，请根据错误消息尝试以下解决方法：
+..   `Unsupported major/minor version 51.0`：表示您正在运行1.6 JRE。要解决此问题，请确保您正在运行Java 1.7并重新启动Studio。
+..   `java.lang.NoClassDefFoundError: psft/pt8/joa/ISession`和`java.lang.ClassNotFoundException: psft.pt8.joa.ISession`：这些例外表明您尚未安装psjoa.jar文件。要访问Mule流中的PeopleSoft组件接口，您必须将PeopleSoft组件接口API添加到您的项目中。使用PeopleSoft应用程序设计器构建窗口编译API，并将存档名称提供为psjoa.jar。要解决这个问题，请回到Required dependencies面板并选择相应的JAR文件。
+. 根据以下步骤配置您的组件界面白名单：
+.. 点击*Create Object manually*，然后点击旁边的按钮。
++
+image:PS_0006_globalelement_whitelist.png[PS_0006_globalelement_whitelist]
+
+.. 在弹出窗口中，选择（+）加按钮来设置组件接口的名称。
++
+image:PS_0007_globalelement_whitelist2.png[PS_0007_globalelement_whitelist2]
+
+.. 右键单击元数据项并单击*Edit the selected metadata field*输入值。 +
+  image:Edit+Meta+Data.png[编辑+元+数据]
+
+.. 点击*OK*保存列表。
+.. 点击*OK*保存全局连接器配置。
+
+===  XML编辑器
+
+确保您已将PeopleSoft命名空间包含在配置文件中。
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:peoplesoft="http://www.mulesoft.org/schema/mule/peoplesoft"
+      xsi:schemaLocation="
+               http://www.mulesoft.org/schema/mule/core
+               http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+               http://www.mulesoft.org/schema/mule/peoplesoft
+               http://www.mulesoft.org/schema/mule/peoplesoft/current/mule-peoplesoft.xsd">
+ 
+      <!-- here go your flows and configuration elements -->
+ 
+</mule>
+----
+
+按照以下步骤在应用程序中配置PeopleSoft连接器。
+
+. 使用以下全局配置代码为PeopleSoft配置创建一个全局元素：
++
+[source, xml, linenums]
+----
+<peoplesoft:config name="PeopleSoft" server="${mule.peoplesoft.server}" username="${mule.peoplesoft.username}" password="${mule.peoplesoft.password}" doc:name="PeopleSoft">
+----
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}说明
+|  *`name`*  |为稍后可以引用的配置输入一个名称。
+|  *`server`*  |输入PeopleSoft实例的URL。
+|  *`username`*  |输入用户名登录到PeopleSoft。
+|  *`password`*  |输入密码。
+|  *`doc:name`*  |默认值是PeopleSoft。
+|===
+. 配置您的组件接口。找到** _ <peoplesoft:component-interface-ids-white-list ref="#[payload]"/> _内部标签并将其替换为以下内容：
++
+[source, xml, linenums]
+----
+<peoplesoft:component-interface-ids-white-list>
+<peoplesoft:component-interface-ids-white-list>
+YOUR_COMPONENT_INTERFACE_NAME_1
+</peoplesoft:component-interface-ids-white-list>
+<peoplesoft:component-interface-ids-white-list>
+YOUR_COMPONENT_INTERFACE_NAME_2
+</peoplesoft:component-interface-ids-white-list>
+</peoplesoft:component-interface-ids-white-list>
+----
+
+. 保存对XML文件所做的更改。
+
+
+
+== 使用连接器
+
+PeopleSoft连接器是基于操作的连接器，这意味着将连接器添加到流中时，需要配置连接器执行的特定操作（调用操作）。 Invoke操作的XML元素是**peoplesoft:invoke-operation**。在调用Invoke操作之后，可以使用Type字段来选择要在特定组件接口上执行的方法。 PeopleSoft连接器允许您在每个组件接口上执行五项标准操作（创建，查找，获取，保存，取消）以及任何CI特定的自定义操作。
+
+=== 用例
+
+下面列出的是PeopleSoft连接器最常见的用例：+
+
+.  PeopleSoft轮询记录并将其写入.CSV文件。
+. 从.CSV文件轮询记录并将它们写入PeopleSoft。
+
+=== 添加到流程中
+
+. 在Anypoint Studio中创建一个新的Mule项目。如果你愿意，你也可以启动一个基于Maven的项目。
+. 添加合适的Mule入站端点，例如HTTP侦听器或文件端点，以开始流程。
+. 搜索PeopleSoft连接器并将其拖到画布上，然后选择它以打开属性编辑器。
+. 配置PeopleSoft连接器的参数：
++
+image:configparameters.jpeg[configparameters]
++
+[%header,cols="2*"]
+|===
+| {字段{1}}说明
+|  *Display Name*  |为应用程序中的连接器输入唯一标签。
+一个|
+  *Connector Configuration*
+
+  |连接到链接到此连接器的全局元素。全局元素封装有关到目标资源或服务的连接的可重用数据。选择您刚创建的全局PeopleSoft连接器元素。
+|  *Operation*  |从下拉菜单中选择*Invoke operation*。
+|  *Type* a |
+选择您要在特定组件接口上执行的操作。 PeopleSoft Connector允许您在每个组件接口上执行五个标准操作以及任何CI特定的自定义操作：
+
+.  <Component Interface>＃创建
+.  <Component Interface>＃查找
+.  <Component Interface>＃得到
+.  <Component Interface>＃保存
+.  <Component Interface>＃取消
+
+|  *Params*  |  *None:*如果操作不需要输入参数，请选择此选项。 +
+  *From Message*：选择此选项可根据传入有效负载定义操作。 *Create Object manually*：选择此选项可手动定义搜索值。 Mule提供了一个编辑来促进这项任务。
+|===
+. 保存您的配置。
+
+== 示例用例
+
+将新的位置数据从.CSV文件插入PeopleSoft。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+
+image:Sampleflow.jpeg[Sampleflow]
+
+.  Create a new Mule project in Anypoint Studio. If you prefer, you can also start a Maven-based project.
+. Drag a File input endpoint into the canvas.
+. On the Message Flow canvas, double-click the *File* icon to open the Properties pane.
+. Configure the following File parameters:
++
+[%header,cols="2*"]
+|===
+|Field |Value
+|Display Name |Employee-Position (or any other name you prefer)
+|Path |Navigate to the location of the file with Employee Position data.
+|Polling Frequency |1000 (or Specify how often the endpoint should check for incoming messages in milliseconds)
+|===
+. Add a *Foreach* scope to the flow.
+. Drag the *PeopleSoft* connector in the Foreach scope area, then configure it according to the steps below:
+.. Add a new PeopleSoft Global Element by clicking the plus sign next to the *Connector Configuration* field.
+.. Configure the global element according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Field |Value
+| *Name* |Upsert data (or any other name you prefer)
+| *Server* |<URL of your PeopleSoft instance>
+| *Username* |<Your PeopleSoft username>
+| *Password* |<Your PeopleSoft Password>
+|===
+.. Click *Test Connection* to confirm that Mule can connect with the PeopleSoft instance. If the connection is successful, click *OK* to save the configurations. If unsuccessful, revise or correct any incorrect parameters, then test again.
+.. Back in the properties editor of the PeopleSoft connector, configure the remaining parameters according to the table below.
++
+[%header,cols="2*"]
+|===
+|Field |Value
+| *Display Name* |Save Employee Position data to CI_Position_Data (or any other name you prefer)
+| *Config Reference* |PeopleSoft (Enter name of the global element you have created)
+| *Operation* |Invoke operation
+| *Type* a|
+CI_POSITION_DATA#Save
+
+(CI_POSITION_DATA#Save)
+
+| *Params* |From Message #[payload]
+|===
+. Add a *DataMapper* transformer between the File endpoint and the PeopleSoft connector to map the data in the File endpoint to the structure required by the PeopleSoft connector.
+. Configure the Input properties of the DataMapper according to the steps below.
+.. In the *Input type*, select *CSV*, then provide the path for the CSV file.
+.. The Output properties are automatically configured to correspond to the PeopleSoft connector.
+.. Click *Create Mapping*
+.. Drag each input data field to its corresponding output PeopleSoft field.
+.. Click the blank space on the canvas to save the changes.
+. Add a *Logger* scope right after the Data Mapper to print the data that is being passed to the PeopleSoft connector in the Mule Console. Configure the Logger according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Field |Value
+| *Display Name* |Log Mapped CI_Position_Data (or any other name you prefer)
+| *Message* |Output from Datamapper is #[payload]
+| *Level* |INFO (Default)
+|===
+. Add a *Object To Json* transformer after the PeopleSoft connector to convert the response from PeopleSoft after saving each record into JSON.
+. Add a *Logger* to print the PeopleSoft response in the Mule Console. Configure the Logger according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Field |Value
+| *Display Name* |Log Save Operation Response (or any other name you prefer)
+| *Message* |Response from Peoplesoft is: #[payload]
+| *Level* |INFO (Default)
+|===
+
+. Finally, outside the Foreach scope, add a *Logger* to print a success message if all the data in the input file has been saved in PeopleSoft without errors. Configure it according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Field |Value
+| *Display Name* |Saving Employee Data Complete (or any other name you prefer)
+| *Message* |Data transfer completed
+| *Level* |INFO (Default)
+|===
+. Save and run the project as a Mule Application.
+
+....
+[tab,title="XML Editor"]
+....
+
+. Add a  `peoplesoft:config` global element to your project, then configure its attributes according to the table below.
++
+[source, xml, linenums]
+----
+<peoplesoft:config name="PeopleSoft" server="${mule.peoplesoft.server}" username="${mule.peoplesoft.username}" password="${mule.peoplesoft.password}" doc:name="PeopleSoft">
+----
++
+[%header%autowidth.spread]
+|===
+|Field |Value
+|*`name`* |Upsert data (or any other name you prefer)
+|*`server`* |<URL of your PeopleSoft instance>
+|*`username`* |<Your PeopleSoft username>
+|*`password`* |<Your PeopleSoft Password>
+|*`doc:name`* |PeopleSoft
+|===
++
+Configure your People Component Interface in the Mule application. To do so, find the `<peoplesoft:component-interface-ids-white-list ref="#[payload]"/>` internal tag and replace it with the following:
++
+[source, xml, linenums]
+----
+<peoplesoft:component-interface-ids-white-list>
+<peoplesoft:component-interface-ids-white-list>
+YOUR_COMPONENT_INTERFACE_NAME
+</peoplesoft:component-interface-ids-white-list>
+</peoplesoft:component-interface-ids-white-list>
+----
++
+.  Begin the flow with a File endpoint, configuring the endpoint according to the table below. 
++
+[source, xml, linenums]
+----
+<file:inbound-endpoint path="src/test/resources" responseTimeout="10000" doc:name="employee-position.csv"> <file:filename-regex-filter pattern="employee-position.csv" caseSensitive="true"/> </file:inbound-endpoint>
+----
++
+[%header,cols="2*"]
+|===
+|Attribute |Value
+|*`path`* |Specify the location of the file with Employee Position data.
+|*`responseTimeout`* |1000 (how often the endpoint should check for incoming messages in milliseconds)
+|===
+. Add a Data Mapper to the flow to map the data in the file to Position Data Component Interface.
++
+[source, xml, linenums]
+----
+<data-mapper:transform doc:name="Employee Position Data to CI_POSITION_DATA"/>
+----
++
+Leave the DataMapper without configuring for now, as it is easier to do so after the mapping's destination is configured.
+. Now, add `<foreach doc:name="For Each">` to the flow. 
+. Add the `peoplesoft:invoke-operation` element now to save the new employee position data to the *Position Data Component Interface* in your PeopleSoft instance.
++
+[source, xml, linenums]
+----
+<peoplesoft:invoke-operation config-ref="PeopleSoft" type="CI_POSITION_DATA#Save" doc:name="Save Employee Position Data to CI_POSITION_DATA"> <peoplesoft:params ref="#[payload]"/> </peoplesoft:invoke-operation>
+----
++
+[%header,cols="2*"]
+|===
+|Attribute |Value
+| *config-ref* |PeopleSoft
+| *type* |CI_POSITION_DATA#Save
+| *doc:name* |Save Employee Position Data to CI_POSITION_DATA
+|===
++
+In the Child Element `peoplesoft:params` include the following parameter:
++
+[%header%autowidth.spread]
+|===
+|Child Element | 
+| *ref* |#[payload]
+|===
+. Add a `json:object-to-json-transformer` element to convert the response from PeopleSoft into a Json object, after each record in saved in PeopleSoft CI_POSITION_DATA. 
+. Add a logger element to print the responses from PeopleSoft in Mule Console.
++
+[source, xml, linenums]
+----
+<logger message="Response from Peoplesoft is: #[payload]" level="INFO" doc:name="Logger"/>
+----
+. Close the foreach scope, then add another logger element outside the foreach to print a message in the Studio Console after all the data in the file is saved in PeopleSoft.
++
+[source, xml, linenums]
+----
+<logger message="Data transfer completed." level="INFO" doc:name="Logger"/>
+----
+. In order to to configure the DataMapper, you must switch Studio to the Visual Editor tab and click on the DataMapper to open its GUI.
+
+.. In the *Input type*, select *CSV*, then provide the path for the CSV file.
+.. The Output properties are automatically configured to correspond to the PeopleSoft connector.
+.. Click *Create Mapping*
+.. Drag each input data field to its corresponding output PeopleSoft field.
+.. Click the blank space on the canvas to save the changes.
+. Return to the XML view in Studio. Add a logger element after the datamapper element to print the data that is being passed to PeopleSoft on the Studio Console.
++
+[source, xml, linenums]
+----
+<logger message="Output from Datamapper is #[payload]" level="INFO" doc:name="Logger"/>
+----
+. Save and run the project as a Mule Application. 
+
+....
+------
+
+== 示例代码
+
+[source, xml, linenums]
+----
+<mule xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:peoplesoft="http://www.mulesoft.org/schema/mule/peoplesoft" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+xmlns:spring="http://www.springframework.org/schema/beans"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/peoplesoft http://www.mulesoft.org/schema/mule/peoplesoft/current/mule-peoplesoft.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd">
+    <peoplesoft:config name="PeopleSoft" server="${mule.peoplesoft.server}" username="${mule.peoplesoft.username}" password="${mule.peoplesoft.password}" doc:name="PeopleSoft" componentInterfaceInteractiveMode="${mule.peoplesoft.mode.interfacemode}" componentInterfaceEditHistoryItems="${mule.peoplesoft.mode.edithistoryitems}" componentInterfaceGetHistoryItems="${mule.peoplesoft.mode.gethistoryitems}">
+        <peoplesoft:component-interface-ids-white-list>
+        <peoplesoft:component-interface-ids-white-list>CI_POSITION_DATA</peoplesoft:component-interface-ids-white-list>
+        </peoplesoft:component-interface-ids-white-list>
+    </peoplesoft:config>
+    <data-mapper:config name="Employee_Position_Data_to_CI_POSITION_DATA" transformationGraphPath="employee_position_data_to_ci_position_data.grf" doc:name="Employee_Position_Data_to_CI_POSITION_DATA"/>
+    <asynchronous-processing-strategy name="Asynchronous_Processing_Strategy" maxThreads="5" minThreads="2" threadTTL="10" poolExhaustedAction="WAIT" doc:name="Asynchronous Processing Strategy"/>
+    <flow name="Save_Employee_Position_Flow" doc:name="Save_Employee_Position_Flow">
+        <file:inbound-endpoint path="input" responseTimeout="10000" doc:name="Read Employee Position Data" moveToDirectory="output">
+            <file:filename-regex-filter pattern="employee-position.csv" caseSensitive="true"/>
+        </file:inbound-endpoint>
+        <data-mapper:transform config-ref="Employee_Position_Data_to_CI_POSITION_DATA" doc:name="Map Employee Position Data to CI_POSITION_DATA">
+            <data-mapper:input-arguments>
+                <data-mapper:input-argument key="GBI">GBI</data-mapper:input-argument>
+                <data-mapper:input-argument key="Y">Y</data-mapper:input-argument>
+                <data-mapper:input-argument key="USA">USA</data-mapper:input-argument>
+                <data-mapper:input-argument key="N">N</data-mapper:input-argument>
+                <data-mapper:input-argument key="STP">STP</data-mapper:input-argument>
+                <data-mapper:input-argument key="C">C</data-mapper:input-argument>
+                <data-mapper:input-argument key="A">A</data-mapper:input-argument>
+                <data-mapper:input-argument key="I">I</data-mapper:input-argument>
+            </data-mapper:input-arguments>
+        </data-mapper:transform>
+        <logger message="Mapped CI_POSITION_DATA : #[payload]" level="INFO" doc:name="Log mapped CI_POSITION_DATA "/>
+        <foreach doc:name="For Each : Save Position Data Collection">
+            <async doc:name="Async : Process each record concurrently" processingStrategy="Asynchronous_Processing_Strategy">
+                <peoplesoft:invoke-operation config-ref="PeopleSoft" type="CI_POSITION_DATA#Save" doc:name="Save Employee Position Data to CI_POSITION_DATA">
+                    <peoplesoft:params ref="#[payload]"/>
+                </peoplesoft:invoke-operation>
+                <json:object-to-json-transformer doc:name="Convert payload Object to JSON"/>
+                <logger message="Response from Peoplesoft is: #[payload]" level="INFO" doc:name="Log Save Operation Response"/>
+            </async>
+        </foreach>
+        <logger message="Data transfer completed." level="INFO" doc:name="Saving Employee Data Complete"/>
+    </flow>
+</mule>
+----
+
+== 另请参阅
+
+. 详细了解如何使用 link:/mule-user-guide/v/3.6/anypoint-connectors[Anypoint连接器]。
+. 访问PeopleSoft连接器 link:/release-notes/peoplesoft-connector-release-notes[发行说明]。
+. 了解如何 link:/mule-user-guide/v/3.6/using-maven-with-mule[使用Male与Mule]。

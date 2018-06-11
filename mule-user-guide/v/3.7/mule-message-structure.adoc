@@ -1,0 +1,176 @@
+=  Mule消息结构
+:keywords: studio, components, elements, message, mule message, architecture
+
+[NOTE]
+本文档在*flow*而不是*batch job*的上下文中检查Mule消息。有关批作业中的邮件如何分解并作为*records*处理的详细信息，请参阅 link:/mule-user-guide/v/3.7/batch-processing[批量处理]。
+
+*Mule message*是通过一个或多个流程通过应用程序的数据。它由两个主要部分组成：
+
+* 消息*header*，其中包含有关消息的元数据
+* 邮件*payload*，其中包含您的业务特定数据。
+
+Mule消息本身嵌入在*Mule message object*中。一些Mule消息对象可能包含变量，附件和异常有效载荷。但是，由于附件和异常有效载荷不经常使用或操纵，因此本概览文档不包含有关它们的详细信息。
+
+image:message_object.png[message_object]
+
+[TIP]
+如果您在流程的特定步骤中对消息的结构有任何疑问，则可以使用 link:/anypoint-studio/v/5/using-the-datasense-explorer[DataSense资源管理器]轻松进行检查。
+
+== 属性和变量
+
+包含在消息头中的元数据由提供有关消息的有用信息的*properties*组成。包含在消息对象中的*variables*表示有关消息的数据。
+
+属性和变量共享一个通用格式：每个属性或变量都有一个*name*和一个*value*。名称是你如何引用Mule中的属性或变量，值是存储在其中的信息。因此，这个名字就像是一扇门的钥匙，其价值在于门后的物质。
+
+消息的属性和变量具有特定的*scopes*，用于定义和组织在消息生命周期中应用的方式。属性将元数据与消息一起发送，以便于处理，并在消息跨越传输障碍时避免错误 - 可以通过输入新流或通过传输到其他应用程序。
+
+*Properties*有两个主要范围：*inbound*和*outbound*。
+
+*  *Inbound properties*是_immutable_，由消息源自动生成，不能由用户设置或操作。它们包含特定于消息源的元数据，以防止在消息生命周期的后期加扰数据格式或其他处理错误。消息仅在流的持续时间内保留其入站属性;当消息通过流程时，其入站属性不会跟随它（请参阅下图）。
++
+image:inbound_property.png[inbound_property]
++
+*  *Outbound properties*是_mutable_;它们在流程期间设置，并且可以在消息从一个流的出站端点通过传输器传递到另一个流的入站端点时成为入站属性。它们包含与入站属性类似的元数据，但在消息进入流程后会应用出站属性。出站属性可以由Mule自动设置，或者用户可以通过在流中手动插入一个或多个变压器元件来设置它们。请注意，如果邮件通过 link:/mule-user-guide/v/3.7/flow-reference-component-reference[流REF]而不是连接器传递到新流，则出站属性保留出站属性而不是转换为入站属性（请参见下图）。
++
+image:outbound_property2.png[outbound_property2]
++
+*Variables*是关于消息的用户定义的元数据。变量有三个范围：
+
+*  *Flow variables*仅适用于它们所在的流程。
+*  *Session variables*适用于同一应用程序内的所有流程。
+*  *Record variables*仅适用于作为 link:/mule-user-guide/v/3.7/batch-processing[批量]一部分处理的记录。
+
+变量是关于消息的临时信息片段，意图由正在处理它的应用程序使用，而不是与消息一起传递到目标。因此，变量更可能由人设置，而属性更可能由系统设置和调用。但是，关于如何使用属性和变量没有严格的规则。
+
+=== 设置和使用属性和变量
+
+Mule包含三个消息处理器，您可以使用它们来设置，复制或删除流中消息的出站属性和变量。当你在你的流程中包含这些变换器之一时，Mule添加，复制或删除元数据到消息头或对象。 （还有第四个消息处理器： link:/mule-user-guide/v/3.7/record-variable[记录变量变压器]可以在批处理中设置或删除记录中的变量，但本节仅关注对消息起作用的消息处理器。）
+
+例如，您可能希望将一个属性添加到消息中以在消息上设置HTTP传输标头。或者，如果您的流查找与用户关联的帐号，则可能需要在您的消息中添加一个变量以将该帐号存储为消息中的元数据。下表介绍了这三个消息处理器：*Property Transformer*，*Variable Transformer*和*Session Variable Transformer*。
+
+[%header%autowidth.spread]
+|===
+|   |属性 |变量 |会话变量
+| *Use*  |使用*Property Transformer*在消息的出站范围上设置，移除或复制*properties*。 |使用{ {3}}设置或删除与当前流程相关的消息上的*flow* *variable*。 |用作*Session Variable Transformer*来设置或删除{{7} }与整个生命周期的当前消息绑定，跨多个流，应用程序甚至服务器。
+| *Persistence*  |一旦消息遇到出站端点，出站作用域中的所有属性都将与消息一起以特定于传输的元数据的形式发送（HTTP的HTTP头例如，出站端点） |使用变量变量设置的变量仅存在于当前流并且不能穿过传输障碍。 |使用会话变量变量设置的会话变量持续存在于整个消息中生命周期，不管运输障碍。 +
+ +
+请注意，与支持sessions_的_transports一起使用时，会话变量在跨越传输障碍时保持不变。
+|===
+
+作为示例，以下流程在消息上设置出站属性 - 时间戳。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:mule+message+structure.png[mule+message+structure]
+
+image:setpropeditor.png[setpropeditor]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="setting_propertiesFlow1" doc:name="setting_propertiesFlow1">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <set-property propertyName="timeStamp" value="#[server.dateTime]" doc:name="Set Property"/>
+    </flow>
+</mule>
+----
+....
+------
+
+要访问您在流中的早期消息中设置的属性或变量，或者在应用程序中使用不同的流，请使用MEL表达式。
+
+[%header%autowidth.spread]
+|===
+|类型 |设置或删除 |使用MEL复制 |访问
+|出站属性 |属性转换器 |属性转换器 | `messsage.outboundProperties`
+|入站财产 |  -   |  -   | `message.inboundProperties`
+|会话变量 |会话变量变换器 |  -   | `sessionVars`
+|变量 |变量变量 |变量变量 | `flowVars`
+|===
+
+例如，如果要根据您在处理之前添加到标题中的timeStamp属性来路由消息，则可以使用选择路由器中的表达式来使用**`message.outboundProperties` **访问出站属性并进行相应的路由。请参阅下面的示例，表达式`#[message.outboundProperties.timeStamp]`访问timeStamp属性并计算属性的值（即邮件上标记的时间）。
+
+[source, xml, linenums]
+----
+<choice doc:name="Choice">
+    <when expression="#[message.outboundProperties.timeStamp]">
+        <logger level="INFO" doc:name="Logger"/>
+    </when>
+    <otherwise>
+    ...
+    </otherwise>
+</choice>
+----
+
+同样，一旦您设置了会话变量，就可以使用Mule表达式中的**`sessionVars`**地图来访问它。例如，如果您已设置名称为"`SVname`"且值为"`SVvalue`"的会话变量，则可以稍后使用表达式`#[sessionVars['SVname']]`调用该会话变量，该表达式的计算结果为{{4} }。要访问变量，请在前面的表达式中使用`flowVars`来代替`sessionVars`。
+
+== 消息有效负载
+
+消息有效载荷是Mule消息中最重要的部分，因为它包含Mule应用程序进程的数据。您可以在消息头或消息对象中应用元数据来传达有关消息的信息或确保消息不被篡改，但是消息的核心 - 您正在传输的数据 - 是消息首先存在的原因。
+
+有效载荷不一定会随着流量的流动而保持不变。 Mule流中的各种消息处理器可以通过设置，增强或将其转换为新格式来影响负载。您还可以使用MEL表达式从流中的有效载荷中提取信息。
+
+=== 设置消息有效负载
+
+使用*Set Payload*消息处理器完全替换消息有效负载的内容。输入一个文字字符串或一个Mule表达式，它定义了Mule应该设置的新有效载荷。以下示例用一个读取"Hello, my friend!"的字符串替换有效内容。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+ 
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+ 
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="setting_propertiesFlow3" doc:name="setting_propertiesFlow3">
+         <http:listener config-ref="HTTP_Listener_Configuration" path="replace" doc:name="HTTP"/>
+        <set-payload value="&quot;#['Hello, my friend!']&quot;" doc:name="Set Payload"/>
+    </flow>
+ 
+</mule>
+----
+
+=== 丰富邮件有效内容
+
+在某些情况下，您可能希望调用外部资源并使用该响应来丰富消息负载，而不是替换它。为此，您可以使用*Message Enricher*作用域（或封装）来封装一个或多个执行获取信息任务的消息处理器。一旦获得，Mule通过调用资源的结果添加或丰富消息有效载荷。
+
+== 查看骡讯息
+
+在Studio中，您可以在流的任何给定点处可视化Mule消息的结构。您只需在流程中选择一个元素，然后点击*DataSense*图标即可。
+
+image:datasenseexplorericon.png[图标]
+
+这将打开*DataSense explorer*，并显示进入元素的消息的结构以及离开它的消息的结构。这对了解当时可用的变量和属性的名称以及有效负载的内部结构非常有用。
+
+image:metadata-explorer.png[元数据]
+
+[TIP]
+当Mule消息依赖入站请求时，有关初始消息结构的信息将不会被Studio知道，因此不会显示在DataSense资源管理器中。如果您知道结构需要如何，可以将此信息输入到入站连接器的*Metadata*选项卡中。由此，DataSense资源管理器将能够推断输入后面的任何元素的消息结构。
+
+有关详情，请参阅 link:/anypoint-studio/v/5/using-the-datasense-explorer[使用DataSense Explorer]
+
+== 另请参阅
+
+*  *NEXT STEP*：了解 link:/mule-user-guide/v/3.7/message-state[消息状态]。
+* 了解如何通过 link:/anypoint-studio/v/5/using-the-datasense-explorer[DataSense资源管理器]预览邮件内容
+* 详细了解 link:/mule-user-guide/v/3.7/variable-transformer-reference[变量]和 link:/mule-user-guide/v/3.7/session-variable-transformer-reference[会话变量]个变形金刚。
+* 详细了解 link:/mule-user-guide/v/3.7/property-transformer-reference[物业变压器]。
+* 详细了解邮件有效负载的 link:/mule-user-guide/v/3.7/set-payload-transformer-reference[设置]或 link:/mule-user-guide/v/3.7/message-enricher[丰富]。
+* 了解 link:/mule-user-guide/v/3.7/record-variable[记录变量]。

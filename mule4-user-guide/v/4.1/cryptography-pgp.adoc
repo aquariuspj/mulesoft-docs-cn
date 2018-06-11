@@ -1,0 +1,100 @@
+=  PGP加密
+:keywords: cryptography, module, sign, encrypt, pgp, AES
+：TOC：
+：TOC标题：
+
+Mule可以使用Pretty Good Privacy（PGP）加密全部或部分消息。 PGP结合了数据压缩和数据加密来保护消息。压缩减小了有效负载的大小，有助于减少应用程序后面的传输时间。
+
+由于其复杂性增加，与JCE或XML加密相比，PGP加密是一项重负载任务。
+
+本节介绍这些情况：
+
+* 加密：使用另一方的公钥在Mule应用中加密外发邮件。
+* 解密：使用您自己的私钥解密Mule应用中的传入消息。
+
+== 先决条件
+
+本文档假定您对PGP加密以及公钥和私钥以及非对称加密的概念相当熟悉。
+
+== 加密
+
+使用PGP加密时，邮件的发件人必须使用收件人的公钥加密其内容。所以，只要你想加密消息
+在您的Mule应用程序中使用别人的公钥，您必须将公钥添加到您的钥匙圈。当为Mule应用程序添加新的PGP配置时，您需要提供密钥环文件，以便加密模块可以从中获取公钥以加密消息。
+
+. 使用GPG Suite等工具导入对方的公钥。详情请参阅下文。
+. 使用相同的工具导出公钥，选择`binary`作为输出格式。这会生成一个带有`.gpg`扩展名的密钥环文件。
+. 确保钥匙圈（`.gpg`）文件存储在Mule应用程序可以在运行时访问它的地方。
+
+。示例：PGP配置
+[source, xml, linenums]
+----
+<crypto:pgp-config name="encrypt-conf" publicKeyring="pgp/pubring.gpg">
+    <crypto:pgp-key-infos>
+        <crypto:pgp-asymmetric-key-info keyId="myself" fingerprint="DE3F10F1B6B7F221"/>
+    </crypto:pgp-key-infos>
+</crypto:pgp-config>
+----
+
+下一个示例返回一个ASCII装甲的加密负载，它适合通过纯文本通道发送。
+
+。示例：使用加密操作
+[source, xml, linenums]
+----
+<crypto:pgp-encrypt config-ref="encrypt-conf" keyId="myself"/>
+----
+
+如果您想要返回二进制输出，则可以使用`pgp-encrypt-binary`操作：
+
+----
+<crypto:pgp-encrypt-binary config-ref="pgpConfig" keyId="recipient"/>
+----
+生成二进制输出比使用ASCII装甲更快。但是，输出不是标准的，可能不适合发送到其他系统进行解密。
+
+如果以后需要将这种有效载荷发送到另一个系统，则可以将其转换为ASCII装甲：
+
+----
+<crypto:pgp-binary-to-armored/>
+----
+上面的操作有一个输入参数，消息有效载荷要转换。
+
+== 解密
+
+使用PGP解密时，消息的接收者必须使用其私钥解密使用公钥加密的消息的内容。
+因此，接收方必须将其公共密钥分发给那些使用它发送加密消息的人。
+
+。示例：PGP配置
+[source, xml, linenums]
+----
+<crypto:pgp-config name="decrypt-conf" privateKeyring="pgp/secring.gpg">
+    <crypto:pgp-key-infos>
+        <crypto:pgp-asymmetric-key-info keyId="myself" fingerprint="DE3F10F1B6B7F221" passphrase="mule1234"/>
+    </crypto:pgp-key-infos>
+</crypto:pgp-config>
+----
+在上面的示例中，请注意您需要提供至少三个参数才能在解密操作中使用私钥环：
+
+* 密钥ID（`keyId`）：将允许您从操作引用该密钥的内部ID。
+* 密钥指纹（`fingerprint`）：密钥指纹的最后16个字符，可以从您的外部GPG工具（如GPG Keychain）获取。
+* 密码短语（`passphrase`）：私钥的密码短语。
+
+。示例：使用解密操作
+[source, xml, linenums]
+----
+<crypto:pgp-decrypt config-ref="decrypt-conf"/>
+----
+
+== 签名
+
+。示例：使用Sign操作
+[source, xml, linenums]
+----
+<crypto:pgp-sign config-ref="sign-conf" keyId="myself"/>
+----
+
+== 验证签名
+
+。示例：使用验证操作
+[source, xml, linenums]
+----
+<crypto:pgp-validate config-ref="validate-conf" value="#[payload]" expected="#[vars.expected]"/>
+----

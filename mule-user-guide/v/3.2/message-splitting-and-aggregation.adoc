@@ -1,0 +1,102 @@
+= 消息拆分和聚合
+
+== 邮件分配器
+
+=== 列表消息分配器
+
+消息分离器可用于将传出消息分解为多个部分，并通过路由器上配置的不同端点分发这些部分。列表消息拆分器接受将被路由到不同端点的对象列表。用于列表中每个对象的实际端点由端点本身配置的过滤器决定。如果端点的过滤器接受该对象，则该端点将用于路由该对象。
+
+默认情况下，AbstractMessageSplitter在出站消息上设置关联ID和关联序列，以便入站路由器（如<<Collection Aggregator>>或相关重排器能够重新排序或组合拆分消息。
+
+下面的路由器配置预计消息有效负载为`java.util.List`，并将路由列表中`com.foo.Order`，`com.foo.Item`和`com.foo.Customer`类型的对象。路由器将允许任何数量和这些对象的组合。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<outbound>  <list-message-splitter-router>    <jms:outbound-endpoint queue="order.queue">      <payload-type-filter expectedType="com.foo.Order"/>    </jms:outbound-endpoint>    <jms:outbound-endpoint queue="item.queue">      <payload-type-filter expectedType="com.foo.Item"/>    </jms:outbound-endpoint>    <jms:outbound-endpoint queue="customer.queue">      <payload-type-filter expectedType="com.foo.Customer"/>    </jms:outbound-endpoint>    <payload-type-filter expectedType="java.util.List"/>  </list-message-splitter-router></outbound>
+----
+
+请注意，路由器上也有一个过滤器，可确保收到的消息有效负载的类型为`java.util.List`。如果列表中存在与任何端点过滤器不匹配的对象，则将向该日志写入警告，并继续处理。要将任何不匹配的对象类型路由到另一个端点，请在没有过滤器的情况下将该端点添加到列表末尾。
+
+=== 表达式分配器路由器
+
+此路由器与列表消息拆分器路由器类似，但它基于 link:/mule-user-guide/v/3.2/expressions-configuration-reference[表达]拆分消息。该表达式必须返回一个或多个消息部分才能生效。
+
+[source, xml, linenums]
+----
+<outbound>  <expression-splitter-router evaluator="xpath" expression="/mule:mule/mule:model/mule:service" disableRoundRobin="true" failIfNoMatch="false">    <outbound-endpoint ref="service1">      <expression-filter evaluator="xpath" expression="/mule:service/@name = 'service splitter'"/>    </outbound-endpoint>    <outbound-endpoint ref="service2">      <expression-filter evaluator="xpath" expression="/mule:service/@name = 'round robin deterministic'"/>    </outbound-endpoint>  </expression-splitter-router></outbound>
+----
+
+=== 过滤XML消息分配器
+
+[TIP]
+XML消息分配器已弃用。改为使用表达式消息拆分器和xpath表达式。
+
+该路由器与列表消息分离器类似，但是对XML文档进行操作。支持的负载类型是：
+
+*  `org.dom4j.Document`个对象
+*  `byte[]`
+*  `java.lang.String`
+
+如果未找到匹配项，则将其忽略并记录在WARN级别。
+
+路由器根据`splitExpression`属性将有效载荷分成节点。用于列表中每个对象的实际端点由端点本身配置的过滤器决定。如果端点的过滤器接受该对象，则该端点将用于路由该对象。实际返回的每个部分都是作为新的DOM4J文档返回的。
+
+路由器可以选择对外部XML模式文档执行验证。要执行验证，请将`externalSchemaLocation`设置为类路径中的XSD文件。设置此属性将覆盖您在XML标头中声明的任何模式文档。
+
+默认情况下，如果没有端点过滤器匹配有效负载，则路由器将失败。为防止路由器在这种情况下失败，可以将`failIfNoMatch`属性设置为`false`。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<outbound>  <mulexml:filter-based-splitter splitExpression="root/nodes" validateSchema="true" externalSchemaLocation="/com/example/TheSchema.xsd">    <vm:outbound-endpoint path="order">      <payload-type-filter expectedType="com.foo.Order"/>    </vm:outbound-endpoint>    <vm:outbound-endpoint path="item">      <payload-type-filter expectedType="com.foo.Item"/>    </vm:outbound-endpoint>    <vm:outbound-endpoint path="customer">      <payload-type-filter expectedType="com.foo.Customer"/>    </vm:outbound-endpoint>    <payload-type-filter expectedType="org.dom4j.Document"/>  </mulexml:filter-based-splitter></outbound>
+----
+
+上述拆分器只是将消息拆分为多个部分，每个部分都传递给下一个消息处理器或端点。还有消息路由器在路由之前拆分消息，如循环消息分配器。有关这些的更多信息，请参阅 link:/mule-user-guide/v/3.2/outbound-routers[消息路由器]。
+
+== 消息聚合
+
+=== 收集聚合器
+
+Collection Aggregator在转发它们之前对具有匹配组ID的传入消息进行分组。组ID可以来自相关ID或将消息链接在一起的另一个属性。
+
+您可以指定`timeout`属性来确定路由器等待邮件完成组等待的时间（以毫秒为单位）。默认情况下，如果预期消息在`timeout`时间内未收到，则会抛出异常并且不会转发消息。从Mule 2.2开始，可以将`failOnTimeout`属性设置为`false`，以防止引发异常，并简单地转发到目前为止收到的任何消息。
+
+聚合器基于Selective Consumer，因此您也可以将过滤器应用于消息。这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar"/>  <collection-aggregator-router timeout="6000" failOnTimeout="false">    <payload-type-filter expectedType="org.foo.some.Object"/>  </collection-aggregator-router></inbound>
+----
+
+=== 消息分块聚合器
+
+在诸如 link:/mule-user-guide/v/3.2/outbound-routers[列表消息分配器]的出站路由器将消息拆分为多个部分之后，消息分块聚合器路由器会将这些部分重新组合为一条消息。聚合器使用由出站路由器设置的关联ID来标识哪些部分属于相同的消息。该聚合器基于Selective Consumer，因此过滤器也可以应用于消息。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar"/>  <message-chunking-aggregator-router>    <expression-message-info-mapping correlationIdExpression="#[header:correlation]"/>    <payload-type-filter expectedType="org.foo.some.Object"/>  </message-chunking-aggregator-router></inbound>
+----
+
+可选的`expression-message-info-mapping`元素允许您使用表达式在消息中标识关联标识。如果未指定此元素，则使用`MuleMessage.getCorrelationId()`。
+
+Message Chunking聚合器还接受<<Collection Aggregator>>中所述的`timeout`和（如Mule 2.2）`failOnTimeout`属性。
+
+=== 自定义关联聚合器
+
+该路由器用于配置自定义消息聚合器。 Mule提供了一个具有执行消息聚合的模板方法的抽象实现。聚合路由器的一个常见用途是合并多个请求的结果，例如"ask this set of vendors for the best price of X"。
+
+聚合器基于选择性消费者，因此您也可以将过滤器应用于消息。它也接受<<Collection Aggregator>>中描述的`timeout`和（如Mule 2.2）`failOnTimeout`属性。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<inbound>  <vm:inbound-endpoint path="foo.bar"/>  <custom-correlation-aggregator-router class="org.mule.CustomAgregator">    <payload-type-filter expectedType="org.foo.some.Object"/>  </custom-correlation-aggregator-router></inbound>
+----
+
+有一个AbstractEventAggregator为自定义聚合器提供线程安全的实现，您可以使用它来编写自定义聚合器路由器。例如，Mule分布中包含的贷款代理示例使用自定义的BankQuotesInboundAggregator路由器来汇总银行报价。

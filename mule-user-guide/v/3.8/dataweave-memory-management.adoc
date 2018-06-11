@@ -1,0 +1,106 @@
+=  DataWeave内存管理
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping, streaming, weaveoutputhandler
+
+
+在处理通过Mule中的DataWeave处理大文件时，可以设置一些内容来微调多少内存将用于何时。
+
+内存与磁盘使用率== 
+
+DataWeave在处理转换时使用系统内存作为缓冲区，除非超过某个阈值，在这种情况下，它会将系统的硬盘用作缓冲区。默认情况下，此阈值设置为*1572864 bytes*，但此值可能会更改。该值是指每个Transform Message组件的内存使用情况，而不是项目中所有组件的内存使用情况。
+
+要更改内存不再用作缓冲区的阈值，您必须添加一个系统属性`com.mulesoft.dw.buffersize`并为其指定新阈值的数量（以字节为单位）。系统属性可以通过多种方式进行定义，例如通过编辑位于项目`src/main/app`文件夹中的`mule-app.properties`文件，请参阅 link:/mule-user-guide/v/3.8/configuring-properties#system-properties[系统属性]了解更多详细信息以及设置这些文件的更多方式。
+
+分配给此属性的值会影响整个Mule应用程序，从而单独影响Transform Message组件的每个实例。
+
+[NOTE]
+对于Mule Runtime及更早版本的3.8.3版，无法处理2 GB或更多的有效负载。此外，单个字段的文本长度不能超过1 MB（这适用于CSV，JSON和XML）。版本3.8.4和更新版本中不存在这些限制。
+
+
+== 立即与延期执行
+
+默认情况下，只要在流中调用组件，DataWeave就会处理消息的转换，您可以更改此行为，以便DataWeave转换返回仅在由另一个组件读取时处理的`WeaveOutputHandler`。这个处理程序能够推迟写入Mule消息的有效负载，直到有可用的流写入它为止。这允许DataWeave输出保持在堆外，因为流中其他组件上的处理继续进行。
+
+要进行设置，请在您的`<dw:transform-message>`组件的XML中添加一个`mode`属性。此属性接受值*immediate*或*deferred*。
+
+*  *immediate*的输出是*inputStream*（默认模式）
+*  *deferred*的输出是`WeaveOutputHandler`
+
+以下是将此属性设置为"deferred"的示例：
+
+[source,xml,linenums]
+----
+<dw:transform-message doc:name="Transform Message" mode="deferred">
+    <dw:set-payload>
+      <![CDATA[
+        %dw 1.0
+        %output application/xml
+        ---
+        payload
+      ]]>
+    </dw:set-payload>
+</dw:transform-message>
+----
+
+
+=== 使用WeaveOutputHandler
+
+请记住，使用延迟执行时，返回的消息将包含`WeaveOutputHandler`对象而不是字符串表示形式。例如，考虑一个您希望记录有效载荷的记录器：
+
+image::dataweave-memory-management-541a1.png[]
+
+此记录器的输出将显示为以下内容：
+
+[source, txt, linenums]
+----
+org.mule.transport.file.FileMessageReceiver: Lock obtained on file: /Users/mulesoft/inputCSV.csv
+org.mule.api.processor.LoggerMessageProcessor: Result was:
+com.mulesoft.weave.mule.WeaveMessageProcessor$WeaveOutputHandler@3528770d
+Initialising: 'File.dispatcher.657964187'. Object is: FileMessageDispatcher
+org.mule.lifecycle.AbstractLifecycleManager: Starting: 'File.dispatcher.657964187'. Object is: FileMessageDispatcher
+org.mule.transport.file.FileConnector: Writing file to: /Users/mulesoft/output/inputCSV.csv
+----
+
+如果您希望将有效负载记录为字符串表示形式，则需要以字符串表示形式请求有效内容。这可以通过使用表达式`#[message.payloadAs(java.lang.String)]`来实现。
+
+image::dataweave-memory-management-dc180.png[]
+
+[WARNING]
+该表达式等同于使用DataWeave输出并将其转换为String。即使在记录器的上下文中使用此表达式也是如此。有效载荷将作为字符串到达​​下一个处理器。同样重要的是要注意，一旦这样消费，整个有效载荷将存在于存储器中。
+
+这个记录器的输出将如下所示。
+
+[source, txt, linenums]
+----
+org.mule.transport.file.FileMessageReceiver: Lock obtained on file: /Users/josh/inputCSV.csv
+org.mule.api.processor.LoggerMessageProcessor: Result was:
+{
+  "people": [
+    {
+      "id": 1,
+      "firstName": "Max",
+      "lastName": "Mule"
+    },
+    {
+      "id": 2,
+      "firstName": "Sally",
+      "lastName": "Mule"
+    }
+  ]
+}
+org.mule.lifecycle.AbstractLifecycleManager: Initialising: 'File.dispatcher.2036619369'. Object is: FileMessageDispatcher
+org.mule.lifecycle.AbstractLifecycleManager: Starting: 'File.dispatcher.2036619369'. Object is: FileMessageDispatcher
+org.mule.transport.file.FileConnector: Writing file to: /Users/josh/output/inputCSV.csv
+----
+
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.8/dataweave-quickstart[DataWeave快速入门指南]
+*  link:/anypoint-studio/v/6/transform-message-component-concept-studio[关于变换消息组件]
+*  link:/mule-user-guide/v/3.8/dataweave-language-introduction[DataWeave语言介绍]
+*  link:/mule-user-guide/v/3.8/dataweave-operators[DataWeave操作符]
+*  link:/mule-user-guide/v/3.8/dataweave-types[DataWeave类型]
+*  link:/mule-user-guide/v/3.8/dataweave-formats[DataWeave格式]
+*  link:/mule-user-guide/v/3.8/dataweave-selectors[DataWeave选择器]
+*  link:/mule-user-guide/v/3.8/dataweave-examples[DataWeave示例]
+*  link:/mule-user-guide/v/3.8/mel-dataweave-functions[MEL DataWeave函数]

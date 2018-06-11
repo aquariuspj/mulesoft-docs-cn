@@ -1,0 +1,364 @@
+Java客户端库示例的= 连接器
+
+本示例引导您完成将Anypoint Connector实现为您拥有Java客户端库的服务。遵循本文档中概述的过程为任何服务构建基于Java客户端库的连接器。
+
+在许多情况下，Java客户端库是集成远程服务的最佳选择。如果客户端库得到了应用程序提供者的官方支持，或者即使它是非官方的但被广泛使用，它也可能实现与常见使用案例中的应用程序集成的最佳实践。
+
+
+
+== 假设
+
+本文件假定：
+
+* 熟悉 link:/anypoint-connector-devkit/v/3.4/anypoint-connector-concepts[Anypoint连接器概念]中描述的Anypoint连接器体系结构
+* 熟悉实现身份验证的@Connector类方法，如 link:/anypoint-connector-devkit/v/3.4/authentication-and-connection-management[身份验证和连接管理]中所述
+* 如果您正在开发基于客户端库的连接器，请按照 link:/anypoint-connector-devkit/v/3.4/creating-a-connector-project[创建一个连接器项目]中所述创建新的连接器项目。
+
+基于客户端库的连接器架构。== 
+
+
+连接器的组件包括：
+
+* 公开身份验证方法和受支持操作的Java客户端库
+* 支持数据模型实体类，通常由Java客户端库定义
+* 您基于DevKit生成的框架实现的@Connector类
+
+实际上，Java客户端库通常与RESTful或基于SOAP的Web服务通信，但是封装了Java中所需的所有客户端逻辑，并避免了构建连接器客户端层所增加的工作和复杂性。客户端库也可能隐藏设计不良的Web服务的非标准行为，使其更易于管理。
+
+== 示例连接器
+
+本次讨论的示例是MuleSoft Twitter连接器，该连接器基于非官方但广泛使用的 http://twitter4j.org/[twitter4j]客户端库。 https://github.com/mulesoft/twitter-connector/ [GitHub上的Twitter连接器，亚麻布]的源代码可用，并在讨论中引用。
+
+[NOTE]
+====
+请注意，Twitter连接器演示了Mule 3.5版本中添加的DevKit功能的许多方面，包括DataSense查询语言支持，OAuth 2身份验证和操作分页结果。本次讨论的重点将放在客户端库和@Connector类之间的关系上，这在DevKit 3.4和3.5版本中实际上是一样的。
+
+对于认证，Twitter连接器实现了一个有趣的混合，在https://github.com/mulesoft/twitter-connector/blob/master/src/main/java/org/mule/twitter/TwitterConnector.java[TwitterConnector中定义。的java]：
+
+*  Twitter4J客户端库实现了自己的OAuth支持，Mule连接器利用该支持。
+* 因为连接器不使用DevKit的OAuth支持，所以可以使用DevKit的 link:/anypoint-connector-devkit/v/3.4/implementing-connection-management[连接管理框架]。
+====
+
+== 将客户端库添加到连接器项目
+
+根据客户端库的交付方式，您可以通过多种方式将其添加到项目中。例如：
+
+* 如果该库通过Maven可用，则可以将其添加到项目POM文件中。例如，可以将Twitter4J作为来自中央Maven存储库的Maven依赖项添加，如下所示：
++
+[source, xml, linenums]
+----
+<dependency>
+<groupId>org.twitter4j</groupId>
+    <artifactId>twitter4j-core</artifactId>
+    <version>[3.0,)</version>
+</dependency>
+----
+
+* 您可以简单地下载JAR文件并将其添加到Eclipse或IntelliJ中的构建路径中。
+* 如果源代码可用，您可以将其简单地合并到您的项目中。
+
+[WARNING]
+====
+在Mule Twitter连接器的情况下，在当前版本中，Twitter4J的源代码实际上直接包含在连接器中。 Twitter4J库的Mule连接器版本已稍微改变，Mule连接器访问一些内部类，并自定义至少一个：
+
+[source, code, linenums]
+----
+import twitter4j.internal.http.alternative.HttpClientHiddenConstructionArgument;
+import twitter4j.internal.http.alternative.MuleHttpClient;
+----
+
+对于非官方或不支持的客户端库或任何开源客户端库，此方法的优点是您可以直接控制客户端库的内容，您可以根据这些内容量身定制与Mule配合使用的功能，或者更好地满足您的使用案例。 （当然，权衡是你必须保持图书馆的前进。）
+====
+
+== 定义@Connector类
+
+第一步是构建围绕连接管理和认证的@Connector类基本功能。
+
+=== 定义实体类和例外
+
+通常，建议您为连接器定义至少两个例外：一个用于指示与连接和身份验证相关的失败，另一个用于指示所有其他失败，例如，将无效参数传递给操作。一个单独的例外软件包是定义这些软件包的好地方。
+
+[WARNING]
+在Twitter连接器的情况下，Twitter4J定义的例外直接传递给Mule。
+
+=== 实施身份验证和连接管理
+
+身份验证既在@Connector类中，也在客户端库中实现。在@Connector类中实现身份验证的细节将取决于所选的身份验证方案以及客户端库对身份验证的支持。
+
+对于OAuth，可以使用@Connector类与OAuth相关的功能来收集所需的密钥和秘密，或者可以通过客户端库通过其他方式管理这些功能。
+
+对于非OAuth身份验证，请按 link:/anypoint-connector-devkit/v/3.4/defining-configurable-connector-attributes[定义可配置的连接器属性]中所述在@Connector类中添加@Configurable属性，并利用连接管理框架，如 link:/anypoint-connector-devkit/v/3.4/authentication-and-connection-management[身份验证和连接管理]中所述。
+
+客户端库的API将公开这些方法或方法参数，通过这些参数您可以在初始化时或调用操作时将这些详细信息传递给库。客户端库的细节会有所不同。
+
+有关可用的不同方案和DevKit支持的详细信息，请参阅：
+
+*  link:/anypoint-connector-devkit/v/3.4/authentication-and-connection-management[身份验证和连接管理]的概述
+*  link:/anypoint-connector-devkit/v/3.4/implementing-connection-management[实施连接管理]用于非OAuth身份验证方案
+*  link:/anypoint-connector-devkit/v/3.4/implementing-oauth-1.0-authentication[实施OAuth 1.0身份验证]和 link:/anypoint-connector-devkit/v/3.4/implementing-oauth-2.0-authentication[实施OAuth 2.0身份验证]获取启用OAuth的方案。
+
+=== 利用Twitter4J OAuth支持
+
+Twitter连接器实现了一个有趣的混合，在https://github.com/mulesoft/twitter-connector/blob/master/src/main/java/org/mule/twitter/TwitterConnector.java[TwitterConnector.java]中定义：
+
+*  Twitter4J客户端库实现了自己的OAuth支持，Mule连接器利用该支持。
+* 因为连接器不使用DevKit的OAuth支持，所以可以使用DevKit的 link:/anypoint-connector-devkit/v/3.4/implementing-connection-management[连接管理框架]。
+
+因此，我们有没有@OAuth注释的类定义：
+
+[source, java, linenums]
+----
+@Connector(name = "twitter", schemaVersion = "2.4", description = "Twitter Integration", friendlyName = "Twitter",
+minMuleVersion = "3.5", connectivityTesting = ConnectivityTesting.DISABLED)
+public class TwitterConnector implements MuleContextAware {...
+----
+
+还有一个将@ConnectionKey设置为OAuth accessKey的@Connect方法，以及常用的关联@Disconnect，@ValidateConnection和@ConnectionIdentifier方法：
+
+[source, java, linenums]
+----
+@Connect
+    public void connect(@ConnectionKey String accessKey, String accessSecret) throws ConnectionException{
+        ConfigurationBuilder cb = new ConfigurationBuilder();
+        cb.setUseSSL(useSSL);
+        cb.setHttpProxyHost(proxyHost);
+        cb.setHttpProxyPort(proxyPort);
+        cb.setHttpProxyUser(proxyUsername);
+        cb.setHttpProxyPassword(proxyPassword);
+         
+        HttpClientHiddenConstructionArgument.setUseMule(true);
+        twitter = new TwitterFactory(cb.build()).getInstance();
+ 
+ 
+        twitter.setOAuthConsumer(consumerKey, consumerSecret);
+        if (accessKey != null) {
+            twitter.setOAuthAccessToken(new AccessToken(accessKey, accessSecret));
+            setAccessToken(accessKey);
+            setAccessTokenSecret(accessSecret);
+        }
+    }
+...
+ 
+    @Disconnect
+    public void disconnect() {
+        twitter = null;
+    }
+ 
+    @ValidateConnection
+    public boolean validateConnection() {
+        return twitter != null;
+    }
+ 
+    @ConnectionIdentifier
+    public String getConnectionIdentifier() {
+        return getAccessToken() + "-" + getAccessTokenSecret();
+    }
+----
+
+另一方面，我们有一系列实现OAuth相关功能的@Processor方法，例如通过调用类`twitter4j.Twitter`公开的函数来获取和管理访问令牌：
+
+[source, code, linenums]
+----
+
+    /**
+     * Set the OAuth verifier after it has been retrieved via requestAuthorization.
+     * The resulting access tokens will be logged to the INFO level so the user can
+     * reuse them as part of the configuration in the future if desired.
+     * <p/>
+     * {@sample.xml ../../../doc/twitter-connector.xml.sample twitter:setOauthVerifier}
+     *
+     *
+     * @param requestToken request token from Twitter
+     * @param oauthVerifier The OAuth verifier code from Twitter.
+     * @return Twitter AccessToken info.
+     * @throws TwitterException when Twitter service or network is unavailable
+     */
+    @Processor
+    public AccessToken setOauthVerifier(@Optional RequestToken requestToken, String oauthVerifier) throws TwitterException {
+        AccessToken accessToken;
+        if (requestToken != null) {
+            accessToken = twitter.getOAuthAccessToken(requestToken, oauthVerifier);
+        }
+        else {
+            accessToken = twitter.getOAuthAccessToken(oauthVerifier);
+        }
+ 
+ 
+        logger.info("Got OAuth access tokens. Access token:" + accessToken.getToken()
+                + " Access token secret:" + accessToken.getTokenSecret());
+ 
+ 
+        return accessToken;
+    }
+ 
+ 
+  /**
+   * Start the OAuth request authorization process.
+   */
+ 
+ 
+@Processor
+    public RequestToken requestAuthorization(@Optional String callbackUrl) throws TwitterException {
+        RequestToken token = twitter.getOAuthRequestToken(callbackUrl);
+        return token;
+    }
+ 
+ 
+...
+   public String getAccessToken() {
+        return accessToken;
+    }
+    public void setAccessToken(String accessToken) {
+        this.accessToken = accessToken;
+    }
+ 
+    public String getAccessTokenSecret() {
+        return accessTokenSecret;
+    }
+ 
+    public void setAccessTokenSecret(String accessTokenSecret) {
+        this.accessTokenSecret = accessTokenSecret;
+    }
+----
+
+实际调用Twitter操作的@Processor方法不使用@OAuthProtected注释：
+
+[source, java, linenums]
+----
+@Processor
+    public User showUser() throws TwitterException {
+        return twitter.showUser(twitter.getId());
+    }
+----
+
+如果您正在使用提供自己的OAuth支持的客户端库，则可以深入研究此代码并使用类似的实现模式。
+
+== 将操作添加到@Connector类
+
+此时，您可以开始向连接器添加操作。
+
+通过客户端库，添加操作的步骤包括：
+
+* 导入由客户端库定义的任何Java实体类，这些实体类用作操作的参数或返回值，以及客户端库可能引发的任何异常。
+* 在@Connector类中添加@Processor方法，该方法调用客户端实例上的操作。
+
+根据您的特定客户端类别，您可能需要在操作方法中添加验证功能来处理验证。
+
+[WARNING]
+====
+*Apply a Test-Driven Approach*
+
+基于MuleSoft的经验，大多数成功的连接器实现项目在构建连接器上的操作时遵循与测试驱动开发类似的周期：
+
+* 确定操作的具体要求 - 实体（POJO或具有特定内容的地图），它可以接受为输入或作为响应返回，任何边界情况（如无效值，错误类型的值等），以及该操作可能会引发什么异常。
+* 实施涵盖这些要求的JUnit测试;
+* 实现足够的操作来通过这些测试，包括创建新的实体类和异常;
+* 使用填充与操作相关的Javadoc的注释更新您的@Connector类和其他代码
+
+迭代，直到您覆盖给定操作的要求中涵盖的所有场景。然后使用相同的循环来实现每个操作，直到连接器功能完成。
+
+如果您的客户端库有详细的文档记录，那么预期的操作行为应该是清楚的，并且您可以通过更少的边缘案例和某些特殊情况的单元测试逃脱 - 但请记住，连接器的可靠性与您基于它的Java客户端。
+
+您可能会问，"When do I try my connector in Studio?"除了自动化的JUnit测试之外，随时随地手动测试每个操作也很有用也令人高兴：
+
+* 您可以在工作时看到基本的操作功能，这可以让您感受到进步
+* 您可以查看连接器在Studio用户界面中的显示方式，这些自动化单元测试无法显示给您。例如，来自Javadoc注释的文本用于填充连接器中对话框中字段的工具提示。
+
+这将有机会打磨连接器的外观，改进合理默认设置的体验等等。
+
+然而，这并没有消除测试驱动方法的价值。许多连接器开发项目已经陷入困境或产生了难以使用的连接器，因为在定义操作时未能定义测试 - 看起来（现在）更多工作，但它确实有收获 - 您得到更好的结果，更快。
+====
+
+=== 实施操作
+
+Twitter连接器实现了一套丰富的操作;下面显示了一些较简单的部分。
+
+[source, code, linenums]
+----
+/**
+     * Returns a single status, specified by the id parameter below. The status's
+     * author will be returned inline. <br>
+     * This method calls http://api.twitter.com/1.1/statuses/show
+     * <p/>
+     * {@sample.xml ../../../doc/twitter-connector.xml.sample twitter:showStatus}
+     *
+     * @param id the numerical ID of the status you're trying to retrieve
+     * @return a single {@link Status}
+     * @throws twitter4j.TwitterException when Twitter service or network is unavailable
+     * @see <a href="http://dev.twitter.com/doc/get/statuses/show/:id">GET
+     *      statuses/show/:id | dev.twitter.com</a>
+     */
+    @Processor
+    public Status showStatus(long id) throws TwitterException {
+        return twitter.showStatus(id);
+    }
+ 
+ 
+    /**
+     * Answers user information for the authenticated user
+     * <p/>
+     * {@sample.xml ../../../doc/twitter-connector.xml.sample twitter:showUser}
+     *
+     * @return a {@link User} object
+     * @throws TwitterException when Twitter service or network is unavailable
+     */
+    @Processor
+    public User showUser() throws TwitterException {
+        return twitter.showUser(twitter.getId());
+    }
+ 
+ 
+    /**
+     * Search for places that can be attached to a statuses/update. Given a latitude
+     * and a longitude pair, or and IP address, this request will return a list of
+     * all the valid places that can be used as the place_id when updating a status.
+     * <p/>
+     * {@sample.xml ../../../doc/twitter-connector.xml.sample twitter:searchPlaces}
+     *
+     * @param latitude  latitude coordinate. Mandatory if ip is not specified
+     * @param longitude longitude coordinate.
+     * @param ip        the ip. Mandatory if coordinates are not specified
+     * @return a {@link ResponseList} of {@link Place}
+     * @throws TwitterException when Twitter service or network is unavailable
+     */
+    @Processor
+    public ResponseList<Place> searchPlaces(@Placement(group = "Coordinates") @Optional Double latitude,
+                                            @Placement(group = "Coordinates") @Optional Double longitude,
+                                            @Optional String ip) throws TwitterException {
+        return twitter.searchPlaces(createQuery(latitude, longitude, ip));
+    }
+ 
+ 
+    private GeoQuery createQuery(Double latitude, Double longitude, String ip) {
+        if (ip == null) {
+            return new GeoQuery(new GeoLocation(latitude, longitude));
+        }
+        return new GeoQuery(ip);
+    }
+----
+
+注意事项：
+
+* 所有这些操作都调用存储在`twitter`属性中的客户端实例上的方法。
+*  @Optional，@Default和@Placement等注释广泛用于改善连接器的配置行为及其在Studio中的外观。
+* 因为认证全部由Java客户端和上面提到的@Connector类中的几个方法处理，所以@Processor方法中不包含与认证相关的代码。
+
+=== 为操作创建JavaDoc和示例
+
+每个操作的JavaDoc包含一个指向示例代码文件`../../../doc/twitter-connector.xml.sample`的指针，以及通常的@param和@return注释。 DevKit将强制包含这些代码示例以及通常的DevKit，并将根据为这些操作定义的参数来检查您提供的示例。有关为每项操作创建所需文档的详细信息，请参阅 link:/anypoint-connector-devkit/v/3.4/creating-devkit-connector-documentation[创建DevKit连接器文档]。
+
+=== 为操作创建单元测试
+
+对于每个操作，如你所定义的，你应该创建运行它的单元测试。由DevKit Maven原型创建的生成项目框架包含./src/test下的单元测试套件目录。 DevKit定义了一个基于JUnit的单元测试框架。
+
+有关创建单元测试的详细信息，请参阅 link:/anypoint-connector-devkit/v/3.4/developing-devkit-connector-tests[开发DevKit连接器测试]。
+
+== 另请参阅
+
+如果您只是查看不同的连接器实现类型，则可以返回到 link:/anypoint-connector-devkit/v/3.4/connector-attributes-operations-and-data-model[连接器属性操作和数据模型]查看直接与SOAP和RESTful Web服务通信的连接器实现，而无需使用预先构建的客户端库。
+
+一旦你的连接器实现了它的操作，并创建了一些文档和测试套件，你可以：
+
+* 返回到 link:/anypoint-connector-devkit/v/3.4/devkit-shortcut-to-success[DevKit成功的捷径]继续此处描述的开发过程
+* 根据 link:/anypoint-connector-devkit/v/3.4/developing-devkit-connector-tests[开发DevKit连接器测试]中的信息构建测试套件以改进覆盖范围
+* 根据 link:/anypoint-connector-devkit/v/3.4/creating-devkit-connector-documentation[创建DevKit连接器文档]中的信息构建文档示例以显示更多示例

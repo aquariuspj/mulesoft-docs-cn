@@ -1,0 +1,733 @@
+=  REST API示例
+:keywords: rest, restful, raml, api, apis, examples, postgres
+
+这些使用REST API的示例向您展示了如何使用Anypoint Studio或Mule Runtime中的独立XML执行典型任务：
+
+*  link:/mule-user-guide/v/3.9/rest-api-examples#consuming-a-rest-api-studio[使用REST API]
++
+介绍如何编写从公共可用的REST API检索数据的API
++
+*  link:/mule-user-guide/v/3.9/rest-api-examples#extracting-and-storing-xml-data-from-a-rest-api-studio[从REST API提取和存储XML数据]
++
+涵盖从雅虎REST API检索数据并将数据插入本地Postgres数据库
+
+== 使用REST API  -  Studio的概述
+
+本示例在以下位置查询培根Ipsum REST API：
+
+----
+http://baconipsum.com/
+----
+
+这个API生成lorem ipsum文本。您不必使用HTTPS或设置帐户。最初，您添加和配置HTTP侦听器和HTTP请求器：
+
+image::rest-api-examples-ec226.png[REST的API-例子-EC226]
+
+此时，您可以调用API并在浏览器中接收培根ipsum文本。接下来，将一个File组件添加到示例中，以将lorem ipsum文本的请求输出保存到文件系统上的文件中。
+
+image::rest-api-examples-2d8e6.png[REST的API-例子，2d8e6]
+
+第一个元素 link:/mule-user-guide/v/3.9/http-connector[HTTP侦听器]在本地主机端口8081（缺省值）上侦听传入的GET请求。从浏览器调用监听器会触发流程。对请求使用以下语法：
+
+[source]
+----
+http://localhost:8081?<query>
+----
+
+`<query>`由REST API接受的参数组成。当HTTP侦听器收到HTTP请求时，应用程序将`<query>`记录为一组入站属性。 HTTP侦听器将这些属性传递给流中的下一个元素（HTTP请求连接器）。此出站连接器配置为在 http://baconipsum.com/api`. The HTTP request connector uses link:/mule-user-guide/v/3.9/mule-expression-language-mel[MEL表达式]处查询远程REST API以从消息中的属性中提取查询参数，并构建远程API的完整URL（包括查询参数）。
+
+例如，您输入此本地浏览器请求：`http://localhost:8081?type=meat-and-filler`。
+
+应用程序发出此查询：`http://baconipsum.com/api/?type=meat-and-filler`。
+
+按照后续章节中的过程创建并运行示例。
+
+=== 配置HTTP连接器
+
+您需要指定如何通过配置HTTP侦听器和HTTP请求器来调用API和返回的内容。
+
+====  HTTP侦听器
+
+. 选择HTTP侦听器组件。
+. 在属性编辑器中，将*Path*设置为`/`：
+
+image::rest-api-examples-bf47c.png[REST的API-例子，bf47c]
+
+在*Connector Configuration*中，点击 image:add.png[加]，然后设置*Host*和*Port*：
+
+image::rest-api-examples-876de.png[REST的API-例子，876de]
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | `HTTP_Listener_Configuration`
+| *Host*  | `localhost`
+| *Port*  | `8081`
+|===
+
+====  HTTP请求连接器
+
+. 在*Connector Configuration*中，点击 image:add.png[加]，然后设置*Host*，*Port*和*Base Path*：
++
+image::rest-api-examples-fc78a.png[REST的API-例子，fc78a]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | `HTTP_Request_Connector`
+| *Host*  | `baconipsum.com`
+| *Port*  |  `80`
+| *Base Path*  | `api`
+|===
++
+该配置向http://baconipsum.com/api发送请求。
++
+. 单击确定。
+. 在属性编辑器中，设置路径和方法：
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Path*  | `/`
+| *Method*  | `GET`
+|===
++
+image::rest-api-examples-e5e5f.png[REST的API-例子，e5e5f]
++
+. 使用*Add Parameter*添加两个参数。接受两者的默认类型*query-param*。对于每一个的`value`字段，写一个mule表达式，它从首先到达HTTP侦听器的请求的查询参数中获取指定的值。
++
+应用程序在到达HTTP请求连接器时将参数转换为入站属性。
++
+image::rest-api-examples-ba00e.png[REST的API-例子，ba00e]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `type`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.type]`
+|===
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `sentences`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.sentences`]
+|===
+
+Bacon Ipsum API页面包含您可以使用的参数列表，但该应用程序仅使用*type*和*sentences*。类型的有效值的示例是`meat-and-filler`，如后所示。可选的`sentences`参数确定在JSON响应中返回的句子数。
+
+=== 文件出站端点
+
+设置文件连接器属性以将此应用程序的输出保存到文件中。
+
+. 将文件连接器拖到画布上。
+. 在属性编辑器中，设置用于存储输出的目录和文件名：`/tmp/output`
++
+image::rest-api-examples-2d8e6.png[REST的API-例子，2d8e6]
++
+. 在属性编辑器中，为*Path*指定文件系统上的任何实际路径。
++
+Mule运行时在这里执行中间进程，但不在这里写输出。
++
+. 在*File Name/Pattern*中，输入输出文件的名称，例如`output`。
+. 在*Connector Configuration*中，从下拉列表中选择*File*。
++
+image::rest-api-examples-d0064.png[REST的API-例子-d0064]
++
+. 在*Connector Configuration*中，点击 image:add.png[加]，然后在*Write to Directory*中输入路径。例如输入`/tmp`。
++
+image::rest-api-examples-479e3.png[REST的API-例子，479e3]
+
+=== 运行应用程序以使用REST API
+
+. 将该示例作为Mule应用程序运行。
+. 要在此应用程序中触发流，请使用Web浏览器在localhost端口8081上查询HTTP侦听器。
++
+image::rest-api-examples-4c1b4.png[REST的API-例子，4c1b4]
++
+控制台记录一条消息，表明响应已写入您指定的文件中：
++
+`INFO  2016-05-22 17:40:56,406 [[myproject].HTTP_Listener_Configuration.worker.01] org.mule.transport.file.FileConnector: Writing file to: /private/tmp/output`
+
+或者，您可以使用HTTP客户端，例如Curl命令行实用程序来触发流程。
+
+----
+curl 'http://localhost:8081?type=meat-and-filler'
+----
+
+Bacon Ipsum API页面包含您可以使用的参数列表，但是在配置HTTP请求连接器时，您将连接器设置为仅使用*type*和*sentences*。第一个参数=值对必须以`?`运算符开头。要插入其他参数=值对，请使用`&`运算符。可以发送到localhost端口8081上的HTTP侦听器的查询示例如下：
+
+----
+http://localhost:8081?type=meat-and-filler
+http://localhost:8081?sentences=2
+http://localhost:8081?type=all-meat&sentences=3
+----
+
+`type=meat-and-filler`示例返回下面显示的输出。
+
+----
+["Doner ullamco ea non, porchetta incididunt brisket ball tip in chuck ex bresaola beef tongue.  Et aute ham hock kielbasa chuck fatback short ribs.  Kevin in reprehenderit est esse, ham bacon ut ball tip.  Laborum ut nulla ex irure t-bone flank, biltong cupidatat venison proident aliquip pork belly ham hock.  In consequat proident, cillum labore pariatur nisi.  Reprehenderit boudin beef ribs, frankfurter cillum enim pork loin consectetur kielbasa laboris.  Hamburger prosciutto nisi, jerky biltong ex pork chop venison.","Fatback tongue anim, irure ut ut cupidatat occaecat eiusmod ham hock laborum commodo.  Anim pig shank kielbasa, drumstick corned beef esse nostrud ham salami id laborum ribeye aute.  Duis pancetta sunt magna occaecat dolor leberkas, short loin meatloaf flank enim pastrami.  Prosciutto proident landjaeger deserunt tenderloin short loin.  Adipisicing aute in bresaola meatball, ut frankfurter pastrami shoulder porchetta turducken strip steak doner.  In filet mignon bresaola, sed deserunt pariatur eu mollit commodo shankle laborum.  Andouille aliqua jowl pork chop jerky sed consequat turkey voluptate bacon pastrami.","Ground round elit boudin reprehenderit.  Brisket shankle esse, leberkas veniam andouille rump proident drumstick.  Consequat sausage do ut prosciutto nostrud andouille tongue ullamco bacon est exercitation.  Do fugiat biltong est tempor short ribs reprehenderit adipisicing shoulder.  Tail venison shank incididunt, hamburger adipisicing voluptate corned beef fugiat sirloin fatback in tri-tip nisi ut.  Tail non excepteur, fugiat veniam corned beef dolore ex pig pork belly sint mollit chuck pork.","Pig hamburger dolore proident brisket landjaeger in boudin kielbasa ut elit.  Velit incididunt boudin qui.  Fatback anim adipisicing, pig jowl voluptate sirloin drumstick chicken esse.  Strip steak consequat tenderloin pastrami, ullamco brisket hamburger bacon beef adipisicing.  Tri-tip ham hock eu non et, flank dolore kevin.  Et duis frankfurter, ut ullamco do non quis boudin andouille aliqua venison ham.  Ut aliqua shoulder, aliquip pariatur bacon spare ribs irure.","Aliqua jerky frankfurter, swine ham in ground round sed qui laborum cow.  Sint turducken shank ut ea id.  Kevin dolore pig excepteur, anim ut magna.  Enim consequat short ribs corned beef ham hock nostrud fugiat chuck.  Tail spare ribs dolore boudin, andouille incididunt laboris occaecat strip steak.  Cow frankfurter capicola, landjaeger cupidatat porchetta ad ground round voluptate."]
+----
+
+== 消耗REST API  - 独立XML{{}} CRLF
+
+[tabs]{{}} CRLF
+------
+[tab,title="Procedure"]
+....
+Configure the HTTP listener connector as follows:
+
+[source,xml,linenums]
+----
+<http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+----
+
+You reference an abstract element called a *Connector Configuration*, which contains several of the high level necessary configuration properties. The **config-ref **attribute in the connector references this connector configuration element. You must now create an element outside the flow that matches the referenced name.
+
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+----
+
+Configure the HTTP request connector as follows:
+
+[source, xml, linenums]
+----
+<http:request config-ref="HTTP_Request_Configuration" path="/" method="GET" doc:name="HTTP">
+   <http:request-builder>
+     <{{0}}"/>
+     <{{0}}"/>
+    </http:request-builder>
+        </http:request>
+----
+
+A series of child elements of the connector define two query parameters that take their values from inbound properties of the message. Enclosing the two elements that define these query parameters is a `request-builder` element that is always necessary when adding parameters to a request. Configured in this way, the query params that reach the HTTP listener are forwarded unchanged to the baconipsum API.
+
+You reference an abstract element called a *Connector Configuration*, which contains several of the high level necessary configuration properties. The **config-ref **attribute in the connector references this connector configuration element. You must now create an element outside the flow that matches the referenced name.
+
+[source,xml,linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="baconipsum.com"  doc:name="HTTP Request Configuration" basePath="api"/>
+----
+
+Finally, add the file component.
+
+[source,xml,linenums]
+----
+<file:outbound-endpoint responseTimeout="10000" doc:name="File" connector-ref="File" outputPattern="output" path="/Users/max"/>
+----
+
+....
+[tab,title="XML"]
+....
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <http:request-config name="HTTP_Request_Configuration" host="baconipsum.com"  doc:name="HTTP Request Configuration" basePath="api" port="80"/>
+    <file:connector name="File" writeToDirectory="/tmp" autoDelete="true" streaming="true" validateConnections="true" doc:name="File"/>
+    <flow name="test2Flow1" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP" />
+        <http:request config-ref="HTTP_Request_Configuration" path="/" method="GET" doc:name="HTTP">
+          <http:request-builder>
+                <{{0}}"/>
+                <{{0}}"/>
+            </http:request-builder>
+        </http:request>
+        <file:outbound-endpoint responseTimeout="10000" doc:name="File" connector-ref="File" outputPattern="output" path="/Users/max"/>
+    </flow>
+</mule>
+----
+....
+------
+
+== 从REST API  -  Studio中提取和存储XML数据
+
+本示例使用来自外部REST API的XML数据，从XML中提取值并将值插入到Postgres数据库中。该应用程序使用Yahoo!适用于金融服务的REST API，可免费使用并且不需要用户帐户。您可以调用API以使用基于SQL的Yahoo查询语言检索金融报价。
+
+=== 从REST API提取和存储XML数据的概述
+查询Yahoo!时指定XML格式REST API位于`+http://query.yahooapis.com/v1/public/yql+`。应用程序收到答复并提取一些值，如股票名称和价格。最后，API将这些值插入到外部Postgres数据库的表中。
+
+该应用程序包含一个流程：
+
+image::rest-api-examples-1cd70.png[REST的API-例子，1cd70]
+
+第一个元素 link:/mule-user-guide/v/3.9/http-connector[HTTP侦听器]在本地主机端口8081（缺省值）上侦听传入的GET请求。调用监听器会触发流程。对HTTP侦听器的请求必须采取以下形式：
+
+[source]
+----
+http://localhost:8081?<query>
+----
+
+请求的`<query>`部分由REST API接受的参数组成。当HTTP侦听器收到HTTP请求时，URL的`<query>`部分将成为一组入站属性。 HTTP侦听器将消息传递给流中的下一个元素，HTTP请求连接器。 HTTP请求连接器使用一组MEL表达式从消息中提取查询参数并构建远程API的完整URL（包括查询参数）。
+
+该应用程序查询以下URL：
+
+----
+http://query.yahooapis.com/v1/public/yql?q=select * from yahoo.finance.quotes where symbol in ("BAC")%0A%09%09&env=http%3A%2F%2Fdatatables.org%2Falltables.env&format=XML
+----
+
+该查询以XML格式检索美国银行股票代码BAC的信息：
+
+*View the XML returned by the REST API*
+
+[source, xml, linenums]
+----
+<query xmlns:yahoo="http://www.yahooapis.com/v1/base.rng" yahoo:count="1" yahoo:created="2016-05-31T04:38:43Z" yahoo:lang="en-US">
+  <results>
+    <quote symbol="BAC">
+        <Ask>14.87</Ask>
+        <AverageDailyVolume>97748896</AverageDailyVolume>
+        <Bid>14.86</Bid>
+        <AskRealtime/>
+        <BidRealtime/>
+        <BookValue>23.12</BookValue>
+        ...
+        <PercentChange>+1.22%</PercentChange>
+      </quote>
+    </results>
+</query>
+<!--  total: 23  -->
+<!--  main-6df7badb-1dfa-11e6-b981-e83935aedd3a  -->
+----
+
+HTTP请求连接器将它从API接收到的XML传递给字节数组到字符串的转换器，该转换器将消息有效载荷转换为字符串。接下来， link:/mule-user-guide/v/3.9/splitter-flow-control-reference[分离器]将消息拆分为多个部分。分离器被配置为使用XML中的`<quote`>元素作为分隔符来分割传入的消息。
+
+[source, xml, linenums]
+----
+<results>
+  <quote symbol="BAC">
+...
+  </quote>
+</results>
+----
+
+流中的最后一个组件 link:/mule-user-guide/v/3.9/jdbc-connector[数据库（JDBC）]连接器接收每个查询符号对应的每个XML块。 JDBC连接器配置为运行以下SQL查询：
+
+----
+INSERT INTO mystock(name,bookvalue) VALUES('#[flowVars.dbName]','#[flowVars.dbBookValue]');
+----
+
+=== 创建和配置流程
+
+. 将以下组件和变换器拖放到画布，将它们从左向右放置：
++
+*  HTTP侦听器
+*  HTTP请求者
+* 将字节数组转换为字符串
+*  DOM到XML
+* 表达
+* 变量
+* 数据库
++
+. 按照以下部分所述配置每个组件和变压器。
+
+====  HTTP侦听器
+
+. 选择HTTP侦听器，然后在HTTP侦听器连接器的属性编辑器中将*Path*设置为`/`：
++
+image::rest-api-examples-2979f.png[REST的API-例子-2979f]
++
+. 在*Connector Configuration*中，点击 image:add.png[加]，然后设置*Host*和*Port*：
++
+image::rest-api-examples-c6d2d.png[REST的API-例子，c6d2d]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Name*  | `HTTP_Listener_Configuration`
+| *Host*  | `localhost`
+| *Port*  | `8081`
+|===
+
+====  HTTP请求连接器
+
+. 选择HTTP请求连接器，然后在属性编辑器中单击 image:add.png[加]创建一个新的连接器配置元素。
+. 设置*Host*和*Base Path*：
++
+image::rest-api-examples-426f6.png[REST的API-例子-426f6]
++
+[%header,cols="20a,80a"]
+|===
+| {参数{1}}值
+| *Name*  | `HTTP_Request_Connector`
+| *Host*  | `query.yahooapis.com`
+| *Port*  | `80`
+| *Base Path*  | `v1/public.yql`
+|===
++
+此配置将请求发送到`query.yahooapis.com/v1/public.yql`
++
+. 点击*OK*。
+. 在属性编辑器中，设置*Path*和*Method*：
++
+image::rest-api-examples-4ec20.png[REST的API-例子，4ec20]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Display Name*  | `HTTP`
+| *Path*  | `/`
+| *Method*  | `GET`
+|===
++
+. 单击*Add Parameter*三次以添加下表中显示的参数。接受默认类型*query-param*。对于每个的`value`字段，编写一个mule表达式，该表达式首先接收HTTP侦听器请求的查询参数值，然后将这些值转换为入站属性以传递给HTTP请求连接器。
++
+image:yahoo+http+w+params.png[雅虎+ HTTP + W +参数]
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `q`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.q]`
+|===
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `env`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.env]`
+|===
++
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Type*  | `query-param`
+| *Name*  | `format`
+| *Value*  | `#[message.inboundProperties.'http.query.params'.format]`
+|===
++
+通过这种方式配置，API将HTTP侦听器接收到的查询参数转发给Yahoo API。
+
+. 选择连接器左侧面板上的*Advanced*选项卡，然后选中*Follow Redirects*复选框。
+
+将==== 字节数组转换为字符串转换器
+
+将MIME类型设置为application / xml。
+
+*General Tab*
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Display Name*  | `Byte Array to String`
+| *Return Class*  | `-`
+| *Ignore Bad Input*  |无
+| *Encoding*  | `-`
+| *MIME Type*  | `application/xml`
+|===
+
+==== 分配器
+
+*Splitter*根据用户定义的XPATH表达式将传入消息分成多个部分。该表达式符合 link:/mule-user-guide/v/3.6/xpath[MEL支持的XPath语法]：
+
+----
+xpath3(xpath_expression, input_data, return_type)
+----
+
+哪里：
+
+*  `xpath_expression`表示本例中的XML元素`<quote>`，它返回股票的股票代码。
+*  `input_data`是从字节数组到字符串的有效载荷。
+本例中的*  `return_type`是NODESET类型，它返回一个DOM NodeList对象。
+
+. 选择流程中的*Splitter*。
+. 在属性编辑器中，按如下所示配置拆分器：
++
+*General Tab*
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Display Name*  | `Splitter`
+| *Enable Correlation*  | `IF_NOT_SET`（默认）
+| *Message Info Mapping*  | `-`
+| *Expression*  | `#[xpath3('//quote', payload, 'NODESET')]`
+|===
+
+XML {Transformer}的====  DOM
+
+*Dom To Xml*转换器将DOM对象转换为XML。不需要配置。
+
+==== 表达
+
+*Expression*组件评估表达式。
+
+. 选择表达组件。
+. 在属性编辑器中，为Bank of America股票的名称和账面价值创建以下表达式：
++
+[source]
+----
+flowVars.dbName=xpath3('//Name');
+flowVars.dbBookValue=xpath3('//BookValue');
+----
++
+image::rest-api-examples-3756b.png[REST的API-例子-3756b]
++
+该表达式从XML中提取值以准备存储在数据库中。
+
+==== 变量
+
+*Variable*组件创建一个表示SQL INSERT语句的变量。
+
+. 选择变量组件。
+. 按照以下屏幕截图和表格中所示配置组件：
++
+image::rest-api-examples-51c06.png[REST的API-例子，51c06]
++
+*General Tab*
+[%header%autowidth.spread]
+|===
+| {参数{1}}值
+| *Display Name*  | `Variable`
+| *Operation - Set Variable - Name*  | `insertStatement`
+| *Value*  | `INSERT INTO mystock(name,bookvalue) VALUES('#[flowVars.dbName]','#[flowVars.dbBookValue]');`
+|===
+
+数据库连接器==== 
+
+在这个过程中，你设置并测试了API和Postgres数据库之间的连接。首先，确保您符合使用数据库的先决条件。
+
+*Prerequisites*
+
+要成功测试连接，需要在配置和测试数据库连接器之前安装并设置数据库。
+
+. 在Studio应用程序中为您的数据库安装正确的 link:/mule-user-guide/v/3.9/database-connector[数据库驱动]。
+.   link:/mule-user-guide/v/3.9/database-connector#adding-the-database-driver-for-generic-db-configuration[将Postgres驱动程序添加到构建路径。]
+. 启动Postgres。
+. 使用默认用户名`postgres`和密码`postgres`设置名为`stock`的数据库。
+. 连接到`stock`数据库。
+. 创建一个名为mystock的表。例如，在`psql`命令行上输入以下查询：
++
+----
+CREATE TABLE mystock (id SERIAL PRIMARY KEY, name varchar, bookvalue money);
+----
+
+*Configure the Database Connector*
+
+在Studio中配置数据库连接器：
+
+. 点击*Database Connector*。
+. 在*Connector Configuration*中，点击 image:add.png[加]。
++
+出现*Choose Global Type*对话框。
++
+image::rest-api-examples-deccf.png[REST的API-例子，deccf]
++
+. 选择*Generic Database Configuration*，然后点击*OK*。
++
+出现*Generic Database Configuration*对话框。
++
+. 在数据库URL中，输入以下URL，假定您正在使用股票数据库的默认数据库密码和用户名称：
++
+`jdbc:postgresql://localhost:5432/stock?password=postgres&user=postgres`
++
+. 输入驱动程序类名称：
++
+`org.postgresql.Driver`
++
+. 点击*Test Connection*。
++
+image::rest-api-examples-82a84.png[REST的API-例子，82a84]
++
+如果测试失败，请检查您是否满足先决条件。
+. 点击*OK*。
+. 在*Operation*中，从下拉列表中选择`Insert`。
+. 在*Query*中，从*Type*下拉菜单中选择`Dynamic`。
+. 在*Dynamic query*文本框中输入以下查询：
++
+[source]
+----
+INSERT INTO mystock(name,bookvalue) VALUES('#[flowVars.dbName]','#[flowVars.dbBookValue]');
+----
++
+image::rest-api-examples-3678e.png[REST的API-例子-3678e]
+
+=== 运行此示例
+
+. 将该示例作为Mule应用程序运行。
+. 用您的查询调用HTTP侦听器。
++
+使用Web浏览器或HTTP客户端（例如Curl命令行实用程序）在localhost端口8081上调用HTTP侦听器。从URL或`curl`命令中删除任何换行符。
++
+[source,code,linenums]
+----
+http://localhost:8081?q=select%20*%20from%20yahoo.finance.quotes%20where%20symbol%20in%20
+(%22BAC%22)%0A%09%09&env=http%3A%2F%2Fdatatables.org%2Falltables.env&format=XML
+----
++
+[source,code,linenums]
+----
+curl 'http://localhost:8081?q=select%20*%20from%20yahoo.finance.quotes%20where
+%20symbol%20in%20(%22BAC%22)%0A%09%09&env=http%3A%2F%2Fdatatables.org%2
+Falltables.env&format=XML'
+----
++
+调用监听器会触发流程。
++
+Postgres的PgAdmin III接口显示插入数据库行的数据。
++
+image::rest-api-examples-b8dd8.png[REST的API-例子，b8dd8]
+
+== 使用REST API  - 独立XML
+
+[tabs]
+------
+[tab,title="Procedure"]
+....
+
+Configure the HTTP Listener connector as follows:
+
+[source, xml, linenums]
+----
+<http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>`
+----
+
+You reference an abstract element called a *Connector Configuration* that contains several of the high level necessary configuration properties. The **config-ref** attribute in the connector references this connector configuration element. You must now create an element outside the flow that matches the referenced name.
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+----
+
+Configure the HTTP Requester connector as follows:
+
+[source, xml, linenums]
+----
+<http:request config-ref="HTTP_Request_Configuration" path="/" method="GET" followRedirects="true" doc:name="HTTP">
+   <http:request-builder>
+      <{{0}}"/>
+      <{{0}}"/>
+      <{{0}}"/>
+   </http:request-builder>
+</http:request>
+----
+
+The series of child elements of the connector define three query parameters that take their values from inbound properties of the message. Enclosing the elements that define the query parameters is a `request-builder` element that is required for adding parameters to a request.
+
+You now need to reference a *Connector Configuration*. The *config-ref* attribute in the connector references this connector configuration element. You must now create an element outside the flow that matches the referenced name.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="query.yahooapis.com" basePath="v1/public/yql" doc:name="HTTP Request Configuration"/>
+----
+
+*Byte Array to String*
+
+[source, xml, linenums]
+----
+<byte-array-to-string-transformer doc:name="Byte Array to String"/>
+----
+
+*Splitter*
+
+[source, xml, linenums]
+----
+<splitter expression="#[xpath3('//results')]" doc:name="Splitter"/>
+----
+
+*Expression*
+[source, xml, linenums]
+----
+<expression-component doc:name="Expression">
+  <![CDATA[flowVars.dbName=xpath3('//Name');flowVars.dbBookValue=xpath3('//BookValue');]]>
+</expression-component>
+----
+
+*Variable*
+
+[source, xml, linenums]
+----
+<set-variable variableName="insertStatement" value="INSERT INTO mystock(name,bookvalue) VALUES('#[flowVars.dbName]','#[flowVars.dbBookValue]');" doc:name="Variable"/>
+----
+
+*Driver Configuration*
+
+[source, xml, linenums]
+----
+<db:generic-config name="Generic_Database_Configuration" url="jdbc:postgresql://localhost:5432/stock?password=postgres&amp;user=postgres" driverClassName="org.postgresql.Driver" doc:name="Generic Database Configuration"/>
+----
+
+*Database Configuration*
+
+[source, xml, linenums]
+----
+<db:insert config-ref="Generic_Database_Configuration" doc:name="Database">
+    <db:dynamic-query><![CDATA[INSERT INTO mystock(name,bookvalue) VALUES('#[flowVars.dbName]','#[flowVars.dbBookValue]');]]></db:dynamic-query>
+</db:insert>
+----
+
+....
+[tab,title="XML"]
+....
+
+[source, xml, linenums]
+----
+<mule xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:json="http://www.mulesoft.org/schema/mule/json"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd">
+
+	<http:listener-config name="HTTP_Listener_Configuration"
+		host="localhost" port="8081" doc:name="HTTP Listener Configuration" />
+	<http:request-config name="HTTP_Request_Configuration"
+		host="query.yahooapis.com" basePath="v1/public/yql" doc:name="HTTP Request Configuration" />
+	<context:property-placeholder location="common.properties" />
+    <db:generic-config name="Generic_Database_Configuration" url="jdbc:postgresql://localhost:5432/stock?password=postgres&amp;user=postgres" driverClassName="org.postgresql.Driver" doc:name="Generic Database Configuration"/>
+
+	<flow name="financeapiFlow1">
+		<http:listener config-ref="HTTP_Listener_Configuration"
+			path="/" doc:name="HTTP" />
+		<http:request config-ref="HTTP_Request_Configuration"
+			port="80" path="/" method="GET" doc:name="HTTP">
+			<http:request-builder>
+                <{{0}}"/>
+                <{{0}}"/>
+                <{{0}}"/>
+			</http:request-builder>
+		</http:request>
+        <byte-array-to-string-transformer mimeType="application/xml" doc:name="Byte Array to String"/>
+	<!-- 	<splitter expression="#[flowVars.results]" doc:name="Splitter" />
+	-->
+
+		<splitter expression="#[xpath3('//quote', payload, 'NODESET')]"
+            doc:name="Splitter" />
+        <mulexml:dom-to-xml-transformer doc:name="DOM to XML"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.dbName=xpath3('//Name');
+flowVars.dbBookValue=xpath3('//BookValue');
+]]></expression-component>
+        <set-variable variableName="insertStatement" value="INSERT INTO mystock(name,bookvalue) VALUES('#[flowVars.dbName]','#[flowVars.dbBookValue]');" doc:name="Variable"/>
+        <db:insert config-ref="Generic_Database_Configuration" doc:name="Database">
+            <db:dynamic-query><![CDATA[INSERT INTO mystock(name,bookvalue) VALUES('#[flowVars.dbName]','#[flowVars.dbBookValue]');]]></db:dynamic-query>
+        </db:insert>
+	</flow>
+</mule>
+----
+
+....
+------
+
+如果您使用API​​一次查询多个股票代码，分离器会将传入的XML分成与每个查询符号对应的块，然后将每个块传送到下一个消息处理器。

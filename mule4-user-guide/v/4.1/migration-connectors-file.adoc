@@ -1,0 +1,189 @@
+= 迁移文件连接器
+
+文件传输被完全重写。它从Mule 3运输模型演变为基于操作的连接器。这启用了许多新功能：
+
+* 与只提供轮询入站端点的旧传输不同，可以按需读取文件或完全列出目录内容。
+* 对常见文件系统操作（如复制，移动，重命名，删除，创建目录等）提供顶级支持。
+* 支持在文件系统级锁定文件。
+* 高级文件匹配功能。
+
+[[whats_covered_here]]
+== 这里涵盖了什么？
+
+*  <<file_configs>>
+*  <<file_config_refs>>
+*  <<file_listener>>
+*  <<file_write>>
+
+
+[[file_configs]]
+== 迁移文件连接器配置
+
+在Mule 3中，所有传输配置都设置在名为`<file:connector />`的顶级元素下，并且默认情况下，文件连接器会将连接自动删除，流式传输和验证设置为`true`。
+
+.Mule 3示例：默认文件配置
+[source,xml, linenums]
+----
+<file:connector name="file_config_default"
+ autoDelete="true"
+ streaming="true"
+ validateConnections="true" />
+----
+
+连接器配置还提供读取，写入和移动文件等设置。下一个示例显示了File连接器可用的大部分Mule 3设置。
+
+.Mule 3示例：可用的文件连接设置
+[source,xml, linenums]
+----
+<file:connector name="file_config_most_settings"
+ outputPattern="FileNamePattern"
+ writeToDirectory="WriteToDirectory"
+ readFromDirectory="ReadFromDirectory"
+ workDirectory="WorkDirectory"
+ workFileNamePattern="WorkFileNamePattern"
+ autoDelete="true"
+ outputAppend="true"
+ streaming="true"
+ dispatcherPoolFactory-ref="MyBean"
+ recursive="true"
+ dynamicNotification="true"
+ validateConnections="true"
+ serialiseObjects="true"
+ pollingFrequency="4000" fileAge="800"
+ moveToPattern="MoveToPattern"
+ moveToDirectory="MoveToDirectory"
+ doc:name="File" doc:description="Notes">
+  <file:expression-filename-parser/>
+  <spring:property name="Name" value="Value"/>
+</file:connector>
+----
+
+在Mule 4中，`<file:config />`是文件连接配置的顶级元素，`<file:connection />`是连接相关设置的子元素。
+
+.Mule 4例子
+[source,xml, linenums]
+----
+<file:config name="file_config" defaultWriteEncoding="UTF-8">
+  <file:connection workingDir="/Users/me/path/to/files" />
+</file:config>
+----
+
+*  `workingDir`允许指定所有其他路径相对于的路径。如果未指定，则将使用用户的主目录。请注意，在Mule 3中，`workDirectory`是一个类似命名的属性，但在处理它们之前移动输入文件时使用`workDirectory`。）
+*  `defaultWriteEncoding`标识用于写入的字符编码。您可以使用文件操作（例如写入）来覆盖此全局配置。
+
+所有其他Mule 3配置参数不再需要，因为它们被新连接器操作中的参数替换，或者它们被新连接器模型渲染为不必要的。
+
+[[file_config_refs]]
+== 引用文件连接配置
+
+在Mule 3中，所有操作都设置为使用`connector-ref`指向名称文件连接器配置的入站或出站端点。
+
+.Mule 3示例：文件连接作为入站端点
+[source,xml, linenums]
+----
+<file:inbound-endpoint path="/tmp/input"
+  connector-ref="file_config"
+  responseTimeout="10000" ... />
+----
+
+.Mule 3示例：文件连接作为出站端点
+[source,xml, linenums]
+----
+<file:outbound-endpoint path="/tmp/output" connector-ref="file_config" responseTimeout="10000" />
+----
+
+[[file_listener]]
+== 迁移入站端点
+
+在Mule 3中，`<file:inbound-endpoint>`消息源用于轮询文件目录。对于找到的每个文件，都会触发一条新消息。该消息将保存有效负载中的文件内容以及一些文件属性作为系统属性。为了避免重复选择相同的文件，提供了`autoDelete`和`moveTo`参数，以便文件在被挑选后离开轮询的目录。
+
+Mule 4提供了一个改进的方法。 Studio调色板中的`<file:listener>`组件（称为`On New File`）轮询目录并触发新消息，就像它的前任一样。但是，它具有以下附加功能：
+
+* 您可以使用`<file:matcher>`仅接受符合特定条件的文件。
+* 必须在应用程序启动之前创建监听`directory`，或者必须配置重新连接策略。在Mule 3.x中，该目录是在应用程序启动时不存在的情况下创建的。
+* 您不再被迫删除或移动该文件，但仍然可以使用该选项。
+* 在3.x中，如果发生错误并且事务已回滚，则不会发生删除或移动输入文件的操作，但是如果没有事务，则会执行该操作。在Mule 4中，无论是否存在事务，错误都会阻止删除或移动操作的发生。
+* 您可以使用任何连接器的操作来更改已处理文件，使其不再符合匹配条件。
+* 自动支持水印，允许您通过创建或修改时间戳自动进行过滤。
+*  Mule 3使用读取文件的规范路径将其元数据添加到消息入站属性中。骡子4使用绝对路径。
+
+.Mule 3示例：入站端点
+[source,xml, linenums]
+----
+<flow name="listener">
+  <file:inbound-endpoint path="${workingDirectory}/test-data/in" autoDelete="true"
+    pollingFrequency="1000"/>
+
+  <flow-ref name="processFile" />
+</flow>
+----
+
+.Mule 4示例：在新文件上
+
+[source,xml, linenums]
+----
+<file:config name="file">
+  <file:connection workingDir="${workingDir}"/>
+</file:config>
+
+<flow name="onNewFile">
+    <file:listener config-ref="file" directory="test-data/in" autoDelete="true">
+      <scheduling-strategy>
+        <fixed-frequency frequency="1000"/>
+      </scheduling-strategy>
+    </file:listener>
+
+    <flow-ref name="processFile" />
+</flow>
+----
+
+[[file_write]]
+== 迁移出站端点
+
+Mule 3传输使用`<file:outbound-endpoint>`组件将当前有效内容写入文件。 Mule 4连接器使用`<file:write>`操作。
+最重要的区别是：
+
+*  `<file:outbound-endpoint>`组件是异步的，这意味着实际写入发生在后台，而流中的下一个消息处理器同时执行。另一方面，`<file:write>`操作是同步的，这意味着下一个消息处理器将不会执行，直到完成。如果您想要异步行为，只需在`<async>`块中包装`<file:write>`操作即可
+*  `<file:outbound-endpoint>`要求将内容写入执行时的消息负载中。 `<file:write>`操作允许嵌入生成要写入的内容的DataWeave转换。
+*  Mule 3传输在配置级别设置了`outputAppend`参数，而`<file:write>`操作有一个模式参数
+
+.Mule 3示例：出站端点
+
+[source,xml, linenums]
+----
+<file:connector name="file" outputAppend="true" />
+
+<flow name="greetings">
+  <http:listener path="greet" method="POST"/>
+  <set-payload value="Hello #[payload.name]" />
+  <file:outbound-endpoint path="greet.txt" connector-ref="file" />
+</flow>
+----
+
+.Mule 4示例：写入操作
+
+[source,xml, linenums]
+----
+<flow name="greetings">
+  <http:listener path="greet" method="POST"/>
+  <file:write path="greet.txt" mode="APPEND">
+    <file:content>#['Hello $(payload.name)']</file:content>
+  </file:write>
+</flow>
+----
+
+要使用文件连接器，只需使用Studio调色板将其添加到应用程序中，或者在您的`pom.xml`文件中添加以下依赖项：
+
+[source,XML,linenums]
+----
+<dependency>
+    <groupId>org.mule.connectors</groupId>
+    <artifactId>mule-file-connector</artifactId>
+    <version>1.1.0</version> <!-- or newer -->
+    <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== 另请参阅
+
+*  link:/connectors/file-connector[文件连接器文档]

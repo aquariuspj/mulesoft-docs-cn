@@ -1,0 +1,351 @@
+= 复杂数据类型属性
+:keywords: devkit, data, complex data types, enumerated types, enum class, collections, list, map, spring beans
+
+Mule和你的连接器之间的一个集成点是连接器和Mule ESB之间的数据传递，例如配置组件时。原始数据类型非常简单;但枚举类型，数组和复杂类型需要特殊处理。
+
+枚举类型== 
+
+Anypoint DevKit提供了一种处理枚举类型的简单方法。用`@Processor`或`@Source`注释的方法可以接收枚举作为参数，这些可以作为字符串从Mule传递。也可以使用枚举类型以及`java.lang.Collection`和`java.lang.Map`。
+
+考虑以下扩展：
+
+[source,java, linenums]
+----
+@Connector(name="my-connector")
+public class MyConnector {
+
+    private Map<Property, String> properties;
+
+    @Configurable
+    private Property myProperty;
+
+    @Processor
+    public void setProperties(Map<Property, String> properties) {
+        this.properties = properties;
+    }
+
+    @Processor
+    public String getPropertyValue(Property property) {
+        return properties.get(property);
+    }
+----
+
+有了这个`enum`类：
+
+[source,java, linenums]
+----
+public enum Property {
+    FIRST_NAME, LAST_NAME, ADDRESS
+}
+----
+
+然后下面的枚举类型和流程是有效的：
+
+[source, xml, linenums]
+----
+<my-connector:config myProperty="FIRST_NAME"/>
+----
+
+[source, xml, linenums]
+----
+<flow name="setProperties">
+    <my-connector:set-properties>
+        <my-connector:properties>
+            <my-connector:property key="FIRST_NAME">Muley</enums:property>
+            <my-connector:property key="LAST_NAME">The Mule</enums:property>
+        </my-connector:properties>
+    </my-connector:set-properties>
+</flow>
+----
+
+[source, xml, linenums]
+----
+<flow name="getPropertyValue">
+    <my-connector:get-property-value property="LAST_NAME"/>
+</flow>
+----
+
+=== 它是如何工作的
+
+在引擎盖下，Anypoint DevKit为所有列举类型生成一个Transformer，这些类型显示为`@Processor`和`@Source`方法的参数，或者任何使用`@Configurable`注释的实例字段。所以当一个字符串输入到枚举类型的xml中时，具有指定名称的枚举常量被传递给该方法或分配给该字段。
+
+生成的模式文件还添加了限制，以便在xml中只能使用匹配的枚举值。例如，由于`Property`枚举的可能值为`FIRST_NAME`，`LAST_NAME,`和`ADDRESS`，因此以下内容无效，并且架构验证失败：
+
+[source, xml, linenums]
+----
+<flow name="getPropertyValue">
+    <my-connector:get-property-value property="COUNTRY"/>
+</flow>
+----
+
+== 类别
+
+Anypoint DevKit提供了一种处理`java.util.Collection`和`java.util.Map`类型的简单方法，无论它们出现在`@Configurable`字段还是作为`@Processor`或`@Source`方法的参数。 DevKit还允许类型嵌套的更复杂场景，如`Map<String, List<String>>`或`List<Map<String, Object>>`。
+
+从Mule处理这些类型有两种方法。
+
+* 明确声明元素。
+* 传递对元素的引用。
+
+[NOTE]
+此页面上的所有示例和解释均适用于`@Connector`类。
+
+=== 收集示例
+
+考虑下面的自定义Mule连接器：
+
+[source,java, linenums]
+----
+import org.mule.api.annotations.Configurable;
+import org.mule.api.annotations.Connector;
+import org.mule.api.annotations.Processor;
+import org.mule.api.annotations.param.Optional;
+
+import java.util.List;
+import java.util.Map;
+
+@Connector(name = "collection")
+public class CollectionConnector {
+
+    @Configurable
+    @Optional
+    private List<String> strings;
+
+    @Configurable
+    @Optional
+    private Map<String, String> mapStrings;
+----
+
+而这些春豆：
+
+[source,xml, linenums]
+----
+<spring:bean id="objectA" class="java.lang.String">
+    <spring:constructor-arg value="ObjectA"/>
+</spring:bean>
+
+<spring:bean id="objectB" class="java.lang.String">
+    <spring:constructor-arg value="ObjectB"/>
+</spring:bean>
+
+<spring:bean id="list" class="org.springframework.beans.factory.config.ListFactoryBean">
+    <spring:property name="sourceList">
+        <spring:list>
+            <spring:ref bean="objectA"/>
+            <spring:ref bean="objectB"/>
+        </spring:list>
+    </spring:property>
+</spring:bean>
+----
+
+您可以通过以下任何方式配置连接器。
+
+* 显式声明列表元素。
++
+[source,xml, linenums]
+----
+<collection:config>
+    <collection:strings>
+        <collection:string>MuleSoft</collection:string>
+        <collection:string>FTW</collection:string>
+    </collection:strings>
+</collection:config>
+----
++
+* 显式声明地图元素。
++
+[source,xml, linenums]
+----
+<collection:config>
+    <collection:map-strings>
+        <collection:map-string key="a">MuleSoft</collection:map-string>
+        <collection:map-string key="b">FTW</collection:map-string>
+    </collection:map-strings>
+</collection:config>
+----
++
+* 像以前的地图一样，使用标签名称（`a`和`b`）作为关键字。
++
+[source,xml, linenums]
+----
+<collection:count-map-of-strings config-ref="configC">
+    <collection:map-strings>
+        <collection:a>mulesoft</collection:a>
+        <collection:b>ftw</collection:b>
+    </collection:map-strings>
+</collection:count-map-of-strings>
+----
++
+* 显式声明一个元素并使用其他元素的引用。
++
+[source,xml, linenums]
+----
+<collection:config>
+    <collection:strings>
+        <collection:string>MuleSoft</collection:string>
+        <collection:string value-ref="objectA"/>
+    </collection:strings>
+</collection:config>
+----
++
+* 不是声明列表的元素，而是将引用传递给相同类型的bean。
++
+[source,xml, linenums]
+----
+<collection:config name="configA">
+    <collection:strings ref="list" />
+</collection:config>
+----
+
+
+== 嵌套集合
+
+现在考虑下面的`@Processor`方法。
+
+[source,java, linenums]
+----
+@Processor
+public void mapOfLists(Map<String, List<String>> map) {
+----
+
+生成的消息处理器可以如下调用。
+
+[source,xml, linenums]
+----
+<collection:map-of-lists>
+    <collection:map>
+        <collection:map key="key1" value-ref="list" />
+        <collection:map key="key2" value-ref="#[map-payload:anotherList]" />
+    </collection:map>
+</collection:map-of-lists>
+----
+
+而不是通过引用传递地图的值，地图本身也可以作为参考：
+
+[source,xml, linenums]
+----
+<collection:map-of-lists>
+    <collection:map ref="#[map-payload:myMap]" />
+</collection:map-of-lists>
+----
+
+== 支持的复杂类型
+
+Anypoint DevKit支持以下类型：
+
+[cols="2*"]
+|===
+一个|
+*  `int`
+*  `float`
+*  `long`
+*  `byte`
+*  `short`
+*  `double`
+*  `boolean`
+*  `char`
+*  `java.lang.Integer`
+*  `java.lang.Float`
+*  `java.lang.Long`
+*  `java.lang.Byte`
+
+ 为|
+*  `java.lang.Short`
+*  `java.lang.Double`
+*  `java.lang.Boolean`
+*  `java.lang.Character`
+*  `java.lang.String`
+*  `java.math.BigDecimal`
+*  `java.math.BigInteger`
+*  `java.util.Date`
+*  `java.lang.Class`
+*  `java.net.URL`
+*  `java.net.URI`
+
+|===
+
+您可以通过引用传递其他类型。
+
+[source,java, linenums]
+----
+@Processor
+public void receiveAComplexType(MyComplexType myComplexType) { ... }
+----
+
+Anypoint DevKit使您能够使用此类处理器，特别是在Anypoint DataMapper使用该模块时。 DataMapper友好的模块在bean中传递信息，因为DataMapper可以从Java bean和XML中提取元数据。 DevKit还标准化了Mule传递参考的方式。
+
+== 复杂类型构造
+
+当`@Processor`方法接收到一个复杂类型时，Anypoint DevKit解构对象，然后构造一个可用于重建该对象的模式。这使您可以用简洁直观的XML表示复杂的类型对象。例如：
+
+[source,xml, linenums]
+----
+<ns:receive-a-complex-type>
+    <ns:my-complex-type color="red"/>
+</ns:receive-a-complex-type>
+----
+
+您可以在复杂类型定义中使用以下注释来控制模式生成：
+
+*  `@Optional`
+*  `@Default`
+
+此外，复杂类型可以具有其他复杂类型的内部列表或映射。
+
+=== 忽略复杂类型中的字段
+
+`@Ignore`注释告诉DevKit忽略复杂对象内的字段。
+
+[source,java, linenums]
+----
+public class MyComplexType
+{
+    private String color;
+
+    @Ignore
+    private String description;
+}
+
+@Processor
+public void receiveAComplexType(MyComplexType myComplexType) { ... }
+----
+
+Anypoint DevKit会从生成的模式中省略描述字段。例如，下面的代码片段是无效的，因为`@Ignored description`属性不是生成的模式的一部分。对于DevKit的目的，在XML级别，此元素没有`description`属性。
+
+[source,xml, linenums]
+----
+<ns:receive-a-complex-type>
+    <ns:my-complex-type color="red" description=""/>
+</ns:receive-a-complex-type>
+----
+
+=== 通过引用传递列表和地图对象
+
+Anypoint DevKit标准化了通过引用传递对象的方式。 List元素和Map元素可以通过引用在子元素的`ref`属性中传递，如下例所示。
+
+[source,java, linenums]
+----
+@Processor
+public void receiveAList(List<String> strings) { ... }
+----
+
+[source,xml, linenums]
+----
+<ns:receive-a-list>
+  <ns:strings ref="#[payload]"/>
+</ns:receive-a-list>
+----
+
+在AnyPoint DevKit中，传递复杂对象还会在子元素中使用`ref`属性。
+
+[source,xml, linenums]
+----
+<ns:receive-a-complex-type>
+    <ns:my-complex-type ref="#[payload]"/>
+</ns:receive-a-complex-type>
+----
+
+== 另请参阅
+
+* 下一步：继续 link:/anypoint-connector-devkit/v/3.8/adding-datasense[添加DataSense]到您的连接器。
+* 了解如何 link:/anypoint-connector-devkit/v/3.8/developing-devkit-connector-tests[测试你的连接器]。

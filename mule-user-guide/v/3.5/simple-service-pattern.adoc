@@ -1,0 +1,191 @@
+= 简单的服务模式
+:keywords: anypoint studio, esb
+
+简单服务模式的目标与名称一样简单：提供一种公开请求 - 响应服务的简单方法。换句话说，它用于通过您选择的传输以同步的方式公开一些业务逻辑。
+
+image:mcp_simple-service.png[mcp_simple服务]
+
+== 核心功能
+
+简单服务允许以短而优雅的方式在Mule上部署SOA风格的服务。毫不费力，让我们深入研究一些可以说明这种新配置元素的广泛能力的例子。
+
+*Exposing a POJO as a Simple Service*
+
+[source,xml, linenums]
+----
+<pattern:simple-service name="maths-service"
+                address="vm://maths.in"
+                component-class="org.mule.tck.services.SimpleMathsComponent" />
+----
+
+就这些！ SimpleMathsComponent的一个实例现在可以通过已自动配置为同步（即请求 - 响应）的VM端点访问。像往常一样，Mule将使用分辨率策略来找到接收已发送到服务的有效载荷的最佳方法。
+
+当然，引用全局端点和组件也是可能的：
+
+*Using References*
+
+[source,xml, linenums]
+----
+<pattern:simple-service name="maths-service"
+                endpoint-ref="maths-service-endpoint"
+                component-ref="math-component" />
+----
+
+出于同样的原因，可以在服务上配置转换器：
+
+*Transformers*
+
+[source,xml, linenums]
+----
+<pattern:simple-service name="byte-array-massager"
+                address="vm://bam.in"
+                transformer-refs="byte-array-to-string append-bar"
+                responseTransformer-refs="append-baz string-to-byte-array"
+                component-class="org.mule.component.simple.EchoComponent" />
+----
+
+简单服务还可以使用任何支持的模式中的组件配置元素。以下显示了在功能测试期间配置服务器存根的非常方便的方法：
+
+*Functional Test Service*
+
+[source,xml, linenums]
+----
+<pattern:simple-service name="functional-test-component"
+                address="vm://ftc.in">
+  <test:component />
+</pattern:simple-service>
+----
+
+同样，入站端点和异常策略都可以配置为子元素：
+
+*Child Elements*
+
+[source,xml, linenums]
+----
+<pattern:simple-service name="maths-service"
+                component-class="org.mule.tck.services.SimpleMathsComponent">
+  <vm:inbound-endpoint path="maths.in"
+                       exchange-pattern="request-response" />
+  <custom-exception-strategy class="com.acme.AcmeExceptionStrategy" />
+</simple-service>
+----
+
+与所有配置模式元素一样，简单服务以标准Spring bean所支持的方式来支持继承。继承可用于跨配置元素共享通用设置。这在下面说明：
+
+*Inheritance*
+
+[source,xml, linenums]
+----
+<pattern:simple-service name="global-exception-strategy"
+                abstract="true">
+  <custom-exception-strategy class="com.acme.AcmeExceptionStrategy" />
+</pattern:simple-service>
+ 
+<pattern:simple-service name="inherited-exception-strategy"
+                parent="global-exception-strategy"
+                address="vm://maths.in"
+                component-class="org.mule.tck.services.SimpleMathsComponent" />
+----
+
+*Note:*不支持嵌套“组件”元素的继承，因此无法在抽象简单服务上定义。
+
+==  SOAP服务
+
+简单服务允许您将JAX-WS注释组件作为SOAP服务公开。所有你需要做的就是添加一个类型属性，你的组件可以通过SOAP调用来调用。
+
+这里是一个例子：
+
+*JAX-WS Service*
+
+[source,xml, linenums]
+----
+<pattern:simple-service name="weather-forecaster-ws"
+                address="http://localhost:6099/weather-forecast"
+                component-class="org.mule.test.integration.tck.WeatherForecaster"
+                type="jax-ws" />
+----
+
+请注意，如果使用的传输是HTTP，Simple Service将为其路径以"?WSDL"结尾的请求开心地为WSDL文档提供服务。
+
+==  RESTful服务
+
+Simple Service还能够将JAX-RS注释的组件公开为RESTful服务。
+
+同样，使用相关类型是开始提供RESTful资源所需的唯一工作，如下所示：
+
+*JAX-RS Service*
+
+[source,xml, linenums]
+----
+<pattern:simple-service name="weather-report-rsc"
+                address="http://localhost:6099/rest"
+                component-class="org.mule.test.integration.tck.WeatherReportResource"
+                type="jax-rs" />
+----
+
+如果上述配置中的组件使用@Path（"/weather-report"）进行注释，则其资源将在此URI下可访问：http：// localhost：6099 / rest / weather-report。
+
+JAX-RS服务可与HTTP和Servlet传输协同工作。
+
+==  JAXB支持
+
+Simple Service可以处理JAXB序列化的有效载荷。 XML配置中不需要特别的东西：
+
+*JAXB Serialized Service*
+
+[source,xml, linenums]
+----
+<pattern:simple-service name="weather-jaxb-consumer"
+                address="vm://weather-consumer.in"
+                component-class="org.mule.test.integration.tck.WeatherReportConsumer" />
+----
+
+但是，为了达到这个目的，需要在组件上使用@Payload（一种特定于Mule的注释）：
+
+*Annotated Service Component for JAXB Payloads*
+
+[source, java, linenums]
+----
+package org.mule.test.integration.tck;
+ 
+import org.mule.api.annotations.param.Payload;
+ 
+public class WeatherReportConsumer
+{
+    public String consume(@Payload WeatherReportType weatherReport)
+    {
+        return weatherReport.report;
+    }
+}
+----
+
+==  XPath支持
+
+最后，简单服务还可以通过XPath表达式直接提取值来处理XML负载。与JAXB一样，XML中不需要任何特殊的东西：
+
+*XPath Payload Service*
+[source,xml, linenums]
+----
+<pattern:simple-service name="weather-xpath-consumer"
+                address="vm://weather-xpath-consumer.in"
+                component-class="org.mule.test.integration.tck.WeatherReportXpathConsumer" />
+----
+
+
+但是，在这种情况下，还需要一个Mule注释，@XPath来实现此功能：
+
+*Annotated Service Component for XPath Payloads*
+[source, java, linenums]
+----
+package org.mule.test.integration.tck;
+ 
+import org.mule.api.annotations.param.Payload;
+ 
+public class WeatherReportConsumer
+{
+    public String consume(@Payload WeatherReportType weatherReport)
+    {
+        return weatherReport.report;
+    }
+}
+----

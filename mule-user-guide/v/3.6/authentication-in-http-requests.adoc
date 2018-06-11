@@ -1,0 +1,679 @@
+=  HTTP请求中的身份验证
+:keywords: http, authentication, security, users, connectors, anypoint, studio, esb, oauth, basic auth, digest
+
+当您的Mule应用向请求身份验证的服务（如 link:/mule-user-guide/v/3.8/authentication-in-http-requests#oauth2-authorization-code[骡3.8文档]中所述的Github OAuth2服务器）发送请求时，请使用您在HTTP请求中配置的身份验证。在这种情况下，您的Mule应用程序是客户端。另一方面，当您希望保护您的API或应用程序免受未经授权的访问时，请使用API​​管理器策略，例如 link:/api-manager/external-oauth-2.0-token-validation-policy[使用外部提供者的OAuth 2.0访问令牌实施]策略。
+
+link:/mule-user-guide/v/3.6/http-request-connector[HTTP请求连接器]支持四种类型的认证：
+
+*  <<Basic Authentication>>
+*  <<Digest Authentication>>
+具有*<<OAuth Authentication with Authorization Code Grant Type>>*授予类型的*  *OAuth*授权
+具有*<<OAuth Authentication Client Credentials Grant Type>>*授予类型的*  *OAuth*授权
+
+如果您要发送请求的HTTP服务要求您进行身份验证，那么您必须在连接器引用的全局元素中提供必要的凭据。这些证书将被添加到通过引用此全局元素的HTTP请求连接器完成的每个请求的授权头中。
+
+通过OAuth身份验证，您还可以提供TLS设置来加密您的OAuth凭据。
+
+== 基本认证
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+. Select the *Authentication* tab
+. In the Protocol dropdown menu, pick *Basic*
+. Provide your Username and Password (or references to properties that contain them.
++
+image:basic+auth.png[basic+auth]
+....
+[tab,title="XML Editor"]
+....
+
+Just add a child element to the global element, in it add the user and password attributes.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP Request Configuration">
+        <http:basic-authentication username="myuser" password="mypass"/>
+    </http:request-config>
+ 
+<flow name="basicauth_flow">
+    ...
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET" />
+ 
+</flow>
+----
+....
+------
+
+在此示例中，GET请求会发送到+ http：//www.example.com/test+，并使用提供的用户名和密码添加"Authorization"标题。
+
+== 摘要式身份验证
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+
+. Select the *Authentication* tab
+
+. In the Protocol dropdown menu, pick *Digest*
+
+. Provide your Username and Password (or references to properties that contain them)
+....
+[tab,title="XML Editor"]
+....
+Digest authentication is configured in the same way as Basic Authentication, just provide username and password in the attributes of the child element. The only difference is that the child element is differently named: "digest-authentication".
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="example.com" port="8081" doc:name="HTTP Request Configuration">
+        <http:digest-authentication username="myuser" password="mypass"/>
+    </http:request-config>
+ 
+<flow name="digest_flow">
+    ...
+    <http:request config-ref="HTTP_Request_Configuration" path="test" method="GET" />
+ 
+</flow>
+----
+....
+------
+
+在此示例中，GET请求会发送到+ http：//www.example.com/test+，并使用提供的用户名和密码添加"Authorization"标题。
+
+带授权码授权类型的==  OAuth认证
+
+=== 授权码*Grant Type*的工作原理 - 简化
+
+OAuth身份验证服务器（*OAS*）是一个用于保存受OAuth保护的资源的服务器。例如：Box服务器提供了一个包含OAuth认证的API。
+
+资源所有者（*RO*）是要访问的资源的所有者。例如：拥有私人存储库的Box用户
+
+客户端应用程序（*CA*）是尝试访问属于资源所有者且保存在OAuth身份验证服务器中的受保护资源的服务器。例如：一个Mule服务器试图访问属于Box用户的资源并保存在Box服务器中。
+
+image:oauth+danceposta.png[OAuth的+ danceposta]
+
+.  CA必须向OAS服务器注册应用程序。发生这种情况时，OAS会将证书分配给CA，以便以后使用该证书来识别自身：*client id*和*client secret*。美洲国家组织还必须提供一个*A* *uthentication URL*，它指向一个网页，RO可以稍后介绍其凭据，以授权CA访问其拥有的资源。 OAS还必须提供一个*Token URL*，CA可以稍后发送HTTP请求来检索*access token*，这是代表RO访问受保护资源时所需的。
+
+. 当RO向CA发出请求时，CA会将其重定向到OAS的Authentication URL。在那里，RO可以授权CA访问资源。该RO被重定向到的URL实际上不仅仅是OAS的认证URL，它还包含一些CA所包含的查询参数：*client id*和*Redirect URL*。 +
+
+.  RO引入其私有凭据，以授予CA对其拥有的受保护资源的访问权限。 +
+
+{0}}一旦发生这种情况，OAS会将URL中包含的*Redirect URL*作为查询参数调用到带来RO的URL中。在OAS对CA的重定向URL进行的调用中，它会发送*authorization code*。
+
+. 一旦CA收到授权码，就会将其发送到OAS的*Token URL*。作为回应，美洲国家组织授予它*access token*。
+
+. 使用此访问令牌，CA现在可以自由访问OAS中的受保护资源，只要它包含在其请求中即可。根据OAS定义的策略，此令牌最终可能会过期。
+
+=== 基本配置
+
+您的mule应用程序将充当*CA*（客户端应用程序）并遵循获取访问令牌的过程中的必要步骤。
+
+首先，您需要将应用程序注册到OAS（在本例中为Box），以获取您的*client id*和您的*client secret*，稍后将向CA认证您的CA.在您的注册过程中，您可能还需要提供一旦RO授予您访问权限后，OAS将调用的*redirect url*（包括访问令牌）。此重定向网址也需要在授权码配置中使用。
+
+从美洲国家组织获得以下信息：
+
+* 授权网址+
+其* 其令牌URL
+* 您的客户ID
+* 您的客户秘密+
+
+通过这些信息，您现在可以在HTTP请求连接器中配置OAuth授权代码授予类型。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+. Select the *Authentication* tab
+. In the Protocol dropdown menu, pick *OAuth2 - Authorization Code +
+*
+. Provide the following values (or references to properties that contain them)
+
+* * The *Client Id* and *Client Secret* the OAS gave you when registering your application.
+** The *Redirect URL* to which the OAS will send the access token once the RO grants you access.
++
+[WARNING]
+====
+If you were required to provide a redirect URL when registering your application to the OAS, this value must match what you provided there.
+====
++
+** The *Authorization URL* that the OAS exposes
+** The *Local Authorization URL* * 
+** The *Scopes* field is optional, it allows you to define a comma separated list of OAuth scopes available in the OAS. Scopes in OAuth are very much like security roles.
+** The *Token URI* that the OAS exposes
+
+* The Local Authorization URL field is used to define a URL in your application that listens for incoming requests and redirects them to the Authorization URL of the OAS. There, the user can login, and then an access token will be sent to the application. After you start your mule application, you can hit this URL and it will allow you to login to the application.
+....
+[tab,title="XML Editor"]
+....
+Within the global configuration of the connector, add an ` oauth2:authorization-code-grant-type ` child element, include the following values in it:
+
+* The *clientId* and *clientSecret* the OAS gave you when registering your application.
+* The *redirectionUrl* to which the OAS will send the access token once the RO grants you access.
++
+[NOTE]
+If you were required to provide a redirect URL when registering your application to the OAS, this value must match what you provided there.
+
+Inside it this element, add a ` oauth2:authorization-request ` child element with the following:
+
+* The *authorizationUrl* that the OAS exposes
+* The *localauthorizationUrl*
+* The *scopes* attribute is optional, it allows you to define a comma separated list of OAuth scopes available in the OAS. Scopes in OAuth are like security roles.
+
+Also, at the same level, add a ` oauth2:token-request ` child element with the following:
+
+* The *tokenUrl* that the OAS exposes
+
+* The  *localauthorizationUrl* attribute is used to define a URL in your application that listens for incoming requests and redirects them to the Authorization URL of the OAS. There, the user can login, and then an access token will be sent to the application. After you start your mule application, you can hit this URL and it will allow you to login to the application.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration">
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="http://localhost:8082/redirectUrl" >
+            <oauth2:authorization-request authorizationUrl="http://www.box.com/api/oauth2/authorize" localAuthorizationUrl="http://localhost:8082/authorization"
+scopes="access_user_details, read_user_files">
+            </oauth2:authorization-request>
+            <oauth2:token-request tokenUrl="http://www.box.com/api/oauth2/token"/>
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+----
+....
+------
+
+=== 将自定义参数发送到授权URL
+
+有些OAuth实现需要或允许在调用OAS的认证URL时发送额外的查询参数。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+
+. Select the *Authentication* tab
+
+. In the Protocol dropdown menu, pick *OAuth2 - Authorization Code*
+
+. Fill in the same fields as in the previous example
+
+. Click the *Add Custom Parameter* as many times as you need and define a name and value for each custom parameter
+....
+[tab,title="XML Editor"]
+....
+This example is very much like the previous, but it includes two `Oauth2:custom-parameter` child elements that define parameters that are specific to this API.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration" >
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="http://localhost:8082/redirectUrl">
+            <oauth2:authorization-request authorizationUrl="http://www.box.com/api/oauth2/authorize" localAuthorizationUrl="http://localhost:8082/authorization">
+                <oauth2:custom-parameters>
+                    <oauth2:custom-parameter paramName="box_device_id" value="123142"/>
+                    <oauth2:custom-parameter paramName="box_device_name" value="my-phone"/>
+                </oauth2:custom-parameters>
+            </oauth2:authorization-request>
+            <oauth2:token-request tokenUrl="http://www.box.com/api/oauth2/token"/>
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+----
+....
+------
+
+=== 从令牌URL响应中提取参数
+
+从OAS获得授权码后，您必须向OAS的令牌URL发送请求，以便接收*access token*。
+
+OAuth规范中未定义对此令牌URL请求的响应格式。每个实现可能因此返回不同的响应格式。默认情况下，Mule希望响应采用JSON格式，在这种情况下，HTTP响应连接器知道如何提取所需的信息，只要其元素的名称如下所示：
+
+*   *access token*：JSON字段必须命名为`access_token`
+
+*   *refresh token*：JSON字段必须命名为`refresh_token`
+
+*   *expires*：JSON字段必须命名为`expires_in`
+
+在这种情况下，参数将自动提取，您可以稍后在流程中轻松使用 link:/mule-user-guide/v/3.6/mule-expression-language-mel[MEL表达式]来引用Mule消息中的这些值，这些值是根据对令牌URL的请求的响应生成的。
+
+如果不是这种情况，那么您必须先配置连接器，以便知道从哪里提取这些值。在下面的示例中，连接器期望响应具有`application/x-www-form-urlencoded`的{​​{0}}，因此响应的主体将被转换为有效内容中的映射，从中很容易从中提取值通过MEL表达式映射，如`#[payload.'access_token']`。
+
+[tabs]
+------
+[tab, title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+
+. Select the *Authentication* tab
+
+. In the Protocol dropdown menu, pick *OAuth2 - Authorization Code*
+
+. Fill in the same fields as in the previous example
+
+. Fill in the following extra parameters:
+
+* ** Access Token: `#[payload.'access_token']`
+
+** Expires In `#[payload.'expires_in']`
+
+** Refresh Token `#[payload.'refresh_token']`
+....
+[tab,title="XML Editor"]
+....
+This example is very much like the previous, but it includes two `Oauth2:custom-parameter` child elements that define parameters that are specific to this API.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration">
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="http://localhost:8082/redirectUrl">
+            <oauth2:authorization-request authorizationUrl="http://www.box.com/api/oauth2/authorize" localAuthorizationUrl="http://localhost:8082/authorization"/>
+            <oauth2:token-request tokenUrl="http://www.box.com/api/oauth2/token">
+                <oauth2:token-response accessToken="#[payload.'access_token']" expiresIn="#[payload.'expires_in']" refreshToken="#[payload.'refresh_token']"/>
+            </oauth2:token-request>
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+----
+....
+------
+
+=== 刷新访问令牌自定义
+
+您从Token URL获得的访问令牌最终会过期，访问令牌对OAS实施有效的时间有多长。一旦访问令牌到期，您可以通过使用令牌URL响应提供的*refresh access token*来检索新的访问令牌，而不是再次检查整个过程。
+
+Mule自动处理这个用例。因此，默认情况下，执行HTTP请求连接器时，如果响应的状态码为403，则mule将自动调用令牌URL并获取新的访问令牌。
+
+当Mule执行其中一个请求来获取新的访问令牌时，可以自定义。这是通过针对从HTTP请求连接器调用的响应生成的Mule消息评估的 link:/mule-user-guide/v/3.6/mule-expression-language-mel[MEL表达]来配置的。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+
+. Select the *Authentication* tab
+
+. In the Protocol dropdown menu, pick *OAuth2 - Authorization Code*
+
+. Fill in the same fields as in the previous examples
+
+. Fill in the *Request Token When* field with the following MEL expression:
++
+[source, code, linenums]
+----
+#[xpath3('/response/status/text()', payload, 'STRING') == ‘unauthorized’]
+----
+....
+[tab,title="XML Editor"]
+....
+To set when to perform a call to obtain a new access token, set a MEL expression for the attribute `refreshTokenwhen` in the `oauth2:token-request` element.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration">
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="http://localhost:8082/redirectUrl">
+            <oauth2:authorization-request authorizationUrl="http://www.box.com/api/oauth2/authorize" localAuthorizationUrl="http://localhost:8082/authorization"/>
+            <oauth2:token-request tokenUrl="{{0}}"/>
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+----
+....
+------
+
+每当请求授权失败时，响应都会包含名为*status*的值为`‘unauthorized’`的XML节点。在上面的例子中，MEL表达式评估该条件。当它评估为真时，Mule向令牌URL发送请求以检索新的访问令牌。
+
+代表多个用户访问资源=== 
+
+到目前为止，所有的例子都是关于验证单个RO的。也可以在单个应用程序中处理多个RO的访问令牌。对于这个用例，您需要定义一种方法来在每个RO被授权时（当您向令牌URL发送请求以检索访问令牌时）以及在使用获取的访问令牌对API执行操作时识别每个RO。
+
+要确定哪个RO授予对CA的访问权限，您必须定义MEL表达式来检索针对完成到本地授权URL的呼叫的*Resource Owner ID*。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+
+. Select the *Authentication* tab
+
+. In the Protocol dropdown menu, pick *OAuth2 - Authorization Code*
+
+. Fill in the same fields as in the previous examples
+
+. In the Advanced section of the Authentication tab, set:
+
+* ** *Resource Owner ID* to `#[flowVars.'userId']`
+
+* *Local Authorization URI**to
++
+[source, code, linenums]
+----
+#[message.inboundProperties.'http.query.params'.userId]
+----
+
+The field *Resource Owner ID*   must be set with a MEL expression that allows each execution of the HTTP Request Connector to retrieve the RO identifier from the Mule Message. So on this example, whenever the HTTP Request Connecotr is executed, there must be a flow variable named ‘userId’ with the RO identifier to use. To create this variable, you can add a Variable transformer to your flow, positioned before the HTTP Request Connector, and configure the transformer to create the userId variable in the Mule Message.
+
+The *Local Authorization* *URI* field (the one in the Advanced section) , defines that in order to get the RO identifier, the `userId` query parameter must be parsed from the call done to the local authorization URL.
+
+So if you hit http://localhost:8082/authorization?userId=john[http://localhost:8082/authorization?userId=john] , then the RO john can grant access to the CA on his behalf. If you hit http://localhost:8082/authorization?userId=peter[http://localhost:8082/authorization?userId=peter] then the RO peter can grant access to the CA on his behalf.
+....
+[tab,title="XML Editor"]
+....
+Set `resourceOwnerId` to `#[flowVars.'userId']` and `localAuthorizationUrlResourceOwnerId` to  `#[message.inboundProperties.'http.query.params'.userId]`
++
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration" tlsContext-ref="TLS_Context">
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="{{0}}"
+resourceOwnerId="#[flowVars.'userId']">
+            <oauth2:authorization-request authorizationUrl="http://www.box.com/api/oauth2/authorize" localAuthorizationUrl="http://localhost:8082/authorization" scopes="access_user_details, read_user_files"/>
+            <oauth2:token-request tokenUrl="{{0}}" />
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+----
+
+The attribute `resourceOwnerId` must be set with a MEL expression that allows each ` http:request ` execution to retrieve the RO identifier from the Mule Message. So on this example, whenever the ` http:request ` is executed, there must be a flow variable named ‘userId’ with the RO identifier to use.
++
+[source, xml, linenums]
+----
+<flow name="accessROFolders">
+        <set-variable variableName="userId" value="#['Peter']" doc:name="Variable"/>
+        <http:request config-ref="HTTP_Request_Configuration" path="/folders" method="GET" doc:name="HTTP"/>
+    </flow>
+----
+
+The attribute localAuthorizationUrlResourceOwnerId defines that, in order to get the RO identifier, the `userId` query parameter must be parsed from the call done to the local authorization URL.
+
+So if you hit http://localhost:8082/authorization?userId=john[http://localhost:8082/authorization?userId=john] , then the RO john can grant access to the CA on his behalf. If you hit http://localhost:8082/authorization?userId=peter[http://localhost:8082/authorization?userId=peter] then the RO peter can grant access to the CA on his behalf.
+....
+------
+  
+=== 为OAuth授权码使用HTTPS
+
+当您需要使用HTTPS与OAS进行通信时（通常情况下适用于任何生产环境），必须对所有请求中的OAuth凭据应用HTTPS编码，其中包括以下操作：
+
+本地授权网址* 
+
+* 授权网址
+
+重定向网址* 
+
+* 令牌网址
+
+通过在HTTP请求连接器身份验证设置中指定TLS上下文，将在所有这些请求中处理这个问题。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+
+. In the General tab, pick the *HTTPS* radio button to select the protocol
+
+. Select the *Authentication* tab
+
+. In the Protocol dropdown menu, pick *OAuth2 - Authorization Code*
+
+. Fill in the same fields as in the previous examples
+
+. In the TLS configuration section, select *Use Global TLS Config*
+
+. Click the green plus sign next to the field to create a new TLS Context
+
+. Set up the trust store and key store configuration and click OK to save
++
+[NOTE]
+====
+Keep in mind that the TLS settings in the Authentication tab are for encoding your OAuth credentials, whilst the TLS/SSL tab of the HTTP Request Configuration are for encoding your request's body.
+====
+....
+[tab,title="XML Editor"]
+....
+Set   `tlsContext-ref` to reference a TLS context element, provide your trust store and key store credentials in this element.
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration_HTTPS" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration" tlsContext-ref="TLS_Context" protocol="HTTPS">
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="http://localhost:8082/redirectUrl" tlsContext-ref="TLS_Context">
+            <oauth2:authorization-request authorizationUrl="https://www.box.com/api/oauth2/authorize" localAuthorizationUrl="https://localhost:8082/authorization" scopes="access_user_details, read_user_files"/>
+            <oauth2:token-request tokenUrl="https://www.box.com/api/oauth2/token" />
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+ 
+    <tls:context name="TLS_Context" doc:name="TLS Context">
+        <tls:trust-store path="your_trust_store" password="your_password"/>
+        <tls:key-store path="your_keystore_path" password="your_password" keyPassword="your_key_password"/>
+    </tls:context>
+----
++
+[NOTE]
+====
+Keep in mind that the `tlsContext-ref` attribute of the `oauth2:authorization-code-grant-type` element is for encoding your OAuth credentials, `tls:context` child element of the `http:request-config` is for encoding your request's body.
+====
+....
+------
+
+==  OAuth身份验证客户端凭据授予类型
+
+=== 客户端证书*Grant Type*的工作原理 - 简化
+
+OAuth身份验证服务器（*OAS*）是一个用于保存受OAuth保护的资源的服务器。例如：Box服务器提供了一个包含OAuth认证的API。
+
+客户端应用程序（*CA*）是尝试访问属于资源所有者且保存在OAuth身份验证服务器中的受保护资源的服务器。例如：一个Mule服务器试图访问属于Box用户的资源并保存在Box服务器中。
+
+在这种情况下，资源所有者（RO）也是CA.这意味着认证机构被认可机构授权，这使得整个程序变得更加简单。
+
+image:oauth+danceposta+simple.png[OAuth的+ danceposta +简单]
+
+.  CA必须向OAS服务器注册应用程序。发生这种情况时，OAS会将证书分配给CA，以便以后使用该证书来识别自身：*client id*和*client secret*。 OAS还必须提供*Token URL*，CA可以在稍后发送HTTP请求以检索访问受保护资源时所需的*access token*。
+
+.  CA向OAS的*Token URL*发出请求，其中包含其客户端ID以证明其身份。作为回应，美洲国家组织授予它*access token*。
+
+. 使用此访问令牌，CA现在可以自由访问OAS中的受保护资源，只要它包含在其请求中即可。根据OAS定义的策略，此令牌最终可能会过期。
+
+=== 基本配置
+
+客户端凭据授权类型旨在由CA用来代表自己授予对应用程序的访问权限，而不是代表OAS中的RO（资源所有者）。要获取访问令牌，您需要的只是应用程序凭据。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+
+. Select the *Authentication* tab
+
+. In the Protocol dropdown menu, pick *OAuth2 - Client Credentials*
+
+. Fill in the following fields:
+
+* ** The *Client Id* and *Client Secret* the OAS gave you when registering your application.
+
+** The *Scopes* field is optional, it allows you to define a comma separated list of OAuth scopes available in the OAS. Scopes in OAuth are very much like security roles.
+
+** The *Token URI* that the OAS exposes
+....
+[tab,title="XML Editor"]
+....
+You must include the following information:
+
+* The *clientId* and *clientSecret* the OAS gave you when registering your application.
+
+* The  *scopes* attribute is optional, it allows you to define a comma separated list of OAuth scopes available in the OAS. Scopes in OAuth are very much like security roles.
+
+* The *tokenUrl* that the OAS exposes
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_Request_Configuration" host="some.api.com" port="80" basePath="/api/1.0" doc:name="HTTP Request Configuration">
+        <oauth2:client-credentials-grant-type clientId="your_client_id" clientSecret="your_client_secret">
+            <oauth2:token-request tokenUrl="http://some.api.com/api/1.0/oauth/token" scopes="access_user_details, read_user_files"/>       
+</oauth2:client-credentials-grant-type>
+    </http:request-config>
+----
+....
+------
+
+当部署mule应用程序时，它将尝试检索访问令牌。如果应用程序无法检索访问令牌，则会在部署中失败。
+
+=== 从令牌URL响应中提取参数
+
+适用于授权码的相同行为可以应用于客户端凭据授权类型。
+
+=== 刷新访问令牌自定义
+
+适用于授权码的相同行为可以应用于客户端凭据授权类型。
+
+== 令牌管理器配置
+
+通过使用令牌管理器配置，可以访问客户端凭证和授权代码的授权信息。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an HTTP Connector to your canvas, create a new Connector Configuration element for it
+
+. Select the *Authentication* tab
+
+. In the Protocol dropdown menu, pick *OAuth2 - Client Credentials*
+
+. In the Advanced section of the form, click the *green plus sign* next to *Token Manager* to create a new token manager
+
+. Assign it a reference to an object store
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<oauth2:token-manager-config name="Token_Manager_Config"  doc:name="Token Manager Config"/>
+ 
+    <http:request-config name="HTTP_Request_Configuration" host="api.box.com" port="443" basePath="/2.0" doc:name="HTTP Request Configuration">
+        <oauth2:authorization-code-grant-type clientId="your_client_id" clientSecret="your_client_secret" redirectionUrl="{{0}}" resourceOwnerId="#[flowVars.'userId']">
+            <oauth2:authorization-request authorizationUrl="https://www.box.com/api/oauth2/authorize" localAuthorizationUrl="https://localhost:8082/authorization" scopes="access_user_details, read_user_files"/>
+            <oauth2:token-request tokenUrl="https://www.box.com/api/oauth2/token"/>
+        </oauth2:authorization-code-grant-type>
+    </http:request-config>
+----
+The tokenManager-ref attribute need to reference a token-manager-config element in the configuration.
+....
+------
+
+=== 通过令牌管理器访问授权信息
+
+一旦令牌管理器与授权授权类型相关联（在下面的示例中，使用授权码），我们可以使用流中任何位置的MEL表达式中的`oauthContext`函数来访问来自OAuth授权的信息。
+
+如果您使用带有*single RO*的{​​{0}}或授权码，请使用以下功能：
+
+[source, code, linenums]
+----
+oauthContext(tokenManagerConfigName)
+----
+
+此功能提供从令牌管理器访问OAuth授权信息的权限。
+
+*   `tokenManagerConfigName`：配置中的令牌管理器的名称
+
+如果您通过*multiple RO*使用授权码，请使用以下功能：
+
+[source, code, linenums]
+----
+oauthContext(tokenManagerConfigName, resourceOwnerId)
+----
+
+该功能可以访问来自令牌管理器的OAuth授权信息。
+
+*   `tokenManagerConfigName`：配置中的令牌管理器的名称
+*   `resourceOwnerId`：RO的标识符。
+
+==== 示例
+
+下表中是一组示例，向您展示如何从令牌管理器中检索信息。这些表达式可以用在您的流程中的任何构建块中，您将这些构建块放置在处理您的OAuth身份验证的HTTP请求连接器之后。
+
+[%header,cols="2*"]
+|===
+|功能 |结果
+|  `oauthContext(‘Token_Manager_Config’).accessToken`  | accessToken值
+使用ID“Peter”标识的RO的|  `oauthContext(‘Token_Manager_Config’, ‘Peter’).accessToken`  | accessToken值
+|   `oauthContext(‘Token_Manager_Config’).refreshToken`  | refreshToken值
+|  `oauthContext(‘Token_Manager_Config’).expiresIn`  |在值中过期
+用于授权URL的|  `oauthContext(‘Token_Manager_Config’).state`  |状态
+一个|
+  `oauthContext(‘Token_Manager_Config’).`
+
+  `tokenResponseParameters.‘a_custom_param_name’`
+
+从令牌URL响应中提取的  |自定义参数
+一个|
+  `oauthContext(‘Token_Manager_Config’, ‘Peter’).`
+
+  `tokenResponseParameters.‘a_custom_param_name’`
+
+从RO'Peter'的令牌URL响应中提取的  |自定义参数。
+|===
+
+=== 访问令牌无效
+
+使用令牌管理器时，很容易阻止特定的RO。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an ** *Invalidate OAuth Context* element to your canvas.
+
+. In its properties editor, set up the *Token Manager Configuration* so that it points to the same *Token Manager* that your HTTP Request Connector references when handling OAuth authentication.
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<flow name="invalidateOauthContext">
+    <oauth2:invalidate-oauth-context config-ref="tokenManagerConfig"/>
+</flow>
+----
+....
+------
+
+*Invalidate OAuth Context*元素清除存储在令牌管理器中的所有OAuth信息。
+
+当使用单个令牌管理器使用多个RO时，如果只想清除一个RO的OAuth信息，则必须在Invalidate OAuth Context元素中指定资源所有者ID。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag an *Invalidate OAuth Context* element to your canvas.
+
+. In its properties editor, set up the *Token Manager Configuration* so that it points to the same *Token Manager* that your HTTP Request Connector references when handling OAuth authentication.
+
+. Set the *Resource Owner Id*to an expression that points to the RO you want to clear. For example
++
+[source, code, linenums]
+----
+#[flowVars.'resourceOwnerId']
+----
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<flow name="invalidateOauthContextWithResourceOwnerId">
+    <oauth2:invalidate-oauth-context config-ref="tokenManagerConfig" resourceOwnerId="#[flowVars.'resourceOwnerId']"/>
+</flow>
+----
+....
+------
+
+=== 自定义令牌管理器对象存储
+
+默认情况下，令牌管理器使用内存中对象存储来存储凭据。您可以使用objectStore-ref属性自定义令牌管理器对象库。 link:/mule-user-guide/v/3.6/mule-object-stores[了解如何配置自定义对象库]。
+
+== 另请参阅
+
+*   link:/mule-user-guide/v/3.6/http-request-connector[HTTP请求连接器]
+
+*   link:/mule-user-guide/v/3.6/http-listener-connector[HTTP侦听器连接器]
+
+*   link:/mule-user-guide/v/3.6/migrating-to-the-new-http-connector[迁移到新的HTTP连接器]

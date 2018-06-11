@@ -1,0 +1,93 @@
+= 自定义参数DSL
+
+:keywords: parameter, parameters, mule, sdk, dsl, xml, syntax
+
+
+为了给用户提供最好的体验，可以自定义或限制组件参数的某些方面。例如，为了清晰起见，您可以隐藏不相关的参数。
+
+== 接收字符串作为参考或作为值
+
+假设我们有如下操作：
+
+[source, Java, linenums]
+----
+public void send(@Connection MyConnection connection, Object value) {
+    connection.doSend(value);
+}
+----
+
+这将被调用像这样：
+
+[source, xml, linenums]
+----
+<demo:send value="requestPayload"/>
+----
+
+默认情况下，Mule假定`requestPayload`是对注册表中对象的引用，如全局列表或POJO。相反，如果我们希望扩展实际接收`requestPayload`字符串，则必须使用`@ParameterDsl`注释修改操作声明：
+
+[source, Java, linenums]
+----
+public void send(@Connection MyConnection connection, @ParameterDsl(allowReferences = false) Object value) {
+    connection.doSend(value);
+}
+----
+
+此更改显式禁用引用的使用，所以操作将收到字符串值。
+
+== 定义复杂类型的使用方式
+
+任何模块都能够展示符合模块API的POJO：
+
+[source, Java, linenums]
+----
+// This is the POJO declaration
+public class Door {
+
+  @Parameter
+  private boolean isLocked;
+
+  @Parameter
+  private String color;
+
+}
+
+// This is the configuration
+public class HouseConfig {
+
+  @Parameter
+  private Door mainDoor;
+
+}
+----
+
+当有这种参数时，模块开发人员有责任配置如何在DSL中使用`Door`。为此，我们有`@TypeDsl`注释，它允许您配置两件重要的事情：
+
+*  `allowInlineDefinition`：定义POJO（在本例中是否为`Door`）可以内联方式声明将它用作参数的元素。
+如果此值为`true`，则用户可以声明：
+
++
+[source, xml, linenums]
+----
+<demo:config name="myConfig"> // <1>
+    <demo:door isLocked="true" color="red"/> // <2>
+</demo:config>
+----
+
++
+<1>配置被声明为参数的容器
+<2> `Door`是内嵌声明的（在{{2}中））
+
+*  `allowTopLevelDefinition`：定义POJO（在本例中是否为`Door`）可以在应用程序中声明为顶层元素。
+如果此值为`true`，则用户可以声明：
+
++
+[source, xml, linenums]
+----
+<demo:door name="MyGlobalDoor" isLocked="true" color="red"/> // <1>
+
+<demo:config name="myConfig" door-ref="MyGlobalDoor"/> // <2>
+----
+
++
+<1>将`Door`声明为应用程序的全局元素
+<2> `config`是单独声明的，通过名称`door-ref`引用全局`Door`元素

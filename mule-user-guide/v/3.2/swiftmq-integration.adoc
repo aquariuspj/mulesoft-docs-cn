@@ -1,0 +1,140 @@
+=  SwiftMQ集成
+
+本页介绍如何在Mule中使用SwiftMQ。
+
+== 配置Mule JMS连接器
+
+整合SwiftMQ的最佳方法是通过JNDI。您将指定以下属性：
+
+[%header%autowidth.spread]
+|===
+|属性 |描述 |推荐值
+| jndiInitialFactory  | InitialContext工厂 | com.swiftmq.jndi.InitialContextFactoryImpl
+| jndiProviderUrl  | JNDI提供程序网址 | smqp：// localhost：4001 / timeout = 10000
+| jndiDestinations  |队列/主题的JNDI查找 | true
+| forceJndiDestinations  |如果在JNDI中找不到目标，则强制JNDI异常 | true
+|规范 | JMS规范的版本 | 1.1
+| connectionFactoryJndiName  |要使用 |的JMS连接工厂的名称ConnectionFactory
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+    xsi:schemaLocation="
+      http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+      http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.0/mule-jms.xsd">
+
+  <jms:connector name="jmsConnector"
+                   connectionFactoryJndiName="ConnectionFactory"
+                   jndiDestinations="true"
+                   forceJndiDestinations="true"
+                   jndiInitialFactory="com.swiftmq.jndi.InitialContextFactoryImpl"
+                   jndiProviderUrl="smqp://localhost:4001/timeout=10000"
+                   specification="1.1"/>
+...
+----
+
+配置完连接器后，将`swiftmq.jar`复制到Mule `lib/user`目录并启动SwiftMQ路由器。你现在可以使用Mule的SwiftMQ。
+
+== 使用SwiftMQ配置贷款代理ESB示例
+
+以下示例显示如何修改 link:/mule-user-guide/v/3.2/loan-broker-example[贷款经纪人的例子]以使用SwiftMQ。唯一需要的更改是在两个示例配置文件中修改JMS连接器。在本地主机上运行SwiftMQ路由器时，连接器将如下所示：
+
+[source, xml, linenums]
+----
+<jms:connector name="jmsConnector"
+                   connectionFactoryJndiName="ConnectionFactory"
+                   jndiDestinations="true"
+                   forceJndiDestinations="true"
+                   jndiInitialFactory="com.swiftmq.jndi.InitialContextFactoryImpl"
+                   jndiProviderUrl="smqp://localhost:4001/timeout=10000"
+                   specification="1.1"/>
+----
+
+Loan Broker ESB示例使用以下JMS队列（Mule语法）：
+
+[source, code, linenums]
+----
+jms://esb.loan.quotes
+jms://esb.credit.agency
+jms://esb.lender.service
+jms://esb.banks
+----
+
+SwiftMQ不允许点“。”在队列名称中。相反，在SwiftMQ的`routerconfig.xml`中使用下划线'_'：
+
+[source, xml, linenums]
+----
+<swiftlet name="sys$queuemanager">
+	<queue-controllers>
+		<queue-controller name="01" persistence-mode="non_persistent" predicate="tmp$%"/>
+		<queue-controller name="02" predicate="sys$%"/>
+		<queue-controller name="03" predicate="swiftmq%"/>
+		<queue-controller name="04" predicate="rt$%"/>
+		<queue-controller name="05" predicate="unroutable"/>
+		<queue-controller name="06" predicate="%$%"/>
+		<queue-controller name="07" predicate="%"/>
+	</queue-controllers>
+	<queues>
+		<queue name="esb_banks"/>
+		<queue name="esb_credit_agency"/>
+		<queue name="esb_lender_service"/>
+		<queue name="esb_loan_quotes"/>
+	</queues>
+</swiftlet>
+----
+
+要与Loan Broker ESB示例的JMS队列名称匹配，请在SwiftMQ的`routerconfig.xml`中定义JNDI别名：
+
+[source, xml, linenums]
+----
+<swiftlet name="sys$jndi">
+	<aliases>
+		<alias name="esb.banks" map-to="esb_banks@router1"/>
+		<alias name="esb.credit.agency" map-to="esb_credit_agency@router1"/>
+		<alias name="esb.lender.service" map-to="esb_lender_service@router1"/>
+		<alias name="esb.loan.quotes" map-to="esb_loan_quotes@router1"/>
+	</aliases>
+	<jndi-replications/>
+	<remote-queues/>
+</swiftlet>
+----
+
+现在，您可以使用Ant或Maven重建Loan Broker ESB示例，以便配置更改生效，然后启动SwiftMQ路由器和贷款代理ESB示例。
+
+请注意，@符号可以通过Mule URI中的`%40`进行转义，因此对于替代配置，您可以使用以下内容：
+
+[source, xml, linenums]
+----
+<endpoint name="LoanBrokerRequestsREST" address="jetty:rest://localhost:8080/loanbroker"/>
+    <vm:endpoint name="LoanBrokerRequests" path="loan.broker.requests"/>
+    <jms:endpoint name="LoanQuotes" address="jms://esb_loan_quotes%40router1"/>
+    <jms:endpoint name="CreditAgencyGateway" address="jms://esb_credit_agency%40router1"/>
+    <!-- here we're telling Mule to invoke a remote Ejb directly (not host a
+         proxy service for the remote object as with the other example in mule-config-with-ejb-container.xml example)
+    -->
+    <ejb:endpoint name="CreditAgency" host="localhost" port="1099" object="local/CreditAgency" method="getCreditProfile" />
+    <!-- endpoint name="CreditAgency" address="ejb://localhost:1099/local/CreditAgency?method=getCreditProfile" / -->
+    <endpoint name="LenderGateway" address="jms://esb.lender.service" />
+    <endpoint name="LenderService" address="vm://lender.service" />
+    <endpoint name="BankingGateway" address="jms://esb.banks%40router1" />
+    <endpoint name="Bank1" address="axis:http://localhost:10080/mule/TheBank1?method=getLoanQuote"
+              synchronous="true" />
+    <endpoint name="Bank2" address="axis:http://localhost:20080/mule/TheBank2?method=getLoanQuote"
+              synchronous="true" />
+    <endpoint name="Bank3" address="axis:http://localhost:30080/mule/TheBank3?method=getLoanQuote"
+              synchronous="true" />
+    <endpoint name="Bank4" address="axis:http://localhost:40080/mule/TheBank4?method=getLoanQuote"
+              synchronous="true" />
+    <endpoint name="Bank5" address="axis:http://localhost:50080/mule/TheBank5?method=getLoanQuote"
+              synchronous="true" />
+----
+
+请记住，SwiftMQ JNDI别名还会将队列与其物理位置分离。您可以将队列移到另一个路由器，而不会影响客户端。所以最好避免使用物理队列名称。

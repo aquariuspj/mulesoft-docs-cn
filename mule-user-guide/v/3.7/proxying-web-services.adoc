@@ -1,0 +1,98 @@
+= 代理Web服务
+:keywords: anypoint studio,  proxy
+
+Mule可以充当Web服务代理来执行几个有用的功能：
+
+* 路由到适当的后端服务（无论是远程还是本地）
+* 消息转换，例如从旧版本的消息格式转换
+* 协议桥接，例如HTTP到JMS
+* 验证
+* 安全执法
+*  WS-Policy强制执行
+
+不要从头构建代理应用程序，而应考虑使用Anypoint平台代理。
+
+Mule提供了几个帮助你做到这一点的工具：
+
+* 协议桥接 - 允许您将请求从一个端点转发到另一个端点。这通常是代理Web服务的最佳选择。
+*  WSProxyService  - 允许您在代理远程Web服务时在本地服务WSDL。
+* 代理Web服务 - 执行WS-Security或WS-Policy操作，根据诸如操作或SOAP Action之类的信息进行路由，并利用CXF的Web服务功能轻松处理有效负载。
+
+以下各节提供有关这些实用程序的更多信息。
+
+== 协议桥接
+
+最简单的Web服务代理类型只需要通过服务桥接将请求从一个端点转发到另一个端点。您可以直接转发数据流，也可以处理和转换XML。如果您正在进行基于内容的路由选择，这通常是最佳选择，因为它将比完整的CXF代理（仅在某些情况下才需要）增加更少的开销。
+
+以下是一个简单的配置示例，它将一个HTTP端点的请求转发给另一个：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8888" doc:name="HTTP Listener Configuration"/>
+    <{{0}}" port="8888" doc:name="HTTP Request Configuration"/>
+ 
+ 
+ 
+  <flow name="HttpProxyService">
+      <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <{{0}}" method="#[message.inboundProperties.'http.method']" doc:name="HTTP"/>
+  </flow>
+</mule>
+----
+
+这种类型的网桥可以与过滤器相结合，以实现简单的消息路由。对于消息的快速XPath路由，您可以使用 link:/mule-user-guide/v/3.7/sxc-module-reference[SXC模块参考]。
+
+==  WSProxyService
+
+WSProxyService允许您在代理远程Web服务时在本地提供WSDL。当您想要服务的备用WSDL时，或者您不希望WSDL请求与所有其他SOAP消息请求一起路由时，这非常方便。任何附加到HTTP URL的"?wsdl"请求都将被重定向，并且指定的WSDL将被替代。
+
+要在你的流程中配置它，你必须首先用你的WSDL定义一个WSProxyService bean：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+ 
+    <spring:bean name="WSProxyService" class="org.mule.module.cxf.WSProxyService">
+        <spring:property name="wsdlFile" value="localWsdl.wsdl"/>
+    </spring:bean>
+----
+
+接下来，定义您的服务桥梁以使用此组件：
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8080" doc:name="HTTP Listener Configuration"/>
+<http:request-config name="HTTP_Request_Configuration" host="acme.come" port="8080" basePath="remote/web/service" doc:name="HTTP Request Configuration"/>
+ 
+ 
+<flow name="HttpWebServiceBridge">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/my/service" doc:name="HTTP"/>
+        <component>
+         <spring-object bean="WSProxyService" />
+        </component>
+        <{{0}}" method="#[message.inboundProperties.'http.method']" doc:name="HTTP"/>
+</flow>
+----
+
+现在任何对"http://localhost:8080/my/service?wsdl"的请求都会导致您的WSDL被提供服务。
+
+== 使用CXF代理
+
+虽然很多时候您可以在不使用CXF的情况下代理Web服务，但有几种情况您可能需要使用CXF代理：
+
+* 直接处理SOAP体，例如直接向其中添加XML
+* 利用CXF Web服务标准支持来使用WS-Security或WS-Addressing
+* 执行WS-Policy断言
+* 轻松服务与您的服务相关联的WSDL
+* 转换SOAP正文
+
+有关更多详细信息，请参阅 link:/mule-user-guide/v/3.7/proxying-web-services-with-cxf[使用CXF代理Web服务]。

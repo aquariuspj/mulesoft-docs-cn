@@ -1,0 +1,267 @@
+= 导入DataWeave模块和映射
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+在DataWeave代码中，您可以导入其他组件来扩展可用的变量和函数。这可以包括与Mule一起打包的附加模块，例如`dw::Crypto`模块，或者可以包含任何预定义功能的自定义模块。
+
+== 导入和重新使用标准DataWeave模块
+以下是导入标准`dw::Strings`模块的DataWeave代码示例，然后使用`dw::Strings`模块中的大写函数：
+
+。示例模块
+[source,DataWeave,linenums]
+----
+%dw 2.0
+output application/json
+
+import dw::core::Strings
+---
+(Strings::dasherize ( (payload pluck $$)[0] as String) ) : Strings::capitalize( (payload pluck $)[0] )
+----
+
+如果传递给此DataWeave表达式的有效内容是：
+
+。示例：输入负载
+[source,DataWeave,linenums]
+----
+{
+    "some key": "bar"
+}
+----
+
+上面的DataWeave表达式的输出：
+
+。示例：输出
+[source,DataWeave,linenums]
+----
+{
+  "some-key": "Bar"
+}
+----
+
+== 编写，导入和重用自定义DataWeave模块
+您可以将DataWeave函数和变量存储在外部模块文件（有时称为_mapping files_）中，然后将它们导入另一个DataWeave脚本中，以便可以在该脚本中使用自定义函数或变量。例如，您可以将其导入Mule应用程序流中的Transform组件。
+
+. 创建您的模块，例如：
++
+。示例：DataWeave模块（映射文件内容）
+[source,DataWeave,linenums]
+----
+%dw 2.0
+fun myfunc(name:String) = name ++ "_"
+----
++
+与DataWeave脚本不同，该模块不能在标题和正文部分之间包含输出指令，正文表达式或分隔符`---`。
++
+自定义模块文件只能包含`var`，`fun`和`ns`个声明。
++
+. 将您的功能模块保存在`.dwl`文件中，例如`myfunc.dwl`。
+. 在Studio项目中，将文件存储在`src/main/resources`下创建的子文件夹中，例如`src/main/resources/modules`。
++
+将模块保存到此位置使其可供该项目中Mule应用程序中的组件使用。
+
+== 创建，导入和重用DataWeave映射文件作为函数
+您可以使用`import`指令将任何有效的DataWeave（`.dwl`）文件导入支持DataWeave转换的Mule组件（如Transform组件）。以下是DataWeave映射文件的示例内容：
+
+。示例模块
+[source,DataWeave,linenums]
+----
+%dw 2.0
+import dw::core::String
+
+fun capitalizeKey(value:String) = Strings::capitalize(value) ++ "Key"
+---
+{
+  capitalizeKey( (payload pluck $$)[0] as String ) : (payload pluck $)[0]
+}
+----
+
+假设您将上面的DataWeave映射文件存储在Mule项目子目录（`src/main/resources/modules`）下的`MyMapping.dwl`中。
+
+以下是从此DataWeave Mapping文件导入和重新使用正文表达式的示例。
+
+。例
+[source,DataWeave,linenums]
+----
+%dw 2.0
+import modules::MyMapping
+output application/json
+---
+MyMapping::main({"payload": {user: "bar"}}
+----
+
+导入DataWeave映射文件时，其正文被认为是一个名为`main`的附加函数。该函数需要遵循转换使用的输入结构的输入。
+
+这是这个DataWeave映射的结果：
+
+.OUTPUT
+[source,Json,linenums]
+----
+{
+    "UserKey": "bar"
+}
+----
+
+请注意，尽管大写密钥函数是私有的，但仍然通过主函数调用使用，DataWeave映射文件也能够导入并重用dw :: core :: Strings模块。
+
+== 导入模块
+
+导入模块时，模块中包含的所有功能和变量均可在DataWeave正文中使用。
+
+在下面的示例中，模块`MyModule`被导入到标题中。由此，函数`myFunc`（包含在该模块中）可以被调用，它在字符串的末尾添加一个下划线。
+
+。例
+[source,DataWeave,linenums]
+----
+%dw 2.0
+import modules::MyModule
+output application/json
+---
+MyModule::myFunc("dataweave")
+----
+
+.OUTPUT
+[source,Json,linenums]
+----
+"dataweave_"
+----
+
+
+在这种情况下，正在导入的模块存储在路径`modules/MyModule.dwl`中，并包含以下内容：
+
+。示例模块
+[source,DataWeave,linenums]
+----
+%dw 2.0
+fun myfunc(name:String) = name ++ "_"
+----
+
+
+== 从模块导入元素
+
+您可以选择仅导入模块中的特定元素，如单个函数。这也可以帮助您避免在每次引用元素时输入模块名称。
+
+。例
+[source,DataWeave,linenums]
+----
+%dw 2.0
+import myFunc from modules::MyModule
+output application/json
+---
+myFunc("dataweave") ++ "name"
+----
+
+.OUTPUT
+[source,Json,linenums]
+----
+"dataweave_name"
+----
+
+在这种情况下，正在导入的模块存储在路径`modules/MyModule.dwl`中，并包含以下内容：
+
+。示例模块
+[source,DataWeave,linenums]
+----
+%dw 2.0
+fun myfunc(name:String) = name ++ "_"
+----
+
+您也可以直接在DataWeave正文中调用元素，而无需将其导入到标题中：
+
+。例
+[source,DataWeave,linenums]
+----
+%dw 2.0
+output application/json
+---
+modules::MyModule::myFunc("dataweave") ++ "name"
+----
+
+
+
+
+== 从模块导入所有元素
+
+作为导入模块的替代方法，您可以导入模块中的所有元素。这样做的好处是，每次引用元素时，都不必键入模块名称。
+
+
+。例
+[source,DataWeave,linenums]
+----
+%dw 2.0
+import * from modules::MyModule
+output application/json
+---
+myFunc("dataweave") ++ myVar
+----
+
+.OUTPUT
+[source,Json,linenums]
+----
+"dataweave_name"
+----
+
+在这种情况下，正在导入的模块存储在路径`modules/MyModule.dwl`中，并包含以下内容：
+
+。示例模块
+[source,DataWeave,linenums]
+----
+%dw 2.0
+fun myfunc(name:String) = name ++ "_"
+var myVar = "Test"
+----
+
+== 为导入的元素分配本地别名
+
+您可以为其中的导入模块或元素分配替代别名以避免名称冲突。
+
+。例
+[source,DataWeave,linenums]
+----
+%dw 2.0
+import myFunc as appendDash, myVar as weaveName from modules::MyModule
+var myVar = "Mapping"
+output application/json
+---
+appendDash("dataweave") ++ weaveName ++ "_" ++ myVar
+----
+
+.OUTPUT
+[source,Json,linenums]
+----
+"dataweave_name_Mapping"
+----
+
+您也可以将别名应用于导入的模块。
+
+。例
+[source,DataWeave,linenums]
+----
+%dw 2.0
+import modules::MyModule as WeaveMod
+output application/json
+---
+WeaveMod::myFunc("dataweave")
+----
+
+.OUTPUT
+[source,Json,linenums]
+----
+"dataweave_"
+----
+
+
+在这种情况下，正在导入的模块存储在路径`modules/MyModule.dwl`中，并包含以下内容：
+
+。示例模块
+[source,DataWeave,linenums]
+----
+%dw 2.0
+fun myfunc(name:String) = name ++ "_"
+var myVar = "Test"
+----
+
+
+
+
+== 另请参阅
+
+*  link:dataweave-create-module[创建DataWeave模块]

@@ -1,0 +1,565 @@
+= 使用@RESTCall批注为RESTful API创建连接器
+
+本示例将引导您完成RESTful API的Anypoint连接器的实现。 Anypoint DevKit提供了一套方便的称为`@RESTCall`的批注，用于为RESTful API创建连接器。
+
+`@RestCall`注释适用于连接器的`@Connector`类中的方法（`@Processor`），该类声明性地描述API上公开的资源的URL。在编译时，Anypoint DevKit为所有操作生成客户端代码，并为这些方法提供大部分功能。对于特别定义良好的RESTful API，这可以成为快速生成连接器的便捷解决方案。
+
+本文讨论了基于`@RestCall`的连接器的体系结构，介绍了`@RestCall`注释及其用法，最后介绍了一个用于实现一些基本操作的示例Facebook连接器。
+
+image:6-package.png[6包]
+
+== 假设
+
+本文假设您熟悉RESTful API以及 link:/anypoint-connector-devkit/v/3.5[Anypoint连接器DevKit]中描述的DevKit连接器体系结构。
+
+基于RestCall的连接器体系结构== 
+
+DevKit具有内置的客户端功能，可以处理许多"well-behaved" REST式Web服务，这些服务需要干净的URL，正确的HTTP动词使用等。
+
+客户端通过您应用于您的`@Connector`类及其方法的一组注释（`@RestCall`注释）公开。
+
+与大多数连接器相比，创建这些连接器需要编写很少的代码。您仍然使用属性和方法定义一个`@Connector`类;但在这种情况下，`@Connector`类及其方法都是抽象的。 （与其他连接器类型一样，传递给操作的实体类仍然是具体类。）对于每个操作，应用`@RestCall`注释以提供：
+
+* 目标资源的URI模板
+* 请求的HTTP动词
+* 将任何参数替换为URI或发送查询/ POST主体以对请求进行参数化
+
+DevKit在实现抽象方法的子类中生成整个REST客户端。你作为开发人员永远不会看到这个类。
+
+这种简单性是可能的，因为访问定义良好的RESTful API的模式非常一致。
+
+== 关于@RestCall客户端和注释
+
+DevKit提供了一组注释来简化使用RESTful API的工作。这些注释处理所有必要的操作，生成每个REST调用，并合并每个REST调用参数。
+
+生成的代码创建URI，该URI基于传递给`@RestCall`注释的参数，并使用由`@RestCall`的`method`参数指定的动词发出请求。
+
+每个使用`@RestUriParam`批注注释的项目填充URI。在下面的示例中，大括号之间指示的URI的`bucket`部分将替换为`bucketName`的内容，如最后一行的`@RestUriParam`注释中所指定的那样。 （以下示例基于Amazon S3连接器。）
+
+[source, java, linenums]
+----
+@Processor
+@RestCall(uri = "http://{bucket}.s3.amazonaws.com/?max-keys=0", method = HttpMethod.HEAD)
+    public abstract Object bucketExists(@RestUriParam("bucket"),
+         String bucketName);
+----
+
+如下所述，您可以在连接器的`@Processor`方法参数或`@Configurable`字段上使用`@RestUriParam`注释以及其他相关注释。
+
+当生成请求调用时，DevKit包含一个未注释的参数和一个用`@Payload`注释的参数作为调用的主体。
+
+==  @ RestCall注释参考
+
+以下各节详细介绍了针对RESTful API实现连接器的全套注释。
+
+===  @ RestCall
+
+与`@Processor`注释一起使用。指示在调用时，处理器发出RESTful请求。
+
+==== 必需的参数
+
+*  `uri`：要查询的REST资源的URI
+*  `method`：使用的HTTP方法
+
+[source, java, linenums]
+----
+@Processor
+@RestCall(uri = "http://mybucket.s3.amazonaws.com/?max-keys=0",
+   method = HttpMethod.HEAD)
+   public abstract Object bucketExists("mybucket")
+   String bucketName);
+----
+
+上面的例子使用了一个静态URI。有关使用动态生成的URI的详细信息，请参阅`@RestURIParam`。
+
+===  @ RestQueryParam
+
+指定URI查询参数，这些参数在`?`或`&`符号之后附加到URI的路径中。您可以将此注释应用于`@Processor`方法参数或标记为`@Configurable`的连接器字段。这使您可以将动态生成的参数用作查询参数。
+
+==== 必需的参数
+
+* 要附加的参数的名称的字符串表示形式
+
+[source, java, linenums]
+----
+@RestCall(uri = ("http://myservice.com/standard?id=1234",
+   method = org.mule.api.annotations.rest.HttpMethod.GET)
+   ...
+   Public abstract String getID(@RestQueryParam("id")
+   String numID)
+----
+
+===  @ RestURIParam
+
+允许您插入属于URI路径本身的URI参数，这是一些URI所必需的。与`@RestQueryParam`批注一样，您可以将此批注应用于`@Processor`方法参数或标记为`@Configurable`的连接器区域。这使您可以使用动态生成的参数作为URI参数。
+
+==== 必需的参数
+
+* 使用URI参数替换消息处理器的参数
+
+要使用`@RestURIParam`注释，您必须在URI中指定参数以替换为注释，方法是用大括号括起来。在下面的例子中，参数是`{path`}。
+
+[source, java, linenums]
+----
+@RestCall(uri = "http://myservice.com/{path}", method = HttpMethod.HEAD)
+----
+
+引用`@RestURIParam`注释中的参数：
+
+[source, code, linenums]
+----
+...
+Public abstract String setPath(@RestURIParam String path ...
+----
+
+===  @ RestHeaderParam
+
+允许您在呼叫中插入自定义标题。您可以将此注释应用于`@Processor`方法参数或注释中标记的HTTP标头的`@Configurable`字段。这使您可以将动态生成的参数用作查询参数。
+
+==== 必需的参数
+
+* 要包含在呼叫中的标题的名称。
+
+[source, java, linenums]
+----
+@RestHeaderParam("AuthorizationCode")
+@Configurable private String authorizationCode;
+@Processor
+@RestCall(uri = "http://\{bucket\}.s3.amazonaws.com/?max-keys=0",
+   method = HttpMethod.HEAD)
+   public abstract Object bucketExists(@UriParam("bucket")
+   String bucketName);
+----
+
+===  @ RestPostParam
+
+允许您在POST方法调用的主体中设置参数。您可以将此注释应用于`@Processor`方法参数或标记为`@Configurable`的连接器字段。 DevKit确保您仅将此注释应用于POST方法。
+
+使用`@RestPostParam`注释的处理器方法不能使用未注释的参数或带有`@Payload`注释的参数。
+
+== 实现@RestCall连接器
+
+本文档的其余部分将引导您完成一个`@RestCall`连接器。您可以直接按照演练来构建此特定示例，也可以应用相同的过程为您自己的API构建连接器。
+
+=== 示例@RestCall连接器：Facebook Graph API
+
+Facebook Graph API是应用程序将数据导入和导出Facebook社交图并与Facebook平台进行交互的主要方式。有关背景信息，请参阅Facebook的https://developers.facebook.com/docs/getting-started/graphapi/ [入门指南：图形API]。
+
+本讨论是围绕使用OAuth身份验证的Facebook Graph API的示例连接器构建的，并提供两种操作：
+
+* 以用户对象的形式检索指定用户的配置文件信息
+* 在Facebook时间轴上发布针对指定用户的更新+
+
+=== 设置对Facebook图形API的访问
+
+Graph API支持读取公共信息的未经身份验证的访问，但需要OAuth2身份验证才能进行写入访问。对Graph API的OAuth2访问要求您：
+
+* 注册Facebook开发者帐户
+* 创建Facebook应用程序（将您的Facebook客户端应用程序与Facebook服务器上的开发者帐户标识关联起来）
+
+有关设置已通过身份验证的API访问的详细信息，请参阅 http://developers.facebook.com/docs/samples/meals-with-friends/register-facebook-application/[Facebook文件]。 Facebook会生成*Consumer Key*和*Consumer Secret*，您需要完成该练习。
+
+== 实现@Connector类
+
+RestCall客户端可以与`@OAuth`认证注释或连接管理框架一起使用。在这种情况下，Facebook连接器使用OAuth 2.0身份验证。抽象`@Connector`类`FacebookConnector`在类上获得`@RestCall`注释和与OAuth相关的注释。
+
+以下代码片段摘自`@Connector`类`FacebookConnector`：
+
+[source, code, linenums]
+----
+/**
+ * Facebook OAuth2 connector
+ *
+ */
+@OAuth2(accessTokenUrl = "https://graph.facebook.com/oauth/access_token",
+        authorizationUrl = "https://graph.facebook.com/oauth/authorize",
+        accessTokenRegex = "access_token=([^&]+?)&", expirationRegex = "expires=([^&]+?)$")
+@Connector(name = "facebook-connector")
+public abstract class FacebookConnector {
+ 
+    /**
+     * Your application's client identifier (consumer key in Remote Access Detail).
+     */
+    @Configurable
+    @OAuthConsumerKey
+    private String consumerKey;
+ 
+ 
+    /**
+     * Your application's client secret (consumer secret in Remote Access Detail).
+     */
+    @Configurable
+    @OAuthConsumerSecret
+    private String consumerSecret;
+ 
+    //@RestQueryParam("access_token")
+    @OAuthAccessToken
+    private String accessToken;
+ 
+ 
+    @OAuthCallbackParameter(expression = "#[json:id]")
+    private String userId;
+ 
+    @OAuthAccessTokenIdentifier
+    public String getUserId() {
+        return userId;
+    }
+ 
+ 
+    /* ...Getters and setters omitted */
+}
+----
+
+笔记：
+
+* 类`FacebookConnector`是抽象类，它是`RestCall`连接器所必需的
+*  OAuth2注释用于相关的方法和属性，如 link:/anypoint-connector-devkit/v/3.5/oauth-v2[OAuth V2] +
+在此阶段，* 操作代码被省略
+
+== 实现数据模型实体类
+
+定义表示传递给Web服务请求和从Web服务请求返回的数据的所有实体类，以及JSON文档如何映射到与连接器一起使用的Java类。
+
+给定一个JSON模式或该服务的示例文档，您可以使用工具*JSONSchema2POJO*生成类， http://www.jsonschema2pojo.org/. (The link:https://github.com/joelittlejohn/jsonschema2pojo/wiki[GitHub上的wiki]提供了入门和JSONSchema2POJO的参考文档。）
+
+创建数据模型类后，将它们添加到项目中，并将它们导入到您的`@Connector`类中。
+
+=== 示例：Facebook用户类
+
+对于我们的示例，类`User`是将有关Facebook用户的数据传递给API的实体类。在实现使用它的操作之前，定义这个类并将其添加到项目中。
+
+`User.java`的完整定义如下：
+
+[source, code, linenums]
+----
+package com.fb;
+import java.util.HashMap;
+import java.util.Map;
+import javax.annotation.Generated;
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.commons.lang.builder.ToStringBuilder;
+import org.codehaus.jackson.annotate.JsonAnyGetter;
+import org.codehaus.jackson.annotate.JsonAnySetter;
+import org.codehaus.jackson.annotate.JsonProperty;
+import org.codehaus.jackson.annotate.JsonPropertyOrder;
+import org.codehaus.jackson.map.annotate.JsonSerialize;
+@JsonSerialize(include = JsonSerialize.Inclusion.NON_NULL)
+@Generated("com.googlecode.jsonschema2pojo")
+@JsonPropertyOrder({
+    "id",
+    "name",
+    "first_name",
+    "last_name",
+    "link",
+    "username",
+    "gender",
+    "locale"
+})
+public class User {
+    /**
+     * User ID
+     *
+     */
+    @JsonProperty("id")
+    private String id;
+    /**
+     * User name
+     *
+     */
+    @JsonProperty("name")
+    private String name;
+    /**
+     * User first name
+     *
+     */
+    @JsonProperty("first_name")
+    private String first_name;
+    /**
+     * User last name
+     *
+     */
+    @JsonProperty("last_name")
+    private String last_name;
+    /**
+     * Link
+     *
+     */
+    @JsonProperty("link")
+    private String link;
+    /**
+     * Username
+     *
+     */
+    @JsonProperty("username")
+    private String username;
+    /**
+     * Gender
+     *
+     */
+    @JsonProperty("gender")
+    private String gender;
+    /**
+     * Locale
+     *
+     */
+    @JsonProperty("locale")
+    private String locale;
+    private Map<String, Object> additionalProperties = new HashMap<String, Object>();
+    /**
+     * Get user ID
+     *
+     */
+    @JsonProperty("id")
+    public String getId() {
+        return id;
+    }
+    /**
+     * Set user ID
+     *
+     */
+    @JsonProperty("id")
+    public void setId(String id) {
+        this.id = id;
+    }
+    /**
+     * Get user name
+     *
+     */
+    @JsonProperty("name")
+    public String getName() {
+        return name;
+    }
+    /**
+     * Set user name
+     *
+     */
+    @JsonProperty("name")
+    public void setName(String name) {
+        this.name = name;
+    }
+    /**
+     * Get user first name
+     *
+     */
+    @JsonProperty("first_name")
+    public String getFirst_name() {
+        return first_name;
+    }
+    /**
+     * Set user first name
+     *
+     */
+    @JsonProperty("first_name")
+    public void setFirst_name(String first_name) {
+        this.first_name = first_name;
+    }
+    /**
+     * Get user last name
+     *
+     */
+    @JsonProperty("last_name")
+    public String getLast_name() {
+        return last_name;
+    }
+    /**
+     * Set user last name
+     *
+     */
+    @JsonProperty("last_name")
+    public void setLast_name(String last_name) {
+        this.last_name = last_name;
+    }
+    /**
+     * Get the link
+     *
+     */
+    @JsonProperty("link")
+    public String getLink() {
+        return link;
+    }
+    /**
+     * Set the link
+     *
+     */
+    @JsonProperty("link")
+    public void setLink(String link) {
+        this.link = link;
+    }
+    /**
+     * Get the username
+     *
+     */
+    @JsonProperty("username")
+    public String getUsername() {
+        return username;
+    }
+    /**
+     * Set the username
+     *
+     */
+    @JsonProperty("username")
+    public void setUsername(String username) {
+        this.username = username;
+    }
+    /**
+     * Get user gender
+     *
+     */
+    @JsonProperty("gender")
+    public String getGender() {
+        return gender;
+    }
+    /**
+     * Set user gender
+     *
+     */
+    @JsonProperty("gender")
+    public void setGender(String gender) {
+        this.gender = gender;
+    }
+    /**
+     * Get the locale
+     *
+     */
+    @JsonProperty("locale")
+    public String getLocale() {
+        return locale;
+    }
+    /**
+     * Set the locale
+     *
+     */
+    @JsonProperty("locale")
+    public void setLocale(String locale) {
+        this.locale = locale;
+    }
+    @Override
+    public String toString() {
+        return ToStringBuilder.reflectionToString(this);
+    }
+    @Override
+    public int hashCode() {
+        return HashCodeBuilder.reflectionHashCode(this);
+    }
+    @Override
+    public boolean equals(Object other) {
+        return EqualsBuilder.reflectionEquals(this, other);
+    }
+    @JsonAnyGetter
+    public Map<String, Object> getAdditionalProperties() {
+        return this.additionalProperties;
+    }
+    @JsonAnySetter
+    public void setAdditionalProperties(String name, Object value) {
+        this.additionalProperties.put(name, value);
+    }
+}
+----
+
+笔记：
+
+*  @Generated（"com.googlecode.jsonschema2pojo"）注释表示该类是使用托管于http://www.jsonschema2pojo.org/的 link:https://github.com/joelittlejohn/jsonschema2pojo/wiki/Getting-Started#the-maven-plugin[JSONSchema2POJO]工具生成的。
+* 来自程序包`org.codehaus.jackson.annotate`的多个导入以及所使用的特定注释（例如`@JsonProperty, @JsonAnySetter, @JsonAnyGetter`）反映了RestCall客户端在内部使用Jackson对与服务交换的JSON数据进行序列化和反序列化的事实。务必在Jackson模式下使用JSONSchema2POJO。
+
+== 将操作添加到@Connector类
+
+在`@Connector`类上执行操作时，请注意，对于`RESTCall`连接器，操作方法（如类本身）是抽象的。方法的注释指定：
+
+*  REST网址的模板，带有参数占位符
+* 值为：+
+** 替换网址中的占位符
+** 追加为GET查询参数
+** 在POST正文中发送
+* 期望作为返回值的类
+* 要使用的HTTP请求方法（如GET，POST或PUT）
+
+[IMPORTANT]
+====
+*Apply a Test-Driven Approach* +
+
+基于MuleSoft的经验，大多数成功的连接器实现项目在构建连接器上的操作时遵循与测试驱动开发类似的周期：
+
+* 确定操作的详细要求 - 连接器可以接受作为输入或作为响应返回的实体（POJO或具有特定内容的地图）;任何边缘情况如无效值，错误类型的值等等;以及该操作可能引发的例外情况。
+* 实施涵盖这些要求的jUnit测试。
+* 实现足够的操作来通过这些测试，包括创建新的实体类和异常。
+* 使用填充与每个操作相关的Javadoc的注释更新您的`@Connector`类和其他代码。
+
+迭代，直到涵盖您的操作要求中涵盖的所有场景。然后使用相同的循环来实现每个操作，直到连接器功能完成。
+
+如果您的客户端库有详细的文档记录，那么预期的操作行为应该清晰，并且您可以通过对边缘案例和某些特殊情况进行较少的单元测试而逃脱，但请记住，连接器的可靠性与您基于它的Java客户端。
+
+您可能会问，"When do I try my connector in Studio?"除了自动化的JUnit测试外，随时随地手动测试每个操作也很有用也令人高兴。测试每个操作可以让您：
+
+* 在您的工作中查看基本操作功能，让您了解进度。
+* 查看连接器在Studio用户界面中的显示方式，这些自动化单元测试无法显示给您。例如，来自Javadoc注释的文本用于填充连接器中对话框中字段的工具提示。
+
+手动测试提供了擦亮连接器外观的机会，通过合理的默认设置改进体验等等。
+
+但是，这并没有削弱测试驱动方法的价值。许多连接器开发项目已经陷入困境或者生产出难以使用的连接器，因为在定义操作时未能定义测试，它看起来像（而且）更多地在前面工作，但确实有收益 - 您会获得更好的效果结果，更快。
+
+有关开发连接器测试的详细信息，请参阅 link:/anypoint-connector-devkit/v/3.5/developing-devkit-connector-tests[开发DevKit连接器测试]。
+====
+
+=== 示例：FacebookConnector操作方法
+
+以下连接器公开了`getUser()`和`publishWall()`操作：
+
+[source,java, linenums]
+----
+/**
+     * GET a user profile.
+     * {@sample.xml ../../../examples/Facebook.default.xml.sample facebook-connector:default}
+     *
+     * @param user
+     * Represents the ID of the user object.
+     * @param metadata
+     * The Graph API supports introspection of objects, which lets
+     * you see all of the connections an object has without knowing
+     * its type ahead of time.
+     * @return  a User object.
+     * @throws IOException
+     * when the call fails
+     */
+    @Processor
+    @RestCall(uri = "https://graph.facebook.com/{user}", method = HttpMethod.GET)
+    public abstract User getUser(
+        @RestUriParam("user") String user,
+        @RestQueryParam("metadata") String metadata)
+        throws IOException
+    ;
+
+    /**
+     * Post a message on a user's wall
+     * {@sample.xml ../../../examples/Facebook.default.xml.sample facebook-connector:default}
+     *
+     * @param message
+     * Message to be published
+     * @param user
+     * User ID
+     * @return  No return information available
+     * @throws IOException
+     * when the call fails
+     */
+    @OAuthProtected
+    @Processor
+    @RestCall(uri = "https://graph.facebook.com/{user}/feed", method = HttpMethod.POST, contentType = "application/json")
+    public abstract String publishWall(
+        @RestUriParam("user") String user,
+        @RestPostParam("message") String message)
+        throws IOException
+    ;
+----
+
+笔记：
+
+*  `getUser()`没有`@OAuthProtected`注释。即使没有身份验证，Facebook也允许获取一些用户信息（尽管通过身份验证可能会返回更完整的响应，具体取决于经过身份验证的用户与所请求用户的关系，所请求用户的隐私设置等）
+* 发布到墙上需要身份验证，因此已注释`@OAuthProtected`
+
+== 另请参阅
+
+在您有一个连接器可以在Studio中安装并且可以通过基本的单元测试之后，您可以：
+
+* 继续通过上述迭代过程添加操作，直到您拥有所需的操作和测试用例来验证所有期望的行为。
+* 按 link:/anypoint-connector-devkit/v/3.5/defining-connector-attributes[定义连接器属性]中所述，通过更多注释优化连接器对话框和XML元素的外观。
+* 您也可以返回到 link:/anypoint-connector-devkit/v/3.5/anypoint-connector-development[Anypoint连接器开发]。

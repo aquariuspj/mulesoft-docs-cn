@@ -1,0 +1,100 @@
+= 统一Mule注册表
+
+Mule 3.7和更新版本提供了生命周期和 link:/mule-user-guide/v/3.8/dependency-injection[依赖注入机制]的升级，并统一了Mule Registry。这些更改保持向后兼容性。
+
+MuleContext包含对象注册表的概念。 Mule注册表基本上是一组用于访问Mule组件的键值对，例如连接器，工厂，对象库，管理器等。
+
+*Important:*开始之前， link:https://blogs.mulesoft.com/dev/mule-dev/sneak-peek-mule-3-7-deepest-internals/[阅读Mule 3.7内部博客]。
+
+== 新的SimpleRegistry
+
+Mule 3.7和更新的版本提供了新的SimpleRegistry，它提供了一种非Spring的方式来将Mule内核从Spring中解耦，这对于测试非常重要。所有直接扩展*AbstractMuleContextTestCase*的测试都需要MuleContext来使注册表工作。
+
+SimpleRegistry具有以下属性：
+
+*  SimpleRegistry轻量且足够简单，可用于测试Registry接口的实现。
+*Important*：不要在生产中使用SimpleRegistry。
+在注册或取消注册任何对象时，*  SimpleRegistry不应用生命周期操作（与TransientRegistry不同）。
+*  SimpleRegistry仅为JSR-330提供基本的非高性能支持，并且仅对使用@Inject注释的字段执行依赖注入。
+*  SimpleRegistry将向后兼容性扩展到任何引用TransientRegistry的自定义测试;但是，这不被推荐。
+
+Mule会自动将SimpleRegistry添加到AbstractMuleContextTestCase的所有子类中的MuleContext，这些子类不扩展FunctionalTestCase。
+
+*FunctionalTestCase*基类继续照常运行，但仅使用*SpringRegistry*。在这种情况下，不要使用SimpleRegistry或TransientRegistry，它模仿实际运行时的行为。
+
+==  TransientRegistry已弃用
+
+Mule收敛于SpringRegistry，它是一个Spring注册表。以前的Mule TransientRegistry已被弃用。为了向后兼容，在Mule软件分发中提供了TransientRegistry，但未使用。
+
+SpringRegistry的好处是：
+
+* 所有对象现在都出现在注册表中，没有互操作性问题。
+*  Spring以正确的顺序创建所有对象，并将依赖注入到它们中，即使在循环依赖的情况下也是如此。
+*  Spring为 link:https://jcp.org/en/jsr/detail?id=330[JSR-330]提供了开箱即用的支持。
+*  Spring是我们已经依赖的经过验证的工具。
+
+统一解决了注册表拆分，互操作性和依赖注入的所有问题。有关更多信息，请参阅 link:http://blogs.mulesoft.com/sneak-peek-mule-3-7-deepest-internals/[狙击Mule 3.7最深的内部]。
+
+也不推荐使用*InjectProcessor*和*PreInitProcessor*接口及其所有实现。
+
+==  SpringRegistryBootstrap取代SimpleRegistryBootstrap
+
+如果用SpringRegistry替换TransientRegistry，则后者或其他组件需要承担TransientRegistry执行的所有任务的责任。其中一项任务是处理`registry-bootstrap.properties`文件。
+
+当Mule启动时，它将在类路径中搜索`registry-bootstrap.properties`文件，该文件包含对象的键和类名以自动添加到注册表中。例如，新的 link:/mule-user-guide/v/3.8/http-connector[HTTP连接器]使用属性文件来注册连接管理器。批处理模块使用它来注册批处理引擎等。
+
+SimpleRegistryBootstrap组件以前负责创建这些类的实例并将它们注册到TransientRegistry中。这是有问题的，因为：
+
+* 当这些对象被注册时，TransientRegistry错误地应用了initialize（）阶段
+*  SimpleRegistryBootstrap对象是作为 link:http://blogs.mulesoft.com/tag/spring/[弹簧] bean被触发的，它在TransientRegistry和SpringRegistry之间创建了一个非常奇怪的函数依赖关系。
+
+SimpleRegistryBootstrap在3.7.0中也被弃用，并且被SpringRegistryBootstrap取代，它在功能上是相似的，但没有实例化和注册对象。相反，它会创建并注册BeanDefinition对象，并将其添加到初始化的Spring BeanFactory *before*中。这样，引导程序对象就像XML中定义的组件一样经历创建，注入，初始化的相同循环。这修复了以前尝试获取不存在的依赖关系的对象的关键问题。既然你可以使用依赖注入，你根本不需要获取依赖关系！
+
+== 覆盖机制
+
+Mule还提供了与Agent和CoreExtensions的向后兼容性，这些是Mule扩展点，它们交叉引用部署在Mule容器中的应用程序。其中一个例子是ClusterCoreExtension，它替换了集群版本的默认QueueManager和ObjectStore实例，同时添加了自己的对象，如HazelcastManager。
+
+在Mule 3.7之前，该机制起作用，因为TransientRegistry已经存在以接收这些对象，并且因为它优先于SpringRegistry。
+
+以下调用显示了TransientRegistry中的版本是如何返回的，而不是Spring中的版本：
+
+[source, code, linenums]
+----
+muleContext.getRegistry().lookupObject(QueueManager.class)
+----
+
+但是，这不是一个一致的行为，因为您可以声明这一点：
+
+[source, xml, linenums]
+----
+<bean id="myComponent" class="org.my.Component" >
+    <property name="queueManager" ref="_muleQueueManager" />
+</bean>
+----
+
+您可以在 link:https://github.com/[GitHub上]中查看此示例的 link:https://gist.github.com/marianogonzalez/6bc6e7cd04c079839ea6#file-gistfile1-xml[gistfile1.xml]。
+
+myComponent bean获取本地队列管理器而不是群集管理器，因为它由Spring创建并注入，而ClusterCoreExtension对TransientRegistry提供的群集awareQueueManager一无所知。
+
+这个问题是通过注册统一来解决的，但它引入了另一个问题：在执行CoreExtension时，SpringRegistry还不存在。
+
+解决这个问题的方法是：
+
+* 当MuleContext创建时，默认情况下它有一个注册表，但不再是一个TransientRegistry，而是一个SimpleRegistry，这意味着没有渴望的初始化。
+*  SimpleRegistry捕获Spring启动之前注册的任何对象。
+* 创建时，SpringRegistry遍历所有其他注册表（如果有）并接管其注册对象。被接管的物品和注册处被视为被吸收。
+*  Mule将每个吸收的注册表从MuleContext中移除。
+* 当SpringRegistry请求一个被吸收的对象时，Mule确保返回的实例与用于吸收注册表的过程完全相同。
+
+通过这种方式，穆勒实现了：
+
+* 与代理和核心扩展的向后兼容性。
+* 用于覆盖定义的一致机制。
+* 重写对象在初始化和依赖注入期间得到公平的处理。
+
+== 另请参阅
+
+*  link:http://blogs.mulesoft.com/sneak-peek-mule-3-7-deepest-internals/[狙击Mule 3.7最深的内部]
+*  link:http://blogs.mulesoft.com/mule-3-6-library-upgrades/[图书馆升级骡3.6]
+*  link:http://blogs.mulesoft.com/mule-3-6-xml-xpath-xslt-xquery3/[你进入XML？ Mule现在支持XPath，XSLT和XQuery 3.0]
+*  link:/anypoint-connector-devkit/v/3.8/building-a-batch-enabled-connector[Mule操作方法：构建批量启用的云连接器]

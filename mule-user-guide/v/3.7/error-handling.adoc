@@ -1,0 +1,203 @@
+= 错误处理
+:keywords: error handling, exceptions, exception catching, exceptions
+
+Mule提供了多种处理错误的选项。发生在Mule中的故障被称为*exceptions*;当您的Mule实例中的活动失败时，Mule会引发异常。为了管理这些例外情况，Mule允许您配置*exception strategies*。
+
+Mule的默认异常策略 - 隐式应用于所有Mule应用程序 - 管理Mule流程中的错误（即抛出的异常）。当您的流程需要更复杂的错误管理时，您可以实施一个或多个异常策略来构造精确，高效的协议以处理错误。
+
+从高层角度来看，Mule中出现的错误可分为两类：*System Exceptions*和*Messaging Exceptions*。
+
+== 系统异常
+
+当_system-level_引发异常时（即，当不涉及消息时，异常由系统异常策略处理），Mule调用*System Exception Strategy*。例如，系统异常策略处理发生的异常：
+
+* 在应用程序启动过程中
+
+* 与外部系统的连接失败时
+
+当发生系统异常策略时，Mule向已注册的侦听器发送异常通知，记录异常，并且 - 如果异常是由连接失败引起的 - 则执行 link:/mule-user-guide/v/3.7/configuring-reconnection-strategies[重新连接策略]。系统异常策略不能在Mule中配置。
+
+=== 示例场景
+
+Mule建立与JMS代理的连接以接收消息。当Mule试图使用连接消费一条消息时，连接失败，这导致Mule调用系统异常策略。由于在收到任何消息进行处理之前发生故障，Mule调用_system_而不是_messaging_，异常策略。
+
+== 消息传递例外
+
+无论何时在流内引发异常（即，无论何时涉及消息，异常由_messaging_异常策略处理），Mule都会调用*Messaging Exception Strategy*。
+
+当通过Mule流处理的消息抛出异常时，正常流程执行将停止，并且处理将转移到异常策略中的消息处理器序列。您可以将任意数量的消息处理器（在一种情况下是其他异常策略）合并到异常策略中，以便按照您的意愿处理异常。下图说明了当消息抛出异常时会发生什么。
+
+image:flow_exception.png[flow_exception]
+
+Mule支持五种类型的消息传递异常策略，每种策略都能够处理处理事务的流程中发生的错误：
+
+[%header%autowidth.spread]
+|===
+2 + |例外策略 |使用 |交易错误处理
+|不适用 | <<Default Exception Strategy>>  |默认定义和隐式应用，以处理在Mule应用程序中引发的所有消息传递异常 |当消息抛出异常情况下，默认的异常策略回滚消息并记录异常。
+| image:catch-1.png[赶上-1]  | link:/mule-user-guide/v/3.7/catch-exception-strategy[捕捉异常策略]  |定义一个catch异常策略来定制Mule处理任何异常的方式。捕获异常策略消耗入站消息。 |当消息抛出异常时，捕获异常策略_always_将提交事务并使用该消息。
+定义回滚异常策略以确保在流中抛出异常的消息被回退以供重新处理（如果消息源支持重新传送）。回滚异常策略不消耗入站消息。 |当消息引发异常时，回滚异常策略会尝试回滚消息并重新传递它以进行处理（如果消息源支持重新传递）。如果消息超过其重新传递尝试，则回滚异常策略将从其入站源接收消息并使用该消息。
+| image:reference.png[参考]  | link:/mule-user-guide/v/3.7/reference-exception-strategy[参考例外策略]  |定义一个引用异常策略来引用并遵守全局catch，rollback或choice异常策略中定义的错误处理参数。 |当消息抛出异常时，引用异常策略引用并遵守全局catch，rollback或choice异常策略中定义的错误处理参数。 （引用异常策略本身从未实际执行任何回滚，提交或消费活动。）
+定义一个选择异常策略来定制Mule处理一个消息的方式，该消息根据当前消息的内容引发异常它会引发异常。 |当消息抛出异常时，选择异常策略会决定将消息路由到哪里以供进一步处理。 （选择异常策略本身从未实际执行任何回滚，提交或消费活动。）
+|===
+
+=== 消息传递例外策略的特征
+
+* 每个流只能包含一个异常策略。然而，这可能是一个选择异常策略，然后引用其他嵌套的异常策略。
+
+* 选择异常策略可以包含一个或多个捕获和/或回滚异常策略。 （但是，回滚和捕获异常策略不能包含其他异常策略。）
+
+* 每个异常策略都可以包含任意数量的消息处理器。
+
+* 异常策略消息处理器不应该抛出异常，因为您无法为这些消息处理器创建嵌套异常策略。
+
+== 默认的例外策略
+
+Mule的默认异常策略隐式和全局地处理在Mule应用程序中引发的所有消息传递异常。您可以通过向流中添加捕获，回滚或选择异常策略来重写Mule的默认异常策略。否则，当一个流中抛出一个异常时，Mule会自动回滚任何待处理的事务并记录异常;如果不涉及事务，则默认的异常策略只记录异常。
+
+==== 何时使用
+
+只要您不需要自定义策略来处理错误，就允许Mule的默认异常策略激活。
+
+==== 配置默认的例外策略
+
+由于默认的异常策略隐式应用于所有Mule流，因此不需要明确指定它。 Mule的默认异常策略会在您的任何流程中发生错误时自动激活。默认的异常策略不能使用Studio界面进行配置。但是，您可以构建全局默认异常策略来自定义Mule隐式处理应用程序中的错误的方式。请参阅下面的<<Custom Default Exception Strategies>>部分。
+
+== 自定义默认例外策略
+
+您可以创建一个或多个全局异常策略，以便在整个Mule应用程序的流中重用。首先，创建一个全局异常策略，然后向流添加一个引用异常策略，以应用新的全局异常策略的错误处理行为。
+
+请咨询个人 link:/mule-user-guide/v/3.7/catch-exception-strategy[抓住]， link:/mule-user-guide/v/3.7/rollback-exception-strategy[回滚]或 link:/mule-user-guide/v/3.7/choice-exception-strategy[选择]例外战略页面以获取有关如何全局创建它们的详细信息;请参阅 link:/mule-user-guide/v/3.7/reference-exception-strategy[参考]异常策略页面以了解如何在全局范围内重用它们的详细信息。
+
+=== 创建全局默认例外策略
+
+创建一个全局默认异常策略来定制Mule _implicitly_处理应用程序中发生的所有异常的方式。为此，您必须首先创建一个配置文件来包含要引用的全局默认异常策略的catch，rollback或choice异常策略。然后，添加引用异常策略以引用配置文件中的其他全局异常策略。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Decide which type of exception strategy to configure to best meet your default exception strategy requirements: catch, rollback or choice.
+
+. Follow the procedure detailed in one of the following documents to *create a global catch, rollback or choice exception strategy* for your global default strategy to reference:
+
+*  link:/mule-user-guide/v/3.7/catch-exception-strategy[Catch Exception Strategy]
+
+*  link:/mule-user-guide/v/3.7/choice-exception-strategy[Choice Exception Strategy]
+
+*  link:/mule-user-guide/v/3.7/rollback-exception-strategy[Rollback Exception Strategy]
+
+. In Studio, create a simple *Global Configuration* element (below, left), configure it to reference the global exception strategy you created in step 2 (below, right), then click *OK* to save.
++
+image:global_config_all.png[global_config_all]
+
+. Mule implicitly invokes your customized global exception strategy each time an exception is thrown in a flow in the application.
++
+[TIP]
+====
+*Shortcut to Create a Global Exception Strategy*
+
+You can create a global catch, rollback or choice exception strategy (i.e. access the Choose Global Type panel) from the *Global Configuration's* properties panel. Click on the **+* button next to the *Default Exception Strategy** drop-down combo box to create a global exception strategy.
+
+image:global_access.png[global_access]
+====
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+
+. Decide which type of exception strategy to configure to best meet your default exception strategy requirements: catch, rollback or choice.
+
+. Follow the procedure detailed in one of the following documents to *create a global catch, rollback or choice exception strategy* for your global default strategy to reference:
+
+*  link:/mule-user-guide/v/3.7/catch-exception-strategy[Catch Exception Strategy]
+
+*  link:/mule-user-guide/v/3.7/choice-exception-strategy[Choice Exception Strategy]
+
+*  link:/mule-user-guide/v/3.7/rollback-exception-strategy[Rollback Exception Strategy]
++
+[source,xml, linenums]
+----
+<catch-exception-strategy name="Catch_ES_for_Default">
+    <logger level="INFO" doc:name="Logger"/>
+</catch-exception-strategy>
+<http:listener-config name="HttpListenerConfiguration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+ 
+     
+     
+<flow name="Creation1Flow1" doc:name="Creation1Flow1">
+    <http:listener config-ref="HttpListenerConfiguration" path="/" doc:name="HTTP"/>
+    <cxf:jaxws-service doc:name="SOAP">
+    </cxf:jaxws-service>
+...
+</flow>  
+----
++
+*View the Namespace*
++
+[source,xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+ 
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd">
+----
+
+. Add another global element, **`configuration`**, below the global exception strategy.
+
+. To the configuration global element, add the attributes according to the table below. Refer to code sample below.
++
+[%header%autowidth,width=80%]
+|===
+|Attribute |Value
+|*defaultExceptionStrategy-ref* |name of your global exception strategy
+|*doc:name* |unique name for the element, if you wish (not required for Standalone)
+|*doc:description* |documentation for the element, if you wish
+|===
+
++
+[source,xml, linenums]
+----
+<catch-exception-strategy name="Catch_ES_for_Default" when="#[payload.null]">
+    <logger level="INFO" doc:name="Logger"/>
+</catch-exception-strategy>
+    
+<configuration defaultExceptionStrategy-ref="Catch_ES_for_Default" doc:name="Configuration" doc:description="Use as implicit default exception strategy."/>
+ 
+<http:listener-config name="HttpListenerConfiguration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+ 
+    
+     
+<flow name="Creation1Flow1" doc:name="Creation1Flow1">
+    <http:listener config-ref="HttpListenerConfiguration" path="/" doc:name="HTTP"/>
+    <cxf:jaxws-service doc:name="SOAP">
+    </cxf:jaxws-service>
+...
+</flow>  
+----
+....
+------
+
+== 处理错误的其他方式
+
+=== 直到成功范围
+
+*Until Successful*的行为与回滚异常策略类似。此作用域尝试通过其子流路由消息，直到消息成功处理。但是，您可以定义直到成功范围承担的最大处理尝试次数，然后才能恢复为处理该消息，就好像它是一个异常。您可以配置*Failure Expression*，*Ack Expression*或*Dead Letter Queue Reference*来指示范围如何管理无法处理的邮件。在这方面，直到成功范围行为类似于 link:/mule-user-guide/v/3.7/rollback-exception-strategy[回滚异常策略]。有关详细信息，请参阅 link:/mule-user-guide/v/3.7/scopes[领域]文档。
+
+=== 异常过滤器
+
+当Mule的异常过滤器发现包含`exceptionPayload`字段中的消息的消息时，会停止正常的流程执行。相比之下，当消息在流中引发异常时，异常策略通常会停止正常流程执行。您可以组合这两者并配置异常过滤器以停止正常的流程执行并抛出异常，这将触发异常策略。有关配置详细信息，请参阅 link:/mule-user-guide/v/3.7/filters[过滤文档]。
+
+=== 重新连接策略
+
+Mule的*Reconnection Strategies*指定连接器在连接失败时的行为方式。您可以通过指定一些标准来控制Mule尝试重新连接的方式：异常类型，重新连接尝试次数和频率，生成的通知等等。通过重新连接策略，您可以通过配置它来更好地控制失败连接的行为，例如，每15分钟重新尝试一次连接，并在10次尝试后停止尝试重新连接。重新连接策略行为类似于异常策略，但重新连接策略专门为 - 和重新连接尝试提供指令。有关详细信息，请参阅 link:/mule-user-guide/v/3.7/configuring-reconnection-strategies[重新连接策略文档]。
+
+===  CXF错误处理
+
+利用CXF的Web服务可以实现与CXF兼容的Mule异常策略（例如Catch和Rollback异常策略）。有关详细信息，请参阅 link:/mule-user-guide/v/3.7/cxf-error-handling[CXF错误处理文档]。
+
+== 另请参阅
+
+* 要了解如何配置Mule的异常策略来处理最常见的错误处理用例，请阅读 link:/mule-user-guide/v/3.7/exception-strategy-most-common-use-cases[异常策略最常见的用例]。

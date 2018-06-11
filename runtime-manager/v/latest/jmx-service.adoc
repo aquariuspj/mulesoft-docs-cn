@@ -1,0 +1,183 @@
+=  JMX服务
+:keywords: agent, mule, esb, servers, monitor, notifications, external systems, third party, get status, metrics
+
+image:logo-cloud-disabled.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-active.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-active.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+Runtime Manager Agent JMX服务允许您跟踪特定的JMX度量标准并将它们发布到外部服务。可以将该服务配置为跟踪特定的Bean并更改其发布其值的频率。
+
+此外，MuleSoft还将多个开源监控发布者作为独立的代理模块提供。这些按原样提供，并且不支持MuleSoft。有关详细信息，请参阅下面的<<Open Source Agent Modules>>。 +
+
+
+
+==  JMX发布者
+
+JMX服务会将所有收集的度量标准发送给发布者，然后将这些度量标准发布到外部监视工具。该服务本身为常用工具提供了一些示例发布者;此外，您可以创建自己的发布者以满足您的特定需求。
+
+== 配置JMX服务
+
+=== 操作：检索配置
+
+检索JMX服务配置。
+
+*Request:*
+
+----
+GET <Runtime Manager Agent URL>/mule/agent/mule.agent.jmx.publisher.service HTTP/1.1
+----
+
+*Example:*
+
+----
+GET http://localhost:9999/mule/agent/mule.agent.jmx.publisher.service HTTP/1.1
+----
+
+*Response:*
+
+[source, json, linenums]
+----
+{
+    "serviceHandlerTypes": [
+        "java.util.List<com.mulesoft.agent.domain.monitoring.Metric>"
+    ],
+    "injectedHandlers": [
+        {
+            "name": "com.mulesoft.agent.monitoring.publisher.CloudwatchMonitorPublisher",
+            "path": "/mule/agent/cloudwatch.agent.monitor.publisher/configuration",
+            "type": "java.util.List<com.mulesoft.agent.domain.monitoring.Metric>"
+        },
+        {
+            "name": "com.mulesoft.agent.monitoring.publisher.GraphiteMonitorPublisher",
+            "path": "/mule/agent/mule.agent.graphite.jmx.internal.handler/configuration",
+            "type": "java.util.List<com.mulesoft.agent.domain.monitoring.Metric>"
+        },
+        {
+            "name": "com.mulesoft.agent.monitoring.publisher.NagiosMonitorPublisher",
+            "path": "/mule/agent/mule.agent.nagios.jmx.internal.handler/configuration",
+            "type": "java.util.List<com.mulesoft.agent.domain.monitoring.Metric>"
+        },
+        {
+            "name": "com.mulesoft.agent.monitoring.publisher.ZabbixMonitorPublisher",
+            "path": "/mule/agent/mule.agent.zabbix.jmx.internal.handler/configuration",
+            "type": "java.util.List<com.mulesoft.agent.domain.monitoring.Metric>"
+        }
+    ],
+    "configurableFields": [
+        {
+            "name": "frequency",
+            "valueType": "java.lang.Integer",
+            "value": 15,
+            "configurableType": "DYNAMIC"
+        },
+        {
+            "name": "frequencyTimeUnit",
+            "valueType": "java.util.concurrent.TimeUnit",
+            "value": "MINUTES",
+            "configurableType": "DYNAMIC"
+        },
+        {
+            "name": "beans",
+            "valueType": "[Lcom.mulesoft.agent.services.monitoring.JMXBean;",
+            "value": [],
+            "configurableType": "DYNAMIC"
+        }
+    ]
+}
+----
+
+响应包含当前加载的发布者列表，以及服务的可配置字段及其值（有关服务配置的更多信息，请参阅管理服务）。
+
+=== 操作：修改配置
+
+该操作修改服务的当前配置。
+
+*Request:*
+[source, json, linenums]
+----
+PATCH <Runtime Manager Agent URL>/mule/agent/mule.agent.jmx.publisher.service HTTP/1.1
+
+{
+  "<parameter>": "<value>",
+}
+----
+
+*Example:*
+[source, json, linenums]
+----
+PATCH http://localhost:9999/mule/agent/myservice HTTP/1.1
+
+{
+  "frequencyTimeUnit": "SECONDS",
+  "frequency": "150"
+}
+----
+
+*Response (if successful):*
+
+----
+HTTP 200
+----
+
+=== 添加新的JMX Publisher
+
+要添加新的JMX发布者，您需要实施运行时管理器代理的`InternalMessageHandler`接口。
+
+您的自定义JMX发布者应该符合以下要求：
+
+* 它必须是线程安全的
+* 它必须在`InternalMessageHandler`中定义的句柄方法中实现所有发布逻辑。
+
+==== 编写您的JMX Publisher
+[source, java, linenums]
+----
+@Named("my.company.jmx.publisher")
+@Singleton
+public class MyJMXPublisher<T> extends InternalMessageHandler<List<Metric>>{
+
+    boolean handle(List<Metric> metrics){
+          // TODO handle message
+    }
+
+    @Override
+    public void enable(boolean state) throws AgentEnableOperationException {
+        // TODO: enable the Handler
+    }
+
+    @Override
+    public boolean isEnabled() {
+        // TODO: return Handler status
+    }
+}
+----
+
+Metric类是一个包含以下字段的POJO：
+
+[source, java, linenums]
+----
+/**
+ * Time stamp when the metric was taken
+ */
+long timestamp;
+
+/**
+ * Name of the metric. In the case of a JXM metric it is the bean that was tracked + message
+ */
+String name;
+
+/**
+ * The numeric value of the metric
+ */
+Number value;
+----
+
+要添加新的JMX发布者，只需将包含类的jar放在Runtime Manager Agent插件中的`lib`文件夹下。
+
+== 开放源代理模块
+
+MuleSoft为Runtime Manager Agent提供了几个模块，其中包括Nagios，Zappix等的JMX发布者。这些模块是一个开源项目，不被MuleSoft支持。
+
+要访问Runtime Manager Agent模块，请检查GitHub存储库：
+
+*  link:https://github.com/mulesoft/mule-agent-modules[代理模块（一般）]

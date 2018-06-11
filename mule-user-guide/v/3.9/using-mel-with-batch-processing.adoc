@@ -1,0 +1,96 @@
+= 使用MEL进行批处理
+:keywords: anypoint studio, studio, mule esb, batch
+
+
+下面的所有函数和属性都可以在Mule中上下文有意义的任何位置的 link:/mule-user-guide/v/3.9/mule-expression-language-mel[MEL]表达式中使用。
+
+与批处理作业相关的==  MEL属性
+
+这些属性可以在批处理作业内部或之后的任何元素中引用：
+
+[%header,cols="2*"]
+|===
+| {属性{1}}说明
+| `recordVars`  |用于通过名称访问记录变量。
+| `totalRecords`  |批次中的记录总数。
+| `loadedRecords`  |在加载阶段加载的记录数。
+| `processedRecords`  |此时处理的记录数。
+| `failedRecords`  |至少在一个步骤中处理并失败的记录数。
+批作业实例的| `batchJobInstanceId`  | ID
+| `inputPhaseException`  |输入阶段的例外对象。
+| `loadingPhaseException`  |加载阶段中的异常的异常对象。
+| `completePhaseException`  |完成阶段中的例外对象。
+|===
+
+涉及批量作业的==  MEL函数
+
+这些函数可以在批处理任务中的任何地方使用，支持MEL表达式的任何组件。
+
+[cols="2*"]
+|===
+| *Function*  | *Description*
+| `isSuccessfulRecord()`  |指示记录处理状态的布尔函数。
+| `isFailedRecord()`  |指示记录处理状态的布尔函数。
+| `failedOnInputPhase()`  |布尔函数，指示在输入阶段批处理是否失败。
+| `failedOnLoadingPhase()`  |布尔函数，指示在加载阶段批处理是否失败。
+| `failedOnCompletePhase()`  |指示批处理是否在完成阶段失败的布尔函数。
+| `failureExceptionForStep()`  |以String参数接收步骤的名称。如果当前记录在该步骤中引发异常，则它返回实际的Exception对象。否则它返回null
+| `getStepExceptions()`  |返回一个java Map <String, Exception>，其中的键是当前记录失败并且值为异常对象本身的批处理步骤的名称。如果记录在任何步骤中都没有失败，则此映射将为空，而不为空。此外，该映射不包含记录未失败的步骤的条目。
+| `getFirstException()`  |返回当前记录失败的第一步的Exception对象。如果记录在任何步骤中都没有失败，那么它返回null。
+| `getLastException()`  |返回当前记录失败的最后一步的Exception对象。如果记录在任何步骤中都没有失败，那么它返回null。
+|===
+
+这些MEL表达式评估批步骤失败。考虑到批处理步骤中失败的异步进程不会被运行时视为步骤失败。 +
+例如，如果你有这个批处理步骤：
+
+[source,xml,linenums]
+----
+<batch:step name="Batch_Step">
+  <file:outbound-endpoint path="output" outputPattern="test.file" connector-ref="File" responseTimeout="10000" />
+</batch:step>
+----
+由于文件出站端点是单向的，因此将分派消息并且批处理步骤将继续处理。因此运行时不会记录步骤失败。
+这意味着即使批处理步骤中的出站端点失败，MEL函数`isFailedRecord()`仍将返回false。
+
+通过将出站端点作为同步进程引用，您可以强制运行时将出站端点故障记录为批步骤故障：
+
+[source,xml,linenums]
+----
+<batch:step name="Batch_Step">
+    <logger message=" #[server.dateTime]: payload is: #[payload]" level="INFO" category="BATCH_STEP_BEGIN" />
+    <flow-ref name="create-file" />
+</batch:step>
+
+<flow name="create-file" processingStrategy="synchronous">
+    <file:outbound-endpoint path="src/test/resources/output" outputPattern="test.file" connector-ref="File" responseTimeout="10000" />
+</flow>
+----
+
+或者通过在事务范围内封装异步进程：
+
+[source,xml,linenums]
+----
+<batch:step name="Batch_Step">
+    <logger message=" #[server.dateTime]: payload is: #[payload]" level="INFO" category="BATCH_STEP_BEGIN" />
+    <transactional action="ALWAYS_BEGIN" doc:name="Transactional">
+    	<file:outbound-endpoint path="src/test/resources/output" outputPattern="test.file" connector-ref="File" responseTimeout="10000" />
+    </transactional>
+</batch:step>
+----
+
+== 示例在批处理作业中使用MEL函数
+
+例如，假设您使用以下批处理步骤进行批处理作业：
+
+image:batch+function1.png[批量+功能1]
+
+在这里，您可以将以下表达式添加到Set Payload转换器中：
+
+image:batch+function2.png[批量+函数2]
+
+在这种情况下，该表达式将为当前记录返回一个Java映射，其中键是批处理步骤的名称，并且该值是异常对象。这个表达式当然只会评估当前记录已经通过的批处理步骤，而不能评估可能在其之后出现的任何批处理步骤。
+
+== 另请参阅
+
+* 阅读关于使用批处理错误的 link:https://blogs.mulesoft.com/dev/mule-dev/handle-errors-batch-job/[博客文章]
+* 详细了解如何在应用程序中使用 link:/mule-user-guide/v/3.9/mule-expression-language-mel[骡子表达语言（MEL）]

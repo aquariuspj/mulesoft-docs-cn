@@ -1,0 +1,124 @@
+= 剖析Mule
+:keywords: anypoint studio, profiling, yourkit, monitoring, performance, memory, cpu, tuning
+
+分析Mule可以帮助您识别定制Mule ESB扩展中的内存泄漏。 link:https://www.yourkit.com/[YourKit]是用于分析JVM性能的常用Java分析器。挂钩到YourKit可以通过<<Profiling with the YourKit Agent>>实现。
+
+注意：有多个Java分析器选项可用。如果您没有使用YourKit，请访问您的相应Profiler文档，以了解如何连接到Mule-Java进程。
+
+== 使用YourKit Agent进行分析
+
+YourKit允许您使用远程附加向导远程连接到Java进程。当你有SSH访问你想要分析的Mule服务器时，这个方法特别有用，而且不会改变Mule代码本身来开始分析。
+
+=== 附加Profiler代理
+
+. 通过https://www.yourkit.com/download下载探查器到Mule服务器。
+. 解包分析器。
+. 通过运行`jps`来确定Mule的PID。
++
+[source,shell]
+----
+jps
+----
++
+. 捕获`MuleContainerBootstrap`的PID。
++
+[source,txt]
+----
+2838 MuleContainerBootstrap
+21311 Jps
+----
++
+. 在YourKit包中，打开`bin`目录。
++
+[source,shell]
+----
+cd yjp-2015-build-15086/bin
+----
++
+. 运行`yph.sh`，其中包含带`MuleContainerBootstrap`的PID的`-attach`标志。
++
+[source,shell]
+----
+./yph.sh -attach 2838
+----
++
+. 验证代理是否已连接
++
+[source,shell]
+----
+Attaching to process 2838 using default options
+The profiler agent has attached. Waiting while it initializes...
+The agent is loaded and is listening on port 10001.
+You can connect to it from the profiler UI.
+----
+
+注意：上述步骤在Windows环境中可能会有所不同。如果无法翻译上述步骤，请检查YourKit文档。
+
+=== 连接YourKit用户界面
+
+. 在您的本地计算机上启动YourKit。
+. 在监视远程应用程序中，单击连接到远程应用程序。
++
+image:monitor-remote-apps.png[宽度= 500]
++
+. 设置您的服务器用户名和密码。
+. 配置SSH验证。
++
+image:yourkit-auth.png[宽度= 500]
++
+. 单击确定。
+. 扫描完可用的应用程序后，YourKit现在应该连接到您的Mule实例。
++
+image:yourkit-hooked-up.png[宽度= 1000]
+
+
+=== 启用Profiler代理
+
+Profiler代理将YourKit Profiler公开给JMX以提供CPU和内存分析。您使用`<management:yourkit-profiler/>`元素配置Profiler代理。有关更多信息，请参阅 link:/mule-user-guide/v/3.7/jmx-management[JMX管理]。
+
+=== 运行Profiler
+
+要运行分析器，您可以使用*-profile*开关加上任何额外的 link:http://www.yourkit.com/docs/90/help/startup_options.jsp[YourKit启动选项]来运行Mule，多个参数之间用逗号分隔，例如*-profile onlylocal,onexit=memory*。此集成包会自动处理Java 1.4.x和5.x / 6.x的配置差异。
+
+例如：
+
+[source]
+----
+./mule -profile
+----
+
+=== 嵌入式Mule
+
+如果您将Mule嵌入到Web应用程序中，则Profiler配置会完全委派给拥有的容器。启动YourKit分析器，*Tools*> *Integrate with J2EE server*并按照说明进行操作。通常，修改服务器的启动脚本以支持分析，然后使用此修改后的启动脚本代替原始脚本。
+
+== 将骡子连接到YourKit Agent
+
+为了使用您自己的*YourKit*分析器，您需要先将构建下载到Mule主机，然后将以下行添加到位于`$MULE_HOME/conf`路径中的`wrapper.conf`文件。
+
+[source]
+----
+wrapper.java.additional.NN=-agentpath:<absolute-path-to-the-agent>=delay=10000
+----
+
+这使YourKit代理能够与你的Mule实例进行交互。
+
+<absolute-path-to-the-agent>值取决于您计算机的配置和操作系统。下载并扩展YourKit包内容后，您通常可以在`/bin/`文件夹中找到该代理。
+
+假设您为Linux下载了`yjp-2013-build-13062`，例如，添加到wrapper.conf中的条目应该如下所示：
+
+[source]
+----
+wrapper.java.additional.NN=-agentpath:/yjp-2013-build-13062/bin/linux-x86-64/libyjpagent.so=delay=10000
+----
+
+有关不同操作系统的详细安装说明，请参阅 link:https://www.yourkit.com/docs/[YourKit文档]。
+
+[NOTE]
+默认情况下，YourKit代理扫描一个面向互联网的端口。如果需要特定的端口，可以通过添加：+来设置它
+`wrapper.java.additional.NN=-agentpath:<absolute-path-to-the-agent>=delay=10000,port=<port>`。 +
+完整的启动参数列表可以在 link:https://www.yourkit.com/docs/java/help/startup_options.jsp[YourKit启动选项]中找到。
+
+重新启动Mule并设置YourKit分析器UI以连接到主机（如果指定了特定端口，则使用端口）。
+
+查看 link:https://www.yourkit.com/docs/java/help/running_profiler.jsp[YourKit文档]，了解有关如何根据您的操作系统正确启动代理程序的更详细说明。
+

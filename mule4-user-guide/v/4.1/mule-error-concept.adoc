@@ -1,0 +1,100 @@
+= 关于Mule错误
+
+Mule执行失败导致Mule错误。每个Mule错误都有以下组件：
+
+[%header,cols=“10%,60%,30%”]
+|===
+| {组件{1}}说明| 表达
+
+|说明
+|有关该问题的描述
+| `#[error.description]`
+
+|输入
+|一种类型，用于表征问题并允许在错误处理程序中进行路由
+| `#[error.errorType]`
+
+|原因
+|导致失败的底层Java Throwable
+| `#[error.cause]`
+
+|消息
+|关于问题的可选Mule消息
+| `#[error.errorMessage]`
+
+|子错误
+|可选的内部错误集合，由Scatter-Gather等元素用于提供聚合路由错误。
+| `#[error.childErrors]`
+|===
+
+Mule应用程序中的每个组件都声明它所抛出的错误类型，因此在设计Mule流时很容易识别潜在的错误。
+
+例如，当HTTP请求失败并显示401状态代码时，Mule错误如下所示：
+
+----
+Description: HTTP GET on resource ‘http://localhost:36682/testPath’ failed: unauthorized (401)
+Type: HTTP:UNAUTHORIZED
+Cause: a ResponseValidatorTypedException instance
+Error Message:  { "message" : "Could not authorize the user." }
+----
+
+== 关于错误类型
+
+在上面的示例中，错误类型是`HTTP:UNAUTHORIZED`，而不仅仅是`UNAUTHORIZED`。 +
+错误类型由名称空间和标识符组成，允许您根据域名区分类型。
+例如，有`HTTP:NOT_FOUND`和`FILE:NOT_FOUND`个错误类型。 +
+虽然连接器定义了自己的名称空间，但核心运行时错误具有隐式的`MULE`。 +
+因此`MULE:EXPRESSION`和`EXPRESSION`被解释为一个。
+
+错误类型的另一个重要特征是它们可能具有父类型。例如，`HTTP:UNAUTHORIZED`将`MULE:CLIENT_SECURITY`作为父项，而`MULE:SECURITY`将其作为父项。这将错误类型建立为更全局的错误类型：HTTP未授权错误是一类客户端安全错误，这是一种更广泛的安全问题。
+
+这些层次结构允许路由更通用。例如，`MULE:SECURITY`的处理程序捕获HTTP未授权错误以及OAuth错误。 +
+下面你可以看到核心运行时的层次结构是什么样的：
+
+image:error-hierarchy.png[错误层次结构]
+
+所有错误都是普通的或`CRITICAL`，后者非常严重，无法处理，只会被记录。在普通层次结构的顶部是`ANY`，它允许匹配它下面的所有类型。注意`UNKNOWN`类型非常重要，在找不到明确的故障原因时使用该类型。只有通过`ANY`类型才能处理此错误，以允许将来指定不明确的错误，而不会更改应用程序的现有行为。
+
+对于连接器，每个连接器都会根据核心运行时层次结构定义其错误类型层次结构，不过`CONNECTIVITY`和`RETRY_EXHAUSTED`类型始终存在，因为它们对所有连接器都是通用的。
+
+== 关于自定义错误类型
+
+自定义错误类型可以在映射错误或引发错误时定义。这些错误
+需要一个特定的自定义命名空间来区分它们与其他现有的类型
+在应用程序内。这意味着在使用HTTP和DB的应用程序中，这些
+两个名称空间不能使用。事实上，最好远离现有的连接器
+命名空间，而是定义与特定Mule应用程序名称或上下文相关的命名空间。
+
+例如，客户聚合API可以为其使用`CUSTOMER`命名空间
+自定义错误类型和订单处理API可以使用`ORDER`命名空间。
+
+== 关于错误映射
+
+在流程的每个操作中，可以将可能的错误类型映射到您选择的自定义错误类型。您可以使用这些自定义错误类型来准确区分流程中发生错误的位置。例如，如果您的流程有两个涉及到不同REST服务的HTTP请求操作，则任何一个连接失败都会产生相同的错误，但通过将每个映射映射到不同的自定义错误类型，以便区分每个操作失败的错误处理，以及更快地识别Mule应用程序日志中的错误来源。
+
+在下面的示例中，您可以看到映射如何实现精细的错误处理：
+
+。示例：Mappings的XML配置
+[source,xml,linenums]
+----
+<flow name="retrieveMatchingOrders">
+  <http:request config-ref="customersConfig" path="/customer">
+    <error-mapping sourceType="CONNECTIVITY" targetType="APP:CUSTOMER_API"/>
+  </http:request>
+  <http:request config-ref="ordersConfig" path="/order">
+    <error-mapping sourceType="CONNECTIVITY" targetType="APP:ORDER_API"/>
+  </http:request>
+  <error-handler>
+    <on-error-continue type="APP:CUSTOMER_API">
+      <logger message="#['Could not retrieve customer data.']"/>
+    </on-error-continue>
+    <on-error-continue type="APP:ORDER_API">
+      <logger message="#['Could not retrieve customer order data.']"/>
+    </on-error-continue>
+  </error-handler>
+</flow>
+----
+
+== 另请参阅
+
+*  link:on-error-scope-concept[关于误差范围]

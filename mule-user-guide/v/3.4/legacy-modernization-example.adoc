@@ -1,0 +1,204 @@
+= 传统现代化示例
+:keywords: legacy, datamapper
+
+*_Enterprise Edition, CloudHub_*
+
+此应用程序说明如何自动化遗留系统和接受HTTP请求的Web服务之间的通信。传统系统 - 只接受通过文件输入 - 以便将HTTP Web服务中的数据准备为传统系统接受的格式。为了演示这些功能，这个例子采用了传统的履行系统的用例，它必须适应通过HTTP请求接受订单。您可以将此示例看作是充当传统基于文件系统的Web服务代理的应用程序。
+
+==== 传统现代化
+
+image:legacy_modern_icon.png[legacy_modern_icon]较旧的遗留系统可能会受到其接受的数据形式的限制。例如，较旧的系统可能只接受作为文件或通过FTP的输入。为了更新这样的系统，以便它接受更现代的输入格式，比如Web服务调用，Mule可以坐在传统系统的前面，例如将HTTP请求转换为字符串。这种转换活动有效地保留了遗留系统，以便它接受HTTP请求。
+
+== 假设
+
+本文档假定您熟悉Mule ESB和 link:/anypoint-studio/v/5/index[Mule Studio界面]。要提高您对Studio的熟悉度，请考虑完成一个或多个 link:/anypoint-studio/v/5/basic-studio-tutorial[Mule Studio教程]。此外，这个例子假定您对 link:/mule-user-guide/v/3.3/mule-application-architecture[骡流]，SOAP Web服务以及在Mule Studio中使用 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[Anypoint DataMapper]有基本的了解。 +
+
+
+本文档在Mule Studio Mule ESB的图形用户界面（GUI）的上下文中描述了该示例的详细信息，并包括可视和XML编辑器的配置详细信息。
+
+== 示例用例
+
+这个例子展示了一个简单用例背景下的遗留系统现代化。
+
+一个组织使用旧的履行制度，只接受平面文件格式的订单。但是，该公司希望通过SOAP Web服务接受订单并自动将订单提交给遗留系统以实现。为了处理订单，公司使用Mule将HTTP请求转换为传统系统接受的文件格式。
+
+== 设置
+
+完成以下过程来创建，然后在您自己的Mule Studio实例中运行此示例。您可以直接在Mule Studio中创建模板应用程序，并调整此基于用例的模板的配置以在Mule中创建您自己的自定义应用程序。
+
+如果您想通过屏幕截图和代码片段简单检查此示例，请跳过<<How it Works>>。
+
+.  *Create, then run* Mule Studio中的传统现代化示例应用程序。
+. 要模拟向Mule应用程序提交的请求，请使用可在 http://www.soapui.org/[www.soapui.org]处免费下载的*soapUI interface*。该工具使您能够提交一个请求，以模拟此示例用例中新订单的提交。如果您尚未这样做，请下载并启动soapUI（请参阅下图）。 +
+
++
+image:soapUI_launch.png[soapUI_launch]
++
+
+. 在soapUI中，选择*File*> *Import Project*。浏览到本地驱动器上的MuleStudio文件夹以找到示例soapUI项目文件：*MuleStudio*> *workspace*> *Legacy Modernization*> *src* *test* {{8 }}> **LegacyModernizationExample-soapui-project.xml**。点击*Open*。
+. 在soapUI的新LegacyModernizationExample项目中，展开文件夹以显示*Request 1*。双击*Request 1*以打开请求 - 响应窗口。
+. 点击提交请求图标（左上角的"play"按钮）将请求提交给Mule应用程序（请参见下面的左侧）。 soapUI在响应窗格中显示来自Mule应用程序的响应（请参见下面的右侧）。 +
+
++
+image:soapUI_both.png[soapUI_both]
++
+
+ 。查看SOAP响应的内容，以检查处理的请求的详细信息。请特别注意值"`true`"的`orderReceivedStatus`。
+. 在Studio中的*Package Explorer*中，导航至`src/test/resources/Output`，然后按*F5*刷新输出文件夹的内容。您通过soapUI提交的订单显示为新的ShippingOrder平面文件;注意新订单的日期和时间戳（见下文）。双击平面文件在Studio中打开它并检查内容。 +
+
++
+image:shipping_output.png[shipping_output]
+
+== 它是如何工作的
+
+使用单一流程，该应用程序公开了一个SOAP Web服务，它接受来自客户的新订单请求。 Java组件处理订单，向调用者返回响应以通知订单已被接受。异步地（相对于HTTP请求 - 响应活动），Mule使用DataMapper变换器将数据从运送订单POJO映射到CSV文件，并将其发送到遗留系统以供履行。在本例中，由于没有实际的遗留系统来执行订单履行，流程末尾的File端点只是将CSV文件输出到应用程序内src / test / resources文件夹中的Output文件夹。
+
+在这个示例应用程序中有几个重要的配置需要注意。
+
+*  **The application exposes a SOAP Web service.**配置为JAX-WS服务时，流中的SOAP组件使Web服务可以使用Apache CXF Web服务框架。
++
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:SOAPcomponent.png[SOAPcomponent]
+....
+[tab,title="Studio XML Editor"]
+....
+[source, xml, linenums]
+----
+<cxf:jaxws-service port="80" serviceClass="org.ordermgmt.IFulfillment"
+            enableMuleSoapHeaders="false" doc:name="FulfillmentWebService"
+            doc:description="Make a web service available via CXF" />
+----
+....
+------
+
+*  *The DataMapper transforms and maps data from POJO to CSV in one step.*在输入和输出字段名称相同的情况下，DataMapper智能地自动将输入映射为输出，就像`ShippingId`一样。否则，您可以通过单击并将输入字段拖动到Data Mapping Console中的输出字段来手动将输入快速映射到输出（参见下文）。每个映射都会获得一个箭头，它可以帮助您可视化DataMapper转换器中发生的活动。点击*Preview*检查应用程序处理订单时DataMapper将产生的CSV输出。 +
+
++
+image:DM_mapping.png[DM_mapping]
++
+
+[TIP]
+====
+在此示例中，DataMapper使用*Rules*映射项目的嵌套列表。对于订单列表中的每个项目，DataMapper必须将结算和送货地址信息映射到输出CSV文件。为此，应用程序的设计人员分别创建每个规则，然后单击并拖动每个规则将其全部映射到CSV输出文件值。
+
+有关映射嵌套元素的更多信息，请参阅 link:/mule-user-guide/v/3.4/mapping-elements-inside-lists[映射列表中的元素]。
+====
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:mule-example-legacy-system-modernization.png[mule-example-legacy-system-modernization]
+....
+[tab,title="Studio XML Editor"]
+....
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+ 
+ 
+ 
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns="http://www.mulesoft.org/schema/mule/core"
+ 
+    xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+ 
+    xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+ 
+    xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+ 
+    xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core"
+ 
+    xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:salesforce="http://www.mulesoft.org/schema/mule/sfdc"
+ 
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="EE-3.4.0"
+ 
+    xsi:schemaLocation="
+ 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+ 
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+ 
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd
+ 
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+ 
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+ 
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/5.0/mule-sfdc.xsd
+ 
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd ">
+ 
+    <sfdc:config name="sfconfig" username="username" password="password"
+ 
+        securityToken="TOKEN" doc:name="Salesforce"
+ 
+        doc:description="Global configuration for Salesforce operations">
+ 
+    </sfdc:config>
+ 
+    <data-mapper:config name="FulfillmentOrder2LegacyCSV_map" transformationGraphPath="fulfillmentorder2legacycsv_map.grf" doc:name="DataMapper"/>
+ 
+    <flow name="Fulfillment_LegacySystemModernization" doc:name="Fulfillment_LegacySystemModernization"
+ 
+        doc:description="This is a simple Mule Studio project that illustrates a Legacy System Modernization use case.">
+ 
+        <http:inbound-endpoint exchange-pattern="request-response"
+ 
+            host="localhost" port="1080" path="OrderFulfillment" doc:name="Receive Order"
+ 
+            doc:description="Process HTTP reqests or responses." />
+ 
+        <cxf:jaxws-service port="80" serviceClass="org.ordermgmt.IFulfillment"
+ 
+            enableMuleSoapHeaders="false" doc:name="FulfillmentWebService"
+ 
+            doc:description="Make a web service available via CXF" />
+ 
+        <component class="org.ordermgmt.FulfillmentImpl" doc:name="Process Order"
+ 
+            doc:description="Invoke a Java component" />
+ 
+        <async doc:name="Async - Legacy Fulfillment Service">
+ 
+            <data-mapper:transform config-ref="FulfillmentOrder2LegacyCSV_map" doc:name="DataMapper"/>
+ 
+            <byte-array-to-string-transformer
+ 
+                doc:name="Transform-to-String" />
+ 
+            <file:outbound-endpoint path="src/test/resources/Output"
+ 
+                outputPattern="ShippingOrder-#[function:datestamp].txt" doc:name="LegacyFulfillment" responseTimeout="10000"/>
+ 
+        </async>
+ 
+    </flow>
+ 
+</mule>
+----
+....
+------
+
+== 文档
+
+Studio包含的功能使您能够轻松导出您为项目录制的所有文档。无论何时您希望轻松与Studio环境外的其他人共享您的项目，您都可以导出项目文档以打印，发送电子邮件或在线共享。 Studio自动生成的文档包括：
+
+* 您应用程序中流程的可视化图表
+* 与您的应用程序中的每个流对应的XML配置
+* 您在流程中任何构建块的“文档”选项卡中输入的文本
+
+
+== 另请参阅
+
+* 详细了解Studio中的 link:/mule-user-guide/v/3.4/soap-component-reference[SOAP组件]。
+* 详细了解Studio中的 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[Anypoint DataMapper转换器]。 link:/mule-user-guide/v/3.4/mule-datasense[DataSense]智能地将应用程序连接到Salesforce。
+* 了解如何在我们的 link:https://blogs.mulesoft.com/dev/mule-dev/mule-esb-with-the-oracle-database-and-ibm-websphere-mq-%E2%80%93-use-case-1-of-3/[MuleSoft博客]中将Mule集成到Oracle数据库和IBM WebShere。

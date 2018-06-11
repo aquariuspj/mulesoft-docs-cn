@@ -1,0 +1,211 @@
+= 使用ELK分析业务和API数据
+
+本主题介绍如何使用Elastic Stack（ELK）分析由Anypoint Platform Private Cloud Edition生成的业务数据和API分析。它还介绍如何使用Filebeat处理Anypoint Platform日志文件并将它们插入到Elasticsearch数据库中。将文件插入Elasticsearch后，您可以使用Kibana分析它们。
+
+下图显示了API数据如何在Kibana中显示的示例。
+
+image:kibana-example.png[]
+
+== 要求
+
+要将外部分析数据导出到ELK，您必须具有以下软件：
+
+*  Mule Runtime，版本3.8.4或更高版本
+*  Mule运行时管理器代理，版本1.7.0或更高版本
+*  Elasticsearch，版本5.6.2
+*  Filebeat，版本5.6.2
+*  Kibana，版本5.6.2
+
+== 先决条件
+
+* 确保您已安装并配置了您的Mule运行时实例。
+* 确保您已使用Runtime Manager注册这些实例。
+
+== 编辑wrapper.conf属性文件
+
+在您的Mule运行时安装中，编辑以下`conf/wrapper.conf`文件。
+
+. 将`analytics_enabled`属性设置为`true`。
++
+----
+wrapper.java.additional.<n>=-Danypoint.platform.analytics_enabled=true
+----
+
+. 从`analytics_base_uri`属性中删除URI值。
++
+----
+wrapper.java.additional.<n>=-Danypoint.platform.analytics_base_uri=
+----
+
+. 将`on_prem`属性设置为`true`。
++
+----
+wrapper.java.additional.<n>=-Danypoint.platform.on_prem=true
+----
+
+== 启用事件追踪
+
+要导出业务和事件跟踪数据，您必须在运行时管理器中启用事件跟踪。
+
+. 从Anypoint Platform中，单击运行时管理器。
+. 点击服务器。
+. 单击包含您要配置ELK的服务器的行。
+. 单击管理器服务器，然后单击插件选项卡。
+. 在事件跟踪下，从关卡下拉列表中选择商务活动。
+. 点击开关在ELK上启用事件跟踪。
++
+运行系统管理器显示ELK集成对话框。
+
+. 根据需要配置日志文件。
+. 点击应用
+
+== 启用API分析
+
+要导出API分析，您必须在Runtime Manager中启用API分析。
+
+. 从Anypoint Platform中，单击运行时管理器。
+. 点击服务器。
+. 单击包含您要配置ELK的服务器的行。
+. 点击该开关启用API分析，点击ELK旁边的开关。
+. 根据需要配置日志文件。
+. 点击应用
+
+== 安装并配置Filebeat代理
+
+您必须在每个有Mule运行时实例的服务器上安装Filebeat代理。
+
+. 为您的操作系统下载并安装Filebeat。
+
+== 配置Mule Filebeat模块
+
+您必须在每个有Mule运行时实例的服务器上安装Filebeat模块。
+
+. 从以下网址下载并展开Filebeat模块存档：
++
+----
+https://s3.us-east-2.amazonaws.com/elk-integration/elk-integration-09-29-17/elk-integration.tar.gz
+----
+
+. 将每个日志文件的绝对路径添加到`filebeat.yml`文件中：
++
+* 将事件日志路径添加到`business_events`的`var.paths`变量，如以下示例所示：
++
+----
+business_events:
+    enabled: true
+    ...
+    var.paths: 
+      - /var/mule/logs/instance1_events.log
+      - /var/mule/logs/instance2_events.log
+    ...
+----
++
+* 将API分析日志路径添加到`api_analytics`的`var.paths`变量，如下例所示：
++
+----
+api_analytics:
+  enabled: true
+  	...
+    var.paths:
+      -  /var/mule/logs/instance1_api-analytics-elk.log
+      -  /var/mule/logs/instance2_api-analytics-elk.log
+----
+
+. 将您的Elasticsearch主机添加到`hosts`属性：
++
+----
+output.elasticsearch:
+	...
+	hosts: ["http://your_elastic_installation:9200"]
+	...
+----
+
+. 更新Filebeat配置
++
+* 如果您使用Linux软件包管理器安装了Filebeat，请运行包含在Filebeat模块下载中的以下脚本：
++
+----
+ setup_mule_module.sh
+----
++
+* 如果您使用其他方法安装Filebeat，则必须
+** 将`filebeat.template.mule.json`和`filebeat.yml`复制到Filebeat的根安装文件夹
+** 将`mule`模块文件夹复制到Filebeat安装的`module`文件夹中。
+== 运行Filebeat
+
+. 在您的系统上启动Filebeat作为服务。
++
+例如，如果您正在使用RPM程序包管理器：
++
+----
+sudo /etc/init.d/filebeat start
+----
+
+. 配置Filebeat以在启动过程中自动启动：
++
+----
+sudo chkconfig --add filebeat
+----
+
+== 安装Elasticsearch Geoip和代理模块
+
+您必须安装以下Elasticsearch插件：
+
+*  *Geoip*：确定存储在日志中的IP地址的地理位置。
+*  *User Agent*：根据HTTP请求确定浏览器或操作系统的相关信息。
+
+
+== 配置Kibana并导入MuleSoft Kibana仪表板
+
+在安装Filebeat和Elasticsearch之后，您必须配置Kibana以便能够使用Anypoint Platform中的数据。
+
+MuleSoft提供了一组默认的Kibana配置，可用于分析业务和API数据。这些包括仪表板，搜索和可视化。
+
+. 配置索引模式
++
+您必须为Anypoint Platform数据创建Elasticsearch索引。
+
+.. 生成初始数据集。
++
+这是创建索引所需的，以便Kibana可以识别这一点。例如，您可以向测试API发送请求以生成一组初始数据。
+
+.. 在Kibana管理控制台中，创建一个以`mule-*`为索引模式的值。
+
+. 获取索引模式ID
++
+创建索引模式后，您必须获取索引ID。查看`mule-*`索引模式时，该模式在URL中可见。例如，在下图中，索引模式ID是`AV7OmqBs1r9syiCBxyee`。
++
+image:kibana-index-pattern-id.png[]
+
+. 从以下URL下载Mule Kibana配置文件：
++
+----
+https://s3.us-east-2.amazonaws.com/elk-integration/elk-integration-09-29-17/dashboards.tar.gz
+----
++
+该文件包含可用于分析Anypoint平台数据的默认仪表板，搜索和可视化仪表板。
+
+. 将索引模式ID添加到`searches.json`的`searchSourceJSON`属性。
++
+修改`searches.json`以包含在上一步中检索到的索引模式ID。您必须修改此文件中`searchSourceJSON`的每个出现次数。
++
+----
+"kibanaSavedObjectMeta": {
+        "searchSourceJSON": "{\"index\":\"AV7OmqBs1r9syiCBxyee\", .......
+ }
+----
+
+. 将每个仪表板导入到Kibana安装中。
++
+您必须按以下顺序导入仪表板：
++
+..  dashboards.json
+..  searches.json
+..  visualizations.json
+
+== 另请参阅
+
+*  https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-geoip.html [摄取Geoip处理器插件]
+*  https://www.elastic.co/guide/en/elasticsearch/plugins/current/ingest-user-agent.html [摄取用户代理处理器插件]
+
+ 

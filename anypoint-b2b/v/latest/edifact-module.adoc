@@ -1,0 +1,348 @@
+=  EDIFACT模块
+:keywords: b2b, edifact, maven, module, DataSense, DataWeave
+
+EDIFACT模块提供消息读取，验证和写入功能，以便使用EDIFACT EDI交换与贸易伙伴进行交流。
+
+EDIFACT模块中包含以下功能：
+
+*  EDIFACT消息的读取，验证和写入
+* 与DataSense和DataWeave集成
+* 定义自己的模式或自定义基本EDIFACT模式的能力
+* 支持许多 link:/anypoint-b2b/supported-edi-document-types[常见的EDIFACT版本]开箱即用
+
+要开始使用连接器，请按照下列步骤操作：
+
+. 安装EDIFACT连接器。
+. 根据您的实施情况创建模式来描述您的EDIFACT消息。
+. 根据您的实施惯例为您的交易伙伴配置EDIFACT模块。
+. 使用Mule流程中的EDIFACT模块。
+
+此页面可帮助您了解如何执行上述每个步骤。
+
+== 安装
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+== 通过Maven使用EDIFACT模块
+
+要将EDIFACT模块与Maven结合使用，请参阅链接：http：//mulesoft.github.io/edi-module/edifact/guide/install.html [
+Mule EDI Anypoint EDIFACT连接器]。
+
+==  EDI模式语言
+
+EDIFACT模块使用名为ESL（用于EDI模式语言）的YAML格式来表示EDI模式。基本ESL根据_structures_（EDIFACT术语中的消息），_groups_（EDIFACT中的段组），_segments_，_composites_和_elements_定义EDI消息的结构。 EDIFACT D.93A，D.95B，D.96A，D.97A，D.98B，D.99A，D.99B，D.00A，D.01B，D.02A和D.03B版本的ESL为包括开箱即用。
+
+要根据您的实施惯例配置EDIFACT模块，请定义_overlay schema_。覆盖模式是一种特殊的ESL形式，允许您使用特定约定修改基本模式，例如EDIFACT D.98B ORDERS模式。 （如果使用标准定义的结构，则不需要覆盖模式，但大多数EDI交换都会修改实现约定中的基础定义）
+
+如果你愿意，你也可以从头开始定义你自己的模式。有关更多详细信息，请参阅 link:/anypoint-b2b/edi-schema-language-reference[EDI模式语言参考]。
+
+[NOTE]
+YAML使用列表和一组键值对。只要需要的项目存在，值的顺序并不重要。引号（单引号或双引号）用于可能由数字组成但是被解释为字符串的值（因为否则YAML解析器会将值视为数字）。缩进用于显示列表的嵌套。
+
+为了便于阅读，这里显示的ESL结构定义了属于相同定义一部分的任何列表之前的所有简单键 - 值对。
+
+=== 使用覆盖架构定义您的实施公约
+
+要根据您的实现惯例指定模式，您可以按照以下过程进行操作：
+
+* 创建一个导入您要自定义的基本模式的"overlay"模式 - 例如EDIFACT D.98B ORDERS。
+* 自定义总体结构 - 细分使用情况，职位，组和计数。
+* 自定义细分 - 包括使用情况和计数。
+
+覆盖架构在结构上与 link:/anypoint-b2b/edi-schema-language-reference[完整的模式定义]非常相似，但不是提供架构结构的所有细节，而是仅列出更改。模式指定实施规范与特定贸易伙伴一起使用的方式，以扩展和定制标准。
+
+例如，以下是修改基本EDIFACT D.98B ORDERS定义的示例覆盖模式的开始。此示例自定义"PAI"段并指定它未使用 - 从而确保它不会显示在Studio的映射结构中。
+
+[source, yaml, linenums]
+----
+form: EDIFACT
+version: 'd98b'
+imports: [ '/edifact/d98b/ORDERS.esl' ]
+structures:
+- idRef: 'ORDERS'
+  name: Purchase Order
+  heading:
+  - { idRef: 'PAI', position: '0040', usage: U }
+----
+
+=== 结构覆盖
+
+结构覆盖详细说明对EDIFACT消息的基本模式定义的修改。大多数情况下，这些修改采用将基本定义中的片段或组标记为未使用的形式，但允许使用或重复计数更改。以下是结构覆盖图所采用的表单：
+
+[source, yaml, linenums]
+----
+- idRef: 'ORDERS'
+  heading:
+  - { idRef: 'PAI', position: '0040', usage: U }
+  - { idRef: 'IMD', position: '0060', usage: U }
+  - groupIdRef: 'Segment group 15'
+    position: '0560'
+    items:
+    - { idRef: 'HAN', position: '0570', usage: U }
+    - { idRef: 'MEA', position: '0580', usage: U }
+    - { idRef: 'FTX', position: '0590', usage: U }
+----
+
+此示例中的修改指定不使用标准ORDERS标题的PAI和IMD分段以及分段组15中的选定分段。
+
+结构级别的键值对是：
+
+[%header,cols="3a,7a"]
+|===
+|键 |说明
+| idRef  |被修改消息的ID
+|名称 |消息名称（可选）
+|标题，详细信息，摘要 |结构每个部分中的部分和组修改列表（可选，每个部分仅在修改该部分时使用）
+|===
+
+结构不同部分（标题，细节，摘要）的分段修改列表都使用相同的结构。列表中的每个项目都是段引用或组定义。段引用使用紧凑的YAML语法显示，其中每个引用的值都以逗号分隔的键值对的形式给出，并用大括号括起来。这些值是：
+
+[%header,cols="3a,7a"]
+|===
+|键 |说明
+| idRef  |引用的段ID（可选，如果提供则进行验证，否则将忽略 - 位置值用于唯一标识段中的段）
+|位置 |消息部分中的段位置
+|用法 |使用代码，可能是M表示强制，O表示可选，C表示条件，或者U表示未使用（如果未指定，则使用可选的基本定义值）
+| count  |最大重复计数值，可能是一个数字或特殊值'> 1'，表示任意数量的重复（可选，如果未指定，则使用基本定义值）
+|===
+
+组覆盖图以展开的形式显示，键值对位于不同的行上。组定义中的值是：
+
+[%header,cols="3a,7a"]
+|===
+|键 |说明
+| groupIdRef  |引用的段组ID（可选，如果提供则进行验证，否则将忽略 - 位置值用于唯一标识段中的组）
+|位置 |消息部分中的组位置
+|使用情况 |使用情况代码，可能是M代表强制性，O代表可选，C代表条件或U代表未使用
+| count  |最大重复计数值，可能是一个数字或特殊值`>1 `，表示任意数量的重复（如果未指定，则使用可选的基本定义值）
+|项目 |构成循环的分段列表（以及潜在的嵌套循环）
+|===
+
+=== 分段覆盖图
+
+段重叠再次详述对基本模式定义的修改。大多数情况下，这些修改的形式是将基本定义中的元素或组合标记为未使用，但允许使用或重复计数更改。以下是一些示例分段覆盖图：
+
+[source, yaml, linenums]
+----
+segments:
+- { idRef: FTX, trim: 20 }
+- idRef: LIN
+  items:
+  - { position: 40, usage: U }
+- { idRef: ALC, trim: 30 }
+- idRef: PCI
+  items:
+  - { position: 20, usage: U }
+  - { position: 40, usage: U }
+----
+
+上面的示例使用紧凑形式进行只涉及截断的段修改，而对各个值进行更改的修改则以展开形式表示。与所有其他YAML示例一样，这两种形式实际上是等效的，可以互换使用。
+
+段叠加中的键值对是：
+
+[%header,cols="3a,7a"]
+|===
+|键 |说明
+| idRef  |分段标识符
+| trim  |修剪段中的位置，表示此时所有值都被标记为未使用（可选）
+|项目 |个别值修改列表
+|===
+
+项目列表按照位置引用段中的值。这些参考值是：
+
+[%header,cols="3a,7a"]
+|===
+|键 |说明
+|位置 |段中的值位置
+| name  |段中值的名称（如果未指定，则使用可选的基本定义值）
+|用法 |使用代码，可能是M表示强制，O表示可选，C表示条件，或者U表示未使用（如果未指定，则使用可选的基本定义值）
+| count  |最大重复计数值，可以是任意数字或特殊值`>1`，表示任意重复次数（如果未指定，则使用可选的基本定义值）
+|===
+
+=== 确定EDIFACT架构位置
+
+要使用输入和输出EDI数据的DataSense视图，您需要知道项目中模式的位置。如果您使用开箱即用的EDIFACT架构，而不是自定义任何内容，架构位置将遵循"/edifact/{version}/{message}.esl"模式，因此对于ORDERS消息的D.98B版本，架构位置为"/edifact/d98b/ORDERS.esl"。您可以在文件edi-schemas-edifact  -  <VERSION>。jar中找到与连接器捆绑在一起的这些模式。
+
+如果您使用一个或多个自定义模式，则应将其置于下方
+`src/main/resources`并引用相对于此目录的位置。
+例如，如果您已将ORDERS架构（覆盖或全部）放在src / main / resources / mypartner / ORDERS.esl中，
+您的架构位置是`/mypartner/ORDERS.esl`。
+
+== 配置EDIFACT模块
+
+在安装连接器并配置架构自定义（如果有）后，可以开始使用连接器。为每个实施约定创建单独的配置。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+Follow these steps to create a global EDI module configuration in a Mule application:
+
+. Click the *Global Elements* tab at the base of the canvas, then click *Create*.
+. In the *Choose Global Type* wizard, use the filter to locate and select, *EDIFACT Module*, and click *OK*.
++
+image:edi-choose-global-type.png[edi-choose-global-type]
++
+. Configure the parameters according to the connector reference.
+. Click *OK* to save the global connector configurations.
+. Return to the *Message Flow* tab in Studio.
+....
+[tab,title="XML Editor or Standalone"]
+....
+First, ensure that you have included the appropriate EDI namespace in your configuration file. For EDIFACT, the namespace and schema location are:
+
+[source, yaml, linenums]
+----
+http://www.mulesoft.org/schema/mule/edifact-edi
+http://www.mulesoft.org/schema/mule/edifact-edi/1.0/mule-edifact-edi.xsd
+----
+
+Follow these steps to configure a EDIFACT module in your application.
+
+. Create a global EDIFACT configuration outside and above your flows.
++
+[source, xml, linenums]
+----
+<edifact-edi:config name="ediTx" interchangeIdQualifierSelf="16" interchangeIdSelf="102096559PROD"
+    interchangeIdQualifierPartner="01" interchangeIdPartner="PARTNER">
+  <edifact-edi:schemas>
+    <edifact-edi:schema>/edifact/d98b/ORDERS.esl</edifact-edi:schema>
+    <edifact-edi:schema>/edifact/d98b/ORDRSP.esl</edifact-edi:schema>    
+ </edifact-edi:schemas>
+</edifact-edi:config>
+----
++
+. Configure the connector according to your implementation convention using the guide below.
+....
+------
+
+为EDIFACT模块设置全局元素后，配置模式，确认，ID和解析器选项。这些选项的参考位于 link:http://mulesoft.github.com/edi-module[模块参考]中。
+
+=== 设置您的架构位置
+
+[NOTE]
+目前，您只能在Anypoint Studio XML视图中配置模式位置。
+
+使用上面确定的架构位置，通过单击*Configuration XML*切换到Studio中的XML视图。通过为每个文档类型添加一个`edi:schema`元素，修改您的EDIFACT模块配置以包含您希望包含的所有模式的列表：
+
+[source, xml, linenums]
+----
+<edifact-edi:config name="MyTradingPartner" doc:name="EDI" interchangeIdQualifierSelf="01" interchangeIdSelf="ABCDEFG" groupIdSelf="ABC123" interchangeIdQualifierPartner="01" interchangeIdPartner="HIJKLMN" groupIdPartner="DEF456">
+    <edifact-edi:schemas>
+        <edifact-edi:schema>/edifact/d98b/ORDERS.esl</edifact-edi:schema>
+        <edifact-edi:schema>/edifact/d98b/ORDRSP.esl</edifact-edi:schema>
+    </edifact-edi:schemas>
+</edifact-edi:config>
+----
+
+当连接器正在处理输入或输出消息时，它首先查找配置的模式之间的匹配。如果它没有找到与其中一个匹配的匹配项，它会尝试从类路径加载一个模式，使用本节开头描述的路径结构。因此，您可以使用未包含在配置中的消息，但只有这些数据结构才会显示在Anypoint Studio中的DataSense中。
+
+=== 设置您的交换ID
+
+您也可以在EDIFACT模块配置上为您和贸易伙伴配置交换和组标识符和限定符。
+
+"Self identification"参数标识您的贸易伙伴关系方，而"Partner identification"参数标识您的贸易伙伴。编写EDI消息以提供发件人交换标识符，交换标识符限定符，组应用程序标识符和组标识符限定符时使用您设置的值，并在接收消息中进行验证。如果您不想限制传入消息，可以将其留空，并在写入操作或实际传出消息中设置传出消息的值。写入操作中设置的值会覆盖连接器配置，并且直接在消息中设置的值会覆盖连接器配置和写入操作中设置的任何值。
+
+== 了解EDIFACT文档的Mule消息结构
+
+该连接器可以将EDIFACT文档读入或写入规范的EDI消息结构。此结构表示为Java地图和列表的层次结构，可以使用DataWeave或代码进行操作。如上所述，每个事务都有自己的架构，如架构中所定义的。
+
+该消息本身包含以下键：
+
+[%header,cols="3a,7a"]
+|===
+|密钥名称 |说明
+|分隔符（可选） |用于消息的分隔符（基于读取操作处理的最后一个交换进行设置）。如果设置为写入操作，则会覆盖模块配置中的值。字符串中的字符根据位置进行解释，顺序如下：（数据分隔符），（分隔符），（重复分隔符或“如果没有”），（段结束符），（释放指示符）。
+|错误（只读） |与整个输入相关联的错误列表，或与没有消息的交换关联的错误列表。 （请参阅下面“读取和验证EDI消息”部分中的EdifactError结构说明。）
+| FunctionalAcksGenerated（只读） |在读取操作期间由模块生成的CONTRL确认的列表。要发送确认，请参阅下面的发送确认部分。
+|组（只写） |编写组时，UNG组页眉段值的映射用作默认值。 （尚未在1.0版本中实现。）
+|交换（只写） |写入交换时用作默认值的UNB交换标题段值的映射。
+|消息 |模块在​​读取操作期间读取的消息或在写入操作期间由模块发送的消息的层次结构。此顶级密钥的值是以标准版本为密钥的映射，格式为`D00A`（例如）。与每个标准版本相关的值是另一个地图，这个地图由消息名称来标注。例如，如果您仅使用D.00A ORDERS和ORDRSP消息，则消息映射将包含一个键`D00A`，并将另一个映射作为该值。这张地图又会有两个密钥`ORDERS`和`ORDRSP`，每个密钥都有一个列表作为值。每个列表将包含您可以处理的单个消息。如果您使用的是CONTRL功能确认，`CONTRL`是CONTRL消息列表的关键。
+|===
+
+个人交易集有他们自己的地图，具有以下关键字：
+
+[%header,cols="3a,7a"]
+|====
+|密钥名称 |说明
+|详细信息 |事务集的详细信息部分中的段或段组的映射。值是至多出现一次的段或组的映射，可以重复的值的映射列表。
+|错误（只读） |作为整体与输入相关联的错误列表，或与没有消息的交换相关联的错误列表。 （请参阅以下<<Reading and Validating EDI Messages>>部分中的EdifactError类描述。）
+|组 |使用组时，UNG组标题段值的映射。阅读时，这张地图是封闭组的实际数据（从该组中的所有消息链接的单个地图）。写入时，这些值用于可选地创建封闭组（将具有相同交换和组值的消息收集到一个组中，而不管实际地图是否相同）。未在此映射中填充的值默认为消息级别的组映射中的值。
+|标题 |事务集标题部分中的段或段组的映射。值是至多出现一次的段或组的映射，可以重复的值的映射列表。
+| ID  |消息ID，它必须与包含消息列表的密钥相匹配。
+|交换 | UNB交换标题段值的映射。读取消息时，此地图是封闭交换中的实际数据（从交换中的所有交易集链接的单个地图）。编写消息时，这些值用于创建封闭交换（将具有相同交换值的交易收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值，默认为消息级别的互换映射中的值。
+| MessageHeader  | UNH消息标题段值的映射。这给出了读取操作的实际标题数据，并允许您为写入操作提供配置设置的覆盖。
+|名称 |消息名称。
+|摘要 |事务集摘要部分中的段或循环的映射。值是针对最多发生一次的段或循环的映射，可以重复的值的映射列表。
+|====
+
+== 读取和验证EDI消息
+
+要阅读EDIFACT消息，请搜索*EDIFACT EDI*的选用板，然后将EDIFACT模块拖入流中。然后，转到属性视图，选择您在上面创建的连接器配置，然后选择*Read*操作。该操作将任何字节流读入由EDI模式描述的结构。
+
+EDIFACT模块在读取输入时验证输入。验证包括检查交换信封段UNA / UNB和UNZ，可选组信封段UGH和UNE的语法和内容以及实际消息。一般情况下，错误都会记录并输入到接收数据映射中，以及在CONTRL确认消息中累积和报告。所有接受的消息（无论是无错的还是非致命错误）都作为输出消息Map的一部分传递进行处理。读取输入数据时出错导致抛出异常。
+
+image:edi-messages.png[EDI的消息]
+
+在接收数据映射中输入的错误数据使用EdifactError类，它是具有以下属性的只读JavaBean：
+
+[%header,cols="3a,7a"]
+|===
+|属性 |说明
+|段 |导致错误的段的输入内的从零开始的索引
+|致命 |标记致命错误，表示相关的消息，组或交换由于错误而被拒绝
+| errorCode  | EDIFACT语法错误代码
+| errorText  |错误的文本描述
+|===
+
+读操作将错误数据作为可选列表在数据结构的每个级别使用"Errors"键返回。在消息级别，此列表包含解析该消息期间遇到的非致命错误。在交换级别，此列表包含致命错误消息的错误（包括致命错误和非致命错误）。在读取的根级别，此列表包含交换中包含的消息的交换错误和错误，并且没有有效的消息。
+
+=== 编写EDIFACT消息
+
+要编写外发消息，可以根据上面定义的结构构造传出的EDIFACT消息。例如，此示例创建一个写入文件的传出EDIFACT消息。
+
+[source, xml, linenums]
+----
+  ...
+<edifact-edi:write config-ref="MyTradingPartner" doc:name="Send ORDERS"/>
+<file:outbound-endpoint responseTimeout="10000" doc:name="File" path="output" outputPattern="ack.edi"/>
+----
+
+== 发送确认
+
+发送确认与编写任何其他EDIFACT消息相同，只是您将消息列表设置为在读取操作期间生成的确认。例如：
+
+[source,xml, linenums]
+----
+<edifact-edi:read config-ref="Walmart" doc:name="Read EDI Doc"/>
+  ...
+<dw:transform-message doc:name="Transform Message">
+<dw:input-payload doc:sample="InMessage.dwl"/>
+<dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+    Messages: {
+        D96A: {
+            CONTRL: payload.FunctionalAcksGenerated
+        }
+    }
+}]]></dw:set-payload>
+ </dw:transform-message>
+<set-payload value="#[ ['Transactions' : ['CONTRL' : payload.FunctionalAcksGenerated] ] ]" doc:name="Create outgoing message"/>
+<edifact-edi:write config-ref="MyTradingPartner" doc:name="Send CONTRL Ack"/>
+<file:outbound-endpoint responseTimeout="10000" doc:name="File" path="output" outputPattern="ack.edi"/>
+----
+
+== 限制
+
+*  EDIFACT软件包（用于二进制数据的容器）不受支持，并且如果尝试使用它们会导致错误。
+* 不支持EDIFACT交互式交换（使用UIB标题段和UIZ预告片段）。
+* 代码值目前尚未针对读取或写入进行验证。
+* 目前，EDIFACT依赖注释并未强制执行读取或写入操作。
+尚未支持*  EDIFACT群组。

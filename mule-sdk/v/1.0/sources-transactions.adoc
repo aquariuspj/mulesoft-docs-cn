@@ -1,0 +1,102 @@
+
+= 事务性消息来源
+:keywords: mule, sdk, sources, listener, triggers, transactions
+
+就像操作一样，消息源支持事务。消息源的示例包括JMS和VM连接器侦听器。这两个侦听器都将消息从队列中取出并将其推送到Flow。如果消息处理成功，则交易被提交。否则，事务回滚，并且消息返回队列。
+
+为了实现事务性，消息源需要通过实现`TransactionalConnection`接口的连接类型进行操作，就像操作一样。如果连接实现`XATransactionalConnection`，则XA事务也会自动受支持。
+
+。示例：事务性消息源
+[source, java, linenums]
+----
+public class TransactionalSource extends Source<Serializable, Void> {
+
+  @Connection
+  private ConnectionProvider<MyTransactionalConnection> connectionProvider;
+
+  ....
+}
+----
+
+== 消息源事务操作
+
+当消息源是事务性的时，名为`transactionalAction`的合成参数会自动添加到该参数中。该参数是可以采用这些值的`enum`类型：
+
+*  ALWAYS_BEGIN：确保为每个调用创建一个新的事务。
+*  NONE：表示源不会启动任何事务，并且不会参与在流中打开的事务。
+
+== 消息来源交易类型
+
+当源支持XA事务时，会添加`transactionType`参数。这个参数可以取这些值：
+
+* 本地：启动一个常规交易。
+*  XA：改为启动XA事务。
+
+== 处理事务
+
+在SDK中，事务通过连接建模。所以每个事务都需要不同的连接实例。这是因为消息源需要支持并行性，并且同一连接不能同时处理两个不同的事务。
+
+这需要一个与SDK文档中其他地方使用的HTTP Listener示例不同的模型。因此，请考虑使用来自VM连接器的`<vm:listener />`的过于简化的示例：
+
+[source, java, linenums]
+----
+public VMListener extends Source<Serializable, VMMessageAttributes> {
+
+	@Connection
+	private ConnectionProvider<QueueSession> sessionProvider;
+
+	@Override
+  public void onStart(SourceCallback<Serializable, VMMessageAttributes> sourceCallback) throws MuleException {
+		while(notStopped()) {
+			QueueSession session =  sessionProvider.connect(); // <1>
+      CallbackContext ctx = callback.createContext(); // <2>
+			TransactionHandle status = ctx.bindConnection(session); // <3>
+
+			try {
+				callback.handle(session.poll(), ctx); // <4>
+			} catch (Exception e) {
+				status.rollback();
+			}
+		}
+	}
+
+	@OnSuccess
+	public void onSuccess(SourceCallbackContext context) {
+		handleSuccess(context.getConnection()); // <5>
+	}
+
+	@OnError
+	public void onError(SourceCallbackContext context, Error error) {
+		handleError(context, error);
+	}
+}
+----
+
+
+<1>获得多个连接。
+<2>对于每个连接，都会创建一个新的`CallbackContext`。
+<3>每个连接都通过刚刚创建的`SourceCallbackContext`中的`bindConnection()`方法在上下文中进行注册。
+<4>上下文传递给`handle`方法。
+<5>该连接稍后将通过`SourceCallbackContext.getConnection()`方法用于所有`onSuccess`，`onError`和`onTerminate methods`。
+
+由于连接已绑定到上下文，因此运行时将在需要时自动关闭连接。如果连接是事务性的并且源也被配置为事务性的，那么调用`bindConnection()`方法将自动在该连接上启动事务。此外，如果连接是事务性的，则运行时将在`onSuccess()`方法后自动提交事务，或者在`onError()`方法之后回滚该事务。
+
+[TIP]
+请注意，在这种情况下，事务需要在轮询队列中的任何消息之前启动。在获得连接后立即调用`bindConnection()`是一个好习惯。
+
+== 自定义事务处理
+
+某些连接器可能需要提供自定义事务处理。例如，假设发生错误，您想要发布错误响应。在这种情况下，您需要提交事务，因为如果它被回滚，响应将永远不会到达目的地。
+
+。示例：自定义事务处理
+[source, java, linenums]
+----
+  @OnError
+  public void onError(SourceCallbackContext context, Error error) {
+    ctx.getConnection().publish(buildErrorResponse(error)); // <1>
+    ctx.getTransactionHandle().commit(); // <2>
+  }
+----
+
+<1>执行`onSuccess()`和`onError()`方法时，连接仍处于打开状态。
+<2>上下文有一个`TransactionHandle`，允许您手动操作事务。如果您手动解决事务，则运行时将尊重您的意愿，并且不会在稍后为您执行。您不需要为最常见的用例执行此操作。

@@ -1,0 +1,186 @@
+=  HTTP侦听器配置参考
+:keywords: anypoint studio, esb, connectors, http, https, http headers, query parameters, rest, raml
+
+监听器操作所需的最小设置为：
+
+* 主机
+* 端口
+* 路径
+
+您可以选择连接器接受哪些方法，例如GET或POST。提供连接器在“高级”>“允许的方法”中允许使用的方法的逗号分隔列表。默认的空白列表允许所有方法。连接器根据请求应用程序的URL路由传入的请求。
+
+您可以配置HTTP侦听器来接受任何请求，或仅接受发往特定URI的请求。您设置路径来限制请求。
+
+连接器将请求主体传递给Mule流的下一个元素，作为Mule消息的消息有效载荷。标题，查询参数和URI参数作为属性传递。您可以使用DataWeave从您的Mule应用程序访问这些属性。
+
+响应监听器收到的请求，您可以配置响应代码和澄清成功和错误结果，以根据结果呈现不同的错误消息。
+
+== 设置主机
+
+要将项目部署到CloudHub，需要设置Host = *0.0.0.0*。
+
+当您在本地进行应用程序depoly时，请设置Host = *localhost*以确保安全。使用本地主机侦听服务器内部生成的传入请求，因此该应用程序不容易受到外部威胁。
+
+将主机设置为`0.0.0.0`可将侦听器设置为侦听本机的所有接口，包括以下示例：
+
+*  `+http://localhost:8081/mybasepath+`
+*  `+http://127.0.0.1:8081/mybasepath+`
+*  `+http://myhost.some.domain:8081/mybasepath+`
+
+== 设置路径
+
+如果请求与多个侦听器的路径相匹配，则具有最特定路径的侦听器优先，而不管操作的定义顺序如何。每个请求只有一个连接器处理。
+例如，考虑到以下Listener配置，当您使用此URL时，第二个接收请求：`account/mulesoft/main-contact`
+
+* 路径= `account/(...)`
+* 路径= `account/(...)/main-contact`
+
+路径中的=== 通配符
+
+在路径设置中，可以使用通配符星号（*），如下所示：
+
+* 监听传入的请求到指定的基本路径中的路径。在路径的末尾使用通配符。
+* 在URI中侦听资源的所有请求。在路径中间使用通配符。
+
+您可以指定以星号结尾的部分路径，例如：`/somepath/*`。任何请求都会成功，其中包含由星号（`/somepath`）的前缀组成的URL。
+
+将通配符放在路径的末尾，以防止在其他流中配置的特定路径覆盖通配符路径时发生意外结果。例如，流中的HTTP侦听器的路径设置如下所示：
+
+* 流程A中配置的路径：`/regions/*/customers`
+* 流程B中配置的路径：`/regions/us/prospects`
+
+对`/regions/us/customers`的请求失败并被路由到流B.
+
+当您希望请求成功时，将通配符放在路径的中间，该请求具有由星号的前缀和后缀组成的URL。例如，Path = `account/\*/main-contact`。 HTTP侦听器侦听具有以`/account/`开头并以`/main-contact`结尾的URI的每个HTTP请求;中间的部分可能会有所不同。请求通过以下网址获得成功：
+
+*  `+http://localhost:8081/account/mulesoft/main-contact+`
+*  `+http://localhost:8081/account/foo/main-contact+`
+
+=== 在URI中使用占位符
+
+您可以定义一个在花括号中使用占位符的路径：`{accountId}`，例如`account/{accountId}/main-contact`。连接器将accountId映射到流中的URI参数属性。
+
+例如，对`+http://localhost:8081/account/mulesoft/main-contact+`的请求将URI参数映射到持有密钥`accountId` = `mulesoft`的Mule消息：
+
+接收数据的== 连接器映射
+
+在监听器操作期间由连接器接收的数据总是被映射为传播的Mule消息的有效载荷。
+
+=== 接收表单的示例
+
+以下示例显示了在收到HTML表单时由HTTP侦听器操作执行的映射。
+
+请求的主体是以下HTML表单：
+
+[source, xml, linenums]
+----
+<form action="http://server.com/cgi/handle" 
+        enctype="multipart/form-data" 
+        method="post"> 
+ 
+    What is your name? <INPUT type="text" name="name"><BR> 
+    What is your request? <INPUT type="file" name="request"><BR> 
+    What is your favorite color? <INPUT type="text" name="color"><BR> 
+    <INPUT type="submit" value="Send"> <INPUT type="reset"> 
+ 
+</form>
+----
+
+请求标题是：
+
+[source, code, linenums]
+----
+POST /accounts HTTP/1.1
+Host: localhost:8081
+Cache-Control: no-cache
+User-Agent: Mule/4.0
+Content-Type: multipart/form-data; boundary=AaB03x 
+  
+ --AaB03x
+Content-Disposition: form-data; name="name"
+ 
+MuleSoft
+ --AaB03x
+Content-Disposition: form-data; name="request"; filename="myrequest.png"
+Content-Type: image/png
+ 
+ 
+ --AaB03x
+Content-Disposition: form-data; name="color"
+ 
+blue
+ --AaB03x
+----
+
+== 使用DataWeave访问表单数据
+
+您可以使用类似这些表达式的表达式来访问表单值：
+
+* 访问`name`字段的内容
++
+`#[payload.name]`
++
+* 访问标题
++
+`#[attributes.headers['content-type']`
+
+有关详情，请参阅"About HTTP Responses to Requests."
+
+==  HTTP自定义属性请求行
+
+除了标题和正文外，HTTP请求也由请求行组成。 HTTP请求行是HTTP请求的第一行中包含来自客户端请求的地址栏的URI的内容。例如：
+
+`POST /mydomain/login/?user=aaron&age=32 HTTP/1.1` +
+
+该内容被转换为Mule消息中的以下属性：
+
+属性名称定义如下：
+
+*  `#[attributes.method]`
++
+HTTP请求方法
++
+*  `#[attributes.listenerPath]`
++
+路径：`/mydomain/login/`
++
+*  `#[attributes.queryParams.user]`和`#[attributes.queryParams.age]`
++
+来自URI `aaron`和`32`的查询字符串值。
++
+*  `#[attributes.queryString]`
++
+来自URI的查询字符串，不分析`user=aaron&age=32`。
+
+当HTTP侦听器在其路径中具有URI参数占位符时，将使用持有者名称作为关键字创建一个Map，并从请求路径中提取值。例如，`domain=mydomain`。监听器路径必须定义为`{domain}/login`
+
+== 生成HTTP响应
+
+请求处理后，该消息将返回给HTTP连接器以提供响应。您可以自定义响应正文，附件，标题和状态。
+
+===  HTTP响应正文
+
+除非明确配置，否则在执行流程之后，会从Mule消息的有效内容生成HTTP响应正文。您可以使用DataWeave脚本或表达式对其进行自定义。
+
+===  HTTP响应头
+
+HTTP侦听器发送的响应消息可以包含HTTP头。在标题中，输入表达式以在响应中包含信息，例如：`#[{'Connection' : 'close' }]`。这将为HTTP响应添加一个带有`close`值的`Connection`标头。
+
+===  HTTP响应状态码和原因短语
+
+您可以动态地自定义连接器对请求的响应。例如，您可以根据错误处理程序设置用于定义HTTP响应状态代码的变量的值而产生的错误，设置不同的错误状态代码编号。
+
+您可以在侦听器中定义状态码和原因短语，定义成功执行的那些和执行失败的那些。
+
+== 配置连接属性
+
+您可以通过设置连接可以空闲的最长时间以及启用或禁用持久HTTP连接来自定义HTTP传入连接。在全局配置元素中，选中Use Persistent Connection来定义多个请求是否由单个连接处理。默认情况下，多个请求由单个连接处理（true）。
+
+如果您使用持久连接，则还可以设置连接空闲超时。此选项定义连接在关闭之前可保持空闲的毫秒数。默认值是30秒。
+
+
+
+
+
+
+

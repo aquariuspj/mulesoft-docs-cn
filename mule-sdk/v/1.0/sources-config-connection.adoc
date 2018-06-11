@@ -1,0 +1,69 @@
+= 获取消息源中的配置和连接
+:keywords: mule, sdk, sources, listener, triggers, config, connection
+
+== 获取配置对象
+
+就像操作一样，源可能会引用配置来获取有关其行为的参数。要获得这样的配置，必须使用`@Config`注释（与在操作参数中使用的相同）注释一个字段：
+
+[source, java, linenums]
+----
+public class HttpListener extends Source<InputStream, HttpRequestAttributes> {
+
+  @Config
+  private HttpListenerConfig config;
+}
+----
+
+== 获取连接
+
+如果源需要连接（并且99％的连接器要执行，除非您正在实施调度程序），则需要获取连接。与操作一样，使用了`@Connection`注释，但有两个主要区别：
+
+* 它用于字段而不是方法参数。
+* 代替连接对象，注入`ConnectionProvider`。
+
+[source, java, linenums]
+----
+public class HttpListener extends Source<InputStream, HttpRequestAttributes> {
+
+    @Config
+    private HttpListenerConfig config;
+
+    @Connection
+    private ConnectionProvider<HttpServer> serverProvider;
+
+    @Parameter
+    @Optional(defaultValue = "/")
+    private String path;
+
+    private HttpServer httpServer;
+
+    @Override
+    public void onStart(SourceCallback<InputStream, HttpRequestAttributes> sourceCallback) throws MuleException {
+        httpServer = serverProvider.connect(); // <1>
+
+        server.listen(path).onRequest(request -> { // <2>
+            processRequest(request, sourceCallback); // <3>
+        });
+    }
+
+    @Override
+    public void onStop() {
+        if (httpServer != null) { // <4>
+            serverProvider.disconnect(httpServer); // <5>
+        }
+    }
+}
+----
+
+<1>该示例使用`ConnectionProvider`来获得`HttpServer`。典型的连接提供商已经使用正确的主机和端口配置了服务器。
+<2>远程客户端将HTTP请求推入服务器，并且`HttpServer`组件通知每个请求的来源。源然后使用`SourceCallback`将消息推送到流中。
+<3>源应该定义`processRequest`方法将HTTP请求转换为可以推送到流的消息。该文档将在稍后介绍如何执行此操作，但为了保持示例简单，您可以假设这是有效的。
+<4> `onStop()`方法释放资源，在本例中为`HttpServer`。如果`onStart()`方法在创建服务器之前失败，它会检查null。
+<5>该示例使用`ConnectionProvider`的`disconnect()`方法来释放服务器。
+
+[TIP]
+上面的例子是伪代码。它过分简化了真正的HTTP连接器，以保持示例清晰和简洁。
+
+== 下一步
+
+*  <<sources-push-message#, Pushing Messages to a Flow from a Message Source>>

@@ -1,0 +1,214 @@
+= 交易管理
+
+Mule的交易框架对基础交易管理者是不可知的。事务可以是JDBC事务，XA事务或JMS事务或消息确认。所有交易类型都可以用相同的方式处理。 Mule事务在同步 link:/mule-user-guide/v/3.2/configuring-endpoints[端点]上进行配置，可以将端点配置为启动新事务或加入现有事务。事务使用`<transaction>`在端点上配置，映射到 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/MuleTransactionConfig.html[org.mule.transaction.MuleTransactionConfig]类。这个元素定义了端点在接收到一个事件和事务工厂用于创建事务时应该采取的行动。
+
+[WARNING]
+如果流中有多个事务性入站或出站端点，并且您为其中的一个指定了事务，则必须为它们的_all_指定事务。例如，如果您有两个出站端点并且您为第一个端点指定了一个事务，那么您还必须为第二个端点指定一个事务。
+
+有关使用XA和非XA方法的分布式事务的优秀文章，请参阅http://www.javaworld.com/javaworld/jw-01-2009/jw-01-spring-transactions.html。下面描述的多资源事务支持映射到文章中描述的Best Effort 1PC模式。
+
+有关您为事务配置的元素的更多详细信息，请参阅 link:/mule-user-guide/v/3.2/transactions-configuration-reference[事务配置参考]。
+
+有关使用异常策略来确定事务是否在发生错误时被提交或回滚的信息，请参阅 link:/mule-user-guide/v/3.2/error-handling[错误处理事务]。
+
+== 单一资源（本地）事务
+
+单资源事务（也称为"local transactions"）是基础资源提供的事务，例如JDBC事务和JMS事务。这些事务只能用于使用单个资源来接收和/或发送消息。
+
+单资源事务的示例配置可能如下所示：
+
+[source, xml, linenums]
+----
+<jms:endpoint name="In" queue="test.In" connector-ref="jmsConnector1" />
+<jms:endpoint name="Out" queue="test.Out" connector-ref="jmsConnector1" />
+
+<flow>
+...
+
+  <inbound-endpoint ref="In">
+    <jms:transaction action="ALWAYS_BEGIN" />
+  </inbound-endpoint>
+...
+  <outbound-endpoint ref="Out">
+    <jms:transaction action="ALWAYS_JOIN" />
+  </outbound-endpoint>
+...
+</flow>
+----
+
+该配置定义了在"test.In"队列上接收的全局JMS端点以及在"test.Out"队列上发送的另一个全局JMS端点。 action属性告诉Mule为每条消息做些什么。在这种情况下，将为每个收到的消息创建一个新的事务。出站端点将使用当前事务中注册的资源（如果正在运行）。在这种情况下，它将使用已用于接收事件的相同JMS会话。当消息从入站端点路由到出站端点时，事务将被提交或回滚。
+
+您可以使用 link:/mule-user-guide/v/3.2/outbound-routers[收件人列表]路由器发送多条消息，该路由器将在同一个事务中发送所有消息。
+
+您可以按如下方式在`<transaction>`元素上设置操作值：
+
+* 无 - 从不参与交易。
+*  ALWAYS_BEGIN  - 收到消息时始终开始新的交易。如果以前的交易存在，它将提交该交易。
+*  BEGIN_OR_JOIN  - 如果在收到事件时事务已在进行中，请加入事务，否则启动新的事务。
+*  ALWAYS_JOIN  - 总是希望在收到事件时进行交易。如果没有事务，则抛出异常。
+*  JOIN_IF_POSSIBLE  - 如果可用，将加入当前事务。否则，不会创建事务。
+
+== 无法呈现嵌入对象：找不到File（eetiny.png）。多资源交易
+
+如果您正在使用Mule Enterprise Edition，则可以使用`<multi-transaction>`元素将来自多个JMS资源的一系列操作分组为一个虚拟事务。多资源事务工作无需XA的开销。折中的原因是没有提供XA可靠性保证，您的流程必须准备好处理重复。这与1.5阶段提交概念非常相似（有关不同方法的讨论，请参阅 http://www.javaworld.com/javaworld/jw-01-2009/jw-01-spring-transactions.html[JavaWorld关于分布式事务的文章]）。
+
+多资源事务对于创建事务性非XA桥接非常有用。例如，如果要桥接两个不同的JMS连接器，每个JMS连接器都运行本地事务而不是XA事务，则可以如下配置多资源事务：
+
+[CAUTION]
+多资源事务功能仅适用于JMS。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesource.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:jms="http://www.mulesource.org/schema/mule/jms"
+      xmlns:wmq="http://www.mulesource.org/schema/mule/ee/wmq"
+      xmlns:ee="http://www.mulesource.org/schema/mule/ee/core"
+      xmlns:test="http://www.mulesource.org/schema/mule/test"
+      xsi:schemaLocation="
+       http://www.mulesource.org/schema/mule/test http://www.mulesource.org/schema/mule/test/3.2/mule-test.xsd
+       http://www.mulesource.org/schema/mule/core http://www.mulesource.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesource.org/schema/mule/ee/core http://www.mulesource.org/schema/mule/ee/core/3.2/mule-ee.xsd
+       http://www.mulesource.org/schema/mule/jms http://www.mulesource.org/schema/mule/jms/3.2/mule-jms.xsd
+       http://www.mulesource.org/schema/mule/ee/wmq http://www.mulesource.org/schema/mule/ee/wmq/3.2/mule-wmq-ee.xsd>
+
+    <jms:activemq-connector name="jmsConnector"
+                            maxRedelivery="3"
+                            disableTemporaryReplyToDestinations="true"/>
+
+    <wmq:connector name="wmqConnector"
+                   hostName="winter"
+                   port="1414"
+                   disableReplyToHandler="true"
+                   disableTemporaryReplyToDestinations="true"
+                   queueManager="MY_QUEUE_MANAGER"
+                   targetClient="NONJMS_MQ"
+                   transportType="CLIENT_MQ_TCPIP"
+                   specification="1.1"
+                   numberOfConsumers="16"
+                   username=""
+                   password=""/>
+
+    <flow name="MultiTxFlow">
+        <jms:inbound-endpoint queue="in">
+            <ee:multi-transaction action="ALWAYS_BEGIN"/>
+        </jms:inbound-endpoint>
+        <test:component/>
+        <wmq:outbound-endpoint queue="out">
+             <ee:multi-transaction action="ALWAYS_JOIN"/>
+        </wmq:outbound-endpoint>
+    </flow>
+</mule>
+----
+
+在本示例中，本地JMS事务在"in"端点上收到消息时启动，并且在"out"端点上发送消息时启动本地WMQ事务。最后一个事务（WMQ）首先被提交，然后事务（JMS）被提交。
+
+请注意，入站端点上配置了多资源事务时，还必须为任何出站端点配置多资源事务支持，并将操作设置为"ALWAYS_JOIN"以成为虚拟事务的一部分。
+
+==  XA交易
+
+如果您希望在同一事务中登记多个受管资源并要求100％可靠性，则可以使用XA事务。入站端点的配置方式与单资源交易的方式相同，但连接器需要配置为使用支持XA的资源。
+
+如果您在应用程序服务器外运行Mule，则可以使用 link:/mule-user-guide/v/3.2/jboss-transaction-manager-reference[JBoss事务管理器]配置嵌入式事务管理器。
+
+目前，只有以下传输支持XA事务：
+
+*  link:/mule-user-guide/v/3.2/vm-transport-reference[VM传输参考]
+*  link:/mule-user-guide/v/3.2/jdbc-transport-reference[JDBC传输参考]
+*  link:/mule-user-guide/v/3.2/jms-transport-reference[JMS传输参考]
+*  link:/mule-user-guide/v/3.2/mule-wmq-transport-reference[Mule WMQ运输参考]（如Mule企业版2.2）
+
+以下XA事务配置示例使用单个事务从JMS队列读取并写入数据库。
+
+[source, xml, linenums]
+----
+<flow name="JmsToJdbc">
+  <jms:inbound-endpoint queue="my.queue" reuseSession="false"/>
+    <xa-transaction action="ALWAYS_BEGIN" timeout="60000"/>
+  </jms:inbound-endpoint>
+  <jdbc:outbound-endpoint address="writeTest" type="2">
+    <xa-transaction action="ALWAYS_JOIN"/>
+  </jdbc:outbound-endpoint>
+</flow>
+----
+
+由于入站JMS端点上配置了XA事务，因此任何出站端点也必须配置XA事务支持才能成为XA事务的一部分。这要求传输类型支持XA事务。要使此配置生效，您需要配置使用JMS XA连接工厂的JMS连接器和配置为使用XA数据源的JDBC连接器。
+
+请注意，虽然Java EE不支持嵌套事务，但XA事务具有暂停/恢复概念。因此，如果将流配置为将XA事务设置为ALWAYS_BEGIN，并将消息转发到另一个流，并将XA事务设置为ALWAYS_BEGIN，则第一个事务将暂停，直到第二个事务完成。
+
+===  XA事务元素和属性
+
+`xa-transaction`元素是`abstract-transaction`元素的子元素。它继承`abstract-transaction`中的`action`属性，`action`设置与`abstract-transaction`中的`xa-transaction`具有相同的含义。但是，`xa-transaction`不会继承`timeout`属性，但下面有关设置轮询频率的部分除外。
+
+`xa-transaction`元素包含另一个属性`interactWithExternal`，它是一个布尔类型。当设置为true时，`interactWithExternal`将导致Mule ESB与Mule ESB之外开始的事务交互。例如，如果外部事务处于活动状态且`interactWithExternal`设置为true，则`action`的BEGIN_OR_JOIN设置会导致Mule ESB加入现有事务，而ALWAYS_BEGIN `action`属性设置会导致抛出异常。请注意，`interactWithExternal`属性的默认值为false。
+
+=== 设置轮询频率
+
+当您使用XA事务配置入站JMS端点时，接收器每100毫秒轮询一次。您可以通过设置`pollingFrequency`属性来更改轮询频率，如下所示：
+
+[source, xml, linenums]
+----
+<jms:inbound-endpoint queue="my.queue" reuseSession="false">
+  <xa-transaction action="ALWAYS_BEGIN" timeout="60000"/>
+  <properties>
+    <spring:entry key="pollingFrequency" value="5000"/>
+  </properties>
+</jms:inbound-endpoint>
+----
+
+此属性仅适用于使用 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/jms/XaTransactedJmsMessageReceiver.html[XaTransactedJmsMessageReceiver]的{{}}，它是使用XA事务的入站JMS端点上的默认接收方。如果您使用的是JBoss交易，请阅读 link:/mule-user-guide/v/3.2/jboss-transaction-manager-reference[这里]了解如何配置`timeout`值。
+
+== 事务管理器查找
+
+Mule使用`javax.transaction.TransactionManager`管理跨多个资源（XA）的事务。如果您需要事务的SUSPEND语义（这是EJB的`RequiresNew`事务属性值的作用），您*must*使用事务管理器。相反，更典型的`javax.transaction.UserTransaction`对于事务管理器来说只是一个简单的句柄，其中有限的（尽管在大多数情况下是足够的）功能不会让您暂停当前事务。
+
+注意：根据您的应用程序服务器供应商，事务管理器可能通过JNDI或仅通过专有API提供。
+
+下表总结了一些常见的Java EE服务器：
+
+[%header%autowidth.spread]
+|===
+|应用服务器 |远程 |嵌入式 |常用位置 |查找类
+|的JBoss  | image:error.png[错误]  | image:check.png[查]  |的java：/事务管理 | http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/lookup/JBossTransactionManagerLookupFactory.html[org.mule.transaction.lookup.JBossTransactionManagerLookupFactory]
+|的Weblogic
+| image:check.png[查]  | image:check.png[查]  |使用javax.transaction.TransactionManager  | http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/lookup/WeblogicTransactionManagerLookupFactory.html[org.mule.transaction.lookup.WeblogicTransactionManagerLookupFactory]
+|树脂
+| image:error.png[错误]  | image:check.png[查]  |的java：COMP /事务管理 | http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/lookup/Resin3TransactionManagerLookupFactory.html[org.mule.transaction.lookup.Resin3TransactionManagerLookupFactory]
+|的JRun
+| image:error.png[错误]
+| image:check.png[查]
+|的java：/事务管理
+| http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/lookup/JRunTransactionManagerLookupFactory.html[org.mule.transaction.lookup。 JRunTransactionManagerLookupFactory]
+|其他
+| image:help_16.png[help_16]  | image:check.png[查]  |通过_jndiName_属性指定 | http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/lookup/GenericTransactionManagerLookupFactory.html[org.mule.transaction.lookup.GenericTransactionManagerLookupFactory]
+|===
+
+例如，要使用Weblogic的事务管理器，您可以按如下方式配置Mule：
+
+[source, xml, linenums]
+----
+<transaction-manager factory="org.mule.transaction.lookup.WeblogicTransactionManagerLookupFactory" />
+----
+
+== 交易协调
+
+事务划分在端点上设置。交易的实际管理由 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transaction/TransactionCoordination.html[骡交易协调员]处理。请注意，任何事务处理事件流都将是同步的。事务处理协调器是一个单身管理器，负责管理Mule实例的所有事务，并提供绑定和解除绑定事务以及检索当前事务状态的方法。
+
+例如，要确定交易是否为XA交易，您可以使用`TransactionCoordination.getInstance().getTransaction().isXa()`。
+
+== 非交易出站端点
+
+默认情况下，来自非事务性传输的出站端点现在将忽略活动事务而不是拒绝它。 （也就是说，此类端点的默认事务操作不再是`NONE`）。这允许诸如以下的流程：
+
+[source, xml, linenums]
+----
+<flow name="transactionalVM">
+    <vm:inbound-endpoint path="orders" exchange-pattern="one-way">
+        <vm:transaction action="ALWAYS_BEGIN"/>
+     </vm:inbound-endpoint>
+     <file:outbound-endpoint ref="receivedOrders"/>
+</flow>
+----
+
+如交易入站虚拟机队列中所述，从VM队列中读取的消息将以同步方式和事务方式处理。上面代码示例中的文件传输不是事务性的。所以严格来说，写入文件不是交易的一部分。但是，创建文件时引发的任何异常都会回滚事务，导致消息被重新处理。这产生了多资源交易的效果。

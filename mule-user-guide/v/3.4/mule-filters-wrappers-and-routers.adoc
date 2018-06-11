@@ -1,0 +1,171 @@
+=  Mule过滤器包装器和路由器
+
+Mule包括各种旨在简化消息路由或过滤以及消息处理器封装的消息处理器。
+
+
+image:filter2.png[过滤器2] Mule *filters*评估一条消息，以确定它是否可以通过流程继续。最简单的过滤器实现基本逻辑运算符（例如`and`，`or`和`not`），但这些简单元素可以通过各种方式组合，以指定复杂的逻辑条件。例如，您可以在流程的开始处使用过滤器来拒绝来自特定IP地址范围的任何请求，或者仅使用过滤器来拒绝具有特定有效内容或带有空有效内容的任何消息。
+
+在Mule Studio中已知的 image:wrapper2.png[wrapper2] Mule *wrappers*或*scopes*可以封装其他消息处理器，以便它们作为一个单元运行。例如，您可能会将多个消息处理器组合在一起形成一个*transactional*单元，以便它们成功或无法一起处理消息，从而确保数据库的准确更新。您可以在*cache scope*中将几个消息处理器合并在一起存储处理结果以供重用，或者将一个消息处理器封装在消息丰富的范围内，以添加消息负载而不用操作原始内容。
+
+image:router2.png[路由器2] Mule *routers*  - 或*flow controls*，因为它们在Mule Studio中是已知的 - 其功能与它们的名称所暗示的很相似：直接或以其他方式控制流中的消息。
+
+有时，流量控制充当分离器，再排序器或聚合器，将消息拆分成单个项目进行处理，重新排序消息内容或聚合拆分消息。
+
+有时候，它们会在路上分叉，评估消息的有效负载或标题，然后根据这些内容将消息路由到特定的"pathway"。因此，流量控制有利于基于内容的路由。例如，您可以使用*choice flow control*来检查消息有效负载的一部分，然后将消息路由到设置条件评估为true的第一个"pathway"，例如订单超过5,000美元。
+
+== 示例
+
+=== 表达式过滤器
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core" version="EE-3.4.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+ 
+    <flow name="EchoFlow" doc:name="EchoFlow">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8084" doc:name="HTTP" doc:description="Process HTTP requests or responses."/>
+        <expression-filter expression="#[groovy:payload.getClass().getName() != 'org.mule.transport.NullPayload']" doc:name="Expression"/>
+        <logger message="About to echo #[message.payload]" level="INFO" doc:name="Logger"/>
+        <echo-component doc:name="Echo"/>
+    </flow>
+ 
+</mule>
+----
+
+=== 消息Enricher和缓存范围
+
+[%header%autowidth.spread]
+|===
+^ | *Message Enricher and Cache*
+一个|
+[source, xml, linenums]
+----
+<mule xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+  
+    xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+  
+    xmlns:jdbc-ee="http://www.mulesoft.org/schema/mule/ee/jdbc" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+  
+    xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:jdbc="http://www.mulesoft.org/schema/mule/ee/jdbc"
+  
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="EE-3.4.0"
+  
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd
+  
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+  
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+  
+http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/current/mule-jdbc-ee.xsd">
+  
+...
+  
+    <flow name="inhouseOrder" doc:name="inhouseOrder">
+        <jms:inbound-endpoint queue="inhouseOrder"
+            connector-ref="Active_MQ" doc:name="inhouseOrder">
+            <xa-transaction action="ALWAYS_BEGIN" />
+        </jms:inbound-endpoint>
+        <set-variable variableName="price" value="0"
+            doc:name="Initialise Price" />
+        <enricher target="#[price]" doc:name="Enrich with price">
+            <ee:cache cachingStrategy-ref="Caching_Strategy" doc:name="Cache the Price">
+                <http:outbound-endpoint exchange-pattern="request-response"
+                    host="localhost" port="9999" path="api/prices/#[payload.productId]"
+                    method="GET" disableTransportTransformer="true" doc:name="Invoke Price Service" />
+                <object-to-string-transformer doc:name="Object to String" />
+            </ee:cache>
+        </enricher>
+        <jdbc-ee:outbound-endpoint exchange-pattern="one-way"
+            queryKey="insertOrder" queryTimeout="-1" connector-ref="JDBCConnector"
+            doc:name="Save Order Item">
+            <xa-transaction action="ALWAYS_JOIN" />
+            <jdbc-ee:query key="insertOrder"
+                value="insert into orders (product_id, name, manufacturer, quantity, price) values (#[payload.productId], #[payload.name], #[payload.manufacturer], #[payload.quantity], #[price])" />
+        </jdbc-ee:outbound-endpoint>
+        <set-variable variableName="totalPrice" value="#[price * payload.quantity]"
+            doc:name="totalPrice = price * payload.quantity" />
+        <set-session-variable variableName="totalValue"
+            value="#[totalValue + totalPrice]" doc:name="totalValue += totalPrice" />
+        <scripting:transformer doc:name="Groovy">
+            <scripting:script engine="Groovy">
+                <scripting:text><![CDATA[receipt = new com.mulesoft.se.orders.PurchaseReceipt(); receipt.setStatus(com.mulesoft.se.orders.Status.ACCEPTED); receipt.setTotalPrice(Float.valueOf(message.getInvocationProperty('totalPrice')));
+return receipt;]]></scripting:text>
+            </scripting:script>
+        </scripting:transformer>
+        <rollback-exception-strategy
+            maxRedeliveryAttempts="3" doc:name="Rollback Exception Strategy">
+            <logger message="#[payload:]" level="INFO" doc:name="Logger" />
+            <on-redelivery-attempts-exceeded
+                doc:name="Redelivery exhausted">
+                <flow-ref name="defaultErrorHandler" doc:name="Invoke defaultErrorHandler" />
+            </on-redelivery-attempts-exceeded>
+        </rollback-exception-strategy>
+    </flow>
+...
+  
+</mule>
+----
+|===
+
+=== 选择路由器
+
+[%header%autowidth.spread]
+|===
+^ | *Choice Router*
+一个|
+[source, xml, linenums]
+----
+<mule
+...
+    xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+...
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="EE-3.4.0"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd
+  
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+  
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+  
+...
+    <flow name="orderService" doc:name="orderService">
+        <http:inbound-endpoint exchange-pattern="request-response"
+            host="localhost" port="1080" path="orders" doc:name="/orders"
+            doc:description="Process HTTP reqests or responses." connector-ref="HttpConnector" />
+        <cxf:jaxws-service serviceClass="com.mulesoft.se.orders.IProcessOrder"
+            doc:name="Order WebService" doc:description="Make a web service available via CXF" />
+        <set-session-variable variableName="totalValue"
+            value="0" doc:name="totalValue=0" />
+        <foreach collection="#[payload.orderItems]" doc:name="For each Order Item">
+            <enricher
+                target="#[rootMessage.payload.orderItems[counter - 1].purchaseReceipt]"
+                doc:name="Enrich with purchase receipt">
+                <choice doc:name="Choice">
+                    <when expression="#[payload.manufacturer == 'Samsung']">
+                        <vm:outbound-endpoint exchange-pattern="request-response"
+                            path="samsungOrder" doc:name="Dispatch to samsungOrder" />
+                    </when>
+                    <otherwise>
+                        <jms:outbound-endpoint exchange-pattern="request-response"
+                            queue="inhouseOrder" connector-ref="Active_MQ" doc:name="Dispatch to inhouseOrder" />
+                    </otherwise>
+                </choice>
+            </enricher>
+        </foreach>
+        <vm:outbound-endpoint exchange-pattern="one-way"
+            path="audit" responseTimeout="10000" mimeType="text/plain" doc:name="Dispatch to audit" />
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <flow-ref name="defaultErrorHandler" doc:name="Invoke defaultErrorHandler" />
+        </catch-exception-strategy>
+    </flow>
+    ...
+  
+</mule>  
+----
+|===
+
+== 另请参阅
+
+*  *NEXT STEP*：请阅读大约 link:/mule-user-guide/v/3.4/mule-exception-strategies[例外战略]。
+* 向前浏览以了解 link:/mule-user-guide/v/3.4/mule-message-structure[骡信息]的结构。
+* 查看包含richher和选择路由器的完整 link:/mule-user-guide/v/3.4/service-orchestration-and-choice-routing-example[示例应用]。

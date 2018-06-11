@@ -1,0 +1,78 @@
+= 对象作用域
+:keywords: anypoint studio, objects, scopes, cardinality
+
+范围也称为基数，描述Mule如何创建和管理Mule容器中的对象。
+
+在Mule中定义的对象范围：
+
+* 单例 - 只有一个对象为所有请求创建。单例对象必须是线程安全的，因为多个线程访问同一个对象。因此，写入时需要保护任何成员变量，以确保一次只有一个线程更改数据。
+* 原型 - 为每个请求或每次从注册中心请求对象时创建一个新对象。给定原型范围的对象是为对象上的每个请求创建的，因此该对象不需要是线程安全的，因为只能有一个线程访问它。但是，该对象必须是无状态的，因为成员变量只存在于请求的整个生命周期中。
++
+另请参阅：<<About Transformers>>
++
+* 池化 - 仅适用于组件对象，但这些存储在池中，以确保一次只有一个线程可以访问对象。池化对象是线程安全的，因为Mule保证一次只有一个线程可以访问该对象。由于创建了多个实例，因此共享对象不能轻易维护对象本身的状态。汇集在原型上的优势在于，创建对象的成本可能很高，并且为接收到的每条消息创建一个新实例时会降低应用程序的速度。
+
+当通过XML配置Mule时，Spring被用于将XML转换为定义Mule实例如何运行的对象。 Mule中的所有顶级对象都是单例，包括流，连接器，端点，代理，安全管理器和事务管理器。
+
+您的流程使用的组件，POJO对象可以是单例，原型或合并。
+
+== 关于变形金刚
+
+具有原型范围的唯一对象是Transformer。这是因为变换器可以在不同的上下文中使用，并可能在不同的线程中同时使用。
+
+预计变形金刚将被多个线程访问。在这种情况下，并发对性能很重要。避免使用单例模式的原因是变换器可以存在于不同的上下文中，但这并不意味着在流调用之后，即使它们具有原型范围，为该流创建的变换器bean也可能被丢弃。
+例如，如果你像这样定义一个流程：
+
+[source,xml,linenums]
+----
+<flow>
+<custom-transformer class="com.mule.support.MyTransformer" doc:name="T1"/>
+<custom-transformer class="com.mule.support.MyTransformer" doc:name="T2"/>
+<custom-transformer class="com.mule.support.MyTransformer" doc:name="T2"/>
+</flow>
+----
+
+由于默认情况下变换器具有原型范围，因此Spring上下文中的getBean操作会调用三次。 com.mule.support.MyTransformer有一个原型范围，所以创建了三个bean实例。
+
+这并不意味着每次调用一个新的getBean都会执行一个流程。相同的转换器被缓存并准备提供并发性，因为每个bean实例都有一个确定的上下文，这在执行流程中提供了不同的相对位置。如果为每个调用执行getBean，则每个实例的并发性都会丢失，并且性能会降低。
+
+== 关于Spring Scopes
+
+您可以将Spring引用为Spring定义的对象范围的组件：
+
+[source, xml, linenums]
+----
+<component >
+     <spring-object ref="myBean">
+</component>
+----
+
+== 示例：Singleton
+
+[source, xml, linenums]
+----
+<component >
+     <singleton-object class="com.foo.Bar"/>
+</component>
+----
+
+== 示例：原型
+
+[source, xml, linenums]
+----
+<component >
+     <prototype-object class="com.foo.Bar">
+</component>
+ 
+<!—or short form -->
+ 
+<component class="com.foo.Bar"/>
+----
+
+== 示例：共享
+
+[source, xml]
+----
+<pooled-component class="com.foo.Bar"/>
+----
+

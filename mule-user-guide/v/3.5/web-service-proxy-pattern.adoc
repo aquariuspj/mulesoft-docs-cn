@@ -1,0 +1,145 @@
+=  Web服务代理模式
+
+代理Web服务是一种非常普遍的做法，用于安全性或审计等不同的原因。这种模式允许对这种代理进行简单而简单的配置。
+
+image:mcp_ws-proxy.png[mcp_ws代理]
+
+== 核心功能
+
+Web服务代理充当调用者应用程序和目标Web服务之间的中介。这使代理有机会透明地在调用序列中引入新行为。例如，它可以：
+
+* 添加或删除HTTP标头。
+* 转换SOAP信封（正文或标题）以添加或删除特定的条目。
+* 重写远程WSDL，使它们似乎绑定到公司防火墙内的服务。
+* 引入自定义错误处理。
+
+我们来看看运行中的Web服务代理：
+
+*Web Service Proxy*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+    inboundAddress="http://localhost:8090/weather-forecast"
+    outboundAddress="http://ws.acme.com:6090/weather-forecast" />
+----
+
+使用此配置后，所有对本地天气预报员代理的呼叫都将重定向到远程。
+
+Web服务代理由*ws*模块提供，该模块必须存在于类路径中才能使用。它的命名空间是http://www.mulesoft.org/schema/mule/pattern，它的模式位置是http://www.mulesoft.org/schema/mule/pattern/current/mule-pattern.xsd。
+
+真正的增值来自代理执行的自动地址重写：调用` http://localhost:8090/weather-forecast?wsdl `返回远程WSDL，其中端口地址已根据请求到达代理的URL自动重写。这样，如果您的Mule实例在负载平衡器或任何类型的网络间接访问后进行访问，则生成的WSDL会将调用方指向端口地址，以遵守您的网络拓扑。
+
+如上所述，代理可以通过使用变换器对SOAP调用执行更改。以下说明：
+
+*Proxy with Transformers*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy-transformers"
+    inboundAddress="http://localhost:8090/weather-forecast"
+    transformer-refs="zip-code-transformer add-credentials-transformer"
+    responseTransformer-refs="weather-code-transformer"
+    outboundEndpoint-ref="target-ws-endpoint" />
+----
+
+注意如何通过引用全局声明引入变形金刚。这种技术也适用于全局端点，正如您可以通过上述对target-ws-endpoint的参考所看到的那样。
+
+Web服务代理元素支持子元素。以下显示了一个配置变体，其中端点在内部进行了声明，并且已添加了一个异常策略：
+
+*Child Elements*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy">
+  <http:inbound-endpoint address="http://localhost:8090/weather-forecast" />
+  <http:outbound-endpoint address="http://ws.acme.com:6090/weather-forecast" />
+  <custom-exception-strategy class="com.acme.AcmeExceptionStrategy" />
+</pattern:web-service-proxy>
+----
+
+最后，Web服务代理还支持继承，它允许跨代理的几个具体实例共享通用配置属性。看看下面的内容来看看继承是如何工作的：
+
+*Inheritance*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="abstract-ws-proxy-zipcode-changer"
+    abstract="true"
+    transformer-refs="zip-code-transformer add-credentials-transformer"
+    responseTransformer-refs="weather-code-transformer" />
+ 
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+    parent="abstract-ws-proxy-zipcode-changer">
+  <http:inbound-endpoint address="http://localhost:8090/weather-forecast" />
+  <http:outbound-endpoint address="http://ws.acme.com/weather-forecast" />
+</pattern:web-service-proxy>
+----
+
+就WSDL处理而言，代理提供了一些额外选项。让我们看看他们。
+
+==  WSDL重定向
+
+在某些情况下，远程Web服务不遵循通常的做法，即在末尾附加"?wsdl"的服务所在的地址上公开其WSDL。在这种情况下，需要将Web服务代理指向远程WSDL的确切位置，如图所示：
+
+*Remote WSDL Redirection*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+    inboundAddress="http://localhost:8090/weather-forecast"
+    outboundAddress="http://ws.acme.com:6090/weather-forecast"
+    wsdlLocation="http://ws.acme.com:6090/wsdl/weather-forecast" />
+----
+
+在这种情况下，远程WSDL将按照上面的解释重写其端口地址。
+
+对于没有远程WSDL可用的情况或者远程WSDL在被Web服务代理公开之前需要手动调整的情况，解决方案包括将正确的WSDL存​​储为本地文件并让代理服务它。这如下所示完成：
+
+*File WSDL Redirection*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+    inboundAddress="http://localhost:8090/weather-forecast"
+    outboundAddress="http://ws.acme.com:6090/weather-forecast"
+    wsdlFile="path/to/correct/weather-forecaster.wsdl" />
+----
+
+在这种情况下，WSDL按原样从文件中提供：不发生重写。
+
+== 提供静态内容
+
+当代理其WSDL导入外部资源（如XSD文件）的Web服务时，请在单独的流中添加`http:static-resource-handler`元素以提供这些外部静态资源。
+
+否则，调用代理Web服务的客户端应用程序无法确定它们必须用来调用服务的正确类型。
+
+示例配置：
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="ws-proxy"
+  inboundAddress="http://${http.inbound.host}:${http.inbound.port}/some-service"  wsdlFile="${wsdl.location}">
+  <http:outbound-endpoint  address="${http.outbound.address}" responseTimeout="${http.outbound.timeout}"/>
+</pattern:web-service-proxy>
+ 
+<flow name="static-content">
+  <http:inbound-endpoint exchange-pattern="request-response" host="${http.inbound.host}" port="${http.inbound.port}" doc:name="HTTP"/>
+  <http:static-resource-handler resourceBase="${app.home}/xsd/" doc:name="HTTP Static Resource Handler"/>
+</flow>
+----
+
+如果属性*wsdl.location*指向的WSDL文件包含XSD导入，则以下示例显示如何处理此用例：
+
+[source, xml, linenums]
+----
+<wsdl:types>
+    <schema
+        xmlns="http://www.w3.org/2001/XMLSchema"
+        <import namespace="http://www.mulesoft.com/schema/some-namespace" schemaLocation="/some-namespace/type-01.xsd"/>
+        <import namespace="http://www.mulesoft.com/schema/other-namespace" schemaLocation="/other-namespace/complexTypes.xsd"/>
+    </schema>
+</wsdl:types>
+----
+
+该应用程序提供来自*src/main/app/xsd*的这些静态内容。有关详情，请参阅 link:/mule-user-guide/v/3.6/http-static-resource-handler[HTTP静态资源处理程序]。

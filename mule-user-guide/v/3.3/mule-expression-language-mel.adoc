@@ -1,0 +1,618 @@
+=  Mule表达语言（MEL）
+
+[TIP]
+访问 link:/mule-user-guide/v/3.3/mel-cheat-sheet[MEL备忘单]以便快速参考。
+
+本指南适用于Mule应用程序的设计人员。流程的构建块通常使用关于Mule消息及其环境的信息来做出有关路由，过滤和其他常见任务的决策。这些决定的逻辑往往依赖于评估表达。
+
+Mule表达语言（MEL）是用于在整个骡子ESB中制定这种表达的主要语言。
+
+MEL的所有功能都可用于XML应用程序配置文件，少数需要额外的Java编程。所有MEL功能均可在Mule Studio提供的可视界面中使用。
+
+==  Mule表达式语言介绍
+
+Mule企业服务总线通过在它们之间传递有效载荷作为消息，在应用程序或其他实体（通称为端点）之间提供松散耦合。从进入端点到退出端点的路径上的每一步都是消息处理器。 link:/mule-user-guide/v/3.3/mule-application-architecture[Mule应用程序架构]解释此架构及其组件。
+
+Mule表达式语言（MEL）通过提供一种访问，操作和使用消息及其环境中的信息的手段来支持消息处理器的工作。
+
+[WARNING]
+====
+虽然Mule表达式语言在Mule 3.3中是新的，但Mule从Mule 2.1开始支持表达式。在Mule 3.3之前，表达式评估者提供了这个功能。每个表达式评估器都有自己的规则和语法。
+
+通过一套规则和语法，MEL提供了一种统一的方式来实现表达式评估器的所有功能以及更多; Mule表达语言是未来版本增强的重点。
+
+Mule表达评估者继续得到Mule ESB的全力支持，但考虑到Mule表达语言的可用性，不再推荐使用它们。
+====
+
+在大多数情况下，Mule表达式在消息处理器中工作以修改这些处理器执行主要工作的方式（例如路由，过滤）。以下是主要用例：
+
+基于消息及其附件的内容，属性或上下文，采取行动过程中的*  *Decide*。例如，流量控制器可以将不同类型产品的采购订单路由到不同的JMS队列。
+*  *Select*来自消息及其附件的内容，属性或上下文的值。例如，连接器可能会从当前消息中提取特定的信息以用作参数。
+*  *Replace*具有实际值的标记。例如，记录器可以从负载内容中提取信息并将其放入日志消息中。
+
+在某些情况下，您还可以使用Mule表达式语言代替Ruby，JavaScript或Groovy等简单脚本编程语言。 MEL可以比这些语言更方便地访问消息及其环境。
+
+<<Using Mule Expression Language>>部分提供了实现上述用例的示例。
+
+*  <<Mule Expression Language Syntax>>部分解释了如何将运算符和操作数合并为正确形成的MEL表达式。
+* 上下文和函数部分解释了如何提取有关Mule消息及其环境的MEL信息，以便通过值或有时通过引用将其用作MEL表达式中的操作数。在某些情况下，MEL表达式可以更改该信息。上下文由建模如下的对象组成：
+*  *Server*：消息处理器运行的操作系统。
+*  *Mule*：运行应用程序的Mule实例。
+*  *Application*：部署当前流的用户应用程序。
+*  *Message*：消息处理器正在处理的包（负载，附件，属性）。
+
+函数`Xpath`和`Regex`提供了在上下文中提取尚未作为单个值存在的信息的方法。默认情况下，它们在有效负载上工作，但可以明确地向它们传递不同的参数。详情显示在<<MEL Context Objects and Functions>>部分。
+
+一旦你学习了MEL，你可以在很多场合和地点使用它来完成许多任务，以方便你使用Mule。
+
+==  Mule表达式语言语法
+
+一个典型的MEL表达式将一个或多个操作数与零个或多个操作符结合成类似Java的语法，并返回结果值。
+
+MEL的核心是`contextObject.property`形式的属性表达式。这些提供了轻松访问Mule消息及其环境的属性。例如，表达式`message.payload`表示消息上下文对象的有效负载属性。它的值是消息有效载荷。
+
+Java方法调用和赋值是其他常见的MEL表达式。
+
+在大多数情况下，MEL表达式独立于消息处理器的配置属性的值。 MEL在运行时评估表达式，并且消息处理器使用结果。
+
+MEL程序的语法很大程度上遵循Java，但MEL通过在运行时执行类型强制来实现动态类型化。分号除了最后一个外，还包括每条语句，不论这些语句是在单行还是单行。返回语句通常是不必要的，因为MEL程序返回最后执行的MEL语句的值。
+
+MEL操作符和基本操作数是常规和可预测的（例如，`2 + 2 == 4`返回`true`）。属性表达式可方便地访问消息及其环境中的信息（例如，如果应用程序在Linux服务器上运行，则`server.fileSeparator returns` "/"，在Windows服务器上运行"\"）。本节的其余部分总结了MEL语法中最重要的元素。
+
+===  MEL操作数
+
+操作数可以是文字，变量或MEL表达式。 <<Null Literals>>部分描述了您可以在MEL中使用的文字种类。 <<MEL Key/Value Maps, Lists, and Arrays>>部分描述了在MEL表达式中作为操作数特别有用的数据结构。 <<MEL Assignments>>部分讨论变量。除了使用Java风格的变量之外，还可以使用流变量和会话变量，这些变量具有以Mule为中心的范围。上下文和函数部分解释了如何使用变量。
+
+最常见于操作数的MEL表达式是属性表达式和方法调用。
+
+==== 属性表达式
+
+Context and Functions部分描述了上下文对象及其属性。属性表达式的语法是`contextObject.property`。这可以作为大多数MEL表达式中的操作数出现，如果属性可以从MEL写入，则包括在赋值的左侧。您可以像使用上下文对象一样使用相同的语法来引用Java bean的属性。
+
+==== 方法调用
+
+Mule表达式语言使用标准的Java方法调用。您可以提供完全合格的班级名称或导入班级并使用非限定名称。 MEL会自动导入许多Java类（请参阅<<Appendix>>）。
+
+以下示例说明Java方法调用。
+
+`message.payload.getName()`
+
+如果有效负载是Java对象（例如，表示一个人），则此代码将调用其`getName`方法。表达式的值是getName返回的值 - 可能是表示人名的字符串。
+
+`java.lang.System.currentTimeMillis()`
+
+该值是当前以毫秒为单位的时间，由Java返回。由于MEL会自动导入java.lang.System（请参阅<<Appendix>>），因此您也可以将其写为：
+
+`System.currentTimeMillis()`
+
+===  MEL运算符
+
+MEL操作符遵循标准的Java语法，但操作数始终是有价值的，而不是引用。例如，"A" =='A'的计算结果为true，而Java中的相同表达式的计算结果为false。
+
+算术运算符。==== 
+
+[%header,cols="34,33,33"]
+|===
+| *Symbol*  | *Definition*  | *Example/Value*
+| *+*  |加。对于数字，该值是操作数值的总和。对于字符串，该值是通过连接操作数的值形成的字符串。 | `2 + 4  6  'fu' + 'bar'  The String "fubar"`
+| *-*  |减号。该值是第一个操作数的值减去第二个操作数的值。 | `2 - 4  -2`
+| */*  |超过。该值是第一个操作数的值除以第二个操作数的值。 | `2 / 4  0.5`
+| ** * |Times. The value is the product of the values of the operands. |`2 * 4 8`
+| *%*  |模。该值是将第一个操作数的值除以第二个操作数的值后的余数。 | `9 % 4  1`
+|===
+
+==== 比较运算符
+
+[%header,cols="34,33,33"]
+|===
+| *Symbol*  | *Definition*  | *Example/Value*
+| *==*  |相等。当且仅当（iff）操作数的值相等时为真。 | `'A' == 'A'  true`
+| *!=*  |不等于。如果操作数的值不相等，则为真。 | `'A' != 'B'  true`
+| *>*  |大于。如果左侧的值大于右侧的值，则为真。 | `7 > 5  true`
+| *<*  |小于。如果左侧的值小于右侧的值，则为真 | `5 < 5  false`
+| *>=*  |大于或等于。如果左侧的值大于或等于右侧的值，则为真。 | `5 >= 7  false`
+| *<=*  |小于或等于。如果左侧的值小于或等于右侧的值，则为真。 | `5 <= 5  true`
+| *contains*  |包含。如果右侧的字符串是左侧字符串的子字符串，则为真。 | `'fubar' contains 'bar'  true`
+| *是，+
+*  |的 实例是一个实例。如果左侧的对象是右侧类的实例，则为真。 | `'fubar' is String  true`
+| *strsim*  |相似度。表达式的值是介于0和1之间的数字，表示两个字符串参数之间的相似度。 | `'foo' strsim 'foo'  1.0  ‘foobar’ strsim ‘foo’  0.5`
+| *soundslike*  |听起来像。如果根据Soundex比较，两个字符串参数听起来相似，则为真。 | `'Robert' soundslike 'Rupert'  true`
+|===
+
+==== 逻辑运算符
+
+[%header,cols="34,33,33"]
+|===
+| *Symbol*  | *Definition*  | *Example/Value*
+| *&&*  |逻辑AND。如果两个操作数均为真，则为真。 （请勿使用*and*） | `(a == b) && (c != d)  true iff a =b and c ≠ d`
+| *\|\|*  |逻辑或。如果至少有一个操作数为真，则为真。 | `(a == b) \|\| (a == c)` +
+ 如果a = b或a = c，则为true
+| *or*  |连锁OR。从左向右扫描并返回第一个非空项目 | `false or '' or ' ' or 'dog'` +的值
+ 字符串"`dog`"
+|===
+
+===  MEL分配
+
+赋值是一个MEL表达式，由一个表示等号左边的可变对象的标识符和等号右边的MEL表达式组成。例如：
+
+`message.payload = 'fu'`
+
+将当前消息的有效载荷设置为字符串"`fu`"。上下文和函数部分描述了您可以使用MEL分配设置的消息的哪些元素及其环境。
+
+MEL动态确定类型，因此声明变量的类型是可选的。例如，如果你没有事先声明，你写
+
+`number = 1; number == '1'`
+
+MEL为表达式赋值true。
+
+您可以将值转换为特定类型。例如，如果你写
+
+`number = (String)1; number is String`
+
+MEL为此表达式返回值`true`。
+
+===  MEL文字
+
+MEL中的文字可以是字符串，数字，布尔值，类型和空值。 <<MEL Key/Value Maps, Lists, and Arrays>>部分显示了如何将数据结构作为文字提供。
+
+==== 数字文字
+
+数字文字是整数和浮点数，与底层Java系统具有相同的值范围。
+
+整数被认为是十进制的，除非它们以0开始。一个由0组成的整数，后面跟着从0到7的数字，被解释为八进制。一个以0x开头的整数，后跟数字范围从0到9，或者从a到f的字母被解释为十六进制。以大写字母I结尾的整数被解释为BigInteger。
+
+MEL通过存在小数点来识别浮点数。浮点数可以有选择地包含d，f或B的后缀来表示double，float或BigDecimal。
+
+以下是数字文字的示例：255,0377,0xff（全部代表255）; 3.14159，3.14159f，3.14159265358979d（全部代表pi）。
+
+包含字母字符的文字区分大小写。
+
+==== 字符串文字
+
+字符串文字是用单引号括起来的字符序列。
+
+[WARNING]
+您不能像使用Java一样使用双引号来表示字符串，因为MEL表达式出现在配置文件中的双引号内。
+
+在字符串文字中，您可以使用以下转义序列来表示不可打印的字符，Unicode字符和转义字符。
+
+[%header,cols="2*"]
+|===
+| *Escape Sequence*  | *Represents*
+| \  | \
+| \ n  |换行符
+| \ r  |返回字符
+| \ xxx  |由八进制数xxx表示的ASCII字符
+| \ uyyyy  |以十六进制数yyyy表示的Unicode字符
+|===
+
+==== 布尔文字
+
+布尔文字是值`true`和`false`。这些区分大小写。
+
+==== 空文字
+
+空文字的格式为`null`或`nil`。这些区分大小写。
+
+==== 输入文字
+
+您可以通过其完全限定名称引用任何Java类，或者如果它是<<Appendix>>中的某个类，则以其非限定名称引用。引用使用与Java中相同的点符号，不同之处在于您必须使用$而不是点来引用嵌套类。
+
+===  MEL键/值映射，列表和数组
+
+地图在Mule表达语言中很重要，因为您可以使用的大部分上下文都以地图的形式出现。
+
+Mule表达式语言为地图和其他数据结构使用了一种方便的语法。它从地图文字开始，还有一种访问地图项目的便捷方式。
+
+==== 映射，列表和数组文字
+
+MEL提供了一种简化的访问地图数据的方式。
+
+而不是用新语句构建地图，然后使用它的put方法填充它，您可以简单地编写以下内容：
+
+`[key1 : value1, key2 : value2, . . .]`
+
+你可以使用这种文字形式，无论你是否使用名称映射，包括作为方法参数。
+
+您可以对列表`({item1, item2, . . .})`和数组`([item1, item2, . . .])`使用类似的文字形式。
+
+Java中的数组必须指定其内容的类型，但在MEL中它们是无类型的。 MEL在使用它们时提供正确的类型 - 通过在编译时确定它或在运行时将数组强制转换为正确的类型。
+
+==== 参考地图数据
+
+MEL提供了比`java.util.Map`提供的更简单的方式来引用地图项目。例如，Mule将包含由入站端点处理器设置的属性的映射与每条消息关联。您可以将此地图称为`message.inboundProperties`。
+
+例如，要检索密钥名为`foo`的入站属性，请编写`'message.inboundProperties[foo]'`。
+
+如果可以设置该属性（从来不是入站属性，而是其他地图中的某些属性），则可以在作业左侧写`message.inboundProperties[foo]`。上下文和函数部分解释了上下文中的哪些项目可以设置，哪些不能。如果您尝试设置无法设置的属性，Mule会通过抛出`org.mvel2.PropertyAccessException`来指示失败。
+
+=== 控制流
+
+MEL提供全面的Java控制流程语句。典型的MEL表达式最有用的是条件操作数（通常称为三元语句）。
+
+条件操作数的格式为`condition ? true value : false value`。
+
+例如：如果`name`的值为"`Smith`"，并且字符串"`Unknown`"，则`x = (name == 'Smith' ? 'Smith' : 'Unknown')`将变量`x`设置为字符串{{2} `name`的值不是"`Smith`"。
+
+==  MEL上下文对象和函数
+
+属性表达式便于使用Mule消息及其环境的属性作为MEL表达式中的操作数。他们采取`contextObject.property`的形式。上下文对象提供了消息及其环境的属性的逻辑分组。
+
+函数提供了一些方法来提取尚不存在的信息作为可以在属性中体现的单个值。
+
+===  MEL上下文对象
+
+上下文对象对消息及其环境进行建模。他们使MEL以骡为中心，而不仅仅是另一种表达语言。本部分记录了MEL有权访问的属性。它描述了以下上下文对象：
+
+*  *Server*：硬件，操作系统，用户和网络接口的属性。
+*  *Mule*：Mule实例的属性。
+*  *App*：Mule应用程序的属性。
+*  *Message*：Mule消息的属性。
+
+==== 服务器
+
+该对象提供对表中列出的硬件，操作系统，用户和网络接口属性的只读访问。
+
+[%header,cols="2*"]
+|===
+| *Name*  | *Description*
+| fileSeparator  |分隔文件路径的组件（UNIX上的"/"和Windows上的"\"）
+|主机 |服务器的完全限定域名
+| ip  |服务器的IP地址
+|语言环境 | JRE的默认语言环境（类型为java.util.Locale）（可以访问server.locale.language和server.locale.country）
+| javaVersion  | JRE版本
+| javaVendor  | JRE供应商名称
+| osName  |操作系统名称
+| osArch  |操作系统体系结构
+| osVersion  |操作系统版本
+| systemProperties  | Java系统属性的映射
+| timeZone  | JRE的默认TimeZone（java.util.TimeZone）
+| tmpDir  |供JRE使用的临时目录
+|用户名 |用户名
+|用户主目录 |用户主目录
+| userDir  |用户工作目录
+|===
+
+例如，“`server.userName`”的值是表示用户名称的字符串。
+
+==== 骡
+
+该对象提供对表中列出的Mule实例属性的只读访问权限。
+
+[%header,cols="2*"]
+|====
+| *Name*  | *Description*
+| clusterId  |群集ID
+|主目录 |到mule服务器安装主目录的文件系统路径
+| nodeId  |集群节点标识
+|版本 | Mule版本
+|====
+
+例如，“`mule.version`”的值是表示Mule版本的字符串。
+
+==== 应用
+
+该对象提供对表中列出的Mule应用程序的属性的访问。
+
+[%header,cols="2*"]
+|===
+| *Name*  | *Description*
+|编码 |应用程序默认编码（只读）
+|名称 |应用程序名称（只读）
+|独立 |如果Mule独立运行（只读）
+| workdir  |应用程序工作目录（只读）
+|注册表 |代表Mule注册表的映射（读/写）
+|===
+
+例如，“`app.name`”的值是表示应用程序名称的字符串。
+
+例如，“`app.registry['foo']`”指的是Mule注册表映射中名为foo的对象。您可以设置或检索其值。
+
+==== 消息
+
+该对象提供对表中列出的Mule消息属性的访问。大部分这些属性的含义都在其他地方记录下来，而不是在这里。
+
+[%header,cols="2*"]
+|===
+| *Name*  | *Description*
+| ID为 |（只读）
+| {rootId {1}}（只读）
+| {的correlationID {1}}（只读）
+| {correlationSequence {1}}（只读）
+| {correlationGroupSize {1}}（只读）
+| {的replyTo {1}}（读/写）
+| {的dataType {1}}（只读）
+| {净荷{1}}（读/写）
+| inboundProperties  |地图（只读）
+| inboundAttachments  |地图（只读）
+| outboundProperties  |映射（读/写）
+| outboundAttachments  |地图（读/写）
+| {异常{1}}（只读）
+|===
+
+==== 消息属性和附件
+
+使用<<Referring to Map Data>>部分中描述的语法，可以引用表中的地图。你可以阅读，并允许写入值，甚至添加新的密钥。要移除密钥，您必须明确使用地图的移除方法：`message.outboundProperties.remove('key')`。这些地图中的键不固定。它们取决于设置它们的消息处理器和使用它们的消息处理器之间的一致性。
+
+例如，`message.outboundProperties['dog'] = 'fido'`将名为dog的出站属性的值设置为“`fido`”。
+
+=== 变量
+
+除了作为当前消息处理器的本地MEL变量之外，MEL还允许您访问Mule流和会话变量。变量位于以下映射中，可用于MEL表达式中：
+
+*  `flowVars`  - 包含对当前流程全局的变量。当控制从一个消息处理器传递到另一个消息处理器时，它们保留其值因此，您可以将它们设置在一个消息处理器中，并将它们用于另一个消息处
+*  `sessionVars`与`flowVars`基本相同，只是当一个流通过Mule端点调用另一个流时，它们会被传播。
+
+您可以使用MEL的简化语法来引用这些映射中的变量。例如，要访问`foo`流变量的值，请写`flowVars['foo']`。这可以出现在任务的任一侧。例如，以下代码获取会话变量`bar`的值并使用它来设置流变量`bar`的值。
+
+`flowVars['foo'] = sessionVars['bar']`
+
+作为更进一步的捷径，您可以简单地在f MEL表达式中使用foo作为变量名称。如果没有名为`foo`的本地MEL变量，则在失败之前，MEL处理器会在`flowVars`中查找一个，然后在`sessionVars`中查找。
+
+例如，如果MEL表达式包含`foo == 'cat'`，并且没有名为`foo`的本地MEL变量，但`flowVars`中存在foo键，则表达式中的foo等同于{ {3}}。
+
+但请注意，您可以通过在xml配置文件中包含配置属性来关闭此分辨率的方法：
+
+[source, xml, linenums]
+----
+<configuration>
+        <expression-language autoResolveVariables="false">
+</configuration>
+----
+
+==== 数据提取函数
+
+函数*xpath*和*regex*提供了一些方法来提取上下文信息提取信息，这些信息并不是作为一个可以包含在属性中的单个值存在的。默认情况下，它们在有效负载上工作，但可以明确地向它们传递不同的参数。
+
+===== 的Xpath
+
+定义 http://www.w3.org/TR/xpath/[这里]的XPath是用于处理XML文档部分的语言。 MEL *xpath*函数允许您评估XPath表达式。它有以下签名：
+
+*  `xpath(xPathExpression)`  - 将XPath表达式应用于消息有效内容（XML文档）并返回指定的内容。
+
+例如：+
+`xpath('/orders/order[0]')` +
+返回消息有效载荷的第一个顺序。
+
+*  `xpath(xPathExpression, xmlElement)`  - 将XPath表达式应用于由作为第二个参数出现的MEL表达式指定的XML元素，并返回指定的内容。
+
+任何MEL表达式都可以作为第二个参数出现。例如：+
+`xpath('/orders/order[0]', message.inboundAttachment['order'])` +
+返回当前消息入站附件地图中订单元素的第一个订单。
+
+===== 的正则表达式
+
+正则表达式提供了一种指定模式的方法，以在存在模式时在文本流和动作中查找。对于那些掌握了其神秘语法的人来说，这是一个处理文本的灵活而强大的工具。
+
+MEL中的正则表达式使用java.util.regex包识别的语法。正则表达式函数使您能够在MEL中使用正则表达式。它有以下签名：
+
+*  `regex(regularExpression)`  - 将正则表达式应用于消息负载。 MEL过程如下：
+. 使用正则表达式的编译版本和表示有效负载的字符串创建一个java.util.regex.Matcher。
+. 如果没有匹配，则返回null +
+否则，如果有一场比赛，则将其退回。 +
+否则，如果有多个匹配项，则将它们返回到一个数组中。
+
+例如，当它评估。
+
+`regex('^(To|From|Cc):')`
+
+MEL返回以To :, From :,或Cc：开头的所有有效载荷行。
+
+*  `regex(regularExpression, melExpression)`  - 使用与上面相同的过程将正则表达式应用于MEL表达式的值，而不是有效负载。
+
+任何字符串值的MEL表达式都可以作为第二个参数出现。例如：+
+\ {\ {regex（TBD，message.inboundAttachment ['order']）}} +
+对当前消息的入站附件顺序元素做些什么。
+
+`regex(regularExpression, melExpression, matchFlags)`  - 与双参数版本类似，但使用Java文档中针对java.util.regex.Pattern描述的_matchFlags_位掩码。
+
+== 使用Mule表达式语言
+
+本节包含MEL常见用途的示例。
+
+=== 做出决定
+
+以下示例显示了MEL支持做出决策的消息处理器的方式。
+
+==== 消息过滤器
+
+Mule消息过滤器是遵循称为消息过滤器的企业集成模式的消息处理器。
+
+image:Expression.png[表达]
+
+它们以最简单的形式将消息从其输入路由到输出或丢弃消息。您可以找到更多关于Mule过滤器 link:/mule-user-guide/v/3.3/using-filters[这里]的信息。
+
+传递书籍订单并放弃其他消息的消息过滤器可能使用以下MEL表达式：
+
+`xpath ('/order/@type') == 'book'`
+
+在配置文件中，它看起来像这样：
+
+[source, xml, linenums]
+----
+<flow name="filteredFlow">
+    <ftp:inbound-endpoint host="ftpServer" port="21"/>
+    <expression-filter expression="#[xpath('/order/@type') == 'book']]"/>
+    <http:outbound-endpoint host="remoteServer" port="8080" path="bookorders"/>
+</flow>
+----
+
+丢弃传入的HTTP请求的过滤器不包含值为true的属性Authorization HTTP头可能如下所示：
+
+[source, xml, linenums]
+----
+<flow name="filteredFlow2">
+    <http:inbound-endpoint host="localhost" port="8000" path="orders"/>
+    <expression-filter expression="message.inboundProperties[‘Authorization’] != null"/>
+    <component class="org.my.OrderProcessingComponent" />
+</flow>
+----
+
+==== 选择路由器
+
+选择路由器是一个消息处理器，根据消息的内容决定发送消息的位置。
+
+选择异常策略是一种决定路由消息的方式，必须偏离正常处理路径。选择异常策略使用MEL表达式。有关详情，请点击 link:/mule-user-guide/v/3.3/choice-exception-strategy[这里]
+
+这是另一个选择路由器的例子。该流程监视您的下载文件夹，然后根据文件扩展名将文件移动到照片，文档或其他文件夹。
+
+image:downloadssorterflow.png[downloadssorterflow]
+
+[source, xml, linenums]
+----
+<flow name="downloadsSorterFlow">
+  <file:inbound-endpoint path="/home/me/downloads" />
+  <choice>
+    <when expression="#[message.inboundProperties['filename'].endsWith('.jpg']">
+      <file:outbound-endpoint path="/home/me/photos" />
+    </when>
+    <when expression="#[message.inboundProperties['filename'].endsWith('.doc')]">
+      <file:outbound-endpoint path="#[/home/me/docs" />
+    </when>
+    <otherwise>
+      <file:outbound-endpoint path="/home/me/misc"/>
+    </otherwise>
+  </choice>
+</flow>
+----
+
+=== 选择一个值
+
+以下示例显示MEL支持选择值的消息处理器的方式。
+
+表情变形金刚==== 
+
+表达式转换器是一个消息处理器，用于在当前消息上执行表达式。表达式的结果替换有效载荷。
+
+这个转换器通过在消息有效载荷上附加“Received！”来转换消息。
+
+image:Expressiontransformer.png[Expressiontransformer]
+
+`<expression-transformer expression="#message.payload + 'Received!'"/>`
+
+==== 连接器
+
+连接器将Mule流连接到在线服务。
+
+例如，如果入站消息具有名为myMessage的属性以用作Twitter状态更新，则可以在使用以下MEL表达式提取它之后将其传递给Twitter连接器：
+
+`message.inboundProperties['myMessage']`
+
+以下示例通过http端点发布新推文。在Web浏览器中使用以下URL会导致在给定的Twitter帐户中创建新的推文。
+
+http://localhost:8081/tweet?status=hello[HTTP：//本地主机：8081 /鸣叫状态=打招呼]
+
+这里使用MEL来选择应该用于连接器的状态属性的值，该连接器的状态属性是用于推文/消息的值。
+
+image:httptwitterflow.png[httptwitterflow]
+
+image:patternpropertiestwitter.png[patternpropertiestwitter]
+
+[source, xml, linenums]
+----
+<flow name="httpTweeterFlow">
+    <http:inbound-endpoint exchange-pattern="request-response"
+      host="localhost"
+      port="8081"
+      path="tweet"
+     />
+    <twitter:update-status
+      config-ref="twitterConfig"
+      status="#[message.inboundProperties['status']]"
+     />
+</flow>
+----
+
+=== 替换令牌
+
+以下示例显示了MEL支持替换令牌的消息处理器的方式。
+
+==== 记录仪
+
+记录器是一个消息处理器，通过Mules日志子系统记录消息。
+
+image:logger.png[记录仪]
+
+要记录的消息被配置为记录器的属性。此消息属性支持令牌（占位符）。这些标记可以包含MEL表达式。
+
+例如：
+
+[source, xml, linenums]
+----
+<logger
+  message="File Received (size = #[message.inboundProperties['fileSize']/1024]  kb)"
+  level="INFO"
+/>
+----
+
+每次有新消息时（这个假设在此之前有一个文件入站端点），就会记录（使用INFO级别）。它输出“文件接收”，但也包括文件大小，它使用嵌入式MEL表达式`#[message.inboundProperties['fileSize']/1024]`来确定。属性表达式`message.inboundProperties['fileSize']`从`inboundProperties`地图的`fileSize`键提供文件的大小（以字节为单位）。
+
+==== 动态端点
+
+动态端点是其URI包含MEL表达式的端点。作为一个例子，让我们实现一些类似于我们对选择路由器所做的文件分类，但是这次我们使用动态端点并使用文件扩展名本身，将所有具有相同名称的文件放在一个新文件夹中，其名称与扩展名。
+
+image:endpoint-properties.png[端点性质]
+
+[source, xml, linenums]
+----
+<flow name="downloadsSorterFlow">
+  <file:inbound-endpoint
+    path="/home/me/downloads"
+ />
+  <file:outbound-endpoint
+    path=
+      "/home/me/#[
+            filename=message.inboundProperties['fileName'];
+            filename.substring(fileName.lastIndexOf('.')+1,fileName.length())
+        ]
+      "
+  />
+</flow>
+----
+
+此配置中的嵌入式MEL令牌由两个用分号分隔的MEL表达式组成。第一个使用属性表达式`message.inboundProperties['fileName']`设置变量文件名。第二个是Java方法调用。其中两个方法参数来自其他Java方法调用。由于`filename`是一个Java字符串，因此它具有`length, lastIndexOf`和`substring methods`。该表达式使用它们提取文件扩展名并将其用作`/home/me/`的子目录的名称。这成为终点。
+
+==== 实施业务逻辑
+
+表达式组件允许临时使用MEL。结果不会取代有效载荷（使用set-payload）。其他消息处理器使用表达式评估的结果来：
+
+* 做出决定
+* 获取一个值
+* 替换字符串中的一个标记。
+
+以下示例显示了一个表达式组件。
+
+一旦有消息，它会执行以下操作：
+
+* 更新要处理的标志。
+* 在消息有效载荷上设置requestTime属性。
+* 将message.payload.processed设置为true或用当前时间设置一个值。
+* 使用新的Date（）方法设置message.payload.processedTimeStamp。
+
+image:expression-icon.png[表达图标]
+
+image:expression-properties.png[表达的属性]
+
+== 附录
+
+MEL自动导入以下Java类。
+
+* 的java.lang。*
+*   java.io. *
+*  java.net。 *
+*  java.util中。*
+* 的java.math.BigDecimal
+*   java.math.BigInteger中
+* 的javax.activation.DataHandler
+*  javax.activation.MimeType
+*  java.util.regex.Pattern中
+*  org.mule.api.transformer.DataType
+*  org.mule.transformer.types.DataTypeFactory
+
+== 另请参阅
+
+* 在我们的 link:http://blogs.mulesoft.com/dev/anypoint-platform-dev/mule-school-the-mulemessage-property-scopes-and-variables/[MuleSoft博客]中详细了解mule消息属性及其范围。
+
+
+
+

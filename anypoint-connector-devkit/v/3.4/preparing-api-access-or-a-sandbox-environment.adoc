@@ -1,0 +1,128 @@
+准备API访问或沙盒环境。= 
+:keywords: api, access, sandbox
+
+在开始任何连接器项目之前，您必须先研究您希望连接的目标。除了收集和阅读由目标提供商提供的任何API文档之外，还必须准备访问目标实例，以便您可以对其进行测试。
+
+沙盒访问，支持代码和文档以及构建到本地企业应用程序或其他Web服务的连接器所需的其他支持通常由本地管理员或应用程序供应商提供。 SaaS应用程序通常提供访问API的自助服务流程，该服务因服务而异。
+
+本文档总结了您可能需要执行的典型准备步骤，然后介绍了两种情况的示例：<<Salesforce Example>>和<<Twitter Example>>。
+
+== 假设
+
+本文假设您熟悉目标应用程序，Web服务或其他资源，并且目标API或客户端库的文档是公开的。
+
+==  API访问和Java云服务库
+
+对于云服务，您通常可以根据以下步骤获得对API的访问权限。
+
+. 与应用程序提供商一起设置测试帐户，沙箱环境和API访问权限。通常，完成这些任务需要几个单独的步骤。
+. 下载任何所需的支持Java库以访问该服务。这些可能是客户端库，它们是访问应用程序的唯一方式，或者它们可能是应用程序公开公开的Web服务的封装。通常，基于这些库构建连接器比在连接器代码中直接调用API更容易。
+. 对于基于SOAP的连接器（如Salesforce连接器），您需要从API提供程序获取WSDL文件。您可能还需要从WSDL生成支持Java库（作为JAR文件），如下面的<<Salesforce Example>>中所述。 DevKit可以使用此JAR来获取有关API的元数据，其公开的操作以及其支持的Java类。
+. 如果API需要使用客户端库或其他Java库，则必须将它们作为Maven依赖项包含在您的项目中。有关详细信息，请参阅下面的Salesforce示例中有关将外部库包含为Maven相关性的部分。
+
+[NOTE]
+下面的例子在撰写本指南时是准确的;不过，请记住，API所有者可能会随着时间的推移更改他们的说明。
+
+==  Salesforce示例
+
+准备建立一个Salesforce连接器，你需要完成三项任务：
+
+. 设置Salesforce开发者帐户
+. 获取两个Salesforce JAR文件
+. 将外部库包含为Maven依赖项
+
+=== 设置Salesforce开发者帐户
+
+.  link:http://www.developerforce.com/events/regular/registration.php[注册一个Salesforce帐户]。您需要提供电子邮件地址才能收到确认电子邮件。
+. 填写完注册表单后，请打开确认电子邮件并单击提供的链接，以便您设置密码并登录到Salesforce Developer Edition。
+. 要启用远程应用程序登录到Salesforce，您必须通过完成以下步骤重置Salesforce上的安全令牌：+
+.. 从Salesforce用户界面中，选择右上角的_您的姓名_> *Setup*。
+.. 展开左侧栏中的*My Personal Information*，然后选择*Reset Security Token*。
+.. 在*Reset Security Token*页面上，点击*Reset Security Token*按钮。 Salesforce通过电子邮件发送新的安全令牌。
+. 请记录您的*security token*，*username*和*password*，以完成下面的示例。
+
+=== 创建Salesforce JAR文件
+
+您必须获取构建连接器所需的两个Salesforce JAR文件。
+
+* 第一个是*Salesforce Web Service Connector*，它是用于访问Salesforce API的Web服务客户端堆栈。
+* 第二个是*Partner JAR*，其中包含以元数据驱动的动态类型方式访问Salesforce数据的框架。此框架作为WSDL文件分发，因此您可以为其生成JAR文件。
+
+. 下载*Salesforce Web Service Connector* link:https://code.google.com/p/sfdc-wsc/wiki/GettingStarted[JAR文件]。
+. 如果您尚未这样做，请登录到Salesforce.com。
+. 在右上角，选择_您的姓名_> *Setup*。
+. 在左侧边栏中，展开*Develop*标题，然后选择*API*。
+. 点击*Generate Partner WSDL*，然后将内容另存为文件到本地驱动器。
+. 将WSDL保存到您的计算机后，使用以下命令将其编译到JAR中以生成文件到您的工作目录（终端会话所在的目录）。运行下面的命令（xx表示WSC JAR文件的版本）。
++
+[source]
+----
+java -classpath <pathToJar>/wsc-xx.jar com.sforce.ws.tools.wsdlc pathToWSDL/wsdlFilename wsdlGenFiles.jar
+----
++
+例如，如果您的WSC JAR文件位于`/Users/doug/workspace/connector`，并且您的WSC JAR文件是`wsc-23.jar`，请运行以下命令：
++
+[source]
+----
+java -classpath /Users/doug/workspace/connector/wsc-23.jar com.sforce.ws.tools.wsdlc pathToWSDL/wsdlFilename wsdlGenFiles.jar
+----
+
+[TIP]
+====
+*Find your Current Directory*
+
+*Unix or Unix-based (Mac OS X, Linux)*：
+
+当您打开终端时，通常从您的主目录（Linux中的`/home/<user>`，`/User/<user>`）开始。终端提示通常显示工作目录的完整路径;如果不是，您可以通过运行`pwd`命令来查看它。
+
+*Windows*：
+
+当你打开一个终端时，你通常从你的主目录开始。终端提示通常显示工作目录的完整路径;例如`C:\Documents and Settings\All Users\doug`。
+====
+
+有关获取和编译JAR文件的更多详细信息，请参阅 link:http://www.salesforce.com/us/developer/docs/api_asynch/Content/asynch_api_code_set_up_client.htm[来自Salesforce的说明]。
+
+=== 将外部库作为Maven依赖包含在内
+
+您必须将任何特定于您的目标系统或应用程序的JAR作为Maven依赖项添加到DevKit Maven项目中。在本例中，您必须将两个Salesforce JAR添加到Eclipse中的Maven项目中。
+
+[TIP]
+有关使用Maven构建应用程序的详细信息，请参阅官方Maven文档中的 link:http://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html[Maven构建周期简介]。
+
+.  Maven在您的开发机器上维护一个本地存储库，由于JAR文件也托管在您的机器上，因此您必须先将它们添加到本地存储库，以便Maven可以在构建时找到它们。 Maven提供了一个将JAR添加到本地存储库的目标。从命令行运行以下命令：
++
+[source]
+----
+mvn install:install-file -Dfile=<PATH_TO_FILE> -DgroupId=salesforce -DartifactId=partner -Dversion=1 -Dpackaging=jar
+----
++
+. 然后，运行以下命令，其中<`PATH_TO_FILE`>是相应JAR文件的路径，<VERSION>是您下载的salesforce合作伙伴WSDL的版本。
++
+[source]
+----
+mvn install:install-file -Dfile=<PATH_TO_FILE> -DgroupId=salesforce
+    -DartifactId=wsc -Dversion=<VERSION> -Dpackaging=jar
+----
++
+.  link:/anypoint-connector-devkit/v/3.4/creating-a-connector-project[在Eclipse中创建一个新的Maven项目]。 （您可以使用IntelliJ或Mule Studio作为IDE;此过程使用Eclipse。）
+. 将这两个JAR文件添加为Maven依赖项。在Eclipse的*Package Explorer*中，右键单击项目名称，然后选择*Maven*> *Add Dependency*。
+. 在*Add Dependency*向导中，为Salesforce合作伙伴JAR输入*Group Id*，*Artifact Id*和*Version*（请参阅下文左侧）。由于这些JAR存储在本地存储库中，因此只要组件名称和Maven依赖关系匹配，组标识，工件标识和版本就可以是任意值。点击*OK*。
+. 重复步骤5  -  6，将WSC JAR作为依赖项添加到项目中（请参见下面的右图）。
+
+==  Twitter示例
+
+Twitter是一个相对简单的API访问连接器的好例子，因为许多Web应用程序或服务都遵循类似的模型。
+
+. 要访问Twitter API，您必须先 link:http://twitter.com/signup[获得一个Twitter帐户]。
+. 要通过您创建的帐户访问Twitter API，您需要在Twitter的 link:https://dev.twitter.com/docs[开发者门户]处创建一个空的Twitter应用程序。
+. 要测试Twitter连接器，请从Twitter获取以下元素：
++
+** 访问键
+** 访问秘密
+** 使用者密钥
+{0}}消费者的秘密
+. 有关在Twitter平台上创建应用程序的详细说明，请参阅 link:/anypoint-connector-devkit/v/3.8/setting-up-api-access#twitter-example[配置Twitter的API访问]。
+
+== 另请参阅
+
+*  *NEXT:*继续 link:/anypoint-connector-devkit/v/3.4/creating-a-connector-project[创建一个连接器项目]开始开发连接器。

@@ -1,0 +1,130 @@
+= 电子邮件传输参考
+:keywords: email, transport, pop3, smtp, imap
+
+电子邮件传输由几个用于电子邮件连接的传输组成。该实现支持CC / BCC / ReplyTo地址，附件，自定义标题属性和可定制的认证。查看每个电子邮件传输页面了解更多详情
+
+*  link:/mule-user-guide/v/3.6/smtp-transport-reference[SMTP]
+*  link:/mule-user-guide/v/3.6/imap-transport-reference[IMAP]
+*  link:/mule-user-guide/v/3.6/pop3-transport-reference[POP3]
+
+== 配置示例
+
+以下是书店示例的配置代码片段。当您向vm：// emailNotification发送字符串并将订单验证电子邮件发送到指定地址时，会触发此流程：
+
+[source,xml, linenums]
+----
+<flow name="EmailNotificationService">
+    <vm:inbound-endpoint path="emailNotification" exchange-pattern="one-way" />
+    <smtps:outbound-endpoint user="${user}" password="${password}" host="${host}" from="${from}"
+                             subject="Your order has been placed!">
+        <custom-transformer class="org.mule.example.bookstore.transformers.OrderToEmailTransformer" />
+        <email:string-to-email-transformer />
+    </smtps:outbound-endpoint>
+</flow>
+----
+
+这是errorhandler示例的配置片段。该端点接收一个ErrorMessageToExceptionBean java对象并将其转换为电子邮件到指定的地址：
+
+[source,xml, linenums]
+----
+<smtp:outbound-endpoint user="${smtp.username}" password="${smtp.password}"
+                        host="${smtp.host}" port="${smtp.port}"
+                        to="${email.toAddress}" from="${email.fromAddress}"
+                        subject="${email.subject}">
+    <transformer ref="ErrorMessageToExceptionBean" />
+    <transformer ref="ExceptionBeanToXML" />
+    <email:string-to-email-transformer/>
+</smtp:outbound-endpoint>
+----
+
+您可以在每个传输参考页面找到完整的工作配置示例。
+
+书店和错误处理程序示例的完整示例代码包含在完整的 http://www.mulesoft.org/download-mule-esb-community-edition[骡子ESB分布]中。
+
+== 过滤器
+
+可以在端点上设置过滤器来过滤掉任何不需要的消息。电子邮件传输提供了可以直接使用或扩展以实现自定义过滤规则的过滤器。
+
+[%header%autowidth,width=60%]
+|===
+| {过滤{1}}说明
+| org.mule.providers.email.filters.AbstractMailFilter  |必须由任何其他邮件过滤器扩展的基本过滤器实现。
+| org.mule.providers.email.filters.MailSubjectRegExFilter  |将正则表达式应用于邮件主题。
+|===
+
+这是你如何定义Mule配置中的*MailSubjectRegExFilter*：
+
+[source,xml, linenums]
+----
+<message-property-filter pattern="to=barney@mule.org"/>
+----
+
+\'pattern'属性是一个正则表达式模式。这被定义为`java.util.regex.Pattern.`
+
+== 电子邮件传输
+
+电子邮件传输提供各种电子邮件连接选项
+
+=== 变压器
+
+这些是这种运输特有的变压器。请注意，这些会在启动时自动添加到Mule注册表中。当进行自动转换时，这些将在搜索正确的变压器时包含在内。
+
+[%header%autowidth,width=80%]
+|===
+| {名称{1}}说明
+| email-to-string-transformer  |将电子邮件转换为字符串格式。
+| string-to-email-transformer  |将字符串消息转换为电子邮件格式。
+| object-to-mime-transformer  |将对象转换为MIME格式。
+| mime-to-bytes-transformer  |将MIME消息转换为字节数组。
+| bytes-to-mime-transformer  |将字节数组消息转换为MIME格式。
+|===
+
+在你的Mule配置文件中定义变压器：
+
+[source,xml, linenums]
+----
+<email:bytes-to-mime-transformer encoding="" ignoreBadInput="" mimeType="" name="" returnClass="" xsi:type=""/>
+<email:email-to-string-transformer encoding="" ignoreBadInput="" mimeType="" name="" returnClass="" xsi:type=""/>
+<email:mime-to-bytes-transformer encoding="" ignoreBadInput="" mimeType="" name="" returnClass="" xsi:type=""/>
+<email:object-to-mime-transformer encoding="" ignoreBadInput="" mimeType="" name="" returnClass=""
+useInboundAttachments="true" useOutboundAttachments="true"/>
+<email:string-to-email-transformer encoding="" ignoreBadInput="" mimeType="" name="" returnClass="" xsi:type=""/>
+----
+
+每个变压器都支持所有常见的变压器属性和属性：
+
+=== 变压器
+
+对其他地方定义的变压器的引用。
+
+。<transformer...>的属性
+[%header%autowidth,width=80%]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| ref  |字符串 |是 |   |要使用的变换器的名称。
+|===
+
+。<transformer...>的子元素
+[%header%autowidth,width=80%]
+|===
+| {名称{1}}基数 |说明
+|===
+
+`object-to-mime-transformer`具有以下属性：
+
+[%header%autowidth,width=60%]
+|===
+|属性 |描述 |默认值
+| *useInboundAttachments*  |是否将输入消息中的入站附件转换为MIME部件。 | true
+| *useOutboundAttachments*  |是否将输入消息中的出站附件转换为MIME部分。 | true
+|===
+
+要使用这些转换器，请确保在你的Mule配置中包含'email'命名空间。
+
+== 限制
+
+以下已知的限制会影响电子邮件传输：
+
+*  MULE-3662  - 无法将同一对象发送给不同的电子邮件用户
+
+*  MULE-1252  -  MailSubjectRegExFilter无法处理带有附件的邮件

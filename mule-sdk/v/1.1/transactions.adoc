@@ -1,0 +1,161 @@
+= 交易
+:keywords: mule, sdk, operation, source, tx, transactions, xa
+
+SDK支持在Mule流中创建连接并创建新事务的连接器，包括作为一个单元工作的源和操作执行。所以，如果流程中出现问题，参与事务的所有组件都将作为一个单元回滚它们的执行。事务内的所有操作都将回滚，以便任何一个部分都不会导致部分完成。
+
+== 在连接器中实现事务
+
+Mule交易支持在由密钥标识的交易资源的前提下工作。 SDK遵循同样的概念，重用连接抽象并使用组件连接作为事务的关键。
+
+由于`ConnectionProvider`会生成`TransactionalConnection`接口的实例，因此扩展必须具有`ConnectionProvider`才能创建事务。
+
+===  TransactionalConnection接口
+
+要在连接器中启用事务，您需要Connection Provider（<<connections#, `ConnectionProvider`>>），因为它提供了实现`TransactionalConnection`接口的连接。
+
+连接必须实现用于传达事务开始和结束的`TransactionalConnection`方法。
+
+
+[source, java, linenums]
+----
+public class TXConnectionProvider implements ConnectionProvider<TXConnection> {
+  ...
+}
+----
+[source, java, linenums]
+----
+public class TxConnection implements TransactionalConnection {
+
+    @Override
+    public void begin() throws TransactionException {
+        //logic to begin a transaction
+    }
+
+    @Override
+    public void commit() throws TransactionException {
+        //logic to commit a transaction
+
+    }
+
+    @Override
+    public void rollback() throws TransactionException {
+        //logic to rollback a transaction
+    }
+}
+
+----
+
+实现这个接口需要实现以下方法：
+
+[%header%autowidth.spread]
+|====
+|  {方法{1}}说明
+| `begin()`  | 当事务必须开始时，调用此方法。
+| `commit()`  | 当事务正确完成并且必须提交时调用它。
+| `rollback()`  | 这被称为然后事务完成与一个错误和这一个
+必须被回滚。
+|====
+
+// TODO审查TX的操作应该在这里解释多少，以及在多大程度上
+//适当的操作文档。与来源相同。
+操作中的=== 事务
+
+要使某个操作在事务下工作，`@Connection`参数应该是支持事务的连接，即实现`TransactionalConnection`的连接。
+
+==== 交易行为
+
+当一个操作是事务性的时候，一个名为`transactionalAction`的合成参数会自动添加到它。该参数是一个可以取这些值的Enum类型：
+
+[%header%autowidth.spread]
+|=======
+| 操作名称 | 说明
+| *ALWAYS_JOIN*  | 连接器将始终加入现有事务。如果没有事务，或者当前事务与当前操作不兼容，则操作将无法执行。
+| *JOIN_IF_POSSIBLE*（默认） | 如果事务可用，请使用它。否则，继续处理。
+| *NOT_SUPPORTED*  | 该操作将在任何正在进行的事务之外执行。
+|=======
+
+[source, xml, linenums]
+----
+<try transactionalAction="BEGIN_OR_JOIN">
+  <transactional-connector:work config-ref="config"
+    transactionalAction="ALWAYS_JOIN"/>
+</try>
+----
+
+操作代码中的===== 操作事务操作
+
+在某些情况下，您可能想知道哪些操作级别
+已在Mule应用中配置`transactionalAction`。您可以通过设置`OperationTransactionalAction`类型的参数来注入使用的值。
+
+[source, java, linenums]
+----
+public void work(@Connection TxConnection connection, OperationTransactionalAction action) {
+  //
+}
+----
+
+==== 操作事务使用情况
+
+操作无法启动交易。它们可以由<<sources#, Message Source>>启动，或者该操作必须位于启动新事务的`<try />`范围内。
+
+在执行交易操作之前，Mule会检查是否
+当前事务有一个绑定关键字：
+
+* 如果已经有一个有界的键（因为之前的操作或源具有）
+已经注册），Mule将检查其与当前操作的兼容性。如果兼容，操作将使用有界连接。否则，执行流程将失败，表明当前的操作正尝试输入不兼容的事务。
+* 如果没有，它将绑定Operation的Connection作为键并执行`TransactionalConnection.begin()`，通知当前操作的事务应该开始。
+
+在事务范围（即`<try />`范围或整个流程（如果事务由<<sources#, Message Source>>初始化）执行结束时），如果事务正确完成，Mule将调用`TransactionalConnection.commit()` 。否则，如果发生错误，它将执行`TransactionalConnection.rollback()`。
+
+当连接加入交易时，供应商的连接管理
+战略被忽略，这意味着无论连接的策略如何，
+相同的连接将用于所有的匹配操作
+交易的范围。
+
+警告：此行为与概念不完全兼容
+`CachedConnectionProvider`，因为这将允许相同的连接加入
+不同的交易同时进行。这意味着您应该知道如何在同一连接中同时管理不同的事务。
+强烈建议在交易中使用`CachedConnectionProviders`。
+
+来源中的=== 交易
+
+要使操作在事务下工作，`@Connection`参数应该是能够提供事务兼容连接的`ConnectionProvider`。
+
+==== 交易行为
+
+源===== 事务操作
+
+当消息源是事务性的时，名为`transactionalAction`的合成参数会自动添加到该参数中。该参数是一个可以取这些值的Enum类型：
+
+。源交易行为
+[%header%autowidth.spread]
+|=======
+| 操作名称 | 说明
+|  ALWAYS BEGIN  | 确保为每个调用创建新的事务。
+| 无（默认） | 源不会启动任何事务，并且不会参与流中打开的事务。
+|=======
+
+操作代码中的===== 源事务操作
+
+在某些情况下，您可能想知道在Source级别中哪些`transactionalAction`已在Mule应用中配置。如果是这样，您可以定义一个`SourceTransactionalAction`类型的参数来注入使用的值，例如：
+
+将SourceTransactionalAction注入Source
+[source, java, linenums]
+----
+public class TransactionalSource extends Source<String, Void> {
+
+  @Connection
+  private ConnectionProvider<TXConnection> connection;
+
+  @Parameter
+  private SourceTransactionalAction action;
+
+  // rest of the code
+}
+----
+
+有关此主题的更多信息，请参阅<<sources-transactions#, Sources Transactions>>。
+
+===  XA交易
+
+XA事务以类似的方式得到支持。唯一的区别是，提供者应该返回`XATransactionalConnection`，而不是`TransactionalConnection`，这是一个能够返回`XAResource`的连接。

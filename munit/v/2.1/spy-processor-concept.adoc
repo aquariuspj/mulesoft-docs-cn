@@ -1,0 +1,92 @@
+= 关于间谍事件处理器
+:keywords: munit, testing, unit testing
+
+间谍处理器允许你窥探事件处理器被调用之前和之后发生的事情。 +
+这允许您验证，例如，选定的Mule事件到达包含特定有效负载或变量的特定事件处理器。
+
+设置间谍处理器会告诉MUnit在执行特务事件处理器之前和/或之后运行一组指令（通常是断言或验证）。
+
+假设你有这个Mule应用程序
+
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config">
+  <http:listener-connection host="0.0.0.0" port="${http.port}" />
+</http:listener-config>
+
+<flow name="testFlow">
+
+  <http:listener config-ref="HTTP_Listener_config" path="/"/>
+  <set-payload value="#['Real_Payload']"/>
+
+</flow>
+----
+
+您可以配置间谍处理器以侦察任何HTTP侦听器，并在到达组件之前声明它们的有效负载为空，并且在处理它之后不会为空：
+
+[source,xml,linenums]
+----
+<munit:test name="suiteTest" >
+
+  <munit:enable-flow-sources >
+    <munit:enable-flow-source value="testFlow" />
+  </munit:enable-flow-sources>
+
+  <munit:behavior >
+
+    <munit-tools:spy processor="http:listener">
+
+      <munit-tools:before-call >
+        <munit-tools:assert-that expression="#[payload]" is="#[MunitTools::nullValue()]"/>
+      </munit-tools:before-call>
+
+      <munit-tools:after-call >
+        <munit-tools:assert-that expression="#[payload]" is="#[MunitTools::notNullValue()]"/>
+      </munit-tools:after-call>
+
+    </munit-tools:spy>
+
+  </munit:behavior>
+
+</munit:test>
+----
+
+甚至可以窥探其路径配置为"/"的任何HTTP侦听器
+
+[source,xml,linenums]
+----
+<munit:test name="suiteTest" >
+
+  <munit:enable-flow-sources >
+    <munit:enable-flow-source value="testFlow" />
+  </munit:enable-flow-sources>
+
+  <munit:behavior >
+
+    <munit-tools:spy processor="http:listener">
+      <munit-tools:with-attributes >
+        <munit-tools:with-attribute attributeName="path" whereValue="/" />
+      </munit-tools:with-attributes>
+
+      <munit-tools:before-call >
+        <munit-tools:assert-that expression="#[payload]" is="#[MunitTools::nullValue()]"/>
+      </munit-tools:before-call>
+
+      <munit-tools:after-call >
+        <munit-tools:assert-that expression="#[payload]" is="#[MunitTools::notNullValue()]"/>
+      </munit-tools:after-call>
+
+    </munit-tools:spy>
+
+  </munit:behavior>
+
+</munit:test>
+----
+
+如上所示，该处理器允许您在调用侦测到的处理器之前和之后定义动作。但是请记住，间谍处理器不会修改原始的Mule事件。 +
+如果您设置变量，属性或修改Spy内的有效内容，这些更改将不会在处理器外持续存在。 +
+总的来说，你应该使用间谍处理器来验证或断言。
+
+== 另请参阅
+
+**  link:/munit/v/2.1/message-processors[关于MUnit事件处理器]

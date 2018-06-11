@@ -1,0 +1,577 @@
+=  MUnit数据库服务器
+：version-info：3.7.0及更高版本
+:keywords: munit, testing, unit testing
+
+== 概述
+
+测试生产代码的主要问题之一是外部系统连接。如果我们创建一个连接数据库服务器的代码的测试，我们需要在我们的本地环境中安装一个数据库服务器以运行测试。另一个选择是只有一个外部数据库服务器用于测试，但这种方法的主要问题是我们的Maven项目不能移植 - 我们无法将它发送给第三方，因为他们无法编译它没有首先安装数据库服务器。
+
+为了使您能够避免此问题，MUnit允许您在本地环境中实施数据库服务器。
+
+== 使用MUnit数据库服务器创建测试
+
+为了本文档的目的，我们将假设我们正在测试以下Mule代码：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:testdbflow.png[testdbflow]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<!-- Set Up a default Java Data Base Connection  -->
+<spring:beans>
+        <spring:bean id="jdbcDataSource" class="org.springframework.jdbc.datasource.SimpleDriverDataSource">
+            <spring:property name="driverClass" value="${db.driver}"/>
+            <spring:property name="url" value="${db.url}"/>
+            <spring:property name="username" value="${db.user}"/>
+            <spring:property name="password" value="${db.password}"/>
+        </spring:bean>
+    </spring:beans>
+
+<!-- Configure your DB connector referencing your JDBC specs -->
+    <db:generic-config name="Generic_Database_Configuration"  doc:name="Generic Database Configuration" dataSource-ref="jdbcDataSource"/>
+
+    <flow name="testDbFlow">
+        <!-- Perform a query based on a value passed by a flow variable -->
+        <db:select config-ref="Generic_Database_Configuration" doc:name="Database" >
+            <db:parameterized-query><![CDATA[SELECT * FROM jobtitlelookup WHERE jobtitleid = #[variable:jobid]]]></db:parameterized-query>
+        </db:select>
+
+        <!-- Set two conditions depending on the query result -->
+        <choice doc:name="Choice">
+            <!-- If there is one or more values resulting from the query set those values as the payload -->
+            <when expression="#[payload.size()>0]">
+                <set-payload value="#[payload[0].get('jobtitle')]" doc:name="Set Payload if True"></set-payload>
+            </when>
+            <!-- If the query throws no results, inform it in the payload  -->
+            <otherwise>
+                <set-payload value="No job title for #[flowVars.jobid] was found" doc:name="Set Payload if False"></set-payload>
+            </otherwise>
+        </choice>
+
+        <!-- Finally, pass the payload content as a Flow variable  -->
+        <set-variable value="#[payload]" variableName="job" doc:name="Variable"></set-variable>
+    </flow>
+----
+....
+------
+
+我们需要创建一个测试：
+
+. 包含带有`jobtitlelookup`表的数据库服务器。
+. 为数据库连接器提供有效的数据库结构以执行其查询。
+. 传递数据库连接器使用的`jobid`变量的值
+
+== 安装MUnit数据库服务器模块
+
+在这个例子中，你需要安装MUnit提供的*DB server Module*。 +
+从Anypoint Studio中，转到*Help*和*Install New Software...*。 +
+在*Work with:*面板中查找*MUnit Update Site*，然后从*MUnit Tools for Mule*部分选择*DB Server Module (Mule 3.4.0+)*
+
+[NOTE]
+--
+如果您使用Maven，请注意以下几点：
+
+您需要将MUnit数据库服务器工件添加到您的`pom`文件中：
+
+[source,xml,linenums]
+----
+<!-- dbserver Dependency -->
+<dependency>
+	<groupId>com.mulesoft.munit.utils</groupId>
+	<artifactId>munit-dbserver-module</artifactId>
+	<version>1.1.0</version>
+</dependency>
+----
+
+此代码示例还使用Spring进行数据库配置。从Maven运行时，您应该将Spring的依赖项添加到您的`pom.xml`文件中。
+
+[source,xml,linenums]
+----
+<!-- Spring Dependency -->
+<dependency>
+  <groupId>org.springframework</groupId>
+  <artifactId>spring-jdbc</artifactId>
+  <version>4.1.6.RELEASE</version>
+</dependency>
+----
+--
+
+== 使用MUnit数据库服务器创建测试
+
+为了本文档的目的，我们将假设我们正在测试以下Mule代码：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:testdbflow.png[testdbflow]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<!-- Set Up a default Java Data Base Connection  -->
+<spring:beans>
+        <spring:bean id="jdbcDataSource" class="org.springframework.jdbc.datasource.SimpleDriverDataSource">
+            <spring:property name="driverClass" value="${db.driver}"/>
+            <spring:property name="url" value="${db.url}"/>
+            <spring:property name="username" value="${db.user}"/>
+            <spring:property name="password" value="${db.password}"/>
+        </spring:bean>
+    </spring:beans>
+
+<!-- Configure your DB connector referencing your JDBC specs -->
+    <db:generic-config name="Generic_Database_Configuration"  doc:name="Generic Database Configuration" dataSource-ref="jdbcDataSource"/>
+
+    <flow name="testDbFlow">
+        <!-- Perform a query based on a value passed by a flow variable -->
+        <db:select config-ref="Generic_Database_Configuration" doc:name="Database" >
+            <db:parameterized-query><![CDATA[SELECT * FROM jobtitlelookup WHERE jobtitleid = #[variable:jobid]]]></db:parameterized-query>
+        </db:select>
+
+        <!-- Set two conditions depending on the query result -->
+        <choice doc:name="Choice">
+            <!-- If there is one or more values resulting from the query set those values as the payload -->
+            <when expression="#[payload.size()>0]">
+                <set-payload value="#[payload[0].get('jobtitle')]" doc:name="Set Payload if True"></set-payload>
+            </when>
+            <!-- If the query throws no results, inform it in the payload  -->
+            <otherwise>
+                <set-payload value="No job title for #[flowVars.jobid] was found" doc:name="Set Payload if False"></set-payload>
+            </otherwise>
+        </choice>
+
+        <!-- Finally, pass the payload content as a Flow variable  -->
+        <set-variable value="#[payload]" variableName="job" doc:name="Variable"></set-variable>
+    </flow>
+----
+....
+------
+
+我们需要创建一个测试：
+
+. 包含带有`jobtitlelookup`表的数据库服务器。
+. 为数据库连接器提供有效的数据库结构以执行其查询。
+. 传递数据库连接器使用的`jobid`变量的值
+
+=== 定义MUnit数据库服务器
+
+使用Mule Pallet中`MUnit Integration Test Tools`的{​​{0}}连接器定义DataBase服务器。 +
+数据库服务器可以采用以下参数：
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+
+| `name`
+|定义此数据库服务器的配置名称。必须是唯一的。
+
+| `database`
+|定义内存数据库的名称。
+
+| `sqlFile`
+|指定定义DB结构/内容的SQL文件的路径。该参数用于在启动时创建数据库。在<<Defining the DB Structure from an SQL File>>部分查找更多相关信息。
+
+| `csv`
+|指定用于定义数据库结构/内容的逗号分隔文件的路径。该参数用于在启动时创建数据库。在<<Defining the DB Structure from a CSV File>>部分查找更多相关信息。
+
+| `connectionStringParameters`
+| 为您的数据库定义连接字符串。您可以用分号连接参数。
+
+|===
+
+对于这个例子，我们使用.csv文件定义数据库结构和内容。
+
+创建一个名为`jobtitlelookup.csv`的文件，其中包含以下值：
+[source,csv,linenums]
+----
+JOBTITLE,EECSALARYORHOURLY,JOBTITLEID
+Developer,10,DEV
+----
+为了让该csv文件在您的项目中可见，请确保您在应用程序的`src/test/resources`目录中找到它。
+
+继续在新的 link:/munit/v/1.3/munit-suite[MUnit套件]中定义数据库服务器配置。
+
+首先，您需要将`both mock connectors`和`mock inbounds`选项设置为false：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+Navigate to your *Global Elements* tab, and select your *MUnit Configuration* element. Click *Edit* and uncheck both *Mock Mule transport connectors* and *Mock Inbound endpoints*.
+
+image:munit-configuration-mock-false.png[munit-configuration-mock-false]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<munit:config mock-inbounds="false" mock-connectors="false"/>
+----
+
+Defines MUnit configuration. Notice that `mock-connectors` and `mock-inbounds` properties are set to `false`.
+....
+------
+
+接下来，定义您的数据库配置：
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+Navigate to your *Global Elements* tab, and select your *DB Server* element. Click *Edit* and complete the fields:
+
+_Name_: DB_Server +
+_csv_.: jobtitlelookup.csv +
+_Database_: DATABASE_NAME +
+
+_Connection String Parameters_:MODE=MySQL
+
+image:dbconfiguration.png[dbconfiguration]
+
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source,xml,linenums]
+----
+<dbserver:config  name="DB_Server" database="DATABASE_NAME"  doc:name="DBServerConfig" connectionStringParameters="MODE=MySQL" csv="jobtitlelookup.csv" />
+----
+
+Defines the DB server configuration.
+....
+------
+
+==== 数据库服务器连接参数
+
+[NOTE]
+--
+MUnit数据库服务器具有以下默认连接参数集：
+
+[source,console,linenums]
+----
+db.driver=org.h2.Driver
+db.url=jdbc:h2:mem:DATABASE_NAME
+db.connection=MODE=MySQL
+db.user=
+db.password=
+----
+--
+
+`db.user`和`db.password`参数的值有意空白。
+
+==== 定义数据库结构
+
+有两种不同的方式来定义数据库的结构和内容：
+
+*  SQL
+*  CSV
+
+[NOTE]
+MUnit数据库服务器基于 link:http://www.h2database.com/html/main.html[H2]。复杂的结构，索引和连接命令可能无法正常工作。
+
+===== 从SQL文件中定义数据库结构
+
+要从SQL文件中定义DB结构和内容，请提供一组有效的ANSI SQL DDL（数据定义语言）说明。
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:create-db-structure-from-sql.png[create-db-structure-from-sql]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<dbserver:config  name="DB_Server" database="DATABASE_NAME" sqlFile="FILE_NAME.sql" connectionStringParameters="MODE=MySQL" />
+----
+....
+------
+
+===== 从CSV文件中定义数据库结构
+
+您可以从CSV文件创建数据库。
+
+* 表的名称是文件的名称（在下面的示例中为`customers`）。
+* 列的名称是CSV文件的标题。
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:configure-db-using-csv.png[configure-db-using-csv]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source,xml,linenums]
+----
+<dbserver:config name="DB_Server" database="DATABASE_NAME" csv="FILE_NAME.csv connectionStringParameters="MODE=MySQL""/>
+----
+....
+------
+
+您也可以在多个CSV文件中拆分您的数据库结构。在这种情况下，请将文件名称作为以分号分隔的列表，如下所示。
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:define-db-several-csv.png[define-db-several-csv]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source,xml,linenums]
+----
+<dbserver:config name="DB_Server" csv="FILE_NAME.csv;FILE_NAME_1.csv" database="DATABASE_NAME" connectionStringParameters="MODE=MySQL" doc:name="DB Server"/>
+----
+....
+------
+
+这会创建两个表`FILE_NAME`和`FILE_NAME_1`
+
+=== 启动MUnit数据库服务器
+
+为了运行它，数据库服务器必须在 link:/munit/v/1.3/munit-suite#defining-a-before-suite[前套房]中启动。使用`start-db-server`消息处理器启动服务器。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:before-suite-start-dbserver.png[before-suite-start-dbserver]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source,xml,linenums]
+----
+<munit:before-suite name="beforesuite" description="Starting DB server">
+    <dbserver:start-db-server config-ref="DB_Server" doc:name="startServer"/>
+</munit:before-suite>
+----
+....
+------
+
+[NOTE]
+--
+如果您从Maven运行并获得`java.lang.ClassNotFoundException: org.h2.Driver`，则可能需要将H2工件添加到您的`pom.xml`：
+
+[source,xml,linenums]
+----
+<!-- H2 Dependency -->
+<dependency>
+	<groupId>com.h2database</groupId>
+	<artifactId>h2</artifactId>
+	<version>1.3.5</version>
+</dependency>
+----
+
+如果你得到这个异常并且你没有使用Maven，你需要将`h2-v.sv.vvv.jar`文件添加到你的项目的构建路径中。去做这个：
+
+. 从项目网站下载.jar文件
+. 从Studio中，右键单击您项目的文件夹，然后转到*Properties*
+. 转到*Java Build Path*，*Libraries*和*Add External JARs...*
+. 导航至您下载.jar文件的位置并选择它。
+
+这将h2库添加到您的构建路径中，从而允许您的项目使用org.h2.Driver类
+--
+
+=== 运行测试
+
+一旦我们的DB服务器启动并运行，我们就可以运行我们的测试。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:run-first-test.png[run-first-test]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<munit:test name="test-suite-testDbFlowTest" description="Asserts the payload after running the project">
+
+            <!-- Passes a variable to value to run in the main flow. -->
+            <set-variable variableName="jobid" value="DEV" doc:name="Variable"/>
+
+            <!-- Run the production code. -->
+            <flow-ref name="testDbFlow" doc:name="testDbFlow"/>
+
+            <!-- Asserts the payload returned by the production code. This value comes from our in-memory database. -->
+            <munit:assert-on-equals expectedValue="Developer" actualValue="#[flowVars['job']]" doc:name="Assert Equals"/>
+</munit:test>
+----
+....
+------
+
+我们没有使用任何新的消息处理器，因为数据库已经被初始化并加载了正确的数据。
+我们只是验证在我们的生产代码中运行的查询是否正确，并且返回的负载是预期的负载。
+
+=== 停止MUnit数据库服务器
+
+要正常停止数据库服务器，需要使用带有`Stop db server`操作的`db-server`消息处理器在 link:/munit/v/1.3/munit-suite#defining-an-after-suite[套房后]中停止。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:after-suite-stop-dbserver.png[after-suite-stop-dbserver]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source,xml,linenums]
+----
+<!-- Stop the server -->
+<munit:after-suite name="munit3Flow-test-suiteAfter_Suite" description="Ater suite actions">
+   <dbserver:stop-db-server config-ref="DB_Server" doc:name="stopServer"/>
+</munit:after-suite>
+----
+....
+------
+
+=== 其他MUnit数据库服务器消息处理器
+
+MUnit数据库服务器还提供了本节中概述的其他一些功能。
+
+==== 验证SQL查询结果
+
+MUnit数据库服务器允许您验证查询结果是否符合预期。
+
+为此，请使用`validate-that`操作。将`results`属性设置为CSV，并用换行符（`\n`）分隔行，如下所示。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:db-server-validate-that-operation.png[db-server-validate-that-operation]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<munit:test name="test-suite-testDbFlowAssertQuery" description="Check if a specific query returns the expected value">
+     <dbserver:validate-that config-ref="DB_Server"
+query="SELECT * FROM jobtitlelookup WHERE JOBTITLE='Developer';" returns="&quot;JOBTITLE&quot;,&quot;EECSALARYORHOURLY&quot;,&quot;JOBTITLEID&quot;\n&quot;Developer&quot;,&quot;10&quot;,&quot;DEV&quot;" doc:name="validateQuery"/>
+</munit:test>
+----
+....
+------
+
+结果应该是一个CSV文本。为了能够将其视为有效负载，MUnit DBserver使用OpenCSV库
+
+[NOTE]
+--
+如果您从Maven运行并且正在获得`java.lang.NoClassDefFoundError`例外，则可能需要将Opencsv工件添加到您的`pom.xml`：
+
+[source,xml,linenums]
+----
+<!-- openCSV Dependency -->
+<dependency>
+	<groupId>net.sf.opencsv</groupId>
+	<artifactId>opencsv</artifactId>
+	<version>2.0</version>
+</dependency>
+----
+
+如果你得到这个异常并且你没有使用Maven，你需要将`opencsv-v.v.jar`文件添加到你的项目的构建路径中。去做这个：
+
+. 从项目网站下载.jar文件
+. 从Studio中，右键单击您项目的文件夹，然后转到*Properties*
+. 转到*Java Build Path*，*Libraries*和*Add External JARs...*
+. 导航至您下载.jar文件的位置并选择它。
+
+这会将打开的csv库添加到您的构建路径中，从而允许您的项目将csv正确渲染到您的有效载荷中。
+--
+
+==== 执行SQL指令和SQL查询
+
+因此，MUnit数据库服务器允许您在内存数据库上执行指令
+您可以在测试之前添加或删除注册表，并检查您的数据是否为
+正确存储。
+
+使用带`execute`操作的数据库服务器连接器将值新值插入表（`Culinary Team Member,10,HIR`），然后使用另一个带有`execute query`操作的数据库服务器连接器来检索表（包括新添加的），并使用记录器组件检查有效负载以存储有效负载。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:test-suite-execute.png[test-suite-execute] +
+image:test-suite-execute-query.png[test-suite-execute-query]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source,xml,linenums]
+----
+<munit:test name="test-suite-testDbFlowExecuteQuery" description="Execute a query from the DB connector">
+
+	<!-- Execute a SQL instruction using the execute operation -->
+	<dbserver:execute config-ref="DB_Server" doc:name="Execute" sql="INSERT INTO jobtitlelookup VALUES ('Culinary Team Member','10','HIR');"/>
+
+	<!-- Check the update using execute-query operation -->
+	<dbserver:execute-query config-ref="DB_Server" sql="SELECT * FROM jobtitlelookup" doc:name="Check by Executing a Query"/>
+
+	<!-- log the resulting payload -->
+	<logger message="#[payload]" level="INFO" doc:name="Logger"/>
+</munit:test>
+
+----
+....
+------
+
+您控制台中的记录器应为：
+[source,logger,linenums]
+----
+[main] org.mule.api.processor.LoggerMessageProcessor: [{JOBTITLEID=DEV, EECSALARYORHOURLY=10, JOBTITLE=Developer}, {JOBTITLEID=HIR, EECSALARYORHOURLY=10, JOBTITLE=Culinary Team Member}]
+----
+
+== 执行环境
+
+您可能已经注意到，我们的产品代码示例在以下示例中广泛使用了某些参数的占位符，例如`driverName`，`url`等：
+
+[source, xml, linenums]
+----
+<spring:bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+  <spring:property name="driverName" value="${db.driver}" />
+  <spring:property name="url" value="${db.url}" />
+  <spring:property name="user" value="${db.user}" />
+  <spring:property name="password" value="${db.password}" />
+</spring:bean>
+----
+
+原因是属性允许我们创建更具可配置性的代码。比较上面的例子：
+
+[source, xml, linenums]
+----
+<spring:bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+  <spring:property name="driverName" value="org.mule.fake.Driver" />
+  <spring:property name="url" value="192.168.0.3" />
+  <spring:property name="user" value="myUser" />
+  <spring:property name="password" value="123456" />
+</spring:bean>
+----
+
+第二个示例代码是无法测试的，即使没有MUnit也是如此。如果我们需要在投入生产之前测试这些代码，我们总是用真实的证书打印生产数据库服务器，这带来了风险。
+
+另一方面，第一个示例代码允许我们定义两个不同的属性文件：
+
+* 一个用于测试环境
+* 一个用于生产环境
+
+这与Mule属性占位符结合使用，如下面的`${env}`所示：
+
+[source,xml,linenums]
+----
+<global-property value="mule.${env}.property"/>
+----
+
+在上例中，使用`${env}`可以让我们利用执行环境。因此，例如，我们可以定义两个单独的属性文件`mule.test.properties`和`mule.prod.properties`，它们包含相同的属性，其值根据我们希望使用的环境而定。
+
+提示：要从Maven运行测试并从命令行发出env参数，可以运行：`mvn -DargLine="-Dmule.env=test" clean test`。

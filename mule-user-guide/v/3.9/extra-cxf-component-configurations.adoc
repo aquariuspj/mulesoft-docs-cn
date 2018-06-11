@@ -1,0 +1,216 @@
+= 设置和重新使用自定义的CXF组件
+:keywords: cxf
+
+要设置和重用定制的CXF行为，您必须创建一个*global element*并在Mule流程的任何CXF组件中引用它。以下配置信息适用于所有类型的SOAP API操作：服务，客户端和代理。
+
+[tabs]
+------
+[tab,title="Studio"]
+....
+
+. On the *Global Elements* tab of the canvas, select `CXF Configuration` and click *Create*. 
++
+image::extra-cxf-component-configurations-823fb.png[extra-cxf-component-configurations-823fb]
++
+The *Choose Global Type* dialog appears.
++
+. Select *Component configurations* > *CXF Configuration*.
++
+image::extra-cxf-component-configurations-824d9.png[extra-cxf-component-configurations-824d9]
++
+. Click OK.
++
+The CXF Configuration dialog appears.
++
+image::extra-cxf-component-configurations-32070.png[extra-cxf-component-configurations-32070]
++
+. Configure the global CXF configuration attributes according to the following table:
++
+* In *Name*, enter a unique name for the global element (optional).
+* In *Configuration Location*, if you have created an `.xml` file that defines behavior of the CXF elements, enter the path and file name to the file in this format: `filepath/filename.xml`
+* Check the <<Configuring Advanced Elements, Enable Mule SOAP Headers>> checkbox to ensure that Mule can add a header to a SOAP message when required by the message processing.
++
+* In *Initialize Static Bus Instance*, check this option to ensure that the CXF SOAP API uses Mule transports instead of link:http://cxf.apache.org/docs/transports.html[CXF transports]. The default is checked.
++
+. Click *OK*.
+
+....
+[tab,title="Standalone XML"]
+....
+
+. Above all flows in your Mule project, add a global <cxf:configuration> element. Refer to code sample below.
+. Configure the global CXF configuration attributes according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value |Description
+|*name* |unique name |Enter a unique name for the global element, if you want (not required for Mule Runtime).
+|*enableMuleSoapHeaders* |true +
+false *Note*: This field is currently not implemented and has no effect. |If set to true`,` this attribute ensures that Mule can add a header to a SOAP message when required as part of the message's processing. +
+For example, if your SOAP messages will be processed by a third-party schema which prohibits deviations from very specific message properties and will not process messages with Mule headers, set this attribute to false.
+|*initializeStaticBusInstance* |true +
+false  |If set to true, (i.e. checked) this attribute ensures that the CXF SOAP API uses Mule transports instead of link:http://cxf.apache.org/docs/transports.html[CXF transports].
+|*configurationLocation* |filepath/filename.xml |If you have created an `.xml` file that supplies the specifics of how you want your CXF elements to behave, enter the file path of your CXF configuration file.
+|===
+. To the CXF element within your flow, add a `configuration-ref` attribute to reference the global CXF configuration element. Refer to code sample below.
++
+[source,xml, linenums]
+----
+<mule xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/current/mule-cxf.xsd">
+
+    <cxf:configuration name="CXF_Configuration" enableMuleSoapHeaders="true" initializeStaticBusInstance="true" doc:name="CXF Configuration" configurationLocation="src/test/resources/filename.xml"/>
+
+    <http:listener-config name="listener-config" host="localhost" port="8081"/>
+    <http:request-config name="request-config" host="localhost"
+port="8081"/>
+    <flow name="example_flow1" doc:name="example_flow1">
+        <http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+        <cxf:jaxws-client doc:name="SOAP" configuration-ref="CXF_Configuration"/>
+        <http:request config-ref="request-config" path="/" method="POST" doc:name="HTTP Connector"/>
+    </flow>
+----
+....
+------
+
+== 添加自定义拦截器
+
+CXF使用最基本的处理单元 link:http://cxf.apache.org/docs/interceptors.html[拦截器]的链来处理消息。当消息在拦截器链中移动时，每个拦截器都会对消息执行操作，例如读取消息，对消息进行转换或验证消息。
+
+如果您需要为由CXF SOAP API处理的消息添加额外操作，例如向消息中添加标头，请使用CXF组件向拦截器链添加额外的拦截器。
+
+[tabs]
+------
+[tab,title="Studio"]
+....
+
+To add a custom interceptor:
+
+. Open the properties editor, and on the *Interceptors* tab, click the image:add.png[(plus)] drop-down.
++
+The *{{0}}* options appear:
++
+image::extra-cxf-component-configurations-fbe86.png[extra-cxf-component-configurations-fbe86]
++
+. Select one of the options, for example *Add in interceptor*.
++
+The selected interceptor option appears in *Settings*.
++
+image::extra-cxf-component-configurations-628c3.png[extra-cxf-component-configurations-628c3]
+. Double-click the interceptor option to open the interceptor provider panel.
++
+The *in interceptor* dialog appears.
++
+. From the drop-down in *Beans*, select a bean.
++
+image::extra-cxf-component-configurations-6f0a1.png[extra-cxf-component-configurations-6f0a1]
+Alternatively, click *new* to define a new bean by importing a Java class that defines interceptor behavior.
++
+. Click *add to list* to insert the selected bean into the interceptor chain.
+. Click *Finish*, then *OK* to save your interceptor configuration.
+
+....
+[tab,title="Standalone XML"]
+....
+
+. Above all flows in your Mule project, create a global `spring:bean` element to import the Java class you have built to specify the interceptor's behavior. Refer to code sample below.
+. To the CXF element in your flow, add a child element according to the type of action you want the interceptor to perform:
++
+* `cxf:inInterceptor`
+* `cxf:inFaultInterceptor`
+* `cxf:outInterceptor`
+* `cxf:outFaultInterceptor`
+. As a child element of the CXF interceptor element, add a reference to the spring bean, `spring:ref  bean`, you created which imports the Java class.
+. Add as many as four interceptor child elements to your CXF service or client component.
+
+[source,xml, linenums]
+----
+<spring:beans>
+    <spring:bean id="Bean" name="Bean" class="org.mule.example.myClass"/>
+</spring:beans>
+     
+<http:listener-config name="listener-config" host="localhost" port="8081"/>
+<http:request-config name="request-config" host="localhost"
+port="8081"/>  
+<flow name="example_flow1" doc:name="example_flow1">
+    <http:listener config-ref="listener-config" path="/" doc:name="HTTP Connector"/>
+    <cxf:proxy-service doc:name="SOAP" port="8080"  serviceClass="org.mule.example.bookstore.OrderService"  payload="body" bindingId=" " namespace=" " service="" validationEnabled="true">
+       <cxf:inInterceptors>
+           <spring:ref bean="Bean"/>
+       </cxf:inInterceptors> 
+    </cxf:proxy-service>
+    <http:request config-ref="request-config" path="/" method="GET" doc:name="HTTP Connector"/>
+</flow>
+----
+
+....
+------
+
+== 配置高级元素
+
+您可以根据需要调整多个高级CXF SOAP API配置。
+
+[tabs]
+------
+[tab,title="Studio"]
+....
+
+The Databinding Management configuration options are available for the following operations:
+
+* Simple service
+* JAX-WS Service
+
+image::extra-cxf-component-configurations-7d94a.png[extra-cxf-component-configurations-7d94a]
+
+The *Schema Locations* configuration is available only for the Proxy service operation.
+
+image::extra-cxf-component-configurations-402ba.png[extra-cxf-component-configurations-402ba]
+
+The following table describes the advanced configuration elements:
+
+[cols="2*"]
+|===
+|Configuration |Activity
+|*WSDL Location* |In the *WSDL Location* field, enter the URL (relative or absolute) of the link:http://en.wikipedia.org/wiki/Web_Services_Description_Language[WSDL file] that describes the functionality of the SOAP API.
+|*MTOM Enabled* |Check *MTOM Enabled* ( http://cxf.apache.org/docs/mtom.html[Message Transmission Optimization Mechanism]) to process the binary data sent as part of a SOAP message.
+|*Enable Mule Soap headers* a|
+Check the *Enable Mule Soap Headers* checkbox (the default) to ensure that Mule can add a header to a SOAP message when required as part of the message processing. Uncheck this checkbox to prevent adding headers to SOAP messages. For example, if the SOAP message is processed by a third-party schema, which prohibits deviations from specific message properties, such as added Mule headers, uncheck *Enable Mule Soap Headers*.
+|*Soap 1.1* +
+ *Soap 1.2 * |Select the version of SOAP you want your service to use: link:http://www.w3.org/2003/06/soap11-soap12.html[SOAP 1.1 or SOAP 1.2]. By default, Mule sets the version to SOAP 1.1.
+|*Databinding* |With regard to CXF, link:http://cxf.apache.org/docs/data-binding-architecture.html[*data binding*] maps data from XML documents to Java objects. From the drop-down, select a data binding type: link:http://cxf.apache.org/docs/aegis-21.html[aegis-databinding],
+link:http://cxf.apache.org/docs/jaxb.html[jaxb-databinding], custom-databinding, or link:http://jibx.sourceforge.net/[jibx-databinding]
+| http://msdn.microsoft.com/en-us/library/ms256100.aspx[*Schema Locations*] |Click image:add.png[add] in *Schema Locations* to specify a `schemaLocations` attribute that identifies a namespace `name` and `description`.
+|===
+
+....
+[tab,title="Standalone XML"]
+....
+
+. Within the context of the CXF framework, link:http://cxf.apache.org/docs/data-binding-architecture.html[*data binding*] refers to the mapping of data from XML documents to Java objects. You can specify the databinding of your client or service, if you wish. (Not configurable on proxy service or proxy client.) The following are the different types of databinding available: +
+*   link:http://cxf.apache.org/docs/aegis-21.html[aegis-databinding] 
+*   link:http://cxf.apache.org/docs/jaxb.html[jaxb-databinding] 
+* custom-databinding 
+*   link:http://jibx.sourceforge.net/[jibx-databinding]
+. To the CXF element in your flow, add a child element according to the type of databinding you want your service or client to use: +
+* `cxf:aegis-databinding`
+* `cxf:jaxb-databinding`
+* `cxf:custom-databinding`
+* `cxf:jibx-databinding`
+. As a child element of the CXF databinding element, add one or more `spring:property` elements with either a name and value, or name and reference, to define any databinding properties. Refer to the code sample below. 
+. Define a `cxf:` `schemalocations` attribute, if you wish, to identify a namespace to which your service should refer. (Not configurable on JAX-WS client, simple client, or proxy client.) Reference link:http://msdn.microsoft.com/en-us/library/ms256100.aspx[schemaLocation] for additional details. To the CXF element in your flow (below any interceptor elements, if you have added any), add a ` cxf:schemaLocations ` child element.
+. Within the `cxf:schemaLocations` element, add a `cxf:schemaLocation` child element, to specify the URL of the schema to which your service should refer. Refer to code sample below.
+. As per your specific needs, configure any of the following CXF service or client attributes according to the table below. Refer to the code sample below.
+
+[cols="2*"]
+|===
+|Configuration |Activity
+|*validationEnabled* |When set to true, validationEnabled ensures that Mule can add a header to a SOAP message when required as part of the message's processing. Set to false if you do not want Mule to add headers to SOAP messages. For example, if your SOAP messages will be processed by a third-party schema which prohibits deviations from very specific message properties (such as added Mule headers), set validationEnabled to false.
+|*mtomEnabled* |Set mtomEnabled to true if you want Mule to process the binary data sent as part of a SOAP message. ( http://cxf.apache.org/docs/mtom.html[Message Transmission Optimization Mechanism])
+|*wsdlLocation* |Enter the URL (relative or absolute) of the link:http://en.wikipedia.org/wiki/Web_Services_Description_Language[WSDL file] which describes the functionality of the SOAP API.
+|*soapVersion* |Identify the version of SOAP you want your service to use: link:http://www.w3.org/2003/06/soap11-soap12.html[SOAP 1.1 or SOAP 1.2]. By default, Mule uses SOAP 1.1.
+|===
+
+....
+------
+

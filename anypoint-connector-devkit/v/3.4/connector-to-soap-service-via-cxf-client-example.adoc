@@ -1,0 +1,1101 @@
+通过CXF客户端示例的= 到SOAP服务的连接器
+
+此示例演示了在给定WSDL文件的情况下为SOAP服务构建连接器的步骤。客户端使用Apache CXF构建，它可以从WSDL元数据中为您生成大部分所需的代码。
+
+Apache CXF是一个复杂的框架，支持许多不同的模型来访问Web服务。这里的重点是一条直接的路径，它应该为您拥有WSDL的任何服务产生结果。有关使用CXF的所有可能客户端模型的更多详细信息，请参阅Apache CXF文档 http://cxf.apache.org/docs/how-do-i-develop-a-client.html[建设客户]，尤其是 http://cxf.apache.org/docs/developing-a-consumer.html[用CXF开发消费者]。
+
+发展模式是：
+
+* 创建组成连接器的主要类
+* 向@Connector类添加认证相关功能
+* 应用测试驱动的开发过程将单个操作添加到连接器
+
+
+
+== 假设
+
+本文件假定：
+
+* 您熟悉SOAP Web服务，包括WSDL定义。 （您可以从 http://www.w3.org/TR/wsdl20/[W3C网站上的WSDL规范]获取WSDL上的重要概念和术语。）
+* 您对CXF和wsdl2java有一些了解，以及如何使用它们构建Web Service客户端。 http://cxf.apache.org/docs/how-do-i-develop-a-client.html[Apache CXF：我如何开发客户端？]，特别是 http://cxf.apache.org/docs/developing-a-consumer.html[Apache CXF：使用CXF开发消费者]提供了有用的背景。
+* 为了学习该示例，您已经为 link:/anypoint-connector-devkit/v/3.4/creating-a-connector-project[创建一个连接器项目]中描述的连接器创建了Maven项目作为起点。
+
+基于CXF的连接器体系结构== 
+
+按照本文档中的步骤构建连接器客户端，从描述服务的WSDL开始。
+
+从一个新的连接器项目开始（可能内置了验证逻辑）：
+
+* 获取服务的WSDL文件并将其添加到项目中
+* 从Maven运行wsdl2java生成可调用服务操作的CXF存根代码
+* 编写一个封装存根客户端的代理类
+* 构建一个DevKit Connector类，该类的方法调用代理类上的方法
+
+
+== 示例服务：SunSetRiseService
+
+演示的Web服务是 http://www.webservicex.net/[WebserviceX.net]处的 http://www.webservicex.net/ws/WSDetails.aspx?WSID=65&CATID=12[SunSetRise Web服务]。
+
+请求和响应都由一个XML文档表示，该文档指定：
+
+* 纬度和经度坐标中的位置，用于指示您所在的位置。请注意，您需要使用南半球的负纬度值和东半球的负经度值。坐标是十进制的，而不是度数，分和秒。
+* 指定您希望返回日出和日落时间的日期。
+*  GMT时区，用于指示将结果转换为（从GMT偏移）的时区。
+
+以下是SOAP 1.1中GetSunSetRiseTime的一个示例请求消息，用于获取日出和日落时间：
+
+[source, xml, linenums]
+----
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+   xmlns:web="http://www.webserviceX.NET/">
+   <soap:Header/>
+   <soap:Body>
+      <web:GetSunSetRiseTime>
+         <web:L>
+            <web:Latitude>0.0</web:Latitude>
+            <web:Longitude>0.0</web:Longitude>
+            <web:TimeZone>0</web:TimeZone>
+            <web:Day>21</web:Day>
+            <web:Month>3</web:Month>
+            <web:Year>2011</web:Year>
+         </web:L>
+      </web:GetSunSetRiseTime>
+   </soap:Body>
+</soap:Envelope>
+----
+
+SunSetTime和SunRiseTime元素被省略，因为这些元素是由服务计算的。响应会有这些人。
+
+以下是一个示例回应：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <soap:Body>
+        <GetSunSetRiseTimeResponse
+            xmlns="http://www.webserviceX.NET/">
+            <GetSunSetRiseTimeResult>
+                <Latitude>0</Latitude>
+                <Longitude>0</Longitude>
+                <SunSetTime>17.9877033</SunSetTime>
+                <SunRiseTime>5.87441826</SunRiseTime>
+                <TimeZone>0</TimeZone>
+                <Day>21</Day>
+                <Month>3</Month>
+                <Year>2011</Year>
+            </GetSunSetRiseTimeResult>
+        </GetSunSetRiseTimeResponse>
+    </soap:Body>
+</soap:Envelope>
+----
+
+SunSetTime和SunRiseTime是十进制的，而不是小时，分钟和秒。
+
+== 从WSDL创建CXF存根客户端
+
+所有的SOAP API都提供了一个WSDL文件，该文件定义了如何调用SOAP Web服务的端口和端口，以及它所期望的操作和参数以及操作返回的数据类型（简单或复杂）。
+
+CXF包含wsdl2java实用程序，该实用程序可以生成Java存根（stub）客户端代码以调用服务上的任何方法，并将请求参数和响应编组和解组为Java对象以供进一步处理。这个生成的存根客户端将成为连接器的核心。
+
+下面提供了创建存根客户端并将其添加到项目的步骤。
+
+=== 准备
+
+您必须将WSDL文件的副本下载到本地磁盘并将其包含在Maven项目中。对于本例中的Web服务，您可以在此处下载WSDL：http://www.webservicex.net/sunsetriseservice.asmx?WSDL。
+
+请参阅 link:/anypoint-connector-devkit/v/3.4/preparing-api-access-or-a-sandbox-environment[准备API访问或沙箱环境]了解访问其他API所需的步骤，包括如何访问WSDL文件。
+
+=== 步骤1将WSDL文件添加到您的项目
+
+在您的项目`/src/main/resources`下，创建一个子目录`wsdl`并在那里复制您的WSDL。
+
+在本例中，将WSDL复制到`/src/main/resources/wsdl/sunsetriseservice.wsdl.`
+
+[WARNING]
+您必须将此WSDL文件保存为项目中的本地文件。如果通过URL直接引用远程WSDL，Mule附带的CXF版本将失败。
+
+=== 步骤2更新您的POM文件
+
+默认的POM文件（其中Maven存储构建的所有指令）不包括特定的属性，依赖项和Maven插件，这些插件专用于使用CXF访问SOAP。您必须手动将这些添加到您的`pom.xml`文件中。
+
+==== 将WSDL和CXF属性添加到POM
+
+第一个代码块为您的POM添加了多个属性，用于标识要使用的CXF版本，设置包名称以及在项目和连接器jar文件中指定WSDL的位置：
+
+*SOAP CXF Connector: Maven Properties*
+
+[source, xml, linenums]
+----
+<!-- Maven should build the update site Zip file -->
+<devkit.studio.package.skip>false</devkit.studio.package.skip>
+ 
+<!--  CXF version info -->       
+<cxf.version>2.5.9</cxf.version>
+<cxf.version.boolean>2.6.0</cxf.version.boolean>
+ 
+<!-- Package name, WSDL file path and location in the JAR -->
+<connector.package>
+    org.tutorial.sunsetrise.definition
+</connector.package>
+<connector.wsdl>
+    ${basedir}/src/main/resources/wsdl/sunsetriseservice.wsdl
+</connector.wsdl>
+<connector.wsdlLocation>
+    classpath:wsdl/sunsetriseservice.wsdl
+</connector.wsdlLocation>
+----
+
+在`<properties>`元素中添加这些元素，并更新`connector.wsdl`和`connector.wsdlLocation`以反映您的WSDL文件的名称。
+
+==== 在CXF中添加Maven依赖项
+
+第二个POM更新添加了Mule中包含的CXF模块的依赖关系：
+
+*CXF Dependency*
+
+[source, xml, linenums]
+----
+<dependency>
+    <groupId>org.mule.modules</groupId>
+    <artifactId>mule-module-cxf</artifactId>
+    <version>${mule.version}</version>
+    <scope>provided</scope>
+  </dependency>
+----
+
+将该代码块复制并粘贴到文件结尾附近的`<dependencies>`标记内，并与其他已列出的<dependency>元素一起粘贴。您不必编辑此块，只需添加它即可。
+
+==== 为wsdl2java添加一个Maven插件
+
+第三个POM更新是一个`wsdl2java` Maven插件，它将从WSDL文件生成Java类。将此插件元素粘贴到<build>元素内的<plugins>元素中。 （请确保不要将它放在<pluginManagement>元素中。）
+
+您不必编辑此块，只需添加它即可。
+
+*Wsdl2Java*
+
+[source, xml, linenums]
+----
+<plugin>
+                <groupId>org.apache.cxf</groupId>
+                <artifactId>cxf-codegen-plugin</artifactId>
+                <version>${cxf.version}</version>
+                <executions>
+                    <execution>
+                        <!-- Note that validate phase is not the usual phase to run wsdl2java...
+                            this is done because DevKit requires the class be generated so it can be used in generate-sources phase by devkit. The devkit generated code from annotations etc. references the wsdl2java generated output  -->
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>wsdl2java</goal>
+                        </goals>
+                        <configuration>
+                            <wsdlOptions>
+                                <wsdlOption>
+                                    <!-- wsdl file path -->
+                                    <wsdl>${connector.wsdl}</wsdl>
+                                    <!-- pick up the WSDL from within the JAR -->
+                                    <wsdlLocation>${connector.wsdlLocation}</wsdlLocation>
+                                    <autoNameResolution>true</autoNameResolution>
+                                    <extraargs>
+                                        <!-- Package Destination -->
+                                        <extraarg>-p</extraarg>
+                                        <!-- name of the output package specified following -p argument
+                                            to wsdl2java -->
+                                        <extraarg>
+                                            ${connector.package}
+                                        </extraarg>
+                                            <!-- DataMapper compatibility requires that boolean getters and setters
+                                            follow naming convention for other getters and setters. -->
+                                        <extraarg>-xjc-Xbg</extraarg>
+                                        <extraarg>-xjc-Xcollection-setter-injector</extraarg>
+                                    </extraargs>
+                                </wsdlOption>
+                            </wsdlOptions>
+                        </configuration>
+                    </execution>
+                </executions>
+                <dependencies>
+                    <!-- Boolean getters -->
+                    <dependency>
+                        <groupId>org.apache.cxf.xjcplugins</groupId>
+                        <artifactId>cxf-xjc-boolean</artifactId>
+                        <version>${cxf.version.boolean}</version>
+                    </dependency>
+                    <!-- Collection Setters -->
+                    <dependency>
+                        <groupId>net.java.dev.vcc.thirdparty</groupId>
+                        <artifactId>collection-setter-injector</artifactId>
+                        <version>0.5.0-1</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+----
+
+注意事项：
+
+* 您添加的`connector.package`，`connector.wsdl`和`connector.wsdlLocation`属性在此处引用。
+* 包含xjc-Xbg参数，以便wsdl2java生成遵循其他Java bean getter和setter的命名约定的getter和setter。这是与DataSense和DataMapper兼容所必需的。
+*  wsdl2java代码生成在Maven验证阶段执行。 wsdl2java生成的代码在构建过程的生成源代码阶段是必需的，DevKit代码生成引用这些源代码。
+
+以下是完整的pom.xml文件内容，包含本教程所需的更改。
+
+*Complete POM file*
+
+[source, xml, linenums]
+----
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>org.tutorial</groupId>
+    <artifactId>sunsetriseconnector</artifactId>
+    <version>1.0</version>
+    <packaging>mule-module</packaging>
+    <name>Sunset Sunrise Service</name>
+    <properties>
+        <mule.version>3.4.0</mule.version>
+        <mule.devkit.version>3.4.0</mule.devkit.version>
+        <junit.version>4.9</junit.version>
+        <mockito.version>1.8.2</mockito.version>
+        <jdk.version>1.6</jdk.version>
+         
+        <!-- Maven should build the update site Zip file -->
+        <devkit.studio.package.skip>false</devkit.studio.package.skip>
+        <!--  CXF version info -->       
+        <cxf.version>2.5.9</cxf.version>
+        <cxf.version.boolean>2.6.0</cxf.version.boolean>
+        <!-- WSDL file path and location in the JAR -->
+        <connector.wsdl>
+            ${basedir}/src/main/resources/wsdl/sunsetriseservice.wsdl
+        </connector.wsdl>
+        <connector.wsdlLocation>
+            classpath:wsdl/sunsetriseservice.wsdl
+        </connector.wsdlLocation>
+        <connector.package>
+            org.tutorial.sunsetrise.definition
+        </connector.package>
+    </properties>
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.mule.tools.devkit</groupId>
+                    <artifactId>mule-devkit-maven-plugin</artifactId>
+                    <version>${mule.devkit.version}</version>
+                    <extensions>true</extensions>
+                </plugin>
+                <plugin>
+                    <groupId>org.eclipse.m2e</groupId>
+                    <artifactId>lifecycle-mapping</artifactId>
+                    <version>1.0.0</version>
+                    <configuration>
+                        <lifecycleMappingMetadata>
+                            <pluginExecutions>
+                                <pluginExecution>
+                                    <pluginExecutionFilter>
+                                        <groupId>org.mule.tools.devkit</groupId>
+                                        <artifactId>mule-devkit-maven-plugin</artifactId>
+                                        <versionRange>[2.0,)</versionRange>
+                                        <goals>
+                                            <goal>attach-test-resources</goal>
+                                            <goal>filter-resources</goal>
+                                            <goal>generate-sources</goal>
+                                        </goals>
+                                    </pluginExecutionFilter>
+                                    <action>
+                                        <ignore />
+                                    </action>
+                                </pluginExecution>
+                            </pluginExecutions>
+                        </lifecycleMappingMetadata>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.cxf</groupId>
+                <artifactId>cxf-codegen-plugin</artifactId>
+                <version>${cxf.version}</version>
+                <executions>
+                    <execution>
+                        <!-- Note that this phase is not the usual phase to run wsdl2java...
+                            this is done because DevKit requires the class be generated so it can be
+                            inspected in another phase -->
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>wsdl2java</goal>
+                        </goals>
+                        <configuration>
+                            <wsdlOptions>
+                                <wsdlOption>
+                                    <!-- wsdl file path -->
+                                    <wsdl>${connector.wsdl}</wsdl>
+                                    <!-- pick up the WSDL from within the JAR -->
+                                    <wsdlLocation>${connector.wsdlLocation}</wsdlLocation>
+                                    <autoNameResolution>true</autoNameResolution>
+                                    <extraargs>
+                                        <!-- Package Destination -->
+                                        <extraarg>-p</extraarg>
+                                        <extraarg>
+                                            ${connector.package}
+                                        </extraarg>
+                                        <!-- For DataMapper compatibility, force boolean getters and setters
+                                            to follow naming convention for other getters and setters. -->
+                                        <extraarg>-xjc-Xbg</extraarg>
+                                        <extraarg>-xjc-Xcollection-setter-injector</extraarg>
+                                    </extraargs>
+                                </wsdlOption>
+                            </wsdlOptions>
+                        </configuration>
+                    </execution>
+                </executions>
+                <dependencies>
+                    <!-- Boolean getters -->
+                    <dependency>
+                        <groupId>org.apache.cxf.xjcplugins</groupId>
+                        <artifactId>cxf-xjc-boolean</artifactId>
+                        <version>${cxf.version.boolean}</version>
+                    </dependency>
+                    <!-- Collection Setters -->
+                    <dependency>
+                        <groupId>net.java.dev.vcc.thirdparty</groupId>
+                        <artifactId>collection-setter-injector</artifactId>
+                        <version>0.5.0-1</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>2.5</version>
+                <executions>
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <compilerArgument>-proc:none</compilerArgument>
+                            <source>${jdk.version}</source>
+                            <target>${jdk.version}</target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>default-testCompile</id>
+                        <configuration>
+                            <compilerArgument>-proc:none</compilerArgument>
+                            <source>${jdk.version}</source>
+                            <target>${jdk.version}</target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.mule.tools.devkit</groupId>
+                <artifactId>mule-devkit-maven-plugin</artifactId>
+                <version>${mule.devkit.version}</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>2.8</version>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <excludePackageNames>org.mule.tooling.ui.contribution:*</excludePackageNames>
+                    <docletArtifact>
+                        <groupId>org.mule.tools.devkit</groupId>
+                        <artifactId>mule-devkit-doclet</artifactId>
+                        <version>${mule.devkit.version}</version>
+                    </docletArtifact>
+                    <doclet>org.mule.devkit.doclet.Doclava</doclet>
+                    <bootclasspath>${sun.boot.class.path}</bootclasspath>
+                    <additionalparam>
+                        -quiet
+                        -federate JDK http://download.oracle.com/javase/6/docs/api/index.html?
+                        -federationxml JDK
+                        http://doclava.googlecode.com/svn/static/api/openjdk-6.xml
+                        -hdf project.artifactId "${project.artifactId}"
+                        -hdf project.groupId "${project.groupId}"
+                        -hdf project.version "${project.version}"
+                        -hdf project.name "${project.name}"
+                        -hdf project.repo.name
+                        "${project.distributionManagement.repository.name}"
+                        -hdf project.repo.id "${project.distributionManagement.repository.id}"
+                        -hdf project.repo.url
+                        "${project.distributionManagement.repository.url}"
+                        -hdf project.snapshotRepo.name
+                        "${project.distributionManagement.snapshotRepository.name}"
+                        -hdf project.snapshotRepo.id
+                        "${project.distributionManagement.snapshotRepository.id}"
+                        -hdf project.snapshotRepo.url
+                        "${project.distributionManagement.snapshotRepository.url}"
+                        -d ${project.build.directory}/apidocs
+                    </additionalparam>
+                    <useStandardDocletOptions>false</useStandardDocletOptions>
+                    <additionalJOption>-J-Xmx1024m</additionalJOption>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>1.0-alpha-4</version>
+                <executions>
+                    <execution>
+                        <id>enforce-maven-version</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireMavenVersion>
+                                    <version>[3.0.0,)</version>
+                                </requireMavenVersion>
+                                <requireJavaVersion>
+                                    <version>[1.6.0,)</version>
+                                </requireJavaVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+        <resources>
+            <resource>
+                <filtering>false</filtering>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <filtering>true</filtering>
+                <directory>src/test/resources</directory>
+            </resource>
+        </resources>
+    </build>
+    <dependencies>
+        <dependency>
+            <groupId>org.mule</groupId>
+            <artifactId>mule-core</artifactId>
+            <version>${mule.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mule.modules</groupId>
+            <artifactId>mule-module-spring-config</artifactId>
+            <version>${mule.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.mule.tools.devkit</groupId>
+            <artifactId>mule-devkit-annotations</artifactId>
+            <version>${mule.devkit.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse</groupId>
+            <artifactId>eclipse-workbench</artifactId>
+            <version>3.6.1.M20100826-1330</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse</groupId>
+            <artifactId>eclipse-runtime</artifactId>
+            <version>3.6.0.v20100505</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>core</artifactId>
+            <version>4.3.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-all</artifactId>
+            <version>${mockito.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mule.tests</groupId>
+            <artifactId>mule-tests-functional</artifactId>
+            <version>${mule.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mule.modules</groupId>
+            <artifactId>mule-module-cxf</artifactId>
+            <version>${mule.version}</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+    <repositories>
+        <repository>
+            <id>mulesoft-releases</id>
+            <name>MuleSoft Releases Repository</name>
+            <url>http://repository.mulesoft.org/releases/</url>
+            <layout>default</layout>
+        </repository>
+        <repository>
+            <id>mulesoft-snapshots</id>
+            <name>MuleSoft Snapshots Repository</name>
+            <url>http://repository.mulesoft.org/snapshots/</url>
+            <layout>default</layout>
+        </repository>
+        <repository>
+            <id>codehaus-releases</id>
+            <name>CodeHaus Releases</name>
+            <url>http://repository.codehaus.org/</url>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>mulesoft-plugin-releases</id>
+            <name>MuleSoft Release Repository</name>
+            <url>http://repository.mulesoft.org/releases/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+            <id>mulesoft-plugin-snapshots</id>
+            <name>MuleSoft Snapshot Repository</name>
+            <url>http://repository.mulesoft.org/snapshots/</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
+</project>
+----
+
+=== 步骤3重新构建具有新相关性的项目
+
+现在你的POM文件包含了这些附加内容，你需要执行一个干净的构建和安装你的项目。
+
+您可以从项目所在的目录在命令行上运行以下Maven命令：
+
+[source, code, linenums]
+----
+mvn clean install
+----
+
+这个命令有两个目标调用Maven：
+
+*  `clean`告诉Maven清除所有以前的构建内容
+*  `install`告诉Maven使用wsdl2java生成CXF客户端代码;编译项目的所有代码;运行任何已定义的测试，将编译后的代码打包为Eclipse更新站点，并将其安装在本地Maven存储库中。 （在这个过程中的任何失败，例如失败的构建或测试，都会阻止Maven尝试后续目标。）
+
+有关此过程的更多详细信息，请参阅Apache Maven项目网站上的 http://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html[构建生命周期介绍]。
+
+你的首选IDE也应该支持这个过程。例如，在Eclipse中，您可以选择项目，然后调用**Run as > Maven Build.**
+
+构建完成后，您将看到Maven使用文件夹`target/generated-sources/cxf.`中的`wsdl2java`生成的文件
+
+=== 步骤4将生成的源文件夹添加到IDE构建路径
+
+您必须将上一步中的target / generated-sources / cxf文件夹添加到IDE所识别的构建路径中。
+
+. 将您的Maven项目导入或重新导入到您的IDE中，如在IntelliJ中编写扩展或 link:/anypoint-connector-devkit/v/3.4/creating-a-connector-project[创建一个连接器项目]中的"Importing a Maven Project into Eclipse/Mule Studio"中所述。
+. 查找文件夹** target/generated-sources/cxf**。
+. 右键点击它，然后选择**Build Path **> *Use as Source Folder*。 +
+
+
+这告诉你的IDE默认这个文件夹应该被视为源代码的一部分。
+
+[WARNING]
+通常，您不应该修改这些生成的类，因为每次运行wsdl2java时，都会重新创建这些文件。如果服务定义发生更改，请更新本地WSDL，然后在下一次构建之前运行`mvn clean`。
+
+=== 了解由WSDL2JAVA生成的存根客户端代码
+
+生成的Java源文件与WSDL内容描述的服务相对应。
+
+WSDL描述了一个服务，可以通过几个端口（或端点）访问。每个端口都支持特定的协议并公开服务的一组操作。每个操作接受并返回也在WSDL中定义的类型的对象（以XML格式）。
+
+从wsdl2java生成的代码为Web服务提供了一个Java存根客户端实现。生成的代码中定义的类和接口对应于WSDL中定义的服务，端口，操作和类型。
+
+对于这个例子，最有趣的生成代码是：
+
+*  SunSetRiseService类 - 与服务对应的顶级类。
+*  SunSetRiseServiceSoap接口 - 公开一个接口，该接口描述与SOAP端口上可用操作对应的getSunSetRiseTime（）方法
+
+一旦你有这些，只需要几行代码来调用服务的任何操作：
+
+* 实例化服务和端口
+* 调用针对port对象的操作，使用类型类创建参数和响应作为Java对象
+
+[NOTE]
+*CXF and JAX-WS Web Service Annotations* +
+ +
+生成的存根客户端代码大量使用JAX-WS注释，因此可能难以完全解密。幸运的是，您无需了解此生成的代码的详细信息即可使用它。请参阅 http://cxf.apache.org/docs/developing-a-service.html#DevelopingaService-AnnotatingtheCode[Apache CXF：开发服务]文档以获取有关所使用的各个注释的详细信息。
+
+类LatLonDate也很重要，它是定义用于将纬度/经度/日期数据传递给getSunSetRiseTime（）操作并将其返回的对象的实体类。
+
+== 创建SOAP代理类
+
+现在，构建调用存根客户端的代理类。这个类是由手工编写的; DevKit不会为您生成任何此类信息。
+
+=== 创建代理客户端类定义
+
+在此，您可以创建一个自己的类 - 例如，在包`org.tutorial.sunsetrise.client`中创建类`SunSetRiseProxyClient`。
+
+首先，添加以下导入：
+
+[source, code, linenums]
+----
+import java.net.URL;
+import org.mule.api.ConnectionException;
+import org.mule.api.ConnectionExceptionCode;
+import org.tutorial.sunsetrise.definition.SunSetRiseService;
+import org.tutorial.sunsetrise.definition.SunSetRiseServiceSoap;
+import org.tutorial.sunsetrise.definition.LatLonDate;
+----
+
+然后，将下面的代码添加到创建服务和端口实例的类定义中：
+
+[source, java, linenums]
+----
+public class SunSetRiseProxyClient {
+     
+        private SunSetRiseServiceSoap port;
+         
+        public SunSetRiseProxyClient() {}
+         
+        public void initialize() throws ConnectionException {
+            SunSetRiseService svc;
+            // pick up the WSDL from the location in the JAR       
+            URL url= SunSetRiseService.class.getClassLoader().getResource("wsdl/sunsetriseservice.wsdl");
+            svc = new SunSetRiseService(url);
+             
+            port = svc.getSunSetRiseServiceSoap();
+             
+            // Configure Authentication headers here, if the service uses them.
+            // Add parameters as needed to initialize() to pass them in from connector
+        }
+ 
+/* operations will be added here */    
+}
+----
+
+创建用于调用存根客户端上的方法的端口实例的`initialize()`方法最终将从`@Connector`类的`@Connect`方法调用。
+
+[WARNING]
+====
+*Authentication in the Proxy Client Class* +
+
+此示例不包含任何身份验证。此示例中使用的WebserviceX.net中的API不需要身份验证。它确实使用了 link:/anypoint-connector-devkit/v/3.4/implementing-connection-management[实施连接管理]中描述的连接管理注释，该注释提供了多租户支持。
+
+在支持认证的这种风格的连接器中，代理类负责提供任何与CXF存根类相关的与认证相关的逻辑。例如，代理客户端类可能需要向请求添加标头或附加URL参数，以传递任何令牌或凭证。 @Connector类应该具有保存随后传递给代理客户端实例的凭据的属性。
+
+link:/anypoint-connector-devkit/v/3.4/authentication-and-connection-management[身份验证和连接管理]中讨论了不同的身份验证方法;找到您的身份验证方法并参考示例以获取有关如何在代理客户端中添加身份验证处理的指导。
+====
+
+== 准备@Connector类
+
+主@Connector类包装上一步中创建的客户端逻辑类，并包含Mule Connector所需的注释。它定义了你的连接器在Mule中公开的操作方法。
+
+从DevKit Maven原型创建的骨架@Connector类是这项工作的起点。
+
+*sunsetriseConnector.java – as generated by DevKit*
+
+[source, code, linenums]
+----
+/**
+ * This file was automatically generated by the Mule Development Kit
+ */
+package org.tutorial.sunsetrise;
+import org.mule.api.annotations.Connector;
+import org.mule.api.annotations.Connect;
+import org.mule.api.annotations.ValidateConnection;
+import org.mule.api.annotations.ConnectionIdentifier;
+import org.mule.api.annotations.Disconnect;
+import org.mule.api.annotations.param.ConnectionKey;
+import org.mule.api.ConnectionException;
+import org.mule.api.annotations.Configurable;
+import org.mule.api.annotations.Processor;
+/**
+ * Cloud Connector
+ *
+ * @author MuleSoft, Inc.
+ */
+@Connector(name="sunsetrise", schemaVersion="1.0-SNAPSHOT")
+public class SunsetriseConnector
+{
+    /**
+     * Configurable
+     */
+    @Configurable
+    private String myProperty;
+    /**
+     * Set property
+     *
+     * @param myProperty My property
+     */
+    public void setMyProperty(String myProperty)
+    {
+        this.myProperty = myProperty;
+    }
+    /**
+     * Get property
+     */
+    public String getMyProperty()
+    {
+        return this.myProperty;
+    }
+    /**
+     * Connect
+     *
+     * @param username A username
+     * @param password A password
+     * @throws ConnectionException
+     */
+    @Connect
+    public void connect(@ConnectionKey String username, String password)
+        throws ConnectionException {
+        /**
+         * CODE FOR ESTABLISHING A CONNECTION GOES IN HERE
+         */
+    }
+    /**
+     * Disconnect
+     */
+    @Disconnect
+    public void disconnect() {
+        /**
+         * CODE FOR CLOSING A CONNECTION GOES IN HERE
+         */
+    }
+    /**
+     * Are we connected
+     */
+    @ValidateConnection
+    public boolean isConnected() {
+        return true;
+    }
+    /**
+     * Are we connected
+     */
+    @ConnectionIdentifier
+    public String connectionId() {
+        return "001";
+    }
+    /**
+     * Custom processor
+     *
+     * {@sample.xml ../../../doc/sunsetrise-connector.xml.sample sunsetrise:my-processor}
+     *
+     * @param content Content to be processed
+     * @return Some string
+     */
+    @Processor
+    public String myProcessor(String content)
+    {
+        /**
+         * MESSAGE PROCESSOR CODE GOES HERE
+         */
+        return content;
+    }
+}
+----
+
+对`@Connector`类框架进行以下更改，以将`@Connector`类链接到基础代理类并添加连接管理支持。
+
+* 导入代理客户端类定义：
++
+
+[source, java, linenums]
+----
+import org.tutorial.sunsetrise.client.SunSetRiseProxyClient;
+----
+
+* 向该类添加一个包含连接器类实例的属性：
++
+
+[source, java, linenums]
+----
+public class SunSetRiseConnector
+{
+    private SunSetRiseProxyClient client;
+     
+...
+----
+
+* 为了支持连接管理，请在类定义中添加@Connect，@Disconnect，@ValidateConnection和@ConnectionIdentifier方法以及@ConnectionKey，如下所示：
+
+[source, code, linenums]
+----
+/**
+     * Connect
+     *
+     * @param username A username
+     * @param password A password. (Ignored, for this connector.)
+     * @throws ConnectionException
+     */
+    @Connect
+    public void connect(@ConnectionKey String username, String password)
+        throws ConnectionException {
+        /**
+         * "Establish connection" here =
+         * "create proxy client and port for later method calls"
+         */
+         
+        client = new SunSetRiseProxyClient();
+        client.initialize();
+    }
+    /**
+     * Disconnect
+     */
+    @Disconnect
+    public void disconnect() {
+        client=null;
+    }
+    /**
+     * Are we connected
+     */
+    @ValidateConnection
+    public boolean isConnected() {
+        return (client!=null);
+    }
+    /**
+     * Connection Identifier
+     */
+    @ConnectionIdentifier
+    public String connectionId() {
+        return "SunSetRise-";
+    }
+----
+
+请注意，此处的@Connect方法在首次调用`connect()`时实例化并初始化代理客户端的端口，并将代理客户端实例保存在`client`中。
+
+您可能需要将客户端类添加为连接器的变量。例如：
+
+[source, code, linenums]
+----
+SunSetRiseProxyClient client = null ;
+----
+
+== 将操作添加到连接器
+
+将操作添加到连接器需要以下步骤：
+
+* 导入操作中引用的任何实体类
+* 为调用存根客户端的代理类中的操作添加一个方法
+* 在@Connector类中添加一个@Processor方法，用于调用新的代理类方法
+* 将所需的Javadoc（包括XML片段）添加到@Processor方法
+
+根据您的情况，您可能还需要向连接器添加@Configurable属性。
+
+最后，您应该添加单元测试来验证操作在各种输入和故障情况下的行为。
+
+[WARNING]
+====
+*Apply a Test-Driven Approach*
+
+当向连接器添加操作时，成功的项目通常遵循与测试驱动开发类似的周期：
+
+* 确定操作的具体要求 - 实体（POJO或具有特定内容的地图），它可以接受为投入或返回为响应，这些响应如何转换为输出，以及它可能引发的例外情况;
+* 实现覆盖其中一些要求的JUnit测试;
+* 实现足够的操作来通过这些测试，包括创建新的实体类和异常;
+* 使用填充与操作相关的Javadoc的注释更新您的@Connector类和其他代码
+
+迭代，直到您覆盖给定操作的要求中涵盖的所有场景。然后再次使用相同的循环来实现其余的操作，直到连接器功能完成。
+
+您可能会问，"When do I try my connector in Studio?"除了自动化的JUnit测试之外，随时随地手动测试每个操作也很有用也令人高兴：
+
+* 您可以在工作时看到基本的操作功能，这可以让您感受到进步
+* 您可以查看连接器在Studio用户界面中的显示方式，这些自动化单元测试无法显示给您。例如，来自Javadoc注释的文本用于填充连接器中对话框中字段的工具提示。
+
+这将有机会打磨连接器的外观，改进合理默认设置的体验等等。
+
+然而，这并没有消除测试驱动方法的价值。许多连接器开发项目已经陷入困境或产生了难以使用的连接器，因为在定义操作时未能定义测试 - 看起来（现在）更多工作，但它确实有收获 - 您得到更好的结果，更快。
+====
+
+=== 为操作添加代理类方法
+
+对于您计划在最终连接器上公开的每个操作，请向代理类中添加一个方法，以在存根客户端上调用相应的方法。存根客户端公开了WSDL中描述的所有方法;如果您不想在连接器中公开服务的所有操作，只需从代理客户端和@Connector类中省略不需要的操作即可。
+
+对于此示例，更新类SunSetRiseProxyClient以公开getSunSetRiseTime（）操作，该操作使用org.tutorial.sunsetrise.definition.LatLonDate的实例作为参数和返回值。将LatLonDate导入代理类定义。
+
+[source, code, linenums]
+----
+// add to imports
+import org.tutorial.sunsetrise.definition.LatLonDate;
+ 
+....
+ 
+ 
+// Add proxy class method for getSunSetRiseTime() operation
+ 
+        public LatLonDate getSunSetRiseTime(LatLonDate in) {
+            // one could do some pre-call validation here on the input parameter etc.
+            return port.getSunSetRiseTime(in);
+        }
+----
+
+SunSetRiseProxyClient的完整代码如下：
+
+*Show source*
+
+[source, java, linenums]
+----
+package org.tutorial.sunsetrise.client;
+import java.net.MalformedURLException;
+import java.net.URL;
+import org.mule.api.ConnectionException;
+import org.mule.api.ConnectionExceptionCode;
+import org.tutorial.sunsetrise.definition.SunSetRiseService;
+import org.tutorial.sunsetrise.definition.SunSetRiseServiceSoap;
+import org.tutorial.sunsetrise.definition.LatLonDate;
+public class SunSetRiseProxyClient {
+     
+        private SunSetRiseServiceSoap port;
+         
+        public SunSetRiseProxyClient() {}
+         
+        public void initialize(String wsdlLocation) throws ConnectionException {
+            SunSetRiseService svc;
+             
+            try {
+                svc = new SunSetRiseService(new URL(wsdlLocation));
+            } catch (MalformedURLException e) {
+                // This is an Exception used by Mule at Connection Time
+                throw new ConnectionException(ConnectionExceptionCode.UNKNOWN,
+                     "", "The URL of the WSDL location is malformed");
+            }
+             
+            port = svc.getSunSetRiseServiceSoap();
+             
+            // In here, configure Authentication headers if the service uses them.
+ 
+        }
+        public LatLonDate getSunSetRiseTime(LatLonDate in) {
+            return port.getSunSetRiseTime(in);
+        }
+         
+}
+----
+
+=== 将@Processor方法添加到@Connector类
+
+在@Connector类中，您必须：
+
+* 导入操作所需的任何实体类
+* 为在代理客户端类上调用操作方法的操作添加@Processor方法
+
+在这个例子中，导入LatLonDate类：
+
+[source, code, linenums]
+----
+import org.tutorial.sunsetrise.definition.LatLonDate;
+----
+
+然后添加getSunSetRiseTime（）方法，如下所示：
+
+[source, code, linenums]
+----
+/**
+     * Custom processor
+     *
+     * {@sample.xml ../../../doc/sunsetrise-connector.xml.sample sunsetrise-connector:get-sun-set-rise-time}
+     *
+     * @param in A LatLonDate object, with latitude, longitude, month, date, and year initialized. Defaults to the payload.
+     * @return Latitude, Longitude, Date, Sunrise and Sunset times, and a Timezone value in a LatLonDate
+     */
+    @Processor
+    public LatLonDate getSunSetRiseTime(@Optional @Default("#[payload]") LatLonDate in)
+    {
+        return client.getSunSetRiseTime(in);
+    }
+----
+
+注意事项：
+
+* 使用@Optional和@Default注释。这些指定操作应该将有效负载作为其参数，如果没有指定参数。
+
+@Processor方法的参数将作为操作参数在连接器的属性对话框中自动公开，工具提示由相应的@param注释确定。
+
+=== 为JavaDoc添加XML配置示例
+
+DevKit强制执行您的方法的JavaDoc文档。您必须添加的内容之一是每个连接器方法所需输入的XML示例。 link:/anypoint-connector-devkit/v/3.4/creating-devkit-connector-documentation[学到更多]有关DevKit的JavaDoc注释。
+
+在@Connector类源代码中，以下注释文本将该方法链接到其所需的XML示例：
+
+[source, code, linenums]
+----
+* {@sample.xml ../../../doc/sunsetrise-connector.xml.sample sunsetrise-connector:get-sun-set-rise-time}
+----
+
+您将在DevKit生成的项目的doc文件夹中看到示例代码片段文件。
+
+DevKit创建了这个文件，但是您需要为每个操作使用示例Mule XML配置来填充它。在本例中，将以下内容添加到文件中以记录`getSunSetRiseTime()`操作：
+
+[source, xml, linenums]
+----
+<!-- BEGIN_INCLUDE(sunsetrise-connector:get-sun-set-rise-time) -->
+<sunsetrise:get-sun-set-rise-time latitude="40.4" longitude="32.25" month="7" day="12" year="2013" />
+<!-- END_INCLUDE(sunsetrise-connector:get-sun-set-rise-time) -->
+----
+
+当您构建JavaDoc时，上面的示例被插入到文档中。
+
+有关为连接器填写JavaDoc的完整信息，请参阅 link:/anypoint-connector-devkit/v/3.4/creating-devkit-connector-documentation[创建DevKit连接器文档]。
+
+== 整合在一起
+
+完成至少以下任务后，即可构建并测试连接器：
+
+* 使用wsdl2java和maven创建存根客户端
+* 使用初始化方法和至少一个操作创建代理客户端类
+* 在调用操作的@Connector类中添加了@Processor方法
+* 提供所需的文档和单元测试
+
+请参阅 link:/anypoint-connector-devkit/v/3.4/installing-and-testing-your-connector[安装和测试连接器]，了解构建连接器并将其导入Studio的步骤。
+
+完成此过程后，您将在调色板中看到SunSetRise连接器。
+
+您可以构建一个简单的流程来演示连接器，如下所示：
+
+[source,xml, linenums]
+----
+<mule xmlns:sunsetrise="http://www.mulesoft.org/schema/mule/sunsetrise" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+    http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/sunsetrise http://www.mulesoft.org/schema/mule/sunsetrise/1.0-SNAPSHOT/mule-sunsetrise.xsd">
+    <sunsetrise:config name="SunSetRise_Service" username="foo" doc:name="SunSetRise Service">
+        <sunsetrise:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+        <reconnect/>
+    </sunsetrise:config>
+    <flow name="SunRiseFlowFlow1" doc:name="SunRiseFlowFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP" path="demoflow"/>
+        <sunsetrise:get-sun-set-rise-time config-ref="SunSetRise_Service" doc:name="SunSetRise Service">
+            <sunsetrise:in latitude="15" longitude="0" timeZone="0" day="12" month="12" year="2013"/>
+        </sunsetrise:get-sun-set-rise-time>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+        <http:response-builder status="200" contentType="application/json" doc:name="HTTP Response Builder">
+            <http:cache-control noCache="true" noStore="true"/>
+        </http:response-builder>
+    </flow>
+</mule>
+----
+
+
+== 下一步
+
+一旦你完成了上述过程，你就有了一个可用的SOAP CXF连接器。您可以：
+
+* 使用相同的过程添加更多操作
+* 返回到 link:/anypoint-connector-devkit/v/3.4/devkit-shortcut-to-success[DevKit成功的捷径]

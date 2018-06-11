@@ -1,0 +1,129 @@
+=  DevKit迁移工具
+:keywords: mule, sdk, devkit, migration, migrate, connector
+
+DevKit迁移工具（DMT）可帮助您从使用在Mule 3.x上运行的DevKit构建的Connector迁移到与Mule 4 SDK兼容的项目。
+
+Anypoint Connector DevKit与Mule 4不兼容。如果您为Mule 3开发了自己的DevKit项目，则需要将其迁移到新SDK以便在Mule 4应用程序中使用它。
+
+== 兼容性规则
+
+迁移连接器时，请注意兼容性规则：
+
+* 迁移仅适用于最新的DevKit版本（3.8.0或更高版本）。
+* 如果在迁移过程中发生任何问题，那么不考虑最新验证或使用弃用组件或注释的连接器。
+*  Mule 4中不存在一些概念。此工具不会迁移受不受支持组件影响的作品，并且可能会迁移不遵循MuleSoft在SDK中强制执行的最佳做法的代码。
+*  Mule 4中的一些功能非常不同，例如DataSense模型。
+
+不会迁移的功能包括：
+
+  * Inbound/outbound message properties
+  * 直接操纵Mule消息/事件的能力
+  * 能够更改或查询变量
+
+迁移之后，您可能需要更改模块中的代码或行为，以获取不再支持的功能。
+
+== 迁移DevKit连接器
+
+DMT迁移你的项目，表现沉重
+为你解除。但是，您必须查看并调整迁移结果。
+
+*Manual work is required to make your project work properly*。
+
+DMT为您执行这些任务：
+
+* 生成与新的SDK扩展模型兼容的新源代码，该扩展模型将当前连接器代码包装为任何其他Java库
+* 将代码责任委托给已经过测试的连接器代码
+* 在生成的代码中使用内嵌注释标记错误，并指出您需要解释下一步解决错误的文档
+
+== 运行DMT
+
+. 打开连接器的`pom.xml`文件并找到`parent`工件：
+
++
+[source, xml, linenums]
+----
+<parent>
+  <groupId>org.mule.tools.devkit</groupId>
+  <artifactId>mule-devkit-parent</artifactId>
+  <version>3.9.4</version>
+</parent>
+----
+
+. 更改`artifactId`和`version`的值：
+
++
+[source, xml, linenums]
+----
+<parent>
+  <groupId>org.mule.tools.dmt</groupId>
+  <artifactId>mule-dmt</artifactId>
+  <version>1.0.0</version>
+</parent>
+----
+
+. 现在`parent`已更改，请从IDE或命令行构建连接器：
+
++
+----
+mvn clean package
+----
+
++
+测试类不会运行，迁移或复制，因为它们不会使用SDK进行编译。如果你
+要在迁移的项目中保留测试类，请使用属性`-DexcludeTests=false`构建连接器。
+
++
+----
+mvn clean package -DexcludeTests=false
+----
+
+一旦该过程结束，将显示一条`Build Success`消息。
+生成的扩展项目位于`_{rootdir}/target/generated-sources/extension_`文件夹下。
+
+image::dmt.png[“文件夹结构”]
+
+== 支持的组件
+
+DevKit连接器的以下元素将移植到新的扩展表示中。
+
+* 处理器
++
+所有的处理器都迁移到操作，全部在同一个类中。
+处理器的参数应该反映在操作参数中
+也应该在旧的连接器中存在配置或注入字段的元素
+被设置为参数传入。
++
+请参阅 link:operations[SDK操作文档参考]了解更多关于扩展操作的信息。
+
+* 来源
++
+轮询和触发源都会迁移到新的Source类。
++
+默认情况下，源代码编译并运行，但注释添加到生成的源类中，这样可以提高最近迁移的连接器的可用性。
++
+请参阅： link:sources[SDK源文档参考]了解有关扩展程序来源的更多信息。
+
+* 连接策略
++
+@Configuration和@ConnectionManagement策略均被迁移。
++
+请参阅： link:connections[SDK中的连接]了解有关连接的更多信息。
+
+* 配置
++
+@Configuration策略被迁移到一个CachedConnectionProvider，它为所有操作提供一个连接实例，直到该连接停止。
+
+* 连接管理
++
+@ConnectionManagement策略被迁移到PoolingConnectionProvider，所以生成的
+连接汇集。连接缓存被维护，以便在将来的请求需要时可以重用它们。
++
+如果@ConnectionManagement连接方法标记为"Single Instance,"，那么它将迁移到CachedConnectionProvider，因为将迁移@Configuration策略。
+
+这些元素也受到支持：
+
+*  link:object-streaming[分页操作]
+*  link:metadata[元数据]（元数据对象不会被迁移，需要手动迁移到元数据类型）
+*  link:connections[OAuth连接策略]
+*  link:parameter-layout[显示注释]
+*  link:errors[OnException处理程序]

@@ -1,0 +1,85 @@
+=  HTTP回调
+
+许多公共API使用回调来通知API消费者特定的事件。例如，在电话Twilio对指定的URL执行HTTP请求以传递有关呼叫状态的信息之后。
+
+DevKit提供了一种特殊的数据类型，以便在收到HTTP回调时调用Mule流。
+
+==  HTTPCallback接口
+
+要返回状态，DevKit会为您的连接器创建一个HTTP入站端点：
+
+[source, java, linenums]
+----
+import org.mule.api.annotations.Connector;
+import org.mule.api.annotations.Processor;
+import org.mule.api.callback.HttpCallback;
+@Connector(name = "callback")
+public class HttpCallbackTest
+{
+   @Processor public void doA(HttpCallback onEventX, HttpCallback onEventY)
+   {
+      String urlEventX = onEventX.getUrl();
+      String urlEventY = onEventY.getUrl();
+----
+
+`HTTPCallback`接口通过单一方法获取此入站端点。当收到回调时，enpdoint引用Mule配置文件中的另一个流。
+
+请注意，引用的流没有入站端点：
+
+[source, xml, linenums]
+----
+<flow name="doA">
+   <callback:do-a on-event-x-flow-ref="flowToExecuteOnEventX"
+             do-a on-event-x-flow-ref="flowToExecuteOnEventX"/>
+</flow>
+ 
+<flow name="flowToExecuteOnEventX">
+   <component class="org.mule.devkit.it.ComponentX"/>
+</flow>
+ 
+<flow name="flowToExecuteOnEventY">
+   <component class="org.mule.devkit.it.ComponentY"/>
+</flow>
+----
+
+== 高级配置
+
+下表列出了您可以在Mule配置文件中使用的高级`HTTPCallback`属性：
+
+[%header%autowidth.spread]
+|===
+|属性名称 |描述
+| `localPort`  |用于创建HTTP入站端点。缺省为环境变量`http.port`
+| `remotePort`  |公共端口用于构建要发送到外部系统的公用URL。缺省为环境变量`http.port`
+| `domain`  |用于构建发送到外部系统的公用URL。缺省为环境变量`fullDomain`
+| `async`  |取决于是否应该异步执行回调流，可能的值是`true`或`false`。默认为`true`
+|===
+
+以下示例说明如何使用可选的流入`HTTPCallback`属性。
+
+[source, xml, linenums]
+----
+<callback:config>
+   <callback:http-callback-config domain="www.mydomain.com"
+                localPort="8080" remotePort="80" async="false" />
+</callback:config>
+----
+
+== 它是如何工作的
+
+在幕后，DevKit创建了一个包含消息处理器的Mule流程，该消息处理器调用所需的流程。默认情况下，DevKit将此处理器封装在异步消息处理器链中。 （您可以使用上表中所述的`async`属性覆盖此行为。）
+
+DevKit使用作为主机的`localhost`和`http.port`环境变量或`localPort`的值作为端口来构建HTTP入站端点的URL。 URL的路径是一个随机字符串。
+
+传递到外部系统的URL与HTTP入站端点的URL相同，只是主机由`domain`设置（或其默认值）替换，并且端口由{{1 }}设置（或其默认值）。
+
+== 另请参阅
+
+阅读更多关于可以为连接器添加功能的其他高级主题：
+
+*  link:/anypoint-connector-devkit/v/3.4/integrating-connectors-with-the-mule-lifecycle[将连接器与Mule生命周期集成]
+*  link:/anypoint-connector-devkit/v/3.4/handling-data-types-for-configurable-properties[处理可配置属性的数据类型]
+*  link:/anypoint-connector-devkit/v/3.4/architectural-considerations-with-connectors-and-the-mule-container[DevKit和Mule容器的建筑考虑]
+*  link:/anypoint-connector-devkit/v/3.4/injecting-mule-managers-into-anypoint-connectors[将Mule管理器注入Anypoint连接器]
+*  link:/anypoint-connector-devkit/v/3.4/supporting-datasense-with-dynamic-data-models[支持DataSense与动态数据模型]
+*  link:/anypoint-connector-devkit/v/3.4/implementing-datasense-query-language-support[实施DataSense查询语言支持]

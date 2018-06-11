@@ -1,0 +1,144 @@
+=  HTTP请求配置参考
+:keywords: anypoint studio, esb, connectors, http, https, http headers, query parameters, rest, raml
+
+HTTP请求操作的典型用法是使用默认的GET方法使用外部HTTP服务。默认情况下，GET和OPTIONS方法不会在请求中发送有效负载; HTTP请求的主体是空的。其他方法将消息负载作为请求的主体发送。
+
+发送请求后，连接器接收到响应并将其传递给流中的下一个元素。
+
+请求操作所需的最小设置是一个主机URI，它可以包含一个路径。您可以在请求操作中配置以下类型的身份验证：
+
+* 基本
+* 的OAuth
+*  NT LAN管理器（NTLM）
+* 文摘
+
+Mule消息和HTTP请求之间的映射== 
+
+默认情况下，HTTP请求操作将Mule消息有效内容作为HTTP请求主体发送，但您可以使用DataWeave脚本或表达式对其进行自定义。
+
+
+== 添加自定义参数
+
+除了请求的主体之外，您还可以配置：
+
+* 集管
+* 查询参数
+*  URI参数
+* 包含多个标题或参数的地图
+
+默认情况下，HTTP连接器将HTTP请求标题部分大小（请求行+标题）限制为最大8191字节。要增加允许的标题部分中的字节数，请在启动Mule运行时时在`wrapper.conf`文件或命令行中设置`mule.http.headerSectionSize`，如下所示：
+
+`./mule -M-Dmule.http.headerSectionSize=16000`
+
+=== 集管
+
+选择Headers将标题添加到请求。例如，添加标题名称HeaderName1和HeaderName2，添加标题值HeaderValue1和HeaderValue2。您可以使用DataWeave表达式，例如`#[{'HeaderName1' : 'HeaderValue1', 'HeaderName2' : 'HeaderValue2'}]`。
+
+
+=== 查询参数
+
+在常规>请求>查询参数中，单击+以向请求添加参数。输入参数的名称和值，或使用DataWeave表达式来定义名称和值。
+
+===  URI参数
+
+如果要在请求的路径中使用占位符（例如`/customer/{customerId}`），请配置一个URI参数。要配置URI参数，在常规中，在路径中输入大括号中的占位符。选择URI参数，单击+，然后输入名称和值。例如，输入*customerId*和*20*作为名称和值。
+
+image::http-mule4-uriparams.png[customerId 20]
+
+或者，您可以在名称和值字段中使用DataWeave表达式。
+
+当应用程序运行时，它将执行对`+http://www.example.com/customer/20+`的GET请求。
+
+=== 动态参数和标题。
+
+如果在设计时，您不知道请求可能需要多少个查询参数或标头，则可以使用DataWeave和一个变量映射来为请求动态分配参数或标头。
+
+例如，您创建一个名为`customMap`的Map变量，并使用DataWeave为变量分配值映射，然后使用该变量设置请求的标题：
+
+`#[customMap ++ {'HeaderName1' : 'HeaderValue1'}]`
+
+要动态设置URI参数，请使用返回参数映射的DataWeave表达式。例如：
+
+* 将路径设置为`/test/{p1}/{p2}`
+*  URI参数名称：p1和p2
+*  URI参数值：`#[customMap]`
+* 在请求之前，假设p1已经设置：`#[customMap ++ {'p2': 'customer'}]`
+
+连接器为每个请求解析参数，按照请求中指定的顺序在当前消息的上下文中评估DataWeave表达式。如果多次定义相同的参数，则使用最新的值。
+
+=== 在POST请求中发送表单参数
+
+要在POST请求中发送参数，请在常规>请求中选择POST方法。
+在Body中，将Mule消息的有效载荷构造为带`application/x-www-form-urlencoded`的名称和要发送的参数的值。例如：
+
+`#[output application/x-www-form-urlencoded --- {'key1':'value1', 'key2':'value2'}]`
+
+POST请求会发送到您使用`Content-Type: application/x-www-form-urlencoded`指定的主机位置，并且正文为"`key1=value1&key2=value2`"。
+
+HTTP响应和Mule消息之间的映射== 
+
+HTTP响应映射到Mule消息，类似于HTTP请求映射到Mule消息的方式。以下元素不适用于HTTP响应：
+
+* 查询参数
+*  URI参数
+* 与HTTP请求URI相关的入站属性
+
+另外，HTTP请求操作在接收到响应时将以下属性添加到Mule消息：+
+
+*  `attributes.statusCode`：HTTP响应的状态码
+*  `attributes.reasonPhrase`：HTTP响应的原因词组
+
+== 循环请求
+
+请求操作使用循环法DNS连接到配置的主机。 Mule Runtime可解析与指定主机关联的所有IP地址，并通过在所有返回的IP上分发请求来执行负载平衡。
+
+当连接到需要验证的资源时，外部服务需要在服务主机下的IP地址之间复制会话信息。否则，您的请求可能因未经授权而被拒绝。
+
+当您的外部资源不处理粘性会话时，您需要在启动Mule运行时时将服务主机名添加到`mule.http.disableRoundRobin`系统属性：
+
+[source,Command,linenums]
+----
+./mule -M-Dmule.http.disableRoundRobin=serverhostname.com
+----
+
+当以这种方式配置时，请求在连接到配置的主机时不使用轮循DNS。
+
+==  HTTP响应验证
+
+当HTTP请求操作接收到HTTP响应时，它会通过其状态码验证响应。默认情况下，状态码高于或等于400时会引发错误。因此，如果服务器返回404（资源未找到）或500（内部服务器错误），则会发生故障并触发错误处理。
+
+您可以通过配置General> Response> Response Validator来更改有效的HTTP响应代码集。
+
+* 无：不进行验证。
+* 表达式：根据您构建的DataWeave表达式进行验证。
+* 成功状态代码验证器：在此元素中定义的所有状态代码均被视为有效;该请求会为其他任何状态码引发错误。
+* 失败状态代码验证器：此元素中定义的所有状态代码均被视为无效，并引发错误;该请求被认为对任何其他状态码都有效。
+
+
+要设置哪些状态代码可接受为成功响应，请在General> Response> Response Validator中选择Success Status Code Validator。在值中，输入可接受的状态代码列表，用逗号分隔。例如：*200,201*。如果HTTP响应具有任何其他状态值，则会失败并引发错误。
+
+一系列失败状态码由两个ASCII完全停止字符`..`定义。 500-599之间的任何值都被认为是失败并产生错误。如果HTTP响应具有任何其他状态值，则认为它是成功的。
+
+== 配置目标
+
+默认情况下，请求的主体来自传入Mule消息的`\#[payload]`，响应作为输出Mule消息的`#[payload]`向前发送。您可以通过General> Request> Body和General> Output> Target Variable属性更改此默认行为。使用此属性可为输出数据指定除负载之外的位置，如变量。
+
+== 配置请求流
+
+默认情况下，如果有效负载的类型是流，则使用流发送请求。您可以更改此默认行为。使用以下值之一选择“常规”>“请求”>“请求流式传输”：
+
+*  *AUTO*（默认）：行为取决于有效载荷类型：如果有效载荷是InputStream，则启用流式传输;否则它被禁用。
+*  *ALWAYS*：无论有效载荷类型如何，始终启用流式传输。
+*  *NEVER*：即使有效载荷是流，也不要流式传输。
+
+流式传输时，请求不包含`Content-Length`标题。它包含`Transfer-Encoding`头并以块形式发送主体，直到流被完全消耗。
+
+== 配置客户端流媒体
+
+在Mule Enterprise Edition中，默认情况下启用HTTP客户端流式传输。您可以设置以下属性来管理流媒体：
+
+*  responseBufferSize
+*  mule.http.disableResponseStreaming，一个系统属性
+
+HTTP请求都是非阻塞的。
+

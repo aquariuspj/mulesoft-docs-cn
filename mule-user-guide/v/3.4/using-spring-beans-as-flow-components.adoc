@@ -1,0 +1,133 @@
+= 使用Spring Bean作为流程组件
+:keywords: anypoint studio, studio, mule esb, spring, beans
+
+*  <<Defining the Beans>>
+*  <<Configuring the Beans>>
+*  <<Configuring the Component>>
+*  <<Using JNDI and EJB Session Beans>>
+
+您可以从Spring bean中构建组件，这些组件可以在单独的Spring上下文文件中定义，也可以在Mule ESB配置文件中定义。本页提供了一个使用两个bean的示例;一个RestaurantWaiter bean，它接收并记录订单，然后将它们传递给接收订单的KitchenService bean。
+
+== 定义Bean
+
+Bean的Java代码如下所示：
+
+[source, java, linenums]
+----
+public class RestaurantWaiter
+{
+    private KitchenService kitchen = null;
+ 
+    public void takeOrder(Order order) {
+    //log order
+ 
+    //notify kitchen
+    this.kitchen.submitOrder(order);
+     }
+ 
+    public void setKitchenService(KitchenService kitchen) {
+        this.kitchen = kitchen;
+    }
+ 
+    public KitchenService getKitchenService() {
+        return kitchen;
+    }
+}
+----
+
+== 配置Bean
+
+首先，在Spring应用程序上下文中配置bean：
+
+[source,xml, linenums]
+----
+<beans>
+  <bean id="restaurantWaiter" scope="prototype" class="com.foo.RestaurantWaiter">
+    <property name="kitchenService">
+      <ref local="kitchenService"/>
+    </property>
+  </bean>
+ 
+  <bean id="kitchenService" class="com.foo.KitchenService"/>
+</beans>
+----
+
+我们现在有一个名为restaurantWaiter和kitchenService的bean，将由Spring创建。注意resturantWaiter bean作用域被设置为原型（默认情况下，Spring中的所有bean都是单例，除非另有说明）。如果你想要集合组件实例，这非常重要 - 告诉Spring不要创建一个singleton，这样可以确保每个池实例都是唯一的实例。如果你想要组件的单例实例，你可以使用Spring的默认单例作用域。
+
+如果你想在你的Mule配置文件中配置bean，而不是在一个单独的Spring上下文文件中，你可以像这样指定它们：
+
+[source, xml, linenums]
+----
+xmlns:spring="http://www.springframework.org/schema/beans"
+...
+<spring:beans>
+    <spring:bean id="restaurantWaiter" scope="prototype" class="com.foo.RestaurantWaiter">
+        <spring:property name="kitchenService">
+            <spring:ref local="kitchenService"/>
+        </spring:property>
+    </spring:bean>
+    <spring:bean id="kitchenService" class="com.foo.KitchenService"/>
+</spring:beans>
+----
+
+== 配置组件
+
+配置完bean后，您可以在组件中创建对restaurantWaiter的引用。例如，以下配置会创建一个组件，使restaurantWaiter能够从VM接收事件。这个例子假定bean是在一个单独的文件中，所以如果你在Mule配置文件中配置它们，你不需要`<spring:import>`标签。
+
+请注意`conf`文件夹在`src/main/app`文件夹中默认不存在。在根据以下示例将`spring:import resource`指向文件路径之前，请创建`conf`文件夹，然后将`xml`文件移动到文件夹中。
+
+[source, xml, linenums]
+----
+xmlns:vm="http://www.mulesource.org/schema/mule/vm/2.0"
+xmlns:spring="http://www.springframework.org/schema/beans"
+...
+<spring:beans>
+    <spring:import resource="classpath:src/main/app/conf/applicationContext.xml"/>
+</spring:beans>
+...
+ 
+<flow name="Restaurant Waiter">
+    <vm:inbound-endpoint path="order.queue"/>
+    <component>
+      <spring-object bean="restaurantWaiter"/>
+    <component>
+</flow>
+----
+
+当Mule服务器启动时，每个<flow>元素都会被加载，并且您在`<spring-object>`标签中指定的bean被创建。在`vm://orders.queue`上接收到事件时，Order对象将传递给`RestaurantWaiter`上的`takeOrder()`方法，然后记录该订单并将其传递给`KitchenService`。
+
+有关组件配置的更多信息，请参阅 link:/mule-user-guide/v/3.7/configuring-components[配置组件]。有关用于配置组件的元素的更多信息，请参阅 link:/mule-user-guide/v/3.6/component-configuration-reference[组件配置参考]。
+
+== 使用JNDI和EJB会话Bean
+
+如果您使用通用的`<bean>`元素在Spring中定义JNDI和EJB会话bean，则可以像在Mule中的其他任何Spring bean一样配置它们。但是，如果您使用`<jee>`元素在Spring（`<jee:jndi-lookup>`，`<jee:local-slsb>`和`<jee:remote-slsb>`）中定义它们，则必须在您的Mule中包含jee名称空间和模式位置配置文件如下：
+
+[source, xml, linenums]
+----
+xmlns:jee="http://www.springframework.org/schema/jee"
+       xsi:schemaLocation="
+...
+http://www.springframework.org/schema/jee http://www.springframework.org/schema/jee/spring-jee-2.5.xsd"
+...
+<jee:remote-slsb id="creditAgencyEJB" jndi-name="local/CreditAgency"
+business-interface="org.mule.example.loanbroker.credit.CreditAgency"> 
+    <jee:environment>
+      java.naming.factory.initial=org.openejb.client.LocalInitialContextFactory
+      java.naming.provider.url=rmi://localhost:1099 openejb.base=${openejb.base}
+      openejb.configuration=${openejb.configuration} logging.conf=${logging.conf}
+      openejb.nobanner=${openejb.nobanner}
+    </jee:environment>
+</jee:remote-slsb>
+...
+<flow name="CreditAgencyService">
+    <mule:inbound>
+        <mule:inbound-endpoint ref="CreditAgency" />
+    </mule:inbound>
+    <component>
+        <mule:spring-object bean="creditAgencyEJB" />
+    </component>
+</flow>
+...
+----
+
+有关更多信息，请参阅Spring站点上的 http://static.springframework.org/spring/docs/2.5.x/reference/ejb.html[企业Java Bean（EJB）集成]和 http://static.springframework.org/spring/docs/2.5.x/reference/xsd-config.html#xsd-config-body-schemas-jee[jee模式参考]。

@@ -1,0 +1,97 @@
+= 关于类加载隔离
+:keywords: mule, sdk, classloading, isolation
+
+Mule 4类加载模式将运行时，应用程序和模块彼此隔离。每个指定要作为其API的一部分导出的包（而不是类），使这些特定的包可见。
+
+骡3班加载问题：
+
+* 模块之间没有隔离。
+* 模块不是与Mule运行时隔离的。
+* 模块不是与Mule应用程序隔离的。
+
+在Mule 3中，使用某个库的模块可能与使用相同库的另一个版本的其他模块，应用程序或运行时发生冲突。这种冲突导致类错误加载错误消息，如`ClassNotFoundException`或`NoSuchMethodException`等难以排除故障的错误消息。
+
+== 模块类加载隔离
+
+类加载自动按包而不是按类过滤，这意味着模块需要指定要导出哪些包并使其对Mule应用可见。
+
+要确定要导出哪些软件包，SDK会反省每个配置，连接以及组件返回和输入类型以获取其软件包。因此，您需要确保您不想导出的任何类都保留在导出的包之外。导出的类不应与不想导出的类共享一个包。
+
+建议的软件包层次结构（在MuleSoft模块内部使用）：
+
+----
+org.mule.module
+\--> .api.*
+\--> .internal.*
+----
+
+*  `.api.*`包含Mule应用程序要导出和看到的所有类：返回类型，子类型，输入类型和连接接口。
+*  `.internal.*`包含用于模块特定行为的所有类：注释类，`Connection`和`Operation`实现以及内部类。
+
+知道导出的包和返回类型=== 。
+
+MuleSoft建议*all*导出的类属于模块。
+
+为避免使模块与其他模块，应用程序依赖性甚至运行时不兼容的库冲突，建议您高度建议：
+
+*  _永不返回或接收来自属于模块正在使用的库的类的对象。
+
+考虑下一节中的情景。
+
+==== 第一种情况：导出相同的包
+
+这个场景包括两个完全不同的操作模块。两者都使用相同的库（GSON）来解析JSON和_return_ `JsonObject`类的实例。其中一个使用GSON版本`1.1`，另一个使用GSON版本`2.3`。 `JsonObject`类在两个版本中位于相同的包中，但每个版本的不同实现会使这些类不兼容。
+
+此示例将`JsonObject`类公开为操作的返回类型：
+
+
+第一模块操作
+[source, java, linenums]
+----
+public JsonObject getEmployee(@Connection EmployeesServiceConnection connection, String id) {
+  return new JsonObject(connection.getById(id));
+}
+----
+
+第二模块操作
+[source, java, linenums]
+----
+public JsonObject getAllProducts(@Connection ProductsServiceConnection connection) {
+  return new JsonObject(connection.getProdsJson());
+}
+----
+
+当您部署Mule应用并尝试使用两个导出相同包的模块时，Mule会失败，因为两个模块无法导出相同的包。
+
+==== 第二种情况：在不同版本中返回相同类的两个实例
+
+基于前面的例子，假设这些操作不会导出_GSON_包。相反，他们返回一个`java.lang.Object`。
+
+第一模块操作
+[source, java, linenums]
+----
+public Object getEmployee() {
+  // Here JsonObject is from GSON 1.1
+  return new JsonObject();
+}
+----
+
+第二模块操作
+[source, java, linenums]
+----
+public Object getAllProducts() {
+  // Here JsonObject is from GSON 2.3
+  return new JsonObject();
+}
+----
+
+如果您在应用程序中使用这两个模块，则只会为应用程序加载两个版本中的一个，因为这两个类具有完全相同的完全限定名称。因此，完全限定名称将发生冲突，并且需要包的_unloaded_版​​本的模块的行为会有所不同，并且容易出现错误，例如`ClassCastException`或`NoSuchMethodException`。
+
+===  @Export注释
+
+`@Export`注释可用于极端角落案例或复杂案例，其中模块需要导出不会由SDK自动导出的类。
+
+`@Export`注释接收要导出的类的数组。
+
+[WARNING]
+如果不导出与导出的类相同的包中的所有类，则不能导出该类。

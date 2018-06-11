@@ -1,0 +1,250 @@
+= 实施DataSense查询语言支持
+
+许多SaaS应用程序要么执行正确的查询语言（如SOQL，Salesforce对象查询语言），要么通过与查询相对应的API来选择资源。 DataSense查询语言（DSQL）提供统一的查询语言，可用于使用兼容的Anypoint连接器查询任何应用程序中的数据。
+
+
+
+== 假设
+
+* 您熟悉用户级别的Anypoint连接器 link:/mule-user-guide/v/3.4/mule-datasense[Mule DataSense，]和 link:/anypoint-studio/v/5/datasense-query-language[DataSense查询语言]。
+* 您有使用 link:/anypoint-connector-devkit/v/3.4[Anypoint DevKit]实现基本连接器的经验。
+* 您了解访问者模式对于DSQL到本机查询语言翻译的基本工作原理。阅读更多：
+**  http://java.dzone.com/articles/design-patterns-visitor[发现设计模式：访问者模式]
+
+
+==  DSQL实施概念
+
+考虑 link:/anypoint-studio/v/5/datasense-query-language[DataSense查询语言]文档中的DSQL查询：
+
+[source, code, linenums]
+----
+SELECT AccountID,FirstName,Lastname FROM Contact WHERE (AccountID > '500' AND IsDeleted = false) OR Employee_Current = false ORDER BY LastName OFFSET 250 LIMIT 1000
+----
+
+Mule使用内部查询模型来表示组成查询的不同语义元素：
+
+[%header,cols="34,33,33"]
+|===
+| {对象{1}}示例 |评论
+|类型 | `Contact`  |应用程序公开的对象。这总是一个类型的列表。
+|选定字段 | `AccountID, FirstName, LastName`  |字段列表。每个字段表示元数据 - 字段名称和数据类型。
+|筛选表达式a |
+----
+WHERE 
+
+ (AccountID > '500'
+
+ AND IsDeleted = false)
+
+OR
+
+Employee_Current
+
+= false
+----
+|在对象类型的字段上定义的布尔条件。
+|排序顺序字段列表a |
+----
+LastName
+----
+|，如... `ORDER BY LastName`
+|抵消|
+----
+OFFSET 250
+----
+|要从结果集的开头跳过的项目数。用于分页。
+|限制|
+----
+LIMIT 100
+----
+|要包含在结果集中的项目数量。用于分页。
+|===
+
+同样，过滤器表达式在内部由一组字段名称，数据文字，分隔符，用于比较和分组的操作符等表示。
+
+在构建将查询模型转换为查询语言的新本地查询语言转换程序时，会出现更多关于查询模型以及从代码访问它的详细信息。
+
+[WARNING]
+本讨论假定目标应用程序支持本地查询语言。如果没有本地查询语言，那么仍然有技术来实现DSQL支持。 mailto：connector_team@mulesoft.com [联系MuleSoft]以获得指导，如果您有这样的要求。
+
+== 实现原生查询语言翻译器
+
+要将DSQL查询转换为给定连接器的本地查询语言，该过程如下所示：
+
+* 解析DSQL并构建一个表示类型，字段，过滤器，顺序，偏移量和限制的查询模型。
+* 遍历查询模型元素并生成所需的本地查询语言语法。
+
+要为连接器实现DSQL支持，请将目标查询语言的语法映射到这些结构。表示通过连接器中的一组类实现的映射，这要感谢包`org.mule.common.query`中实现的许多Visitor类。
+
+=== 访问者类和查询语言
+
+一组访问者类实现了查询模型元素和特定查询语言语法之间的映射 - 实现 http://java.dzone.com/articles/design-patterns-visitor[访客设计模式]的类，遍历查询模型，并以所需的本地查询语言生成相应的语句。
+
+包`org.mule.common.query`定义代表DSQL查询语言不同部分的Visitor接口，然后提供实现DSQL语法的那些访问者的默认实现。
+
+[%header,cols="34,33,33"]
+|===
+|访问者接口 |实现类 |实现的语法
+| QueryVisitor | https://github.com/mulesoft/mule-common/tree/3.x/src/main/java/org/mule/common/query/DefaultQueryVisitor.java [ DefaultQueryVisitor]
+
+https://github.com/mulesoft/mule-common/blob/c66595981f02fbed7b357d93010c84a0cacf704e/src/main/java/org/mule/common/query/DsqlQueryVisitor.java[DSQLQueryVisitor]
+
+ 为|
+*  "Beginning of an expression" +
+（即过滤器表达式之前的词"WHERE"）
+* 字段列表
+* 类型
+* 限制和偏移子句
+* 优先运算符
+* 按字段排序
+* 比较
+* 布尔运算符
+
+| OperatorVisitor a |
+https://github.com/mulesoft/mule-common/blob/c66595981f02fbed7b357d93010c84a0cacf704e/src/main/java/org/mule/common/query/DefaultOperatorVisitor.java[DefaultOperatorVisitor]
+
+ 为|
+* 具体的比较运算符+
+ （等于，不等于，大于/小于，LIKE等）
+
+|===
+
+要实现对新查询语言的支持，请定义实现QueryVisitor和OperatorVisitor的类，并使用它们从查询模型构建原生查询语言语句。你可以调用你的新类MyAppQueryVisitor和MyAppOperatorVisitor。以下各节介绍如何构建它们。
+
+=== 实施操作员访问者
+
+创建一个新的操作员访问器类可以让您为原生查询语言定义比较操作符语法（包括LIKE）。
+
+在您的连接器中定义一个新类，它扩展了https://github.com/mulesoft/mule-common/blob/c66595981f02fbed7b357d93010c84a0cacf704e/src/main/java/org/mule/common/query/DefaultOperatorVisitor.java[DefaultOperatorVisitor]，该类实现所有DSQL比较运算符：
+
+*Class DefaultOperatorVisitor*
+
+[source, java, linenums]
+----
+public class DefaultOperatorVisitor implements OperatorVisitor {
+    public static final String LIKE = " like ";
+    public static final String GREATER_OR_EQUALS = " >= ";
+    public static final String NOT_EQUALS = " <> ";
+    public static final String EQUALS = " = ";
+    public static final String LESS_OR_EQUALS = " <= ";
+    public static final String GREATER = " > ";
+    public static final String LESS = " < ";
+    @Override public String lessOperator() {
+        return LESS;
+    }
+    @Override public String greaterOperator() {
+        return GREATER;
+    }
+    @Override public String lessOrEqualsOperator() {
+        return LESS_OR_EQUALS;
+    }
+    @Override public String equalsOperator() {
+        return EQUALS;
+    }
+    @Override public String notEqualsOperator() {
+        return NOT_EQUALS;
+    }
+    @Override public String greaterOrEqualsOperator() {
+        return GREATER_OR_EQUALS;
+    }
+    @Override public String likeOperator() {
+        return LIKE;
+    }
+}
+----
+
+大多数语言大多会使用类似的操作符要使用您自己的语言实现操作，最短路径是创建一个扩展DefaultOperatorVisitor的新类，然后覆盖返回语言与DSQL不同的操作符的方法。
+
+例如，在Salesforce.com连接器中，类`SfdcOperatorVisitor`覆盖`notEqualsOperator():`
+
+[source, java, linenums]
+----
+import org.mule.common.query.DefaultOperatorVisitor;
+ 
+ 
+public class SfdcOperatorVisitor extends DefaultOperatorVisitor {
+ @Override public java.lang.String notEqualsOperator() {
+        return " != ";
+    }
+}
+----
+
+由于其他操作符在SOQL和DSQL中相同，因此没有其他更改。
+
+=== 实现新的查询访问者
+
+创建一个新的查询访问者类可以让你定义查询语法，用你的本地查询语言表达核心查询模型结构。
+
+. 在您的连接器中定义一个扩展现有QueryVisitor类之一的新类。
++
+扩展https://github.com/mulesoft/mule-common/blob/master/src/main/java/org/mule/common/query/DsqlQueryVisitor.java[DsqlQueryVisitor];通常最简单。至少，扩展https://github.com/mulesoft/mule-common/tree/3.x/src/main/java/org/mule/common/query/DefaultQueryVisitor.java[DefaultQueryVisitor]并在你的实现上建模DsqlQueryVisitor，导入代表查询模型的类和几个实用程序类：
++
+[source, java, linenums]
+----
+import org.mule.common.query.expression.*;
+import java.util.Iterator;
+import java.util.List;
+----
+
+.  DsqlQueryVisitor在其构造函数中创建一个StringBuilder，然后遍历查询模型元素，在StringBuilder中一次构建一个查询字符串函数：
++
+[source, java, linenums]
+----
+public class DsqlQueryVisitor extends DefaultQueryVisitor {
+    private StringBuilder stringBuilder;
+    public DsqlQueryVisitor() {
+        stringBuilder = new StringBuilder();
+    }
+    @Override
+    public void visitFields(List<Field> fields) {
+        StringBuilder select = new StringBuilder();
+        select.append("SELECT ");
+        Iterator<Field> fieldIterable = fields.iterator();
+        while (fieldIterable.hasNext()) {
+            String fieldName = addQuotesIfNeeded(fieldIterable.next().getName());
+            select.append(fieldName);
+            if (fieldIterable.hasNext()) {
+                select.append(",");
+            }
+        }
+        stringBuilder.insert(0, select);
+    }
+ 
+    @Override
+    public void visitBeginExpression()
+    {
+        stringBuilder.append(" WHERE ");
+    }
+ 
+    //... other methods omitted for space
+}
+----
+
+每种方法都将查询的一个子句添加到StringBuilder中。最后，一种方法（QueryVisitor接口中未定义）将构建的查询作为String返回。例如，DsqlQueryVisitor以此方法结束：
+
+[source, code, linenums]
+----
+public String dsqlQuery()
+{
+        return stringBuilder.toString();
+}
+----
+
+== 在您的`@Connector`类中使用您的查询翻译器
+
+在您的`@Connector`类中，实现一个用`@QueryTranslator`注释的方法，该方法调用返回查询的方法。例如，Salesforce连接器包含此`@QueryTranslator`方法：
+
+[source, java, linenums]
+----
+@QueryTranslator
+public String toNativeQuery(DsqlQuery query){
+    SfdcQueryVisitor visitor = new SfdcQueryVisitor();
+    query.accept(visitor);
+    return visitor.dsqlQuery();
+}
+----
+
+== 下一步
+
+* 返回到 link:/anypoint-connector-devkit/v/3.4/devkit-advanced-topics[DevKit高级主题]页面
+* 返回到 link:/anypoint-connector-devkit/v/3.4/devkit-shortcut-to-success[DevKit成功的捷径]

@@ -1,0 +1,761 @@
+=  HTTP传输参考
+
+== 介绍
+
+HTTP传输为通过HTTP公开应用程序提供支持，并通过Mule流向外部服务提供HTTP客户端请求。 Mule支持入站，出站和轮询HTTP端点。这些端点支持HTTP规范的所有常见功能，例如ETag处理，cookie和keepalive。 HTTP 1.0和1.1均受支持。
+
+HTTP / S端点默认是同步的，因此您不必设置`exchange-pattern="request-response"`。如果您设置`exchange-pattern="one-way"`，则会异步发送消息。请注意，如果您正在进行异步POST，则会禁用流式传输。
+
+== 传输信息
+
+[%header,cols="10,9,9,9,9,9,9,9,9,9,9"]
+|===
+一个|
+运输
+
+ 为|
+文件
+
+ 为|
+入站
+
+ 为|
+出站
+
+ 为|
+请求
+
+ 为|
+交易
+
+ 为|
+流
+
+ 为|
+重试
+
+ 为|
+欧洲议会议员
+
+ 为|
+默认MEP
+
+ 为|
+Maven神器
+
+| HTTP
+| http://www.mulesoft.org/docs/site/current3/apidocs/org/mule/transport/http/package-summary.html[JavaDocSchemaDoc]  | image:check.png[查]  | image:check.png[查]  | image:check.png[查]  | image:error.png[错误]  | image:check.png[查]  | image:error.png[错误]  |单向请求 - 响应 |请求 - 响应
+| org.mule.transport：骡传输-HTTP
+
+| HTTPS
+| http://www.mulesoft.org/docs/site/current3/apidocs/org/mule/transport/http/package-summary.html[JavaDocSchemaDoc]  | image:check.png[查]  | image:check.png[查]  | image:check.png[查]  | image:error.png[错误]  | image:check.png[查]  | image:error.png[错误]  |单向请求 - 响应 |请求 - 响应
+| org.mule.transport：骡传输-HTTP
+|===
+
+[TIP]
+====
+*Legend*
+
+
+*Transport*  - 交通工具的名称/协议+
+*Docs*  - 链接到transport +的JavaDoc和SchemaDoc
+*Inbound*  - 传输是否可以接收入站事件并可用于入站端点+
+*Outbound*  - 传输是否可以生成出站事件并与出站端点+一起使用
+*Request*  - 此端点是否可以通过请求调用直接查询（通过MuleClient或EventContext）+
+*Transactions*  - 交易是否受交通工具支持。支持事务的传输可以在本地或分布式两阶段提交（XA）事务中进行配置。 +
+*Streaming*  - 此传输是否可以处理输入流中传入的消息。这可以非常有效地处理大数据。有关更多信息，请参阅流式传输。 +
+*Retry*  - 此传输是否支持重试策略。请注意，所有传输都可以配置Retry策略，但只有在这里标记的传输才能被MuleSoft +官方支持
+*MEPs*  - 此传输+支持的消息交换模式
+*Default MEP*  - 使用此传输的端点的默认MEP，它没有明确配置MEP +
+*Maven Artifact*  - 组名称为 http://maven.apache.org/[Maven的]中此传输的工件名称
+====
+
+== 命名空间和语法
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/http
+----
+
+XML模式位置
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/http/3.4/mule-http.xsd
+----
+
+==== 语法
+
+*URI example*
+
+----
+http://theUser:secret@theHost:port/path?query
+----
+
+*XML version*
+
+[source, xml, linenums]
+----
+<http:endpoint host="theHost" port="8080" path="/path" user="theUser"
+                password="secret"/>
+----
+
+== 特点
+
+作为HTTP服务器或客户端的* 服务器
+* 创建诸如SOAP，REST或XML-RPC之类的HTTP服务
+* 向外部服务发出HTTP请求
+* 支持轮询HTTP端点，包括ETag支持
+* 传输二进制或文本文件，包括表单和附件
+包括SSL，证书和身份验证在内的* 安全
+* 构建流向同一端口上的不同路径
+* 支持读取和写入Cookie
+* 流式传输大文件
+* 自定义HTTP标头支持
+* 重定向处理
+* 处理内容类型和编码
+* 提供静态内容，例如HTML，JavaScript，图片和CSS（因为Mule 3.2）
+
+== 基本用法
+
+要创建HTTP服务器，只需使用入站HTTP端点创建流：
+
+[source, xml, linenums]
+----
+<flow name="testComponent">
+    <http:inbound-endpoint name="clientEndpoint" address="http://localhost:8080/moon"/>
+    <echo-component/>
+</flow>
+----
+
+这在`http://localhost:8080/moon`上接受传入的HTTP请求并将响应回送给客户端。
+
+为了让客户端调用HTTP端点，您需要在流上配置出站端点，或者您可以使用MuleClient直接在您的代码中调用HTTP端点。
+
+[source, xml, linenums]
+----
+<flow name="OutboundDelete">
+    <vm:inbound-endpoint path="doDelete"
+            exchange-pattern="one-way" />
+ 
+    <http:outbound-endpoint host="localhost" port="8080" path="foo"
+            method="DELETE" exchange-pattern="one-way" />
+ 
+    </flow>
+----
+
+或者从您的代码中：
+
+[source, code, linenums]
+----
+MuleClient client = muleContext.getClient();
+MuleMessage result = client.send("http://localhost:8080/foo", "");
+----
+
+最后，您可以通过Mule客户端中Mule配置的名称引用端点。从前面的例子中，我们可以创建一个全局HTTP端点，可以从流程或代码中引用cna：
+
+[source, xml, linenums]
+----
+<http:endpoint name="deleteEndpoint" host="localhost" port="8080" path="foo"
+            method="DELETE" exchange-pattern="one-way" />
+<flow name="OutboundDelete">
+    <vm:inbound-endpoint path="doDelete" exchange-pattern="one-way" />
+ 
+    <http:outbound-endpoint ref="deleteEndpoint"/>
+</flow>
+----
+
+[source, code, linenums]
+----
+MuleClient client = muleContext.getClient();
+MuleMessage result = client.send("deleteEndpoint", "");
+----
+
+全局端点允许您从代码和流中移除实际地址，以便您可以在各种环境之间移动Mule应用程序。
+
+== 安全
+
+您可以使用 link:/mule-user-guide/v/3.4/https-transport-reference[HTTPS传输参考]通过HTTP创建安全连接。如果要保护对HTTP端点的请求，则HTTP连接器支持HTTP Basic / Digest身份验证方法（以及Mule通用头身份验证）。要配置HTTP Basic，请在HTTP端点上配置 link:/mule-user-guide/v/3.4/configuring-security[安全端点过滤器]。
+
+[source, xml, linenums]
+----
+<http:inbound-endpoint address="http://localhost:4567">
+  <spring-sec:http-security-filter realm="mule-realm" />
+</http:inbound-endpoint>
+----
+
+您必须在安全过滤器认证的Mule实例上配置安全管理器。有关安全配置选项和示例的信息，请参阅 link:/mule-user-guide/v/3.4/configuring-security[配置安全性]。有关端点配置的一般信息，请参阅 link:/mule-user-guide/v/3.4/configuring-endpoints[配置端点]。
+
+===  HTTP响应标题
+
+HTTP连接器的默认行为是将X_MULE_SESSION标头作为每个HTTP响应的一部分返回。这个头文件的内容是一个base64编码的Java序列化对象。因此，如果您解码该值并查看纯文本，则可以查看存储在Mule会话中的所有属性的名称和值。为了加强安全性，您可以防止Mule通过以下代码添加此标头。
+
+[source, xml, linenums]
+----
+<http:connector name="NoSessionConnector">
+<service-overrides
+sessionHandler="org.mule.session.NullSessionHandler"/>
+</http:connector> 
+----
+
+[NOTE]
+请注意，如果X_MULE_SESSION头已经作为消息的属性存在，则不会通过此sessionHandler属性移除它 - 它会通过。由于应用程序中的另一个连接器添加了标题，因此标题可能存在。如果您需要完全清除此标头，请将NullSessionHandler添加到应用程序中引用的所有连接器。
+
+=== 发送凭证
+
+如果您想要发出需要验证的HTTP请求，则可以在端点上设置凭据：
+
+----
+http://user:password@mycompany.com/secure
+----
+
+=== 饼干
+
+如果您希望根据您的传出请求发送Cookie，只需在端点上配置它们即可：
+
+[source, xml, linenums]
+----
+<set-property value="#[['customCookie':'yes']]" propertyName="cookies" doc:name="Property" />
+ 
+<http:outbound-endpoint address="http://localhost:8080" method="POST"/>
+----
+
+== 轮询HTTP服务
+
+HTTP传输支持轮询HTTP URL，这对于从更改的页面获取定期数据或调用REST服务（例如轮询 http://www.amazon.com/gp/browse.html/ref=sc_fe_l_2_3435361_4/104-8456774-7498312?%5Fencoding=UTF8&node=13584001&no=3435361&me=A36L942TSJ2AJA[亚马逊队列]）非常有用。
+
+要配置HTTP轮询接收器，请在Mule配置中包含HTTP轮询连接器配置：
+
+[source, xml, linenums]
+----
+<http:polling-connector name="PollingHttpConnector" pollingFrequency="30000"
+           reuseAddress="true" />
+----
+
+要在端点中使用连接器，请使用：
+
+[source, xml, linenums]
+----
+<http:inbound-endpoint user="marie" password="marie" host="localhost" port="61205"
+           connector-ref="PollingHttpConnector" />
+----
+
+== 处理HTTP内容类型和编码
+
+=== 发送
+
+发送POST请求主体作为客户端时以及在返回响应主体时适用以下行为：
+
+对于String，char []，Reader或类似的字符：
+
+* 如果端点具有明确的编码设置，请使用该设置
+* 否则，从消息的属性`Content-Type`
+* 如果没有设置这些，请使用Mule Context的配置默认值。
+* 对于`Content-Type`，将消息的属性`Content-Type`发送给实际的编码集。
+
+对于二进制内容，编码不相关。 `Content-Type`设置如下：
+
+* 如果在消息上设置了`Content-Type`属性，请发送该消息。
+* 如果邮件中没有设置为`Content-Type`，则发送"application/octet-stream"。
+
+=== 接收
+
+当收到HTTP响应时，MuleMessage的有效负载始终是HTTP响应的InputStream。
+
+== 包含自定义标题属性
+
+当创建一个新的HTTP客户端请求时，Mule会过滤掉任何现有的HTTP请求头，因为它们通常来自先前的请求。例如，如果您有一个代理另一个HTTP端点的HTTP端点，则不希望将第一个HTTP请求的`Content-Type`标题属性复制到第二个请求。
+
+如果您确实需要包含HTTP标头，则可以将其指定为出站端点上的属性，如下所示：
+
+[source, xml, linenums]
+----
+<http:outbound-endpoint address="http://localhost:9002/events"
+                        connector-ref="HttpConnector" contentType="image/png">
+    <set-property propertyName="Accept" value="*.*"/>
+</http:outbound-endpoint>
+----
+
+或使用Message Properties Transformer，如下所示：
+
+[source, xml, linenums]
+----
+<message-properties-transformer scope="outbound">
+    <add-message-property key="Accept" value="*.*"/>
+</message-properties-transformer>
+ 
+<http:outbound-endpoint address="http://localhost:9002/events"
+                        connector-ref="HttpConnector" contentType="image/png"/>
+----
+
+== 从请求中构建目标网址
+
+HTTP请求URL在Mule标题中可用。您可以使用标题表达式评估程序`#[header:http.request]`来访问它。例如，如果您想要将请求重定向到基于过滤器的其他服务器，则可以构建目标URL，如下所示：
+
+[source, xml, linenums]
+----
+<{{0}}" />
+----
+
+== 处理重定向
+
+要重定向HTTP客户端，您必须在端点上设置两个属性。首先，将`http.status`属性设置为'307'，它指示客户端资源已被临时重定向。或者，您可以将该属性设置为“301”以获得永久重定向。其次，设置`Location`属性，该属性指定您要重定向客户端的位置。
+
+[TIP]
+有关状态代码的详细信息，请参阅HTTP协议规范，网址为http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html。
+
+以下是正在监听本地地址http：// localhost：8080 / mine的流的示例，并用重定向代码发送响应，指示客户端转到http://mulesoft.org/：
+
+[source, xml, linenums]
+----
+<http:inbound-endpoint address="http://localhost:8080/mine" exchange-pattern="request-response"/>
+<set-property propertyName="http.status" value="307"/>
+<set-property propertyName="Location" value="http://mulesoft.org/"/>
+----
+
+*Notes*：
+
+* 您必须将`exchange-pattern`属性设置为`request-response`。否则，当请求被放置在内部队列中时，响应立即返回。
+* 如果您在Mule Studio的XML编辑器中将属性配置为入站端点的子元素，您会看到一个验证错误，指出这不允许作为子元素。但是，您的流程运行成功，因此您可以放心地忽略此错误。
+
+要在发出HTTP呼叫时遵循重定向，请使用`followRedirect`属性：
+
+[source, xml, linenums]
+----
+<http:outbound-endpoint address="http://com.foo/bar" method="GET" exchange-pattern="request-response" followRedirects="true"/>
+----
+
+== 获取POST正文参数的哈希映射
+
+您可以在入站端点上使用自定义转换器 link:http://www.mulesoft.org/docs/site/3.4.0/apidocs/org/mule/transport/http/transformers/HttpRequestBodyToParamMap.html[HttpRequestBodyToParamMap]，将消息属性作为名称 - 值对的哈希映射返回。此变换器使用`application/x-www-form-urlencoded`内容类型处理GET和POST。
+
+例如：
+
+[source, xml, linenums]
+----
+<http:inbound-endpoint ...>
+  <http:body-to-parameter-map-transformer />
+</http:inbound-endpoint>
+----
+
+== 处理GET查询参数
+
+发布到HTTP入站端点的GET参数在原始形式的Mule消息的有效载荷中自动可用，并且查询参数也被传递并存储为Mule消息的入站作用域标头。
+
+例如，以下流程会创建一个简单的HTTP服务器：
+
+[source, xml, linenums]
+----
+<flow name="flows1Flow1">
+    <http:inbound-endpoint host="localhost" port="8081"  encoding="UTF-8"/>
+    <logger message="#[groovy:return message.toString();]" level="INFO"/>
+</flow>
+----
+
+使用URL从浏览器发出请求：
+
+----
+http://localhost:8081/echo?reverb=4&flange=2
+----
+
+导致消息`/echo?reverb=4&flange=2`的消息有效负载和消息`reverb=4`和`flange=2`上的两个额外入站标头。
+
+然后可以使用诸如`#[header:INBOUND:reverb]`之类的表达式来访问这些标题，这些表达式可以被过滤器和路由器使用或注入到您的代码中。
+
+== 提供静态内容
+
+HTTP连接器可用作Web服务器来传递静态内容，如图像，HTML，JavaScript，CSS文件等。为了实现这一点，请使用HTTP静态资源处理程序配置流程：
+
+[source, xml, linenums]
+----
+<flow name="main-http">
+    <http:inbound-endpoint address="http://localhost:8080/static"/>
+    <http:static-resource-handler resourceBase="${app.home}/docroot"
+        defaultFile="index.html"/>
+</flow>
+----
+
+这里的重要属性是`resourceBase`，因为它定义了在本地系统上从哪个文件提供服务。通常，这应该设置为`${app.home}/docroot`，但它可以指向任何完全限定的位置。
+
+默认文件允许您指定要加载的默认资源，如果没有指定。如果未设置，则默认值为`index.html`。
+
+[TIP]
+在开发您的Mule应用程序时，`docroot`目录应位于`<project.home>/src/main/app/docroot`处。
+
+=== 内容类型处理
+
+`static-resource-handler`使用与JDK相同的MIME类型映射系统，如果您需要将自己的MIME类型添加到文件扩展名映射中，则需要将以下文件添加到应用程序`<project home>/src/main/resources/META-INF/mime.types`。内容类似于：
+
+----
+image/png                   pngtext/plain                  txt cgi java
+----
+
+这将MIME类型映射到一个或多个文件扩展名。
+
+==  HTTP属性
+
+当在Mule中处理HTTP请求时，会创建一个Mule消息，并将以下HTTP信息作为消息的入站属性持久化。
+
+*  *http.context.path:*被访问端点的上下文路径。这是HTTP端点正在侦听的路径。
+*  *http.context.uri:*被访问端点的上下文URI，它对应于端点的地址。
+*  *http.headers:*包含所有HTTP标头的地图。
+*  *http.method:* HTTP请求行中使用的HTTP方法的名称。
+*  *http.query.params:*包含所有查询参数的地图。它支持每个键的多个值，并且键和值都未转义。
+*  *http.query.string:* URL的查询字符串。
+*  *http.request:*被访问的URL的路径和查询部分。
+*  *http.request.path:*访问URL的路径。它不包含查询部分。
+*  *http.relative.path:*被访问的URI相对于上下文路径的相对路径。
+*  *http.status:*与最新响应关联的状态代码。
+*  *http.version:* HTTP版本。
+
+为了保持与Mule以前版本的向后兼容性，标题和查询参数也被存储在入站属性中。这种行为在Mule 3.3中通过*http.headers*和*http.query.params*属性得到了改进。
+
+例如，给出以下HTTP GET请求：http：// localhost：8080 / clients？min = 1＆max = 10，可以通过以下方式轻松访问查询参数：
+
+`#[message.inboundProperties['min']]`和`#[message.inboundProperties['max']]`
+
+== 示例
+
+以下提供了常见的用法示例，可帮助您了解如何使用HTTP和Mule：
+
+*Filtering HTTP Requests*
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd
+       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.4/mule-http.xsd">
+ 
+    <flow name="httpIn">
+        <http:inbound-endpoint host="localhost" port="8080">
+            <not-filter>
+                <http:request-wildcard-filter pattern="*.ico"/>
+            </not-filter>
+        </http:inbound-endpoint>
+        <echo-component/>
+    </flow>
+</mule>
+----
+
+*Polling HTTP*
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+    xmlns:test="http://www.mulesoft.org/schema/mule/test"
+    xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.4/mule-test.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd
+       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.4/mule-vm.xsd
+       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.4/mule-http.xsd">
+ 
+    <!-- We are using two different types of HTTP connector so we must declare them
+         both in the config -->
+    <http:polling-connector name="PollingHttpConnector"
+        pollingFrequency="30000" reuseAddress="true" />
+ 
+    <http:connector name="HttpConnector" />
+ 
+    <flow name="polling">
+        <http:inbound-endpoint host="localhost" port="8080"
+            connector-ref="PollingHttpConnector" exchange-pattern="one-way">
+            <set-property propertyName="Accept" value="application/xml" />
+        </http:inbound-endpoint>
+ 
+        <vm:outbound-endpoint path="toclient" exchange-pattern="one-way" />
+    </flow>
+ 
+    <flow name="polled">
+        <inbound-endpoint address="http://localhost:8080"
+             connector-ref="HttpConnector" />
+ 
+        <test:component>
+            <test:return-data>foo</test:return-data>
+        </test:component>
+    </flow>
+</mule>
+----
+
+*Setting Custom Headers*
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.4/mule-vm.xsd
+       http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.4/mule-test.xsd
+       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.4/mule-http.xsd
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd">
+ 
+ 
+    <http:endpoint name="clientEndpoint" host="localhost" port="8080" exchange-pattern="request-response"/>
+    <http:endpoint name="serverEndpoint" host="localhost" port="$8080" exchange-pattern="request-response"/>
+ 
+    <http:endpoint name="clientEndpoint2" host="localhost" port="$8081" contentType="application/xml"
+        exchange-pattern="one-way">
+        <set-property propertyName="Content-Disposition" value="attachment; filename=foo.zip"/>
+        <set-property propertyName="X-Test" value="foo"/>
+    </http:endpoint>
+    <http:endpoint name="serverEndpoint2" host="localhost" port="8081" exchange-pattern="request-response"/>
+ 
+    <flow name="ProductDataSourceRepository">
+        <http:inbound-endpoint ref="serverEndpoint" contentType="application/x-download">
+            <properties>
+                <spring:entry key="Content-Disposition" value="attachment; filename=foo.zip"/>
+                <spring:entry key="Content-Type" value="application/x-download"/>
+            </properties>
+        </http:inbound-endpoint>
+        <echo-component/>
+    </flow>
+ 
+    <flow name="TestService2">
+        <http:inbound-endpoint ref="serverEndpoint2"/>
+        <test:component logMessageDetails="true"/>
+        <vm:outbound-endpoint path="out" connector-ref="vm" exchange-pattern="one-way"/>
+    </flow>
+</mule>
+----
+
+*WebServer - Static Content*
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.4/mule-http.xsd">
+ 
+    <flow name="httpWebServer">
+        <http:inbound-endpoint address="http://localhost:8080/static"/>
+ 
+        <http:static-resource-handler resourceBase="${app.home}/docroot"
+               defaultFile="index.html"/>
+    </flow>
+</mule>
+----
+
+*Setting Cookies on a Request*
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+    xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd
+       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.4/mule-http.xsd
+       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.4/mule-vm.xsd">
+ 
+    <http:connector name="httpConnector" enableCookies="true" />
+ 
+    <flow name="testService">
+        <vm:inbound-endpoint path="vm-in" exchange-pattern="one-way" />
+ 
+        <http:outbound-endpoint address="http://localhost:${port1}"
+            method="POST" exchange-pattern="one-way" content-type="text/xml">
+            <properties>
+                <spring:entry key="cookies">
+                    <spring:map>
+                        <spring:entry key="customCookie" value="yes"/>
+                        <spring:entry key="expressionCookie" value="#[header:INBOUND:COOKIE_HEADER]"/>
+                    </spring:map>
+                </spring:entry>
+            </properties>
+        </http:outbound-endpoint>
+    </flow>
+</mule>
+----
+
+== 配置参考
+
+该连接器还接受来自 link:/mule-user-guide/v/3.4/tcp-transport-reference[TCP连接器]的所有属性。
+
+== 连接器
+
+允许Mule通过HTTP进行通信。 HTTP规范的所有部分都由Mule覆盖，所以您可以期待ETags以及保持活跃的语义和cookie。
+
+<connector...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| cookieSpec  |枚举 |否 |   |启用cookie时此连接器使用的cookie规范。
+| proxyHostname  |字符串 |否 |   |代理主机名或地址。
+| proxyPassword  |字符串 |否 |   |用于代理访问的密码。
+| proxyPort  |端口号 |否 |   |代理端口号。
+|代理用户名 |字符串 |否 |   |用于代理访问的用户名。
+| proxyNtlmAuthentication  |布尔值 |否 |   |代理身份验证方案是否为NTLM。该属性是必需的，以便在该方案下使用正确的凭证。默认为false
+| enableCookies  |布尔值 |否 |   |是否支持cookies。
+|===
+
+无<connector...>的子元素
+
+
+
+例如：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.4/mule.xsd
+       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.4/mule-http.xsd">
+ 
+    <http:connector name="HttpConnector" enableCookies="true" keepAlive="true"/>
+...
+</mule>
+----
+
+该连接器还接受来自 link:/mule-user-guide/v/3.4/tcp-transport-reference[TCP连接器]的所有属性。
+
+====
+xslt：意外的程序错误：java.lang.NullPointerException
+====
+
+== 其余服务组件
+
+内置的RestServiceWrapper可用于将REST风格的服务作为本地Mule组件进行代理。
+
+<rest-service-component...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| httpMethod  |枚举 |否 | GET  |提供服务请求时使用的HTTP方法。
+| serviceUrl  |   |是 |   |提出请求时使用的服务网址。这不应该包含任何参数，因为这些应该在组件上进行配置。服务URL可以包含Mule表达式，所以对于每个消息请求，URL可以是动态的。
+|===
+
+<rest-service-component...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+|错误过滤器 | 0..1  |错误过滤器可用于检测远程服务的响应是否导致错误。
+| payloadParameterName  | 0 .. *  |如果消息的有效负载要作为URL参数进行附加，则应将其设置为参数名称。如果消息有效载荷是可以设置多个参数的对象数组，请使用数组中的每个元素。
+| requiredParameter  | 0 .. *  |这些参数必须在当前消息中可用，以使请求成功。键映射到参数名称，该值可以是Mule支持的有效表达式中的任何一个。
+| optionalParameter  | 0 .. *  |这些是参数，如果它们位于当前消息中，则会被添加到请求中，否则它们将被忽略。键映射到参数名称，该值可以是Mule支持的有效表达式中的任何一个。
+|===
+
+== 入站端点
+
+入站HTTP端点通过HTTP公开服务，本质上使其成为HTTP服务器。如果需要轮询远程HTTP服务，则应该使用轮询HTTP连接器配置此端点。
+
+<inbound-endpoint...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|用户 |字符串 |否 |   |将用于验证的用户名（如果有）。
+|密码 |字符串 |否 |   |用户的密码。
+|主机 |字符串 |否 |   |要连接到的主机。对于入站端点，这应该是本地网络接口的地址。
+|端口 |端口号 |否 |   |建立连接时使用的端口号。
+|路径 |字符串 |否 |   | HTTP URL的路径。它不能以斜杠开始。
+| contentType  |字符串 |否 |   |要使用的HTTP ContentType。
+|方法 | httpMethodTypes  |否 |   |要使用的HTTP方法。
+|保持连接 |布尔值 |否 |   |控制套接字连接是否保持活动状态。如果设置为true，则将返回连接器中指定连接超时的保持活动标头。如果设置为false，则会返回一个"Connection: close"标题。
+|===
+
+无<inbound-endpoint...>的子元素
+
+例如：
+
+[source, xml, linenums]
+----
+<http:inbound-endpoint host="localhost" port="63081" path="services/Echo" keep-alive="true"/>
+----
+
+HTTP入站端点属性将覆盖为 link:/mule-user-guide/v/3.4/endpoint-configuration-reference[默认入站端点属性]指定的属性。
+
+== 出站端点
+
+HTTP出站端点允许Mule使用HTTP协议向外部服务器或Mule入站HTTP端点发送请求。
+
+<outbound-endpoint...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|====
+| {名称{1}}输入 |必 |缺省 |说明
+| followRedirects  |布尔值 |否 |   |如果使用GET进行请求并使用redirectLocation标头进行响应，则将其设置为true将使请求在重定向网址上。这仅适用于使用GET的情况，因为在执行POST时（根据RFC 2616的限制），您无法自动遵循重定向。
+|用户 |字符串 |否 |   |将用于验证的用户名（如果有）。
+|密码 |字符串 |否 |   |用户的密码。
+|主机 |字符串 |否 |   |要连接到的主机。对于入站端点，这应该是本地网络接口的地址。
+|端口 |端口号 |否 |   |建立连接时使用的端口号。
+|路径 |字符串 |否 |   | HTTP URL的路径。它不能以斜杠开始。
+| contentType  |字符串 |否 |   |要使用的HTTP ContentType。
+|方法 | httpMethodTypes  |否 |   |要使用的HTTP方法。
+|保持连接 |布尔值 |否 |   |控制套接字连接是否保持活动状态。如果设置为true，则将返回连接器中指定连接超时的保持活动标头。如果设置为false，则会返回一个"Connection: close"标题。
+|====
+
+无<outbound-endpoint...>的子元素
+
+例如：
+
+[source, xml, linenums]
+----
+<http:outbound-endpoint host="localhost" port="8080" method="POST"/>
+----
+
+HTTP出站端点属性将覆盖为 link:/mule-user-guide/v/3.4/endpoint-configuration-reference[默认出站端点属性]指定的属性。
+
+== 端点
+
+配置可由服务引用的'全局'HTTP端点。服务可以使用本地配置元素来增加全局端点中定义的配置。
+
+<endpoint...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|====
+| {名称{1}}输入 |必 |缺省 |说明
+| followRedirects  |布尔值 |否 |   |如果使用GET进行请求并使用redirectLocation标头进行响应，则将其设置为true将使请求在重定向网址上。这仅适用于使用GET的情况，因为在执行POST时（根据RFC 2616的限制），您无法自动遵循重定向。
+|用户 |字符串 |否 |   |将用于验证的用户名（如果有）。
+|密码 |字符串 |否 |   |用户的密码。
+|主机 |字符串 |否 |   |要连接到的主机。对于入站端点，这应该是本地网络接口的地址。
+|端口 |端口号 |否 |   |建立连接时使用的端口号。
+|路径 |字符串 |否 |   | HTTP URL的路径。它不能以斜杠开始。
+| contentType  |字符串 |否 |   |要使用的HTTP ContentType。
+|方法 | httpMethodTypes  |否 |   |要使用的HTTP方法。
+|保持连接 |布尔值 |否 |   |控制套接字连接是否保持活动状态。如果设置为true，则将返回连接器中指定连接超时的保持活动标头。如果设置为false，则会返回一个"Connection: close"标题。
+|====
+
+无<endpoint...>的子元素
+
+例如：
+
+[source, xml, linenums]
+----
+<http:endpoint name="serverEndpoint1" host="localhost" port="60199" path="test1" />
+----
+
+HTTP端点属性会覆盖为 link:/mule-user-guide/v/3.4/endpoint-configuration-reference[默认的全局端点属性]指定的属性。
+
+====
+xslt：意外的程序错误：java.lang.NullPointerException
+====
+
+== 请求通配符过滤器
+
+（从2.2.2开始）通过将通配符表达式应用于URL，可以使用request-wildcard-filter元素来限制请求。
+
+无<request-wildcard-filter...>的子元素
+
+

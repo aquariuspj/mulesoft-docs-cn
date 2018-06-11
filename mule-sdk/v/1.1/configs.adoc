@@ -1,0 +1,206 @@
+= 创建配置对象
+:keywords: mule, sdk, config, configuration
+
+配置是一组影响模块整体行为的可配置参数。
+所有模块都必须至少有一个配置，但您可以根据需要定义多个配置。
+
+不同的配置可能不仅提供一组不同的参数
+还要指定他们自己的一组操作，来源和连接提供者
+只有在使用该配置时才可用。
+
+== 定义单个配置模块
+
+最简单的情况是只有一个配置的模块。
+为了方便起见，您可以使用先前注释过的同一个类
+为`@Extension`，例如：
+
+[source, java, linenums]
+----
+@Extension(name="singleConfig")
+@Operations(Operations.class)
+@Sources(MessageSources.class)
+@ConnectionProviders({BasicAuthConnection.class, OAuthConnection.class})
+public class SingleConfigModule {
+
+  @Parameter
+  private String someParameter;
+
+  @Parameter
+  private Integer numericParameter;
+
+  public String getSomeParameter() {
+    return someParameter;
+  }
+
+  public String getNumericParameter() {
+    return numericParameter;
+  }
+}
+
+----
+
+上面的示例显示了具有单个配置的模块的完整框架。
+您可以看到如何使用所有操作声明扩展的相同类，
+来源，连接等等，还充实了`@Parameter`注释字段，
+这将转化为配置的参数。
+
+当另一个组件（如操作或源代码）需要访问
+配置，它会通过`SingleConfigModule`类的实例来实现。
+
+== 外部化单个配置对象
+
+根据你想要如何组织你的代码，你可能想要一个
+而不重用`@Extension`注释类。原因
+因为这样做的范围可以从可维护性（你认为你可能想要添加）
+未来更多的配置），关注点的分离，或者仅仅是个人偏好。
+
+您可以使用`@Configurations`注释来做到这一点。同样的返工例子
+看起来像这样：
+
+[source, java, linenums]
+----
+@Extension(name="singleConfig")
+@Configurations(Config.class) // <1>
+public class SingleConfigModule {
+}
+
+@Configuration(name="config") // <2>
+@Operations(Operations.class)
+@Sources(MessageSources.class)
+@ConnectionProviders({BasicAuthConnection.class, OAuthConnection.class})
+public class Config {
+
+  @Parameter
+  private String someParameter;
+
+  @Parameter
+  private Integer numericParameter;
+
+  public String getSomeParameter() {
+    return someParameter;
+  }
+
+  public String getNumericParameter() {
+    return numericParameter;
+  }
+}
+----
+
+<1>使用`@Configurations`注释引用`Config`类。
+<2>定义一个充当配置并定义参数的类，另外
+所有其他组件，如操作，连接等。
+
+[TIP]
+请注意，`@Configuration`注释需要您提供配置
+名称。对于只有一种配置的模块，推荐使用名称`config`。
+
+== 定义多个配置
+
+我们以HTTP连接器为例来说明这一点。
+
+实现HTTP协议有两个方面：监听请求和
+发送请求。这些方面中的每一个不仅需要非常不同的一套
+参数，它也表明：
+
+* 要监听请求，您需要定义一个充当消息源的`<http:listener />`元素。
+* 要发送请求，您需要一个充当操作的`<http:request />`元素。
+
+因为一个应用程序可以包含很多监听器元素，所以这些元素只有在时才能使用
+与`<http:listener-config />`配对包含关于如何使用的常规设置
+连接是要建立的和其他行为参数。请求者也一样
+操作，它与`<http:requester-config />`元素配对。
+
+代码如下所示：
+
+[source, java, linenums]
+----
+@Extension(name="http")
+@Configurations({HttpListenerConfig.class, HttpRequesterConfig.class}) // <1>
+public class HttpConnector {
+
+}
+
+@Configuration(name="listener") // <2>
+@ConnectionProviders(HttpListenerConnection.class)
+@Sources(HttpListener.class)
+public class HttpListenerConfig {
+
+  /**
+   * Base path to use for all requests that reference this config.
+   */
+  @Parameter
+  @Optional
+  @Expression(NOT_SUPPORTED)
+  private String basePath;
+
+  public String getBasePath() {
+    return basePath;
+  }
+}
+
+@Configuration(name="requester") // <3>
+@Operations(HttpRequester.class)
+@ConnectionProviders(HttpRequesterConnection.class)
+public class HttpRequesterConfig {
+
+  // the requester parameters
+}
+----
+
+<1> `@Extension`注释类定义了两种配置。
+<2> `HttpListener`类定义入站连接和侦听器功能独有的消息源。
+<3> `HttpConfig`类定义请求操作和出站连接类型。
+
+[TIP]
+请注意，这次，`Configuration`注释中使用的名称不会跟随
+一个特定的默认值，而是使用一个描述性名称。
+
+== 获取配置名称
+
+出于记录或调试的原因，您可能想知道该配置实例的名称
+已经在申请。为此，您可以使用`@RefName`注释。这个注释必须
+用于`String`类型的字段，并且同一类中没有两个字段应该承担这一点
+注解。这里是一个如何使用它的例子。
+
+在这个例子中，你可以看到如何记录我们的组件在初始化时的名字。
+这样，你可以对不同的配置实例进行追踪。
+
+[source, java, linenums]
+----
+@Configuration(name="config")
+@Operations(Operations.class)
+public class Config implements Initialisable {
+
+  private static final Logger LOGGER = LoggerFactory.getLogger(Config.class);
+
+  @RefName // <1>
+  private String configName;
+
+  @Parameter
+  private String someParameter;
+
+  public String getSomeParameter() {
+    return someParameter;
+  }
+
+  @Override
+  public void initialise(){
+    LOGGER.debug("Initializing config with name: " + configName);
+  }
+
+}
+----
+
+<1> `@RefName`注释表示应用程序中使用的配置的名称
+应该注入字段`configName`。
+
+你可以看到一个DSL的具体例子，看看会发生什么：
+
+[source, xml, linenums]
+----
+<my-extension:config name="exampleConfig" someParameter="aParameter">
+----
+
+在这种情况下，变量`configName`将采用值"exampleConfig"。什么时候
+这个配置被初始化了，你会看到这消息反映在日志中：
+`Initializing config with name: exampleConfig`

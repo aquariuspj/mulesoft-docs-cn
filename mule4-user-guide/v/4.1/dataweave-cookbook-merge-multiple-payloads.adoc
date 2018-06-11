@@ -1,0 +1,170 @@
+= 示例：合并多个有效负载
+:keywords: studio, anypoint, transform, transformer, format, aggregate, filter, json, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping, contains, as
+
+
+本示例处理包含有效负载集合的输入。第一个有效载荷按书籍列出价格，第二个按书籍列出作者，其中每本书可以通过唯一的`bookId`键进行标识。这种转换将两种有效载荷合并成一个，匹配他们的密钥，其中一本书可能有几个作者。
+
+
+[NOTE]
+请注意，这与将一个由数组组成的单个有效负载作为输入不同。这里，一个Mule事件对象中有多个单独的有效载荷元素。例如，这种数据结构可以通过分散 - 收集组件生成。
+
+它使用这些功能：
+
+*  `map`遍历第一个有效载荷的元素（`payload[0]`）。在每个元素上，第二个`map`函数遍历与过滤条件匹配的第二个有效内容（`payload[1]`）的元素。
+*  `using`在主`map`函数的范围内定义了一个较短的别名。
+*  `filter`将第二个`map`函数的作用域限制为与第一个`map`函数当前正在处理的对象共享相同的`bookId`。这样，每个输出中只列出相关的作者。
+
+
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+
+payload[0]  map (bookListing) -> using (id = bookListing.bookId) {
+	bookId:	id,
+    title:  bookListing.title,
+	price: 	bookListing.price as Number,
+	(payload[1] filter ($.*bookId contains id)  map (bookAuthor) -> {
+		author:bookAuthor.author
+   })
+}
+----
+
+////
+这与原来的例子不一样。像这样，它与"group by"示例没有太大差别，只是它以低效率的方式执行操作。
+
+这个例子的重点在于输入是在不同的对象中。
+
+
+。输入
+[source,JSON, linenums]
+----
+{
+  "Book Price by ID" : [
+    {
+      "bookId": 101,
+      "title": "Some Book",
+      "price" : 7.15
+    },
+    {
+      "bookId": 102,
+      "title": "Another Book",
+      "price" : 40.75
+    }],
+  "Book Author by ID"  : [
+    {
+      "bookId": 101,
+      "author"  : "Some Body"
+    },
+    {
+      "bookId": 102,
+      "author"  : "Some Body Else"
+    }]
+}
+----
+////
+
+。输入1用于收集 - 有效负载[0]
+[source, json, linenums]
+----
+[
+  { "bookId":"101",
+    "title":"world history",
+    "price":"19.99"
+  },
+  {
+    "bookId":"202",
+    "title":"the great outdoors",
+    "price":"15.99"
+  }
+]
+----
+
+。输入2用于收集 - 有效负载[1]
+[source, json, linenums]
+----
+[
+  {
+    "bookId":"101",
+    "author":"john doe"
+  },
+  {
+    "bookId":"202",
+    "author":"jane doe"
+  }
+]
+----
+
+
+
+
+.OUTPUT
+[source, json, linenums]
+----
+[
+  {
+    "bookId": "101",
+    "title": "world history",
+    "year": "2017",
+    "isbn": "11111",
+    "price": "19.99",
+    "author": "john doe"
+  },
+  {
+    "bookId": "202",
+    "title": "the great outdoors",
+    "year": "2016",
+    "isbn": "22222",
+    "price": "15.99",
+    "author": "jane doe"
+  }
+]
+----
+
+
+
+
+
+////
+.OUTPUT
+[source, json, linenums]
+----
+[
+  {
+    "bookId": 101,
+    "title": "Some Book",
+    "price": 7.15,
+    "author": "Some Body"
+  },
+  {
+    "bookId": 102,
+    "title": "Another Book",
+    "price": 40.75,
+    "author": "Some Body Else"
+  }
+]
+----
+////
+////
+请注意，Transform组件的*sample data*部分不允许为其提供多个有效负载的集合作为示例。测试这个例子的唯一方法就是运行它。
+////
+
+== 相关示例
+
+*  link:dataweave-cookbook-extract-data[提取数据]
+
+*  link:dataweave-cookbook-reference-multiple-inputs[参考多个输入]
+
+*  link:dataweave-cookbook-zip-arrays-together[一起拉链阵列]
+
+== 另请参阅
+
+
+// * link:dw-functions-core[DataWeave核心功能]
+
+*  link:dataweave-selectors[DataWeave选择器]
+
+*  link:dataweave-cookbook[DataWeave食谱]

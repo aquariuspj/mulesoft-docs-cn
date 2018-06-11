@@ -1,0 +1,244 @@
+= 在XML模块中使用XPath
+:keywords: XML, xpath
+
+`<xml-module:xpath-extract>`操作支持评估XPath表达式。
+
+由于XPath表达式可以匹配任意数量的单个元素，因此此操作将返回一个字符串列表。如果没有元素匹配表达式，则该操作返回一个空列表。
+
+XPath表达式也是名称空间感知的，所以这个操作允许命名空间映射。这些映射与引用的`namespace-directory`中定义的任何`namespaces`合并，这意味着评估将组合两个名称空间映射。
+
+请注意，虽然MuleSoft支持XPath标准，但DataWeave能够实现相同的用例，并且是推荐的用于提取和转换XML文档的工具。
+
+这个例子展示了如何使用包含William Shakespeare的Othello剧本剧本的XML。 XML文件如下所示：
+
+[source, xml, linenums]
+----
+<?xml version="1.0"?>
+<!--<!DOCTYPE PLAY SYSTEM "play.dtd">-->
+<PLAY>
+    <TITLE>The Tragedy of Othello, the Moor of Venice</TITLE>
+    <FM>
+        <P>Text placed in the public domain by Moby Lexical Tools, 1992.</P>
+        <P>SGML markup by Jon Bosak, 1992-1994.</P>
+        <P>XML version by Jon Bosak, 1996-1998.</P>
+        <P>This work may be freely copied and distributed worldwide.</P>
+    </FM>
+    <PERSONAE>
+        <TITLE>Dramatis Personae</TITLE>
+
+        <PERSONA>DUKE OF VENICE</PERSONA>
+        <PERSONA>BRABANTIO, a senator.</PERSONA>
+        <PERSONA>Other Senators.</PERSONA>
+        <PERSONA>GRATIANO, brother to Brabantio.</PERSONA>
+        <PERSONA>LODOVICO, kinsman to Brabantio.</PERSONA>
+        <PERSONA>OTHELLO, a noble Moor in the service of the Venetian state.</PERSONA>
+        <PERSONA>CASSIO, his lieutenant.</PERSONA>
+        <PERSONA>IAGO, his ancient.</PERSONA>
+        <PERSONA>RODERIGO, a Venetian gentleman.</PERSONA>
+        <PERSONA>MONTANO, Othello's predecessor in the government of Cyprus.</PERSONA>
+        <PERSONA>Clown, servant to Othello. </PERSONA>
+        <PERSONA>DESDEMONA, daughter to Brabantio and wife to Othello.</PERSONA>
+        <PERSONA>EMILIA, wife to Iago.</PERSONA>
+        <PERSONA>BIANCA, mistress to Cassio.</PERSONA>
+        <PERSONA>Sailor, Messenger, Herald, Officers, Gentlemen, Musicians, and Attendants.</PERSONA>
+    </PERSONAE>
+
+    <SCNDESCR>SCENE  Venice: a Sea-port in Cyprus.</SCNDESCR>
+    <PLAYSUBT>OTHELLO</PLAYSUBT>
+    <ACT><TITLE>ACT I</TITLE>
+    <SCENE><TITLE>SCENE I.  Venice. A street.</TITLE>
+    <STAGEDIR>Enter RODERIGO and IAGO</STAGEDIR>
+    <SPEECH>
+        <SPEAKER>RODERIGO</SPEAKER>
+        <LINE>Tush! never tell me; I take it much unkindly</LINE>
+        <LINE>That thou, Iago, who hast had my purse</LINE>
+        <LINE>As if the strings were thine, shouldst know of this.</LINE>
+    </SPEECH>
+
+.....
+<!-- A LOT MORE CONTENT -->
+----
+
+[[othello_lines]]
+现在假设你有上述格式的整个剧本的文本。您可以使用此脚本来提取包含单词`handkerchief`的所有行：
+
+.XPath脚本
+[source, xml, linenums]
+----
+<xml-module:xpath-extract xpath="//LINE[contains(., $word)]"> // <1>
+    <xml-module:context-properties>#[{'word': 'handkerchief'}]</xml-module:context-properties> // <2>
+</xml-module:xpath-extract>
+----
+
+<1>提供使用`$`前缀引用上下文属性的XPath表达式。
+<2>在`context-properties`参数中使用DataWeave生成上下文属性。
+
+上面的XPath脚本输出以下字符串列表，其中每个`LINE`是列表中的不同项目：
+
+.OUTPUT
+----
+<LINE>For the same handkerchief?</LINE>
+<LINE>What handkerchief?</LINE>
+<LINE>What handkerchief?</LINE>
+<LINE>Have you not sometimes seen a handkerchief</LINE>
+<LINE>I know not that; but such a handkerchief--</LINE>
+<LINE>Where should I lose that handkerchief, Emilia?</LINE>
+<LINE>Lend me thy handkerchief.</LINE>
+<LINE>That handkerchief</LINE>
+<LINE>Fetch me the handkerchief: my mind misgives.</LINE>
+<LINE>The handkerchief!</LINE>
+<LINE>The handkerchief!</LINE>
+<LINE>The handkerchief!</LINE>
+<LINE>Sure, there's some wonder in this handkerchief:</LINE>
+<LINE>But if I give my wife a handkerchief,--</LINE>
+<LINE>But, for the handkerchief,--</LINE>
+<LINE>Boding to all--he had my handkerchief.</LINE>
+<LINE>--Handkerchief--confessions--handkerchief!--To</LINE>
+<LINE>--Is't possible?--Confess--handkerchief!--O devil!--</LINE>
+<LINE>mean by that same handkerchief you gave me even now?</LINE>
+<LINE>By heaven, that should be my handkerchief!</LINE>
+<LINE>And did you see the handkerchief?</LINE>
+<LINE>That handkerchief which I so loved and gave thee</LINE>
+<LINE>By heaven, I saw my handkerchief in's hand.</LINE>
+<LINE>I saw the handkerchief.</LINE>
+<LINE>It was a handkerchief, an antique token</LINE>
+<LINE>O thou dull Moor! that handkerchief thou speak'st of</LINE>
+<LINE>How came you, Cassio, by that handkerchief</LINE>
+----
+
+请注意，默认情况下，操作尝试在消息负载级别转换XML文档。但是，您可以使用`content`参数提供输入文档：
+
+[source, xml, linenums]
+----
+<flow name="linesFromOthello">
+    <file:read path="othello.xml" target="othello" />
+    <xml-module:xpath-extract xpath="//LINE[contains(., $word)]">
+        <xml-module:content>#[vars.othello]</xml-module:content>
+        <xml-module:context-properties>#[{'word': 'handkerchief'}]</xml-module:context-properties>
+    </xml-module:xpath-extract>
+</flow>
+----
+
+上面的例子从其他地方（在这种情况下，从文件系统中的文件）获取内容，然后使用简单的表达式引用它。
+
+== 映射名称空间
+
+在某些情况下，输入XML文档包含具有不同名称空间的元素。例如，请考虑以下文件：
+
+[source, xml, linenums]
+----
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body foo="bar">
+    <ns1:echo xmlns:mule="http://simple.component.mule.org/">
+      <ns1:echo>Hello!</ns1:echo>
+    </ns1:echo>
+  </soap:Body>
+</soap:Envelope>
+----
+
+下一个示例将XPath表达式中使用的每个{{0}映射到相应的名称空间`uri`。
+
+[source, xml, linenums]
+----
+ <flow name="xpathWithInlineNs">
+    <xml-module:xpath-extract xpath="/soap:Envelope/soap:Body/mule:echo/mule:echo">
+        <xml-module:namespaces>
+            <xml-module:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+            <xml-module:namespace prefix="mule" uri="http://simple.component.mule.org/"/>
+        </xml-module:namespaces>
+    </xml-module:xpath-extract>
+</flow>
+----
+
+但是如果您需要执行多个使用相同名称空间的XPath表达式，会发生什么情况？为了避免每次都执行映射，可以为映射创建一个`namespace-directory`，然后引用该目录，例如：
+
+[source, xml, linenums]
+----
+<xml-module:namespace-directory name="fullNs"> // <1>
+    <xml-module:namespaces>
+        <xml-module:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+        <xml-module:namespace prefix="mule" uri="http://simple.component.mule.org/"/>
+    </xml-module:namespaces>
+</xml-module:namespace-directory>
+
+<flow name="xpathWithFullNs">
+    <xml-module:xpath-extract
+      xpath="/soap:Envelope/soap:Body/mule:echo/mule:echo"
+      namespaceDirectory="fullNs"/> // <2><3>
+</flow>
+----
+
+<1> `namespace-directory`元素用于将前缀映射到实际的名称空间URI。请注意，这些前缀应与输入文档中使用的前缀匹配。
+<2>然后，您可以在XPath表达式中引用这些前缀。
+<3>最后，使用`namespaceDirectory`参数来引用步骤1中创建的映射。
+
+最后，你可以结合使用案例。例如，您可以拥有包含一些映射的全局`namespaceDirectory`，然后在操作级别添加其他映射。如果您有大量文档（例如全部包含`soap`名称空间，但其中只有一个包含`mule`名称空间），则此组合非常有用：
+
+[source, xml, linenums]
+----
+<xml-module:namespace-directory name="partialNs"> // <1>
+    <xml-module:namespaces>
+        <xml-module:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+    </xml-module:namespaces>
+</xml-module:namespace-directory>
+
+<flow name="xpathWithMergedNs">
+    <xml-module:xpath-extract
+      xpath="/soap:Envelope/soap:Body/mule:echo/mule:echo"
+      namespaceDirectory="partialNs"> // <2> <3>
+        <xml-module:namespaces>
+            <xml-module:namespace prefix="mule" uri="http://simple.component.mule.org/"/> // <4>
+        </xml-module:namespaces>
+    </xml-module:xpath-extract>
+</flow>
+----
+
+<1>像之前一样声明一个`namespace-directory`，但只提供公共名称空间。
+<2>提供您的XPath表达式。
+<3>引用部分名称空间目录。
+<4>提供额外的映射。
+
+请注意，映射和XPath表达式中使用的前缀必须与输入文档中使用的前缀匹配。
+
+== 将XPath用作函数
+
+XML模块提供了使用XPath提取值的DataWeave函数。这在诸如`<choice>`或`<foreach>`路由器的情况下非常有用。
+
+请注意，也可以在任何DataWeave转换中使用此函数。
+
+=== 与<foreach>一起使用XPath函数
+
+回到<<othello_lines, Othello lines>>的例子，假设您想遍历所有这些行并分别处理它们：
+
+[source, xml, linenums]
+----
+<foreach collection="#[XmlModule::xpath('//LINE', payload, {})]">
+    <flow-ref name="processLine" />
+</foreach>
+----
+
+* 第一个参数是XPath表达式。
+* 第二个是输入文档，在这种情况下是消息负载。
+* 第三个是上下文属性。由于这种情况不需要，函数传递一个空对象（`{}`）。
+
+=== 与<choice>一起使用XPath函数
+
+回到<<othello_lines, Othello lines>>的例子，假设你想做一些事情，如果输入文件不包含单词`handkerchief`。
+
+[source, xml, linenums]
+----
+<choice>
+    <when expression="#[isEmpty(XmlModule::xpath('//LINE[contains(., \$word)]', vars.untrustedOthello, {'word': 'handkerchief'}))]">
+        <flow-ref name="alteredOthello" />
+    </when>
+</choice>
+----
+
+* 由于`XmlModule::xpath`函数返回一个列表，因此该示例使用DataWeave `isEmpty()`函数来测试输出是否为空。
+*  XPath函数的第一个参数是一个使用`$word`上下文属性的表达式。
+* 第二个参数是变量中的输入文档。
+* 第三个参数提供了上下文属性值。
+
+== 另请参阅
+
+link:xml-module[XML模块]

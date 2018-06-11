@@ -1,0 +1,1272 @@
+=  DataWeave语言
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+
+link:/mule-user-guide/v/3.8/dataweave[DataWeave]语言是一个功能强大的模板引擎，允许您将数据转换为任何格式（XML，CSV，JSON，Pojos，地图等）。在Anypoint Studio中，该语言可用于：
+
+*  link:/anypoint-studio/v/6/transform-message-component-concept-studio[关于变换消息组件]中描述的*Transform Message Component*
+* 通过 link:/mule-user-guide/v/3.8/mel-dataweave-functions[MEL DataWeave函数]接受Mule表达式语言的任何Mule组件
+
+
+
+本文档涵盖基本示例，概述，DataWeave文件的结构以及有关如何从中访问不同数据的信息。以下是一些更高级主题的链接：
+
+
+* 有关可供使用的所有运营商的参考信息，请参阅 link:/mule-user-guide/v/3.8/dataweave-operators[DataWeave操作符]
+* 有关列表和您可以使用的所有类型的详细信息，请参阅 link:/mule-user-guide/v/3.8/dataweave-types[DataWeave类型]
+
+
+
+基本示例== 
+
+为了展示DataWeave的强大功能，下面是一个简单的例子。这个例子展示了一个简单的从JSON到XML的映射格式：
+
+。输入
+[source,json,linenums]
+----
+{
+  "title": "Java 8 in Action: Lambdas, Streams, and functional-style programming",
+  "author": "Mario Fusco",
+  "year": 2014
+}
+----
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  order: {
+    type: "Book",
+    title: payload.title,
+    details: "By " ++ payload.author ++ " (" ++ payload.year ++ ")"
+  }
+}
+----
+
+.OUTPUT
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<order>
+  <type>Book</type>
+  <title>Java 8 in Action: Lambdas, Streams, and functional-style programming</title>
+  <details>By Mario Fusco (2014)</details>
+</order>
+----
+
+
+==  DataWeave文件结构
+
+DataWeave文件分为两部分：
+
+*  *Header*  - 定义指令（_optional_）
+*  *Body*  - 描述输出结构
+
+这两部分由三连击*separator*分隔："---"
+
+这基本上是`.dwl`文件的外观。此代码描述了从JSON输入到XML输出的转换：
+
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  user: {
+    name: payload.user_name,
+    lastName: payload.user_lastName
+  }
+}
+----
+
+请注意，两行代码组成头部，然后分隔符将其与文件的其余部分（即定义输出结构的正文）分隔。
+
+这个DataWeave示例希望收到一个JSON输入，其结构类似于下面的JSON示例：
+
+[source,json,linenums]
+----
+ {
+  "user_name": "Annie",
+  "user_lastName": "Point"
+ }
+----
+
+在接收到输入后，DataWeave生成如下所示的XML输出：
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<user>
+ <name>Annie</name>
+ <lastName>Point</lastName>
+</user>
+----
+
+==  DataWeave标题
+
+DataWeave标题包含*directives*，它定义了有关您的转换的高级信息。 *header*的结构是一系列行，每行都有自己的*directives*。 *header*部分以`---`结尾。
+
+通过使用以下*directives*，可以定义转换的关键方面：
+
+*  *DataWeave version*，例如`%dw 1.0`
+*  *Output type*，例如`%output application/xml`
+*  *Input type*，例如`%input payload application/xml`
+*  *Namespaces*导入到您的转换中，例如％namespace ns0 `+http://mulesoft.org/tshirt-service/+`
+*  *Constants*可以在整个主体中引用，例如`%var conversionRate=13.15`
+*  *Functions*可以在整个身体内调用，例如`%var toUser = (user) -> {firstName: user.name, lastName: user.lastName}`
+
+所有指令都在DataWeave文档的标题部分中声明，并在其整个范围内执行。
+
+指令是一种用于声明_variables_，_constants_和_namespaces_及其_aliases_机制的机制。
+
+需要输出类型指令来声明变换的输出类型。
+
+输入指令可以可选地用于声明额外的输入源及其输入类型。
+
+=== 版本指令
+
+指定用于使用version指令解释转换的DataWeave语法的版本。
+
+[source, dataweave]
+---------------------------------------------------------------------
+%dw 1.0
+---------------------------------------------------------------------
+
+命名空间指令=== 
+
+使用此伪指令指定别名后指定的URI的别名。只有当输入或输出是XML类型时，该指令才有意义。
+
+[source, dataweave, linenums]
+---------------------------------------------------------------------
+%namespace mes http://www.mulesoft.com/anypoint/SOA/message/v1.0
+---------------------------------------------------------------------
+
+
+=== 输出指令
+
+使用以下格式指定转换输出类型：`<content>/<type>`。
+
+只能指定一种输出类型 - 此输出的结构在DataWeave主体中进一步指定。
+
+[source, dataweave]
+----
+%output application/xml
+----
+
+有效的类型是：
+
+*  link:/mule-user-guide/v/3.8/dataweave-formats#java[`应用/ java`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#csv[`应用/ csv`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#csv[`文/ csv`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#json[`应用/ json`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#json[`文/ json`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#xml[`应用/ xml`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#xml[`文/ xml`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#flat-file[`文/ plain`]
+*  `application/dw`
+
+
+=== 输入指令
+
+[NOTE]
+====
+对于到达DataWeave转换器（负载，流变量和输入/出站属性）的Mule消息的任何组件，也没有必要声明输入指令，也不需要为任何系统变量声明输入指令。
+
+您可能不需要此功能，因为到达Mule消息内部的任何数据都会基于附带的元数据（通过流组件随附的元数据）隐式识别为输入。因此，DataWeave体内的任何地方都可以轻松地引用和操作数据，而无需将其包含在标题中。
+====
+
+可以使用以下格式指定输入源及其输入类型：`<content>/<type>`。
+
+
+[source, dataweave]
+----
+%input payload application/xml
+----
+
+有效的类型是：
+
+*  link:/mule-user-guide/v/3.8/dataweave-formats#java[`应用/ java`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#csv[`应用/ csv`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#csv[`文/ csv`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#json[`应用/ json`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#json[`文/ json`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#xml[`应用/ xml`]
+*  link:/mule-user-guide/v/3.8/dataweave-formats#xml[`文/ xml`]
+*  `application/dw`
+
+
+=== 定义常量指令
+
+您可以在标题中定义一个常量，并在DataWeave正文中引用它（或其子元素，如果存在的话）。
+
+[source, dataweave, linenums]
+----
+%dw 1.0
+%var conversionRate=13.15
+%output application/json
+---
+{
+ price_dollars: payload.price,
+ price_localCurrency: payload.price * conversionRate
+}
+----
+
+=== 定义函数指令
+
+您可以在头文件中定义一个 link:/mule-user-guide/v/3.8/dataweave-types#functions-and-lambdas[功能]，然后可以在DataWeave正文的任何​​部分调用它，包括参数。
+
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+%var toUser = (user) -> {firstName: user.name, lastName: user.lastName}
+---
+{
+ user: toUser(payload)
+}
+----
+
+功能指令可以通过`%var`进行定义，如上例所示，或通过`%function`
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+%function toUser(user){firstName: user.name, lastName: user.lastName}
+---
+{
+ user: toUser(payload)
+}
+----
+
+
+有关详情，请参阅 link:/mule-user-guide/v/3.8/dataweave-types#functions-and-lambdas[函数和Lambdas]。
+
+==  DataWeave正文
+
+[NOTE]
+*body*包含生成输出结构的*expression*。
+
+无论输入和输出类型如何，输出的数据模型都始终在标准DataWeave代码中进行描述，输入转换为此模型。
+
+生成输出的数据模型可以由三种不同类型的数据组成：
+
+. 简单值
+. 数组：表示为一系列逗号分隔值
+. 对象：表示为键值对的集合
+
+
+当您在DataWeave正文中编写代码时，您可以定义一个生成上面列出的数据类型的表达式，即使是一个字符串`Hello world`也是一个有效的DataWeave正文。
+
+表达式也可能很复杂，也就是说它们可以由其他表达式组成。这可以通过在数组或对象中嵌套表达式或通过使用运算符来实现。
+在复杂表达式中，一个表达式的结果为其他表达式的后续执行设置上下文。您只需要记住每个表达式都会生成一个Object，一个Array或一个Variable。当您理解这些数据类型的结构是从DataWeave表达式构建的时，您将有效地理解如何使用DataWeave。
+
+
+[TIP]
+要可视化数据的规范DataWeave模型以获得更好的视觉参考，请将变换的输出类型设置为`application/dw`。然后，您的转换将数据作为DataWeave表达式输出，该表达式类似于JSON对象。
+
+
+=== 简单值
+
+简单值可以是以下类型：
+
+*  link:/mule-user-guide/v/3.8/dataweave-types#string[*串*]：双引号（"Hello"）或单引号（'Hello'）
+*  link:/mule-user-guide/v/3.8/dataweave-types#boolean[*布尔*]：文字是真或假
+*  link:/mule-user-guide/v/3.8/dataweave-types#number[*数*]：支持十进制和整数值（例如2.0）
+*  link:/mule-user-guide/v/3.8/dataweave-types#dates[*日期*]：由"|"包围的IS0-8601（例如：| 2003-10-01T23：57：59Z |）
+*  link:/mule-user-guide/v/3.8/dataweave-types#regular-expressions[*正则表达式*]：由"/"（例如：/（\ d +） - （\ d +）/）括起的正则表达式
+
+=== 阵列
+
+数组表示为一系列值表达式。
+
+。输入
+[source, dataweave]
+--------------------------------------------------------------------
+[ 1, 2 + 2, 3 * 3, $x ]
+--------------------------------------------------------------------
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+[ "My", "three", "words" ]
+----
+
+有关数组的更多详细信息，请参阅 link:/mule-user-guide/v/3.8/dataweave-types#array[DataWeave类型]。
+
+=== 对象
+
+这些表示为逗号分隔的由大括号{}围绕的键：值对序列。
+
+。转变
+[source, dataweave, linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+myoutput:{
+  name : "Jill",
+  payload : payload.id + 3
+  }
+---------------------------------------------------------------------
+
+.OUTPUT
+[source,xml,linenums]
+---------------------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<myoutput>
+  <name>Jill</name>
+  <payload>5</payload>
+</myoutput>
+---------------------------------------------------------------------
+
+请注意，键和值都可以是*expressions*。
+
+有关对象的更多详细信息，请参阅 link:/mule-user-guide/v/3.8/dataweave-types#object[DataWeave类型]。
+
+
+== 变量
+
+=== 常量
+
+在DataWeave头文件中，将常量定义为指令，然后可以在变换主体的任何部分将这些变量引用为变量，就像您对输入变量所做的一样。
+以下内容创建一个XML文档并在输出语言元素中插入语言"Español"的常量值。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/xml
+%var language='Español'
+---
+{
+  document: {
+    language: language,
+    text: "Hola mundo"
+  }
+}
+----
+
+.OUTPUT
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<document>
+  <language>Español</language>
+  <text>Hola Mundo</text>
+</document>
+----
+
+=== 作用域变量
+
+变量标题中声明的变量总是具有全局范围，声明和初始化变量的范围是有限的，你可以在变换体的任何部分这样做。
+
+您可以使用文字表达式，变量引用表达式或函数表达式来初始化这些变量。他们可以在其初始化中引用任何其他范围变量或任何输入变量或常量。声明和初始化可以作为任何文字表达式的前缀，但是您必须意识到它们预先限定的范围。你不能在其范围之外引用一个变量。
+
+要在DataWeave正文中声明变量，支持以下语法：*using (<variable-name> = <expression>)*并且必须在定义其中存在的文字内容之前写入该语法。
+要引用一个已经初始化的变量，你可以用你为其定义的名称来调用它，就像其他变量一样，或者你也可以用*$<variable-name>*的形式写出它。
+
+考虑下面的例子：
+
+*Scoped to Simple Value*
+
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+using (x = 2) 3 + x # <1>
+----
+<1>结果仅为5
+
+*Scoped to Array literal*
+
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+using (x = 2) [1, x, 3]
+----
+
+*Scoped to Object literal*
+
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+  person: using (user = "Greg", gender = "male") { # <1>
+    name: user, # <2>
+    gender: gender
+  }
+}
+----
+
+<1>声明和初始化。
+<2> *user*是一个有效的引用，因为它位于为其声明的对象*person*内。
+
+*Invalid Reference outside of Scope*
+
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+entry: using (firstName = "Annie", lastName = "Point") {
+  person: using (user = firstName, gender = "male") {
+    name: user,
+    gender: gender
+  },
+  sn: lastName, # <1>
+  gen: gender # <2>
+}
+----
+
+<1>参考*lastName*是有效的，因为它在范围内。
+<2>参考*gender*无效，因为性别是在*person*对象中声明的，并且此引用存在于该对象的范围之外。
+
+== 表达式
+
+DataWeave允许您使用表达式值将逻辑放入您的脚本中。
+DataWeave中的所有表达式都会返回一个值，这些可以分为：
+
+*  <<Operators>>
+*  <<Selectors>>
+*  <<Flow Control Expressions>>
+
+=== 算
+
+运算符在数据结构上应用特定的逻辑/转换。
+运营商可以根据他们的 link:https://en.wikipedia.org/wiki/Arity[元数]分类为一元，二元或三元。请参阅 link:/mule-user-guide/v/3.8/dataweave-operators[DataWeave操作符]以获取完整参考。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  name: upper "mulesoft"
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "name": "MULESOFT"
+}
+----
+
+=== 选择器
+
+选择器允许导航和查询数据结构的多个层次以引用特定值或一组值。请参阅 link:/mule-user-guide/v/3.8/dataweave-selectors[DataWeave选择器]以获取完整参考。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  users: payload.users.*user
+}
+----
+
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+[source, xml,linenums]
+----
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+</users>
+----
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source, json,linenums]
+----
+{
+  "users": [
+    "Mariano",
+    "Martin",
+    "Leandro"
+  ]
+}
+----
+....
+------
+
+=== 流量控制表达式
+
+==== 否则
+
+关键字*when*有条件地评估您的DataWeave代码的一部分，具体取决于表达式计算结果为true还是false。您可以制作一行条件文件，或将整个部分放在大括号中。如果*when*表达式的计算结果为*false*，则代码的相应部分将被忽略，并执行对应于*otherwise*表达式的代码。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  currency: "USD"
+} when payload.country == "USA"
+otherwise
+{
+      currency: "EUR"
+}
+----
+
+您还可以将多个*otherwise*个表达式链接在一起，如下例所示：
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+	currency: "USD"
+} when payload.country =="USA"
+otherwise
+{
+	currency: "GBP"
+} when payload.country =="UK"
+otherwise
+{
+	currency: "EUR"
+}
+----
+
+
+[TIP]
+检查<<Precedence Table>>以查看在此之前或之后编译的表达式。
+
+==== 除非另有说明
+
+关键字*unless*有条件地评估您的DataWeave代码的一部分，具体取决于表达式计算结果为true还是false。您可以制作一行条件文件，或将整个部分放在大括号中。如果*unless*表达式的计算结果为*true*，则代码的相应部分将被忽略，并执行对应于*otherwise*表达式的代码。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  currency: "EUR"
+} unless payload.country == "USA"
+otherwise
+{
+      currency: "USD"
+}
+----
+
+[TIP]
+检查<<Precedence Table>>以查看在此之前或之后编译的表达式。
+
+==== 缺省
+
+如果在输入字段中找不到值，则指定一个默认值。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+    currency: payload.currency default "USD"
+}
+----
+
+[TIP]
+检查<<Precedence Table>>以查看在此之前或之后编译的表达式。
+
+
+==== 模式匹配
+
+模式匹配在匹配指定表达式的第一个模式上执行。
+DataWeave支持四种不同类型的模式：
+
+* 字面
+* 输入/性状
+* 的正则表达式
+* 表达式
+
+每种模式类型可以是已命名的或未命名的。下面的例子并不是实际的DataWeave代码，而是匹配如何工作的模型，您可以在下面的每个部分看到更具体的例子：
+
+[source, dataweave, linenums]
+----
+value match {
+  (<name>:)?<pattern> -> <when matched>,
+  (<name>:)?<pattern> -> <when matched>,
+  default -> <when none of them matched>
+}
+----
+
+[TIP]
+对于所需的简单用例是基于值是否匹配的布尔结果，请参阅 link:/mule-user-guide/v/3.8/dataweave-operators#matches[匹配运算符]。
+
+[TIP]
+检查<<Precedence Table>>以查看在此之前和之后编译的表达式。
+
+===== 文字模式
+
+当评估值等于简单文字值时匹配。
+
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+a: payload.string match {
+   "Emiliano" -> true,
+   "Mariano" -> false
+ },
+ b: payload.string match {
+   str: "Emiliano" -> { "matches": true, value: str },
+   str: "Mariano" -> { "matches": false, value: str }
+ }
+----
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+
+.Input
+[source,json, linenums]
+----
+{
+  "string": "Emiliano"
+}
+----
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source,json, linenums]
+----
+{
+  "a": true,
+  "b": {
+      "matches": true,
+      "value": "Emiliano"
+  }
+}
+----
+....
+------
+
+
+在这个例子中，第一个字段简单地匹配'payload.string'中的值并返回布尔值，第二个字段执行相同的匹配，但返回一个包含布尔值和对验证值的引用的对象。
+
+表达式模式===== 
+
+在评估值上运行某个表达式时匹配返回true。
+
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: payload.string match {
+    str when str == "Mariano" -> str ++ " de Achaval",
+    str when str == "Emiliano" -> str ++ " Lesende"
+  },
+  b: payload.number match {
+    n when n < 3 -> "lower",
+    n when n > 3 -> "higher"
+  }
+}
+----
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source,json,linenums]
+----
+{
+  "string": "Emiliano",
+  "number": 3.14
+}
+----
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source,json, linenums]
+----
+{
+  "a": "Emiliano Lesende",
+  "b": "higher"
+}
+----
+....
+------
+
+
+在这个例子中，第一个字段与两个替代方案中的'payload.string'的值相匹配，并有条件地向其添加不同的字符串;第二个字段评估'payload.number'中的值是大于还是小于3，并相应地返回"lower"或"higher"。
+
+匹配类型===== 
+
+当评估值是指定类型时匹配
+
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: payload.a match {
+    :object -> "OBJECT",
+    :string -> "STRING",
+    :number -> "NUMBER",
+    :boolean -> "BOOLEAN",
+    :array -> "ARRAY",
+    :null -> "NULL"
+  },
+  b: payload.b match {
+    y is :object -> { type: "OBJECT", y: y },
+    y is :string -> { type: "STRING", y: y },
+    y is :number -> { type: "NUMBER", y: y },
+    y is :boolean -> { type: "BOOLEAN", y: y },
+    y is :array -> { type: "ARRAY", y: y },
+    y is :null -> { type: "NULL", y: y }
+  }
+}
+----
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source,json, linenums]
+----
+{
+  "a": "Emiliano",
+  "b": 3.14
+}
+----
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source,json, linenums]
+----
+{
+  "a": "STRING",
+  "b": {
+    "type": "NUMBER",
+    "y": 3.14
+  }
+}
+----
+....
+------
+
+
+
+在这个例子中，第一个字段评估'payload.a'的类型，并根据匹配的类型返回一个不同类型的字符串（这可以通过 link:/mule-user-guide/v/3.8/dataweave-operators#type-of[类型的运算符]轻松完成），第二个字段返回与字符串具有相同类型名称的对象，以及对评估值的引用。
+
+===== 匹配正则表达式
+
+当评估值符合给定的正则表达式时匹配
+
+
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: payload.phones map ($ match {
+     /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: $[0], area: $[1], number: $[2] },
+     /\((\d+)\)\s(\d+\-\d+)/ -> { area: $[1], number: $[2] }
+   }),
+ b: payload.phones map ($ match {
+   phone: /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: phone[0], area: phone[1], number: phone[2] },
+   phone: /\((\d+)\)\s(\d+\-\d+)/ -> { area: phone[1], number: phone[2] }
+ })
+}
+----
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source,json,linenums]
+----
+{
+  "phones": [
+    "+1 (415) 229-2009",
+    "(647) 456-7008"
+  ]
+}
+----
+....
+[tab,title="Output: JSON"]
+....
+.Output
+[source,json,linenums]
+----
+{
+  "a": [
+    {
+      "country": "+1 (415) 229-2009",
+      "area": "1",
+      "number": "415"
+    },
+    {
+      "area": "647",
+      "number": "456-7008"
+    }
+  ],
+  "b": [
+    {
+      "country": "+1 (415) 229-2009",
+      "area": "1",
+      "number": "415"
+    },
+    {
+      "area": "647",
+      "number": "456-7008"
+    }
+  ]
+}
+----
+....
+------
+
+
+
+
+在这个例子中，有效载荷包含一个数组中的两个元素，并且在这两种情况下都需要 link:/mule-user-guide/v/3.8/dataweave-operators#map[地图运算符]循环访问数组。然后它根据正则表达式评估每个元素，并根据找到的匹配类型输出不同的对象。
+
+
+
+== 系统值
+
+DataWeave提供了一组由系统自动分配的值。
+
+=== 现在
+
+以 link:/mule-user-guide/v/3.8/dataweave-types#dates[（：约会时间）]类型返回当前时刻。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: now,
+  b: now.day,
+  c: now.minutes
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": "2015-12-04T18:15:04.091Z",
+  "b": 4,
+  "c": 15
+}
+----
+
+[TIP]
+请参阅 link:/mule-user-guide/v/3.8/dataweave-selectors[DataWeave选择器]，以获取此处可能使用的选择器列表。
+
+
+=== 随机
+
+返回0到1之间的随机数类型 link:/mule-user-guide/v/3.8/dataweave-types#number[（：数）]
+
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  price: random * 1000
+}
+----
+
+
+
+== 调用外部流程
+
+从DataWeave转换中，您可以触发在Mule应用程序中调用不同的流程，并且流程返回的是表达式返回的内容。
+
+您可以通过以下表达式来完成此操作：
+
+`lookup(“flowName”,$)`
+
+这需要两个参数：
+
+* 必须调用的流的名称
+* 发送到此流的有效内容，如地图
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  a: lookup("mySecondFlow",{b:"Hello"})
+}
+----
+
+.Mule Flow
+[source, xml,linenums]
+----
+<flow name="mySecondFlow">
+    <set-payload doc:name="Set Payload" value="#[payload.b + ' world!' ]"/>
+</flow>
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "a": "Hello world!"
+}
+----
+
+请注意，只有被调用流返回的有效载荷才会被分配（即，使用查找功能时，所有其他消息的属性，如flowVars和sessionVars都不会被覆盖）。
+
+[NOTE]
+`lookup`函数不支持调用{{}}。
+
+== 从DataWeave代码调用全局MEL函数
+
+如果您在Mule项目中定义全局 link:/mule-user-guide/v/3.8/mule-expression-language-mel[骡子表达语言]（MEL）函数，则可以在DataWeave代码中的任何位置调用它，而无需任何特殊语法。
+
+要创建一个这样的全局函数，您必须编辑您的Mule项目的XML文件，并在定义任何流之前，将以下必须放置在全局元素部分中的标记集合中要定义的任何函数括起来。
+
+[source, xml, linenums]
+----
+<configuration doc:name="Configuration">
+     <expression-language>
+         <global-functions>
+
+         </global-functions>
+     </expression-language>
+ </configuration>
+----
+
+
+在这个空间中，您可以使用任何MEL表达式来定义自定义函数，例如：
+
+[source, xml, linenums]
+----
+<configuration doc:name="Configuration">
+     <expression-language>
+         <global-functions>
+             def newUser() {
+                 return ["name" : "mariano"]
+             }
+             def upperName(user) {
+                 return user.name.toUpperCase()
+             }
+         </global-functions>
+     </expression-language>
+ </configuration>
+----
+
+
+有了这个，在Transform Message元素的DataWeave代码中，您可以参考这些函数。请注意，这些函数的输入和输出甚至可以是对象和数组。
+
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  "foo" :  newUser(),
+  "bar":  upperName(newUser())
+}
+----
+
+
+即使有了这些外部功能，您也应该可以预览此变换的输出，并在编辑时实时更新。
+
+
+== 阅读
+
+。（content：string，mimeType：string，readerOptions：object）=>：any
+
+read函数用指定的mimeType读取器返回解析内容参数的结果。
+
+第一个参数指出必须读取的内容，第二个参数指定写入的格式。第三个可选参数列出读取器配置属性。
+
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+output: read(payload.root.xmlblock, "application/xml").foo
+----
+
+
+[tabs]
+------
+[tab,title="Input: XML"]
+....
+.Input
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<root>
+    <xmlblock><![CDATA[<foo>bar</foo>]]></xmlblock>
+</root>
+----
+....
+[tab,title="Output: XML"]
+....
+
+.Output
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='UTF-8'?>
+<output>bar</output>
+----
+....
+------
+
+
+
+在上面的例子中，默认情况下，DataWeave阅读器没有对CDATA元素进行分析，这就是为什么必须使用*read*运算符来解释它。
+
+== 收件
+
+。（value：any，mimeType：string，writerOptions：object）=>：string
+
+write函数返回一个字符串，其中包含指定mimeType中值的序列化表示。
+
+第一个参数指向必须写入的元素，第二个参数指向写入的格式。第三个可选参数列出了写入器配置属性。有关每种不同格式的可用配置选项的完整列表，请参阅 link:/mule-user-guide/v/3.8/dataweave-language-introduction#output-directive[输出指令]及其子部分。
+
+
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/xml
+---
+{
+ output: write(payload, "application/csv", {"separator" : "|"})
+}
+----
+
+
+[tabs]
+------
+[tab,title="Input: JSON"]
+....
+.Input
+[source,json,linenums]
+----
+"Name": "Mr White",
+"Email": "white@mulesoft.com",
+"Id": "1234",
+"Title": "Chief Java Prophet"
+},
+{
+"Name": "Mr Orange",
+"Email": "orange@mulesoft.com",
+"Id": "4567",
+"Title": "Integration Ninja"
+}
+]
+----
+....
+[tab,title="Output: XML"]
+....
+.Output
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<output>Name|Email|Id|Title
+Mr White|white@mulesoft.com|1234|Chief Java Prophet
+Mr Orange|orange@mulesoft.com|4567|Integration Ninja
+</output>
+----
+....
+------
+
+
+
+== 日志
+
+。（前缀：字符串，值：任何）
+
+返回指定的值，并使用指定的前缀记录DataWeave表达式中的值。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+---
+{
+  result: log("Logging the array",[1,2,3,4])
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "result": [1,2,3,4]
+}
+----
+
+输出到记录器
+----
+Logging the array [1,2,3,4]
+----
+
+请注意，除了生成预期的输出外，它还会记录它。
+
+
+
+
+
+== 优先表
+
+该表列出了编译不同DataWeave表达式的顺序。在某个级别上编译某些东西的结果可能会用作较高级别表达式的输入，但反之亦然。表格从表格中排序，首先编译到最后。
+
+[%header,cols="30a,60a,10a"]
+|===
+| {算{1}}说明             | 等级
+|使用所有一元运算符         |全部 link:https://en.wikipedia.org/wiki/Unary_operation[一元运营商]      |  1
+|作为                              |类型强制表达式     |  2
+|  * /                              |乘法          |  3
+| +  -  >>                             |添加剂                |  4
+|> = <= < >是                   |关系/类型比较 |  5
+|！=〜= ==                           |平等评估者    |  6
+| link:/mule-user-guide/v/3.8/dataweave-operators#AND[和]                               |有条件且         |  7
+| link:/mule-user-guide/v/3.8/dataweave-operators#OR[要么]                                 |有条件的OR           |  8
+link:/mule-user-guide/v/3.8/dataweave-operators#default[默认]，<<Pattern Matching>>， link:/mule-user-guide/v/3.8/dataweave-operators#matches[火柴]， link:/mule-user-guide/v/3.8/dataweave-operators#map[地图]， link:/mule-user-guide/v/3.8/dataweave-operators#map-object[地图对象]， link:/mule-user-guide/v/3.8/dataweave-operators#group-by[通过...分组]， link:/mule-user-guide/v/3.8/dataweave-operators#filter[过滤] {{8} }默认值/模式匹配/二元运算符 |  9
+| <<When Otherwise>>，<<Unless Otherwise>>              |条件表达式 |  10
+|===
+
+
+
+== 仔细看看示例转换
+
+
+。输入
+[source, xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<note>
+  <to>Tove</to>
+  <from>Jani</from>
+  <heading>Reminder</heading>
+  <body>Don't forget me this weekend!</body>
+</note>
+----
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 1.0
+%output application/json
+%var date='01-MAR-2015'
+---
+{
+  letter : payload,
+  sent : date
+}
+----
+
+
+
+。输出为JSON
+[source, json,linenums]
+----
+{
+  "letter": { # <1>
+    "note": { # <2>
+      "to": "Tove",
+      "from": "Jani",
+      "heading": "Reminder", # <3>
+      "body": "Don't forget me this weekend!"
+    }
+  },
+  "sent": "01-MAR-2015"  # <4>
+}
+----
+<1> "payload"输入被解析为一个Object。
+<2>如前所述，对象是键值对的序列。请注意XML输入中的每个元素名称如何被解析为一个键，后跟一个冒号：然后是值。
+<3>与*note*＃2中的情况一样，值可以是简单值，就像*heading*字段或对象一样。
+<4>该值来自变量'date'，该变量在DataWeave头文件的指令中定义。
+
+
+
+
+[WARNING]
+无论何时从JSON转换为XML，请确保生成的输出作为XML文件有效。具体来说，确保有一个父标记，JSON支持最高级别的多个元素，而XML不支持。
+同样，无论何时将XML从XML转换为JSON，请确保生成的输出作为JSON文件有效。具体来说，确保在同一个父代中没有重复的密钥。 XML支持这个，但JSON不支持。
+
+
+== 下一步
+
+
+* 有关可用于`using`运算符的所有运算符的参考，请参阅 link:/mule-user-guide/v/3.8/dataweave-operators[DataWeave操作符]
+* 有关列表和您可以使用的所有类型的详细信息，请参阅 link:/mule-user-guide/v/3.8/dataweave-types[DataWeave类型]
+* 有关可以使用DataWeave处理的不同格式以及可以为各种格式配置的参数的详细信息，请参阅 link:/mule-user-guide/v/3.8/dataweave-formats[DataWeave格式]
+* 有关如何选择传入消息的某些组件的详细信息，请参阅 link:/mule-user-guide/v/3.8/dataweave-selectors[DataWeave选择器]
+* 在https://www.anypoint.mulesoft.com/exchange/?search=dataweave[Anypoint Exchange]中查看使用DataWeave的完整示例项目。
+
+
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.8/dataweave-quickstart[DataWeave快速入门指南]
+*  link:/anypoint-studio/v/6/transform-message-component-concept-studio[关于变换消息组件]
+*  link:/mule-user-guide/v/3.8/dataweave-examples[DataWeave示例]
+*  link:/mule-user-guide/v/3.8/mel-dataweave-functions[MEL DataWeave函数]

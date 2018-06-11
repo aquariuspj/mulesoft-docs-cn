@@ -1,0 +1,149 @@
+= 使用Mule SDK创建示波器
+:keywords: mule, sdk, scopes, scope, components
+
+范围类似于<<operations#, Operations>>，但其执行包括执行其他子<<operations#, Operations>>。这意味着Scope基本上是一个接收一个或多个简单的<<parameters#, Parameters>>参数以及单个`Chain`组件和`CompletionCallback`的参数的操作。
+
+`Chain`表示您在范围内声明的子<<operations#, Operations>>，并提供执行它们的抽象。
+
+== 声明范围
+
+您可以看到这个装饰器示例的Scope的基本结构。它具有要执行的`Chain`和`CompletionCallback`来调用一次
+范围执行完成_（是的，所有范围声明为<<non-blocking-operations#, Non-Blocking Operations>>）_：
+
+[source,java,linenums]
+----
+@Extension(name = "Docs")
+@Operations(LogDecorator.class)
+public class DocsModule {
+
+}
+----
+
+[source,java,linenums]
+----
+public void logDecorator(Chain operations,
+                         CompletionCallback<Object, Object> callback) {
+
+  LOGGER.debug("Invoking child operations")
+  operations.process(
+    result -> {
+      LOGGER.debug(result.getOutput());
+      callback.success(result);
+    },
+    (error, previous) -> {
+      LOGGER.error(error.getMessage());
+      callback.error(error);
+    });
+}
+----
+
+当然，如果您收到<<operations#, Operation>>的{​​{0}}，则需要执行
+他们以某种方式，这就是`process(successCallback, errorCallback)`所做的。
+有了它，该示例以非阻塞方式执行`Chain`，并在成功或错误情况下监听结果。这里，当`Chain`中的<<operations#, Operations>>成功执行完成时，将使用执行结果调用`successCallback`。如果在执行_any_ child <<operations#, Operation>>期间发生错误，并且错误和上次成功的结果都是参数，则会调用`errorCallback`。
+
+这里是你如何在一个Mule应用程序中使用范围：
+
+[source,xml,linenums]
+----
+<flow name="logDecoratorSampleFlow">
+    <docs:log-decorator>
+        <http:request config-ref="config" path="/" method="GET"/>
+    </docs:log-decorator>
+</flow>
+----
+
+这将执行由`LOGGER`调用包装的`http:request`子操作。
+任何数量的<<operations#, Operations>>都可以在范围内执行，包括其他范围或路由器。
+
+
+== 添加参数
+
+范围可以接收其他简单的`@Parameters`和`@ParameterGroups`。它们很简单，因为范围不允许接收_complex_参数
+被声明为子元素。例如，如果您想自定义装饰器的日志级别，则可以将其作为参数接收：
+
+[source,java,linenums]
+----
+public void logDecorator(@Optional(defaultValue="true") boolean debug,
+                         Chain operations,
+                         CompletionCallback<Object, Object> callback) {
+
+  if (debug){
+    LOGGER.debug("Invoking child operations")
+  }
+  operations.process(
+    result -> {
+      Object message = result.getOutput();
+      if (debug){
+        LOGGER.debug(message);
+      } else {
+        LOGGER.info(message);
+      }
+      callback.success(result);
+    },
+    (error, previous) -> {
+      LOGGER.error(error.getMessage());
+      callback.error(error);
+    });
+}
+----
+
+只需对Scope的API进行微小的更改：
+
+[source, xml, linenums]
+----
+<flow name="logDecoratorSampleFlow">
+    <docs:log-decorator debug="false">
+        <http:request config-ref="config" path="/" method="GET"/>
+    </docs:log-decorator>
+</flow>
+----
+
+默认情况下，使用容器收到的消息执行`Chain`
+范围，但`process`方法的其他定义允许范围的用户自定义将用于执行`Chain`的`payload`和`attributes`。
+
+== 使用定型
+
+可以使用`Stereotypes`来限制`Chain`内允许存在的<<operations#, Operation>>，从而强化其使用的一致性。只有具有给定`Stereotypes`的<<operations#, Operations>>才能在范围内声明。
+
+[source, java, linenums]
+----
+public void assertAll(@AllowedStereotypes(AssertionStereotype.class) Chain assertions,
+                @Optional boolean failOnError,
+                CompletionCallback<Boolean, Void> callback) {
+  assertions.process(
+    result -> {
+      callback.success(Result.<Boolean, Void>builder().output(true).build());
+    },
+    (error, previous) -> {
+      if (failOnError){
+        callback.error(error);
+      } else {
+        callback.success(Result.<Boolean, Void>builder().output(false).build());
+      }
+    });
+}
+----
+
+[source, xml, linenums]
+----
+<flow name="logDecoratorSampleFlow">
+    <docs:assert-all>
+      <docs:not-null value="#[payload]">
+      <docs:not-empty-collection value="#[payload]">
+    </docs:assert-all>
+</flow>
+----
+
+== 无配置和无连接
+
+范围有一些限制，将它们与<<operations#, Operations>>区分开来。根据定义，范围不允许依赖或接收特定的<<configs#, Configuration>>或<<connections#, Connection>>。
+
+== 只有一个连锁店
+
+`Chain`组件是定义范围的关键，因此需要有一个和_only_ one `Chain`参数。
+
+== 始终不阻止
+
+所有范围必须定义为接收`CompletionCallback`以传递其结果的`void`方法，这意味着默认情况下所有范围都是非阻塞的。
+
+请参阅 link:non-blocking-operations[非阻塞操作]。

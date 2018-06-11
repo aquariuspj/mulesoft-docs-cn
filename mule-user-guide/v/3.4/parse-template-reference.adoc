@@ -1,0 +1,90 @@
+= 解析模板参考
+
+使用*parse template*将流外部文件的内容加载到Mule流中，然后将该文件用作模板，您可以在其中插入作为评估过的Mule表达式返回的数据。
+
+例如，您可能希望Mule流向调用方发送"order complete" HTTP响应，以指示新订单的编号和订购的小部件数量（这两个值您之前在Mule消息中设置为变量）。您可以使用分析模板从外部位置加载文件，该文件充当模板，期望"order number"和"number of widgets"的值。然后，解析模板从Mule消息变量中提取信息，作为值插入到模板中，并将结果内容设置为消息负载。实质上，一个分析模板将一个模板文件拉入Mule流中，填充空白，然后在消息上设置结果作为有效载荷。在示例中，在解析模板使用外部文件作为模板设置消息的负载之后，Mule流将返回HTTP响应以确认顺序。
+
+*<<Complete Code Example>>*
+
+== 配置分析模板
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+Drag a *parse template* message processor from the palette onto the canvas, then configure the fields according to the table below.
+
+image:parse_template.png[parse_template]
+
+[%header,cols="10,10,85"]
+|===
+|Field |Value |Description
+|*Display Name* |Parse Template |Customize to display a unique name for the transformer in your application.
+|*Location* |filepath |Define the location of the file that Mule uses as a template into which to insert values extracted from the message properties or variables.
+|===
+....
+[tab,title="XML Editor or Standalone"]
+....
+Add a `parse-template` element to your flow, then configure according to the tables below.
+
+[source, xml, linenums]
+----
+<parse-template location="users/administrator/desktop/hrweb/confirmation.html" doc:name="Parse Template"/>
+----
+
+[%header]
+|===
+|Element
+|`parse-template`
+|===
+
+[%header,cols="15,80"]
+|===
+|Element Attributes |Value
+|`location` |Filepath which defines the location of the file that Mule uses as a template into which to insert values extracted from the message properties or variables.
+|`doc:name` |Customize to display a unique name for the transformer in your application. (Note: not needed in Mule standalone.)
+|===
+....
+------
+
+== 完整的代码示例
+
+以下示例演示如何在应用程序中使用解析模板，该模板接受employeeID查询以获取有关员工的数据。
+
+分析模板使​​用流程外部文件作为模板，在该模板中插入字段值 - 名称，部门，职位名称，开始日期和员工类型 - 从消息负载中获取。流程然后将模板构建的有效载荷返回给调用者。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:jdbc-ee="http://www.mulesoft.org/schema/mule/ee/jdbc" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+ 
+http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/current/mule-jdbc-ee.xsd
+ 
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+ 
+    <jdbc-ee:mssql-data-source name="MySQL_Data_Source" user="mule" password="MuleR0cks" url="jdbc:mysql://localhost:3306/hrDB" transactionIsolation="UNSPECIFIED" doc:name="MS SQL Data Source"/>
+ 
+    <jdbc-ee:connector name="Database" dataSource-ref="MySQL_Data_Source" validateConnections="true" queryTimeout="-1" pollingFrequency="0" doc:name="Database">
+        <jdbc-ee:query key="getEmployeeById" value="SELECT * FROM Employees WHERE id=#[message.inboundProperties['id']]"/>
+    </jdbc-ee:connector>
+ 
+    <flow name="exampleTemplateFlow1" doc:name="exampleTemplateFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="getEmployee" doc:name="HTTP" doc:description="Send GET request with a parameter, for example, http://localhost:8081/getEmployee?id=12345"/>
+        <jdbc-ee:outbound-endpoint exchange-pattern="request-response" queryKey="getEmployeeById" queryTimeout="-1" connector-ref="Database" doc:name="Database" doc:description="Returns list of maps containing records; only the first one is required."/>
+        <parse-template location="src/test/resources/responseHtml.template" doc:name="Parse Template"/>
+         <set-property doc:name="Content Type" propertyName="Content-Type" value="text/html"/>
+    </flow>
+ 
+</mule>
+----
+
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.4/variable-transformer-reference[可变变压器]
+*  link:/mule-user-guide/v/3.4/property-transformer-reference[属性变压器]

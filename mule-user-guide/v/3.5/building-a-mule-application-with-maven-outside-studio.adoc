@@ -1,0 +1,237 @@
+= 使用Studio以外的Maven构建一个Mule应用程序
+
+本指南将引导您使用Maven原型从头创建一个Mule应用程序项目。它包括生成项目模板，修改配置以创建简单的"Hello World"应用程序，手动维护其POM文件，然后构建和部署项目。
+
+== 假设
+
+该文档假定您已经下载 http://maven.apache.org/[Apache Maven]并熟悉使用它来构建和维护项目。详细了解 link:/mule-user-guide/v/3.5/using-maven-with-mule[和Mule一起使用Maven]。
+
+== 配置Maven
+
+将两段代码添加到文件`settings.xml`（通常在您的Maven `conf`或`$HOME/.m2`目录中）
+
+这会让Maven允许你执行Mule插件：
+
+*settings.xml*
+
+[source, xml, linenums]
+----
+<settings>
+    <pluginGroups>
+        <pluginGroup>org.mule.tools</pluginGroup>
+    </pluginGroups>
+    ...
+</settings>
+----
+
+这会告诉你的Maven实例在哪里可以找到Mule存储库：
+
+*settings.xml*
+
+[source, xml, linenums]
+----
+<profile>
+    <id>Mule Org</id>
+    <activation>
+        <activeByDefault>true</activeByDefault>
+    </activation>
+    <repositories>
+        <repository>
+            <id>mulesoft-releases</id>
+            <name>MuleSoft Repository</name>
+            <url>https://repository-master.mulesoft.org/releases/</url>
+            <layout>default</layout>
+        </repository>
+        <repository>
+            <id>mulesoft-snapshots</id>
+            <name>MuleSoft Snapshot Repository</name>
+            <url>https://repository-master.mulesoft.org/snapshots/</url>
+            <layout>default</layout>
+        </repository>
+    </repositories>
+</profile>
+----
+
+[TIP]
+如果您需要添加未包含的依赖项（例如添加到Salesforce连接器），或者如果您使用Mule Enterprise并需要企业存储库，请参阅 link:/mule-user-guide/v/3.5/configuring-maven-pom-files-and-settings[配置Maven POM文件和设置]。
+
+== 创建一个项目模板
+
+. 打开命令shell并导航到您想要创建项目的目录。
+. 如图所示执行*mule-project-archetype*。如果这是您第一次运行此命令，Maven会为您下载原型。
++
+
+[source, code, linenums]
+----
+mvn mule-project-archetype:create -DartifactId=helloWorld -DmuleVersion=3.5.0
+----
++
+
+[NOTE]
+====
+*Running the archetype*
+
+Maven默认使用原型的最新版本。这可能会导致问题，如果你想创建一个早期版本的骡子项目。在这种情况下，运行mule-project-archetype，指定插件的完整版本，如下所示：
+
+[source, code, linenums]
+----
+mvn org.mule.tools:mule-project-archetype:3.1.1:create ...
+----
+====
++
+
+至少，你传入两个系统参数：
+
+*  *`artifactId`:*项目的简称（如myApp）。这应该是一个较低的骆驼情况下的单个词，没有空格，句点，连字符等。
++
+
+[NOTE]
+*artifactId* +
+ +
+artifactId可以包含下划线或连字符等字符。但是，插件会将名称转换为适用于Java的可用表单。例如，如果将参数指定为**-DartifactId=My#Awesome-Mule_Project**，则将在该名称的目录中创建项目，但项目名称为*MyAwesomeMuleProject*，包名称为*.myawesomemuleproject*
+
+*  *`muleVersion`:*您要使用的Mule项目原型的版本。这也将是用于生成的工件的默认Mule版本。 +
+
+. 插件提出了一系列问题。下表显示了一组可能的答案。
++
+
+[%header,cols="2*"]
+|===
+|问题 |答案
+|提供项目内容的描述。 | `This is a basic "Hello, World" test project.`
+|此项目针对哪个版本的Mule？ | `3.5.0`
+|此项目的基本Java包路径是什么？一个| COM / myCompany中/项目
+|您希望在此项目中包含哪些Mule交通工具？ | `http`
+|您希望在此项目中包含哪些模块？ |（留空。）
+|===
++
+
+您还可以选择在"silent mode"中运行此原型，方法是包含-DinteractiveMode = false，然后传入以下任何参数。
++
+
+[%header,cols="34,33,33"]
+|===
+|姓名 |示例 |默认值
+|的groupId  |  - 。DgroupId = org.mule.application <artifactId>  | org.mule.application <artifactId>
+| {packagepath的{1}}  -  DpackagePath =组织/骡/应用 |无
+| {运输{1}}  -  Dtransports = HTTP，VM  | CXF，文件，HTTP，JDBC，JMS标准输入输出，VM
+| {muleVersion {1}}  -  DmuleVersion = 3.5.0  |无
+| {的packageName {1}}  -  DpackageName =项目 |无
+|描述 |  -  Ddescription = "My Hello World app"  |无
+| {模块{1}}  -  Dmodules = XML，脚本 |客户，管理，脚本，SXC，XML
+|的basedir  |  -  Dbasedir = /项目/骡/工具 | <current dir>
+| {包{1}}  -  Dpackage =组织/ myCompany中/项目 |无
+|的artifactId  |  -  DartifactId = {的helloWorld {3}} <artifactId>
+|版本 |  -  Dversion = 1.0-SNAPSHOT  | <muleVersion>
+|===
++
+
+. 在回答完所有问题后，原型将使用您指定的项目名称创建一个目录。该目录包括：
+
+..  用Maven构建的POM文件
+..  一个Mule配置文件（`src\main\app\mule-config.xml`），它包含您指定的传输和模块的名称空间，并具有用于创建第一个流的占位符元素
+`src\main\java`下的..   a `package.html`文件使用您指定的包路径，即`src\main\java\com\mycompany\project\package.html`
+`src\test`下的..  个模板文件可帮助您开始为项目创建单元测试
+..  项目根目录中的新`MULE-README.txt`文件，用于解释创建的文件
+
+== 从模板创建一个Mule应用程序
+
+. 打开*src/main/app/mule-config.xml*。删除默认存在的流并添加这个流：
++
+
+[source, xml, linenums]
+----
+<flow name="exampleFlow1">
+    <http:inbound-endpoint exchange-pattern="request-response" host="localhost"
+port="8081" />
+    <set-payload value="Hello World!"/>
+</flow>
+----
+
+. 保存这个mule-config.xml。您现在有一个可以打包和部署的工作项目。
+
+
+== 管理相关性
+
+如果您的项目中添加了逻辑，该逻辑依赖于尚未包含在原型生成的POM文件中的依赖项，则必须手动修改POM文件以添加此依赖项，如此处所述。本示例以一种需要额外的Maven依赖项的方式引导您修改项目测试用例：https://code.google.com/p/rest-assured/[REST-assured DSL]。
+
+. 打开示例测试用例文件src / test / java / com / mycompany / project / helloWorld / HelloWorldTestCase.java，并用以下代码替换现有代码：
++
+
+[source, java, linenums]
+----
+package com.mycompany.project.helloworld;
+ 
+import static org.junit.Assert.*;
+import static com.jayway.restassured.RestAssured.*;
+import org.junit.Test;
+import org.mule.tck.junit4.FunctionalTestCase;
+import org.apache.commons.cli.ParseException;
+ 
+public class HelloWorldTestCase extends FunctionalTestCase {
+    private static String MESSAGE = "Hello world!";
+     
+    @Override
+    protected String getConfigResources()
+    {
+    return "mule-config.xml";
+    }
+     
+    @Test
+    public void dependencyClientTestCase() throws Exception
+    {
+    String response = get("http://localhost:8081").body().asString();
+    assertEquals(MESSAGE, response);
+    }
+}
+----
++
+
+注：+
+* 第4行：导入REST保证的+
+* 第21-22行：使用REST保证
+
+. 将以下依赖项添加到位于应用程序根文件夹中的pom.xml文件中。
++
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>com.jayway.restassured</groupId>
+  <artifactId>rest-assured</artifactId>
+  <version>2.3.1</version>
+  <scope>test</scope>
+  <exclusions>
+    <exclusion>
+      <groupId>org.codehaus.groovy</groupId>
+      <artifactId>groovy</artifactId>
+    </exclusion>
+  </exclusions>
+</dependency>
+<dependency>
+  <groupId>org.codehaus.groovy</groupId>
+  <artifactId>groovy-all</artifactId>
+  <version>2.2.1</version>
+  <scope>test</scope>
+</dependency>
+<dependency>
+  <groupId>commons-cli</groupId>
+  <artifactId>commons-cli</artifactId>
+  <version>1.1</version>
+</dependency>
+----
+
+. 在pom.xml文件所在的目录中，通过执行以下语法将命令行中的Mule项目打包：
++
+`mvn package`
++
+maven-mule-plugin将项目打包到`.` `zip`文件中。将`.zip`文件复制到独立Mule ESB实例的`apps`文件夹中以运行该应用程序。
+. 控制台应打印*BUILD SUCCESS*。 +
+ +
+image:build-success-image%281%29.png[打造成功 - 图像％281％29]
+
+== 另请参阅
+
+* 详细了解 link:/mule-user-guide/v/3.5/using-maven-with-mule[和Mule一起使用Maven]。
+* 了解如何 link:/mule-user-guide/v/3.5/importing-a-maven-project-into-studio[将现有的Maven项目导入Anypoint Studio]。
+* 访问其他Maven link:/mule-user-guide/v/3.5/maven-reference[参考]和 link:/mule-user-guide/v/3.5/configuring-maven-pom-files-and-settings[组态]信息。

@@ -1,0 +1,244 @@
+= 示例：使用常量指令
+:keywords: studio, anypoint, transform, transformer, format, aggregate, rename, xml, json, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping, concatenate,
+
+本示例根据DataWeave头中定义为变量（`var`）的常量构建URL。如果它们存在于输入中，它还有条件地输出字段。
+
+它使用这些功能：
+
+*  `++`（连接）在URL中构建常量指令。
+*  `map`遍历输入中的字段。
+*  `if`输出`summary`和`brand`个字段。
+
+.DataWeave
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+var baseUrl = "http://alainn-cosmetics.cloudhub.io/api/v1.0"
+var urlPage = "http://alainn-cosmetics.cloudhub.io/api/v1.0/items"
+var fullUrl = "http://alainn-cosmetics.cloudhub.io/api/v1.0/items"
+var pageIndex = 0
+var requestedPageSize = 4
+---
+using (pageSize = payload.getItemsResponse.PageInfo.pageSize) {
+     links: [
+        {
+            href: fullUrl,
+            rel : "self"
+        },
+        {
+            href: urlPage ++ "?pageIndex=" ++ (pageIndex + pageSize) ++ "&pageSize=" ++ requestedPageSize,
+            rel: "next"
+        },
+        ({
+            href: urlPage ++ "?pageIndex=" ++ (pageIndex - pageSize) ++ "&pageSize=" ++ requestedPageSize,
+            rel: "prev"
+        }) if(pageIndex > 0)
+     ],
+     collection: {
+        size: pageSize,
+        items: payload.getItemsResponse.*Item map (item) -> {
+            id: item.id,
+            'type': item.'type',
+            name: item.name,
+            (summary: item.summary) if(item.summary?),
+            (brand: item.brand) if(item.brand?),
+            links: (item.images.*image map (image) -> {
+                href: trim(image),
+                rel: image.@'type'
+            }) + {
+                href: baseUrl ++ "/" ++ item.id,
+                rel: "self"
+            }
+        }
+     }
+}
+----
+
+// TODO：请注意`type`可以在此处作为关键字处理，因此有必要引用它。
+
+。输入XML
+[source, xml, linenums]
+----
+<ns0:getItemsResponse xmlns:ns0="http://www.alainn.com/SOA/message/1.0">
+    <ns0:PageInfo>
+        <pageIndex>0</pageIndex>
+        <pageSize>5</pageSize>
+    </ns0:PageInfo>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B0015BYNRO</id>
+        <type>Oils</type>
+        <name>Now Foods LANOLIN PURE</name>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/11Qoe774Q4L._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B002K8AD02</id>
+        <type>Bubble Bath</type>
+        <name>Deep Steep Honey Bubble Bath</name>
+        <summary>Disclaimer: This website is for informational purposes only.
+            Always check the actual product label in your possession for the most
+            accurate ingredient information due to product changes or upgrades
+            that may not yet be reflected on our web site. These statements made
+            in this website have not been evaluated by the Food and Drug
+            Administration. The products offered are not intended to diagnose,
+            treat
+        </summary>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/216ytnMOeXL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B000I206JK</id>
+        <type>Oils</type>
+        <name>Now Foods Castor Oil</name>
+        <summary>One of the finest natural skin emollients available</summary>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/21Yz8q-yQoL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B003Y5XF2S</id>
+        <type>Chemical Hair Dyes</type>
+        <name>Manic Panic Semi-Permanent Color Cream</name>
+        <summary>Ready to use, no mixing required</summary>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/51A2FuX27dL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+    <ns1:Item xmlns:ns1="http://www.alainn.com/SOA/model/1.0">
+        <id>B0016BELU2</id>
+        <type>Chemical Hair Dyes</type>
+        <name>Herbatint Herbatint Permanent Chestnut (4n)</name>
+        <images>
+            <image type="SwatchImage">http://ecx.images-amazon.com/images/I/21woUiM0BdL._SL30_.jpg
+            </image>
+        </images>
+    </ns1:Item>
+</ns0:getItemsResponse>
+----
+
+。输出JSON
+[source, json, linenums]
+----
+{
+  "links": [
+    {
+      "href": "http://alainn-cosmetics.cloudhub.io/api/v1.0/items",
+      "rel": "self"
+    },
+    {
+      "href": "http://alainn-cosmetics.cloudhub.io/api/v1.0/items?pageIndex=5&pageSize=4",
+      "rel": "next"
+    }
+  ],
+  "collection": {
+    "size": "5",
+    "items": [
+      {
+        "id": "B0015BYNRO",
+        "type": "Oils",
+        "name": "Now Foods LANOLIN PURE",
+        "links": [
+          {
+            "href": "http://ecx.images-amazon.com/images/I/11Qoe774Q4L._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http://alainn-cosmetics.cloudhub.io/api/v1.0/B0015BYNRO",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B002K8AD02",
+        "type": "Bubble Bath",
+        "name": "Deep Steep Honey Bubble Bath",
+        "summary": "Disclaimer: This website is for informational purposes only.\n            Always check the actual product label in your possession for the most\n            accurate ingredient information due to product changes or upgrades\n            that may not yet be reflected on our web site. These statements made\n            in this website have not been evaluated by the Food and Drug\n            Administration. The products offered are not intended to diagnose,\n            treat\n        ",
+        "links": [
+          {
+            "href": "http://ecx.images-amazon.com/images/I/216ytnMOeXL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http://alainn-cosmetics.cloudhub.io/api/v1.0/B002K8AD02",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B000I206JK",
+        "type": "Oils",
+        "name": "Now Foods Castor Oil",
+        "summary": "One of the finest natural skin emollients available",
+        "links": [
+          {
+            "href": "http://ecx.images-amazon.com/images/I/21Yz8q-yQoL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http://alainn-cosmetics.cloudhub.io/api/v1.0/B000I206JK",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B003Y5XF2S",
+        "type": "Chemical Hair Dyes",
+        "name": "Manic Panic Semi-Permanent Color Cream",
+        "summary": "Ready to use, no mixing required",
+        "links": [
+          {
+            "href": "http://ecx.images-amazon.com/images/I/51A2FuX27dL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http://alainn-cosmetics.cloudhub.io/api/v1.0/B003Y5XF2S",
+            "rel": "self"
+          }
+        ]
+      },
+      {
+        "id": "B0016BELU2",
+        "type": "Chemical Hair Dyes",
+        "name": "Herbatint Herbatint Permanent Chestnut (4n)",
+        "links": [
+          {
+            "href": "http://ecx.images-amazon.com/images/I/21woUiM0BdL._SL30_.jpg",
+            "rel": "SwatchImage"
+          },
+          {
+            "href": "http://alainn-cosmetics.cloudhub.io/api/v1.0/B0016BELU2",
+            "rel": "self"
+          }
+        ]
+      }
+    ]
+  }
+}
+----
+
+== 相关示例
+
+
+
+*  link:dataweave-cookbook-define-a-custom-addition-function[定义自定义添加功能]
+
+*  link:dataweave-cookbook-conditional-list-reduction-via-function[通过函数有条件地减少列表]
+
+
+
+
+== 另请参阅
+
+
+// * link:dw-functions-core[DataWeave核心功能]
+
+*  link:dataweave-selectors[DataWeave选择器]
+
+*  link:dataweave-cookbook[DataWeave食谱]

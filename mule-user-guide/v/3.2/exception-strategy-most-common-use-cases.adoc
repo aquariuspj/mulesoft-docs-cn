@@ -1,0 +1,247 @@
+= 例外策略最常见的用例
+
+本页说明了在Mule ESB应用程序中处理错误处理的六种方法。我们涵盖以下例子：
+
+*  <<Route the message (as it existed just before the error occurred) to the dead letter queue>>
+*  <<Route the message (in its initial state, when it triggered the flow) to the dead letter queue>>
+*  <<Route the message based on exception type>>
+*  <<Roll back the transaction and send a notification>>
+*  <<Prevent the flow from receiving any more messages after certain types of exceptions occur>>
+*  <<Invoke a custom exception strategy implemented through a Java class>>
+
+[TIP]
+这里介绍的所有例子都展示了Mule流程中的错误处理技术。尽管Mule服务模型的某些术语和其他细节有所不同 -  Mule Flow从Mule ESB第3版中超级分离 - 但同样的错误处理原则适用于这两种体系结构。
+
+前两个示例实现事务性JMS队列，并包含一个消息转换器，它将字符串附加到原始消息。发生错误时，消息以某种形式通过流的异常策略路由到JMS死信队列中，在该队列中可以恢复和检查该错误以确定发生错误的原因。
+
+这两个例子主要在它们发送给死信队列的“消息状态”中有所不同。
+
+== 将消息（在错误发生之前就存在）路由到死信队列
+
+在第一种情况下，我们在发生错误之前恢复其最终状态的消息。换句话说，消息已经被转换（即，一个字符串已被附加到有效负载），但是异常还没有被抛出。
+
+[TIP]
+结束某些代码行的内嵌数字（即XML的`<!-- [1] -->`和Java的// 1）对应于紧接在这些代码列表下面出现的编号注释。
+
+[source, xml, linenums]
+----
+<flow name="LastMessageStateRouting">
+    <jms:inbound-endpoint queue="in">
+        <jms:transaction action="ALWAYS_BEGIN" />
+    </jms:inbound-endpoint>
+    <append-string-transformer message=" with some text added"/>
+    <test:component throwException="true"/>
+    <jms:outbound-endpoint queue="out">
+        <jms:transaction action="ALWAYS_JOIN" />
+    </jms:outbound-endpoint>
+    <default-exception-strategy>
+        <commit-transaction exception-pattern="*"/> <!-- [1] -->
+        <processor-chain>
+            <expression-transformer evaluator="groovy" expression="payload.getPayload()"/> <!-- [2] -->
+            <jms:outbound-endpoint queue="dead.letter"> <!-- [3] -->
+                <jms:transaction action="ALWAYS_JOIN" />
+            </jms:outbound-endpoint>
+        </processor-chain>
+    </default-exception-strategy>
+</flow>
+----
+
+. 为避免不小心处理同一消息的可能性不止一次，我们配置异常策略来提交事务，而不管抛出什么类型的异常。
+. 我们将当前有效载荷替换为抛出异常之前从附加字符串转换器出现的有效载荷版本（即附加了指定字符串的转换后的有效载荷）。
+. 我们将该消息的转换版本发送给JMS死信队列。为此，我们"join"在默认异常策略中嵌入的出站端点处理事务（即，使用就在抛出异常之前存在的消息版本恢复事务）。在我们通过所有异常策略消息处理器路由消息后执行提交。
+
+== 将消息（初始状态，当它触发流程时）路由到死信队列
+
+在这第二种情况下，我们不希望检查处于其转换状态的消息，而是在它从流的消息源中出现时处于其初始未转换状态，从而触发消息处理流程。为了确保我们可以将此原始形式的消息发送到死信队列，我们​​需要将其暂时保存在`session`属性中，如果发生异常，它将可用。
+
+[source, xml, linenums]
+----
+<flow name="OriginalMessageRouting">
+    <jms:inbound-endpoint queue="in">
+        <jms:transaction action="ALWAYS_BEGIN" />
+    </jms:inbound-endpoint>
+    <message-properties-transformer scope="session"> <!-- [1] -->
+        <add-message-property key="originalMessage" value="#[message:payload]"/>
+    </message-properties-transformer>
+    <append-string-transformer message=" with some text added"/>
+    <test:component/>
+    <jms:outbound-endpoint queue="out">
+        <jms:transaction action="ALWAYS_JOIN" />
+    </jms:outbound-endpoint>
+    <default-exception-strategy>
+        <commit-transaction exception-pattern="*"/> <!-- [2] -->
+        <processor-chain>
+            <expression-transformer evaluator="header"  expression="SESSION:originalMessage"/>  <!-- [3] -->
+            <message-properties-transformer scope="session">  <!-- [4] -->
+                <delete-message-property key="originalMessage"/>
+            </message-properties-transformer>
+            <jms:outbound-endpoint queue="dead.letter">  <!-- [5] -->
+                <jms:transaction action="ALWAYS_JOIN" />
+            </jms:outbound-endpoint>
+        </processor-chain>
+    </default-exception-strategy>
+</flow>
+----
+
+. 要保留原始消息，我们必须将其存储在`session`属性中;因此，无论在流程的其余部分发生什么，我们都不会失去它。
+. 无论异常类型如何，我们都希望提交事务，以便我们不再处理此消息。
+. 此时，我们将当前有效内容替换为保存在`session`属性中的内容。
+. 移除`originalMessage`的`session`属性非常重要，以避免将其传播到其他流，并伴随性能下降。
+. 将消息（处于其原始状态）发送给死信队列，然后提交事务，以便该消息不会被处理两次。
+
+== 根据异常类型路由消息
+
+有时，我们根据抛出的异常类型执行不同的操作。这与基于内容的路由类似，但在这种特殊情况下，路由由所抛出的异常的类型决定，而不是有效负载的类型。
+
+[source, xml, linenums]
+----
+<jms:activemq-connector name="jmsConnector" maxRedelivery="3" /> <!-- [1] -->
+
+<flow name="RouteByExceptionType">
+    <jms:inbound-endpoint queue="in">
+        <jms:transaction action="ALWAYS_BEGIN" />
+    </jms:inbound-endpoint>
+    <test:component/>
+    <jms:outbound-endpoint queue="out">
+        <jms:transaction action="ALWAYS_JOIN" />
+    </jms:outbound-endpoint>
+    <default-exception-strategy>
+        <commit-transaction exception-pattern="org.mule.transport.jms.redelivery.MessageRedeliveredException"/> <!-- [2] -->
+        <choice>
+            <when evaluator="groovy" expression='payload.getException() instanceof org.mule.transport.jms.redelivery.MessageRedeliveredException'> <!-- [3] -->
+                <expression-transformer evaluator="groovy" expression="payload.getPayload()"/>
+                <jms:outbound-endpoint queue="dead.letter">
+                    <jms:transaction action="ALWAYS_JOIN" />
+                </jms:outbound-endpoint>
+            </when>
+            <when evaluator="groovy" expression="payload.getException() instanceof org.mule.component.ComponentException"> <!-- [4] -->
+                <jms:outbound-endpoint queue="exceptions">
+                    <jms:transaction action="NONE"/>
+                </jms:outbound-endpoint>
+            </when>
+            <otherwise> <!-- [5] -->
+                <logger/>
+            </otherwise>
+        </choice>
+    </default-exception-strategy>
+</flow>
+----
+
+. 我们首先为入站端点连接器指定`maxRedelivery="3"`，以便Mule试图通过流发送消息不超过3次。在第三次失败后，Mule抛出`MessageRedeliveredException`。
+. 当且仅当抛出的异常是`org.mule.transport.jms.redelivery.MessageRedeliveredException`时才提交事务。
+. 如果异常结果为`MessageRedeliveredException`，我们不希望重新处理我们无法提供的消息，因此我们将处理后的消息发送给JMS死信队列，然后提交交易。
+. 如果组件抛出异常（通常是Mule Flow核心的定制编码业务逻辑），我们会将`ExceptionMessage`发送到JMS异常队列。
+. 对于所有其他类型的异常，我们只需记录异常。
+
+== 回滚事务并发送通知
+
+当某些流程引发异常时，我们想要回滚事务并发送包含有关失败信息的通知。本示例使用SMTP端点，以便通过电子邮件进行通知。
+
+[source, xml, linenums]
+----
+<flow name="RollbackTransactionAndSendEmail">
+    <jms:inbound-endpoint queue="in">
+        <jms:transaction action="ALWAYS_BEGIN"/>
+    </jms:inbound-endpoint>
+    <test:component throwException="true"/>
+    <default-exception-strategy>
+        <rollback-transaction exception-pattern="*"/> <!-- [1] -->
+        <processor-chain>
+            <expression-transformer evaluator="groovy" expression='"Failed to process message: " + payload.getPayload()'/> <!-- [2] -->
+            <smtp:outbound-endpoint user="pablolagreca" password="mypassword" host="smtp.gmail.com" from="failures-app@mycompany.com" to="technical-operations@mycompany.com" subject="Message Failure"/>  <!-- [3] -->
+        </processor-chain>
+    </default-exception-strategy>
+</flow>
+----
+
+. 无论何时抛出异常，都会回滚事务。
+. 汇总我们将作为电子邮件通知发送的邮件的有效内容。通常，我们将以下两部分插入到消息中：
+正在处理消息* 
+* 例外消息
+. 这是我们配置发送通知电子邮件的出站端点的方式。
+
+== 防止某些类型的异常发生后，流再收到更多消息
+
+有时，当外部服务不可用时，我们知道每个消息处理尝试都会失败，直到恢复不可用资源为止，我们希望关闭该流程以防止消耗更多消息。
+
+[source, xml, linenums]
+----
+<flow name="StopFlowBasedOnExceptionType">
+    <vm:inbound-endpoint path="in" exchange-pattern="request-response"/>
+    <http:outbound-endpoint host="localhost" port="808" responseTimeout="5"/>
+    <default-exception-strategy>
+        <choice>
+            <when evaluator="groovy" expression="payload.getException().getCause() instanceof java.net.ConnectException"> <!-- [1] -->
+                <script:component>
+                    <script:script engine="groovy">
+                        flowConstruct.stop();
+                    </script:script>
+                </script:component>
+            </when>
+            <otherwise> <!-- [2] -->
+                <logger/>
+            </otherwise>
+        </choice>
+    </default-exception-strategy>
+</flow>
+----
+
+. 如果异常类型为`ConnectionException`，我们想要停止流程。
+. 对于所有其他异常类型，我们只记录异常。
+
+== 调用通过Java类实现的自定义异常策略
+
+默认情况下，当基于请求 - 响应交换模式针对流（或服务）抛出异常时，调用者接收`NullPayload`作为消息有效载荷并接收`ExceptionPayload`（即有效负载在抛出异常之后立即存在）作为`exceptionPayload`。改变这种行为的唯一方法是创建一个Java类来实现自定义异常策略。
+
+[source, java, linenums]
+----
+public class PreservePayloadExceptionStrategy extends AbstractMessagingExceptionStrategy
+{
+    public PreservePayloadExceptionStrategy(MuleContext muleContext)
+    {
+        super(muleContext);
+    }
+
+    private MuleEvent processException(Exception e, MuleEvent event, RollbackSourceCallback rollbackCallback)
+    {
+        Object payloadBeforeException = event.getMessage().getPayload(); //2
+        MuleEvent resultEvent = super.handleException(e, event, rollbackCallback); //3
+        resultEvent.getMessage().setPayload(payloadBeforeException); //4
+        return resultEvent; //5
+    }
+
+    @Override
+    public MuleEvent handleException(Exception e, MuleEvent event) //1
+    {
+        return processException(e, event, null);
+    }
+
+    @Override
+    public MuleEvent handleException(Exception e, MuleEvent event, RollbackSourceCallback rollbackCallback) //1
+    {
+        return processException(e, event, rollbackCallback);
+    }
+}
+----
+
+. 我们必须覆盖从`AbstractMessagingExceptionStrategy`继承的`handleException(Exception e, MuleEvent event)`和`handleException(Exception ex, MuleEvent event, RollbackSourceCallback rollbackCallback)`，因为这些是Mule调用来处理抛出的每个异常的方法。
+. 我们使用局部变量来存储有效负载的副本，因为它在发生异常之前就已经存在。
+. 我们调用super.handleException（e，event，rollbackCallback）来调用默认的异常策略。
+. 我们用发生异常之前存在的有效载荷副本来替换抛出异常之后存在的有效载荷。
+. 我们用更新的有效负载返回事件。
+
+创建我们的自定义异常策略后，我们可以在流（或服务模型）中使用它，如下所示：
+
+[source, xml, linenums]
+----
+<flow name="PreservePayloadExceptionStrategy">
+    <vm:inbound-endpoint path="in" exchange-pattern="request-response"/>
+    <append-string-transformer message=" with some text added"/>
+    <test:component throwException="true"/>
+    <custom-exception-strategy class="org.mule.examples.PreservePayloadExceptionStrategy"> <!-- [1] -->
+        <logger/>
+    </custom-exception-strategy>
+</flow>
+----
+
+. 定义由类`PreservePayloadExceptionStrategy`实施的自定义异常策略。这使得我们可以在发送异常时发送消息副本，而不是发送`ExceptionPayload`。

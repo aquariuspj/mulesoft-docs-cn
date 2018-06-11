@@ -1,0 +1,483 @@
+= 将MMC数据保存到MySQL
+
+＃*_MMC Version 3.4.2 and Later_*＃
+
+本文将介绍如何将环境和事务数据保存到MySQL数据库。按照<<MySQL Installation>>的说明操作，然后按照<<Persisting Environment Data>>或<<Persisting Transaction Data>>持久性的具体说明设置用户，创建数据库并配置MMC实例以保存数据。
+
+[NOTE]
+请记住*environment data and transaction data must exist in two separate databases*（不管它们是在同一台服务器上还是在同一个平台上）。
+
+*Jump to:*
+
+*  *<<Persisting Environment Data>>*
+*  *<<Persisting Transaction Data>>*
+
+== 假设
+
+本文档假设您已了解 link:/mule-management-console/v/3.8/setting-up-mmc[数据持久性选项]的环境和交易数据，并且您熟悉基本的 link:/mule-management-console/v/3.8/architecture-of-the-mule-management-console[Mule管理控制台的架构]。它还假定您已经安装：
+
+*  *MMC Version 3.5.0*。如果您需要升级到此版本，请从 link:http://www.mulesoft.com/support-login[客户门户]下载。
+*  *a Web application server such as Tcat, Tomcat, or JBoss*。有关硬件要求和支持的应用程序服务器，Java运行时环境和浏览器的最新信息，请参阅 link:/mule-user-guide/v/3.8/hardware-and-software-requirements[硬件和软件要求]。
+
+为了实际的目的，本文提到Tomcat作为servlet容器;但是，这里包含的说明也适用于Tcat或JBoss。如果您使用的是Tcat或JBoss，请确保将Management Console .war文件解压到相应的目录中。有关其他信息，请参阅 link:/mule-management-console/v/3.8/installing-the-production-version-of-mmc[安装MMC的生产版本]。
+
+[NOTE]
+====
+在本文档中，`<MMC_HOME>`指的是安装MMC的目录。
+
+如果您使用的是试用版，则此目录位于运行MMC的嵌入式Tomcat服务器的根目录中。根据您放置捆绑安装的位置，路径将类似于`<installation_root>/mmc-distribution-mule-console-bundle-3.5.0/mmc-3.5.0/apache-tomcat-7.0.52/webapps/mmc-3.5.0`。
+
+如果您在应用服务器（如Tomcat）中使用生产安装，则路径应与`<Tomcat root>/webapps/mmc-console-3.50.`相似，例如`/var/lib/tomcat6/webapps/mmc-console-3.5.0`。
+====
+
+==  MySQL安装
+
+这里概述的MySQL安装是基本的：数据库安装在默认端口3306的本地计算机上，安全性停用（使用到数据库的不安全连接以及具有完全管理权限的用户）。
+
+=== 工具
+
+*  MySQL社区服务器（ http://dev.mysql.com/downloads/mysql/[下载]）
+*  mysql命令行实用程序
+*  phpMyAdmin，基于Web的数据库管理工具（可选）（ http://www.phpmyadmin.net/home_page/downloads.php[下载]）
+
+这个配置在MySQL社区服务器5.5上进行了测试。
+
+在MySQL中创建数据库和数据库用户相对简单。您可以使用`mysql`命令行实用程序或基于`phpMyAdmin`的基于Web的管理工具来执行这些任务。本文档不介绍如何设置或安装MySQL，或者如何使用`phpMyAdmin`创建表;但是，它列出了用于为下面的环境数据持久性示例创建数据库，用户和表的命令。有关详情，请参阅<<Creating the Tables>>中的展开式部分。
+
+== 坚持不懈的环境数据
+
+要设置MySQL来保存您的MMC环境数据，您需要完成以下步骤：
+
+. 创建数据库。
+. 创建数据库用户。
+. 创建表格。
+. 设置MMC。
+. 如果您的MySQL位于远程主机上，请执行一些其他配置。
+
+[NOTE]
+====
+Mule控制台的嵌入式数据库文件位于以下目录之一：
+
+* 如果在诸如Tomcat的Web servlet容器上：` <MMC_HOME>/mmc-data/db`
+* 如果在试用版上：`<Mule install path>/.mule/mmc/mmc-data/db`
+
+将MMC配置为使用外部数据库存储其持久数据后，请勿删除`mmc-data`文件夹。 `db`子文件夹不再使用，但`repository`，`version`和`workspaces`子文件夹将被Java内容存储库（JCR）内部设置使用。
+====
+
+=== 创建数据库
+
+使用以下参数创建一个新数据库：
+
+*  *Database name:* `mmc_persistency_status`
+*  *Database owner:* `MMC_STATUS`
+
+=== 创建数据库用户
+
+使用默认权限和以下参数创建一个新的数据库用户：
+
+*  *Username:* `MMC_STATUS`
+*  *Password:* `mmc123`
+
+=== 创建表格
+
+导航到以下目录：`<MMC_HOME>/WEB-INF/classes/quartz`。在这个目录中，你会发现MySQL的两个脚本：
+
+MySQL服务器版本高于4.1的*  `tables_mysql.sql`
+*  `tables_mysql_version_4_1_and_older.sql`适用于MySQL服务器4.1及更早版本
+
+根据您的MySQL服务器版本，在目标数据库`mmc_persistency_status`中执行相应的脚本。
+
+
+[NOTE]
+====
+使用mysql实用程序创建数据库，用户和表
+
+. 打开终端并使用以下命令运行`mysql`实用程序。
+.  `mysql`会提示您输入root的用户密码。输入密码，您应该看到以下`mysql`提示。
+. 按照下面显示的顺序输入以下命令。每个命令都以分号（;）结尾。当您在每个分号后按Enter时，终端将显示一条以`Query OK`开头的消息，表示该命令已成功完成。
+. 退出`mysql`后，找到管理控制台随附的MySQL相关脚本（默认情况下位于`<MMC_HOME>/WEB-INF/classes/quartz`）。在您的终端中，通过运行`cd`命令切换到包含脚本的目录。下面是一个示例命令。
+. 从这个目录再次运行`mysql`，这次使用下面显示的参数。
+. 输入密码后，以用户`MMC_STATUS`登录到数据库`mmc_persistency_status`。 +
+. 通过发出以下命令来运行MySQL脚本。
+. 根据您的MySQL服务器版本，脚本名称将为`tables_mysql.sql`或`tables_mysql_versions_4_1_and_above.sql`。运行脚本时，`mysql`将显示一长串状态消息，如下所示。
+. 上面列出的状态消息表明这些表已成功创建。要验证，发出以下命令（下面，顶部），它会产生以下输出（下面，底部）。
+要查看特定表的内容，请运行以下命令。
+以下示例包含表`QRTZ_BLOB_TRIGGERS`的命令输出：
+此时，您已完成MySQL的配置。您可以继续设置管理控制台以使用您刚刚创建的数据库。
+====
+
+
+=== 设置MMC以使用MySQL保存环境数据
+
+本示例使用创建MySQL数据库时使用的参数<<Persisting Environment Data>>。
+
+*  MySQL监听主机和端口：localhost端口3306
+* 数据库名称：`mmc_persistency_status`
+* 数据库用户：`MMC_STATUS`
+* 密码：`mmc123`
+
+==== 获取MySQL驱动程序
+
+.  link:http://dev.mysql.com/downloads/connector/j/5.0.html[下载]最新的MySQL驱动程序。 （您需要免费下载Oracle帐户。）该驱动程序称为`mysql-connector-java-<version>`，例如`mysql-connector-java-5.1.26`。您可以将驱动程序作为zip或tar.gz文件下载。
+. 解压缩.zip或.tar.gz安装文件。在生成的目录结构中，找到名为`mysql-connector-java-<version>-bin.jar`的文件。这是jbdc驱动程序本身，您将复制到管理控制台目录结构。
+
+=====  MMC驱动程序以Mule应用程序运行
+
+将MySQL jdbc驱动程序`mysql-connector-java-<version>-bin.jar`复制到以下目录：`<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/lib`。
+
+或者，通过将驱动程序复制到`<Mule install path>/lib/user`来使驱动程序通常可用。
+
+用于MMC的===== 驱动程序以Web应用程序的形式运行
+
+将MySQL jdbc驱动程序`mysql-connector-java-<version>-bin.jar`复制到以下目录：`<MMC_HOME>/` WEB-INF / lib。
+
+====  MMC配置
+
+配置MMC将数据存储在MySQL数据库中涉及两项基本任务：
+
+* 修改文件`web.xml`，告诉MMC使用MySQL而不是默认数据库
+* 修改文件`mmc-mysql.properties`以设置连接到MySQL数据库的参数
+
+===== 修改web.xml
+
+. 在`<MMC_HOME>/WEB-INF`目录中找到文件`web.xml`，然后打开它进行编辑。
+. 找到`spring.profiles.active`部分，如下所示。
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-derby</param-value>
+</context-param>
+----
+
+. 删除字符串`env-derby`，然后将其替换为`env-mysql`，如下所示。
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-mysql</param-value>
+</context-param>
+----
+
+. 如果您还计划将<<Persisting Transaction Data>>添加到MySQL，请删除字符串`tracking-h2`并将其替换为`tracking-mysql`。
+
+[TIP]
+`web.xml`配置文件中的`spring.profiles.active`部分允许您定义用于存储环境和/或跟踪数据的外部数据库。
+
+===== 修改mmc-mysql.properties
+
+. 在`<MMC_HOME>/WEB-INF/classes/META-INF/databases`目录中找到文件`mmc-mysql.properties`，然后打开它进行编辑。
+. 下表列出了文件中包含的设置。根据需要修改值。一般而言，您需要修改的唯一值是`env.username`，`env.password`，`env.host`，`env.port`和`env.dbschema`。
+
+[%header,cols="33a,33,33a"]
+|===
+| {参数{1}}说明 |缺省
+| `env.driver`  |用于连接数据库的驱动程序 | `com.mysql.jdbc.Driver`
+| `env.script`  |用于在目标数据库中创建表的脚本 | `mysql`
+| `env.username`  |数据库用户 | `MMC_STATUS`
+| `env.password`  |数据库用户的密码 | `mmc123`
+| `env.host`  |数据库服务器正在侦听的主机名或IP地址 | `localhost`
+| `env.port`  |数据库服务器正在侦听的端口 | `3306`
+连接到数据库的| `env.url`  |网址 | `jdbc:mysql://${env.host}:${env.port}/${env.dbschema}`
+| `env.dbschema`  |连接到 | `mmc_persistency_status`的数据库
+|===
+. 将修改后的文件保存（如果有的话）。
+
+=== 删除本地数据库文件
+
+要使配置更改生效，在启动MMC之前，您需要删除MMC默认使用的本地数据库文件。
+
+在Web应用程序服务器的根目录中，找到`mmc-data`目录（例如，`/var/lib/tomcat6/mmc-data`），然后删除`mmc-data`目录。
+
+[NOTE]
+在删除`mmc-data`之前，请制作此目录的备份副本并将其保存在安全的位置。如果您的新数据库配置出现问题，您可以使用`mmc-data`在测试环境中排除新数据库配置时恢复旧数据库配置。
+
+此时，MMC将配置为将环境数据存储在您指定的外部MySQL数据库中。
+
+=== 连接到远程MySQL服务器
+
+如果MySQL服务器驻留在远程主机上，则很可能无法连接，除非执行以下两个操作：
+
+* 配置MySQL服务器以允许远程数据库连接
+* 授予您的数据库用户权限，允许其远程连接
+
+这两个操作在以下两节中进行介绍。
+
+==== 远程数据库连接
+
+. 要检查MySQL服务器是否允许远程数据库连接，请找到MySQL服务器配置文件，例如`/etc/mysql/my.cnf`。
+. 搜索以下行。
+
+[source]
+----
+bind-address        = 127.0.0.1
+----
+
+. 如果该行存在，请执行以下步骤：
+
+..  1。停止MySQL服务器。
+.. 打开配置文件进行编辑，然后用数字符号（＃）注释掉该行，如下所示。
+
+[source]
+----
+# bind-address      = 127.0.0.1
+----
+
+.. 关闭文件，然后重新启动MySQL服务器。
+
+==== 远程访问权限
+
+. 要向数据库用户授予远程数据库访问权限，请使用以下命令以MySQL服务器root用户身份登录到MySQL。
+
+[source]
+----
+mysql -u root -D mysql -p
+----
+
+. 输入root的密码。
+. 通过运行以下命令获取数据库用户密码的41位十六进制表示形式（在本例中为用户MMC_STATUS的密码）。
+
+[source]
+----
+SELECT * FROM user WHERE User = '<user>';
+----
+
+. 在上一个命令的输出中，查找，然后复制41位数的十六进制数字，前面带星号。确保将此编号保存到剪贴板或文本文件中，因为您将在下一步中使用它。下面显示了一个示例输出的代码片段。
+
+[source, sql, linenums]
+----
+mysql> SELECT * FROM user WHERE User = 'MMC_STATUS';
++--------------+------------+-------------------------------------------+-------------+-------------+-------------+-------------+-------------+-----------+-------------+---------------+--------------+-----------+------------+-----------------+------------+------------+--------------+------------+-----------------------+------------------+--------------+-----------------+------------------+------------------+----------------+---------------------+--------------------+------------------+------------+--------------+------------------------+----------+------------+-------------+--------------+---------------+-------------+-----------------+----------------------+--------+-----------------------+
+| Host         | User       | Password                                  | Select_priv | Insert_priv | Update_priv | Delete_priv | Create_priv | Drop_priv | Reload_priv | Shutdown_priv | Process_priv | File_priv | Grant_priv | References_priv | Index_priv | Alter_priv | Show_db_priv | Super_priv | Create_tmp_table_priv | Lock_tables_priv | Execute_priv | Repl_slave_priv | Repl_client_priv | Create_view_priv | Show_view_priv | Create_routine_priv | Alter_routine_priv | Create_user_priv | Event_priv | Trigger_priv | Create_tablespace_priv | ssl_type | ssl_cipher | x509_issuer | x509_subject | max_questions | max_updates | max_connections | max_user_connections | plugin | authentication_string |
++--------------+------------+-------------------------------------------+-------------+-------------+-------------+-------------+-------------+-----------+-------------+---------------+--------------+-----------+------------+-----------------+------------+------------+--------------+------------+-----------------------+------------------+--------------+-----------------+------------------+------------------+----------------+---------------------+--------------------+------------------+------------+--------------+------------------------+----------+------------+-------------+--------------+---------------+-------------+-----------------+----------------------+--------+-----------------------+
+| localhost    | MMC_STATUS | *14695FC49478AC013A63030250DD44DE579D54E1 | N           | N           | N           | N           | N           | N         | N           | N             | N            | N         | N          | N               | N          | N          | N            | N          | N                     | N                | N            |
+----
+
+. 使用以下命令授予权限。对于`<password>`参数，粘贴您在上一步中复制的41位十六进制数。
+
+[source, code, linenums]
+----
+GRANT ALL PRIVILEGES ON <database>.* TO '<user>'@'<host|net>' IDENTIFIED BY PASSWORD '<password>' WITH GRANT OPTION;
+----
+
+. 通过以下命令告诉MySQL服务器重新加载授权表。
+
+[source]
+----
+FLUSH PRIVILEGES;
+----
+
+[NOTE]
+====
+  GRANT ALL PRIVILEGES命令的详细信息和用法示例
+
+`<host|net>`的值可以是主机或网络规范。可以使用通配符，例如`'MMC_STATUS'@'172.16.0.%'`。
+
+`<password>`的值是代表密码的41位十六进制数字。要获取用户的密码，请从`mysql`提示符处运行以下命令。
+
+一个完整的命令示例如下。
+====
+
+[NOTE]
+====
+使用telnet命令测试远程连接
+
+如果您不确定MySQL服务器的配置，但确定您已连接到MySQL服务器主机和端口_（即您确定没有路由问题，防火墙等阻止连接），那么您可以使用{{ 0}}命令来执行MySQL服务器的远程测试。
+
+如果MySQL服务器不接受远程连接，即使服务器确实在监听指定的主机和端口，尝试远程登录到MySQL主机和端口也会生成"Connection refused error,"。
+
+如果MySQL服务器正在接受远程连接，但没有允许远程连接的用户，则输出如下所示。在这个例子中，连接成功，但被远程主机关闭。
+
+如果与MySQL服务器的连接正常工作，并且服务器授予用户访问权限，则输出与以下内容类似。
+
+如果您获得此输出，但无法成功将管理控制台连接到远程MySQL服务器，那么管理控制台配置可能有问题。有关详细信息，请查看Mule或Web应用程序服务器中的日志。
+====
+
+== 持久性交易数据
+
+要设置MySQL来保存您的MMC交易数据，您需要完成以下步骤：
+
+. 创建数据库。
+. 创建数据库用户。
+. 设置MMC。
+.  <<Modifying the Cleanup Script for MySQL>>。
+
+=== 创建数据库
+
+使用以下参数创建一个新数据库：
+
+*  *Database name:* `event_tracker`
+*  *Database owner:* `MMC_EVENTS`
+
+=== 创建数据库用户
+
+使用默认权限和以下参数创建一个新的数据库用户：
+
+*  *Username:* `MMC_EVENTS`
+*  *Password:* `mmc123`
+
+=== 设置MMC以使用MySQL保存交易数据
+
+==== 获取MySQL驱动程序
+
+.  http://dev.mysql.com/downloads/connector/j/5.0.html[下载]最新的MySQL驱动程序。 （您需要免费下载Oracle帐户。）该驱动程序称为`mysql-connector-java-<version>`，例如`mysql-connector-java-5.1.26`。您可以将驱动程序作为zip或tar.gz文件下载。
+. 解压zip或tar.gz安装文件。在生成的目录结构中，找到名为`mysql-connector-java-<version>-bin.jar`的文件。这是jbdc驱动程序本身，您将复制到管理控制台目录结构。
+
+===== 安装驱动程序
+
+将MySQL JDBC驱动程序`mysql-connector-java-<version>-bin.jar`复制到以下目录：`<MMC_HOME>/WEB-INF/lib`。
+
+====  MMC配置
+
+配置MMC以将Business Events数据存储在MySQL数据库中涉及两项基本任务：
+
+* 修改文件`web.xml`，告诉MMC使用MySQL而不是默认数据库
+* 修改文件`tracking-persistence-mysql.properties`以设置连接到MySQL数据库的参数
+
+===== 修改web.xml
+
+. 在`<MMC_HOME>/WEB-INF`目录中找到文件`web.xml`，然后打开它进行编辑。
+. 找到`spring.profiles.active`部分，如下所示。
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-h2,env-derby</param-value>
+</context-param>
+----
+
+. 删除字符串`tracking-h2`，然后将其替换为`tracking-mysql`，如下所示。
+
+[source, xml, linenums]
+----
+<context-param>
+<param-name>spring.profiles.active</param-name>
+<param-value>tracking-mysql,env-mysql</param-value>
+</context-param>
+----
+
+. 如果您还计划将<<Persisting Environment Data>>添加到MySQL，请删除字符串`env-derby`并将其替换为`env-mysql`。
+
+[TIP]
+`web.xml`配置文件中的`spring.profiles.active`部分允许您定义用于存储环境和/或跟踪数据的外部数据库。
+
+
+==== 修改tracking-persistence-mysql.properties
+
+. 在`<MMC_HOME>/WEB-INF/classes/META-INF/databases`目录中找到文件`tracking-persistence-mysql.properties`，然后打开它进行编辑。
+. 根据下表根据需要修改包含的设置。一般而言，您需要修改的唯一值是`mmc.tracking.db.username`，`mmc.tracking.db.password`，`mmc.tracking.db.host`，`mmc.tracking.db.port`和`mmc.tracking.db.dbname`。
+
+[%header,cols="33a,33,33a"]
+|===
+| {参数{1}}说明 |缺省
+| `mmc.tracking.db.events.query.propKeys`  | *Do not change this value.*这是用于检索事件密钥的特定于数据库引擎的查询。 | `SELECT DISTINCT t1.KEY0 FROM EVENT_PROPERTIES t1`
+| `mmc.tracking.db.platform`  |连接到 |的数据库服务器的类型`mysql`
+| `mmc.tracking.db.driver`  |用于连接数据库的驱动程序 | `com.mysql.jdbc.Driver`
+| `mmc.tracking.db.host`  |数据库服务器正在侦听的主机名或IP地址 | `localhost`
+| `mmc.tracking.db.port`  |数据库服务器正在侦听的端口 | `3306`
+连接到数据库的| `mmc.tracking.db.url`  |网址 | `jdbc:mysql://${mmc.tracking.db.host}:${mmc.tracking.db.port}/${mmc.tracking.db.dbname}`
+| `mmc.tracking.db.username`  |数据库用户 | `MMC_EVENTS`
+| `mmc.tracking.db.password`  |数据库用户的密码 | `mmc123`
+| `mmc.tracking.db.dbname`  |连接到 | `event_tracker`的数据库
+| `mmc.max.events.exception.details.length`  | Business Events异常中将存储在跟踪数据库中的字符数。允许的最大数量为261120。 | `8000`
+|===
+. 将修改后的文件保存（如果有的话）。
+
+=== 删除本地数据库文件
+
+要使配置更改生效，在启动MMC之前，您需要删除MMC默认使用的本地数据库文件。
+
+在Web应用程序服务器的根目录中，找到`mmc-data`目录（例如，`/var/lib/tomcat6/mmc-data`），然后删除`mmc-data`目录。
+
+[NOTE]
+在删除`mmc-data`之前，请制作此目录的备份副本并将其保存在安全的位置。如果您的新数据库配置出现问题，您可以使用`mmc-data`在测试环境中排除新数据库配置时恢复旧数据库配置。
+
+此时，MMC将配置为将环境数据存储在您指定的外部MySQL数据库中。
+
+== 修改MySQL的清理脚本
+
+MMC包含一个脚本来执行MMC数据库的例行清理，默认情况下每天在午夜发生。当前的MySQL脚本包含一个导致MySQL抛出SQL异常的错误。为避免此问题，请通过完成以下步骤将原始脚本替换为下面提供的脚本。
+
+[[newscript]]
+
+[source,java,linenums]
+----
+import javax.persistence.EntityManager;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.Persistence;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import com.mulesoft.mmc.tracking.repository.jpa.entities.*
+
+import java.util.Calendar;
+
+def logger = log
+
+def oneWeekAgo = Calendar.getInstance()
+oneWeekAgo.add(Calendar.DAY_OF_MONTH, -7);
+
+log.info("About to delete all tracking details older than "+oneWeekAgo.getTime());
+
+DriverManagerDataSource ds = applicationContext.getBean("dataSource");
+
+Properties properties = new Properties();
+properties.put("openjpa.jdbc.DBDictionary", "mysql");
+properties.put("javax.persistence.jdbc.url", ds.getUrl());
+properties.put("javax.persistence.jdbc.user", ds.getUsername());
+properties.put("javax.persistence.jdbc.password", ds.getPassword());
+properties.put("openjpa.ConnectionDriverName", "com.mysql.jdbc.Driver");
+
+EntityManagerFactory emf = null;
+EntityManager em = null;
+
+try {
+
+    emf = Persistence.createEntityManagerFactory("tracking-persistence-unit", properties);
+
+    em = emf.createEntityManager();
+
+    em.getTransaction().begin();
+
+    em.createNativeQuery("DELETE p FROM EVENT_PROPERTIES p where p.id in (select e.id from EVENTS e where e.transaction_id in (select t.id from TRANSACTION_SUMMARIES t where t.timestamp < ?1))").setParameter(1, oneWeekAgo).executeUpdate();
+
+    em.createNamedQuery(EventEntity.DELETE_OLDER_THAN_QUERY_NAME).setParameter("timestamp", oneWeekAgo).executeUpdate();
+            em.createNamedQuery(TransactionSummaryEntity.DELETE_OLDER_THAN_QUERY_NAME).setParameter("timestamp", oneWeekAgo).executeUpdate();
+
+    em.getTransaction().commit();
+
+} catch (RuntimeException re)
+    {
+        if (em?.getTransaction()?.isActive()) {
+            em.getTransaction().rollback();
+        }
+        throw re;
+    }
+
+finally {
+    em?.close();
+    emf?.close();
+}
+----
+
+=== 替换旧脚本
+
+. 登录到MMC。
+. 转到管理标签，然后是管理外壳。你应该看到下面的屏幕。
++
+image:admin_shell.png[admin_shell]
++
+. 点击右侧栏中的清理跟踪数据库。这将在编辑框中显示脚本的内容，如下所示。
++
+image:admin_shell2.png[admin_shell2]
++
+. 现在您可以根据需要编辑脚本。删除脚本的所有内容，将编辑器留空。
+. 将新脚本复制粘贴到编辑器中。
+. 点击编辑器下方的*Save As*。
+. 在*Save As*旁边的输入字段中，键入`Cleanup Tracking DB`（区分大小写），然后单击保存。这会导致xref：newscript [新脚本]覆盖旧的脚本。
+
+== 另请参阅
+
+* 详细了解 link:/mule-management-console/v/3.8/setting-up-mmc[MMC设置]。
+* 查看 link:/mule-management-console/v/3.8/architecture-of-the-mule-management-console[Mule管理控制台的架构]。

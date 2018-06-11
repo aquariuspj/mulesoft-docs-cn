@@ -1,0 +1,241 @@
+DataWeave中的= 模式匹配
+
+在DataWeave中，模式匹配在匹配指定表达式的第一个模式上执行。 DataWeave支持四种不同类型的模式：
+
+*  link:#pattern_match_literals[文字值]
+*  link:#pattern_match_data_types[数据类型]
+*  link:#pattern_match_expressions[表达式]
+*  link:#pattern_match_regex[常用表达]
+
+每种模式类型可以被命名或未命名。
+
+。模式匹配模型
+[source, dataweave, linenums]
+----
+value match {
+  case (<name>:)?<pattern> -> <when matched>
+  case (<name>:)?<pattern> -> <when matched>
+  else -> <when none of them matched>
+}
+----
+
+// TODO：解释这一点
+
+对于只需要基于值是否匹配的布尔结果的用例，您可以使用`matches`函数而不是使用模式匹配。
+
+// TODO：您也可以使用`match`功能。与此匹配运算符不同吗？
+
+[[pattern_match_literals]]
+符合文字值的=== 模式
+
+当评估值等于简单文字值时匹配。
+
+在此示例中，第一个字段与`payload.string`中的值匹配并返回一个布尔值。第二个字段执行相同的匹配，但返回一个包含布尔值和对验证值的引用的对象。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  a: payload.string match {
+    case "Emiliano" -> true
+    case "Mariano" -> false
+  },
+  b: payload.string match {
+    case str: "Emiliano" -> { "matches": true, value: str }
+    case str: "Mariano" -> { "matches": false, value: str }
+  }
+}
+----
+
+。输入
+[source, json, linenums]
+----
+{
+  "string": "Emiliano"
+}
+----
+
+.OUTPUT
+[source, json, linenums]
+----
+{
+  "a": true,
+  "b": {
+    "matches": true,
+    "value": "Emiliano"
+  }
+}
+----
+
+[[pattern_match_expressions]]
+表达式上的=== 模式匹配
+
+当给定的表达式返回`true`时匹配。
+
+在此示例中，第一个字段与`payload.string`的值相对于两个替代方案匹配，并有条件地向其添加不同的字符串。第二个字段评估`payload.number`中的值是否为"greater"，"less than"或"equal"为3并返回相应的字符串。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  a: payload.string match {
+    case str if str == "Mariano" -> str ++ " de Achaval"
+    case str if str == "Emiliano" -> str ++ " Lesende"
+  },
+  b: payload.number match {
+    case num if num == 3 -> "equal"
+    case num if num > 3 -> "greater than"
+    case num if num < 3 -> "less than"
+  }
+}
+----
+
+。输入
+[source,json,linenums]
+----
+{
+  "string": "Emiliano",
+  "number": 3.14
+}
+----
+
+.OUTPUT
+[source,json, linenums]
+----
+[
+  {
+    "a": "Emiliano Lesende",
+    "b": "greater than"
+  }
+]
+----
+
+[[pattern_match_data_types]]
+数据类型上的=== 模式匹配
+
+当评估值是指定的数据类型时匹配。
+
+在此示例中，第一个字段评估`payload.a`的类型，并返回具有相应类型名称的字符串。第二个字段相似，但也返回`payload.b`的值。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  a: payload.a match {
+    case is Object -> 'OBJECT'
+    case is String -> 'STRING'
+    case is Number -> 'NUMBER'
+    case is Boolean -> 'BOOLEAN'
+    case is Array -> 'ARRAY'
+    case is Null -> 'NULL'
+    else -> 'ANOTHER TYPE'
+  },
+  b: payload.b match {
+    case y is Object -> { 'Type': { 'OBJECT' : y} }
+    case y is String -> { 'Type': { 'STRING' : y} }
+    case y is Number -> { 'Type': { 'NUMBER' : y} }
+    case y is Boolean -> { 'Type': { 'BOOLEAN' : y} }
+    case y is Array -> { 'Type': { 'ARRAY' : y} }
+    case y is Null -> { 'Type': { 'NULL' : y} }
+    else -> { 'Type': { 'ANOTHER TYPE' : payload.b} }
+  }
+}
+----
+
+。输入
+[source,json, linenums]
+----
+{
+  "a": "Emiliano",
+  "b": 3.14
+}
+----
+
+.OUTPUT
+[source,json, linenums]
+----
+{
+  "a": "STRING",
+  "b": {
+    "Type": {
+      "NUMBER": 3.14
+    }
+  }
+}
+----
+
+[[pattern_match_regex]]
+正则表达式上的=== 模式匹配
+
+当评估值符合给定的正则表达式时匹配。在这个例子中，输入有效载荷包含一个字符串数组。该脚本使用`map`函数遍历数组。它根据正则表达式评估每个元素，并根据匹配输出一个对象到输入。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  a: payload.phones map ($ match {
+     case phone matches /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: phone[1]}
+     case phone matches /\((\d+)\)\s(\d+\-\d+)/ -> { area: phone[1], number: phone[2] }
+   }),
+ b: payload.phones map ($ match {
+   case phone matches /\+(\d+)\s\((\d+)\)\s(\d+\-\d+)/ -> { country: phone[1], area: phone[2], number: phone[3] }
+   case phone matches /\((\d+)\)\s(\d+\-\d+)/ -> { area: phone[1], number: phone[2] }
+ })
+}
+----
+
+。输入
+[source,json,linenums]
+----
+{
+  "phones": [
+    "+1 (415) 229-2009",
+    "(647) 456-7008"
+  ]
+}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "a": [
+    {
+      "country": "1"
+    },
+    {
+      "area": "647",
+      "number": "456-7008"
+    }
+  ],
+  "b": [
+    {
+      "country": "1",
+      "area": "415",
+      "number": "229-2009"
+    },
+    {
+      "area": "647",
+      "number": "456-7008"
+    }
+  ]
+}
+----
+
+== 另请参阅
+
+// * link:dw-functions-core[DataWeave核心功能]
+*  link:dataweave-types[DataWeave类型]
+*  link:dataweave-selectors[DataWeave选择器]

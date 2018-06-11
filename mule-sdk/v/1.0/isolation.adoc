@@ -1,0 +1,122 @@
+= 关于类加载隔离
+:keywords: mule, sdk, classloading, isolation
+
+为了在Mule 4中引入新的类加载模式，我们需要理解类加载问题
+我们在骡子3中。
+
+* 模块之间没有隔离。
+* 模块不是与运行时隔离的。
+* 模块未与应用程序隔离。
+
+这意味着用于使用某个库的模块可能会与其他模块，应用程序或其他模块冲突
+运行时使用同一个库的另一个版本，导致类加载问题
+包含`ClassNotFoundException`或`NoSuchMethodException`等错误，以及令应用开发人员感到困惑，并产生很难排除故障的运行时错误。
+
+在Mule 4中，为了解决这个问题，有一个全新的类加载模式
+将运行时，应用程序和模块相互隔离。他们每个人
+指定哪些*packages*（过滤是由包和*not*进行的）
+将作为其API的一部分导出，使这些特定的包可见。
+
+== 模块类加载隔离
+
+如前所述，在Mule 4中，类加载过滤是通过包而不是按类来完成的，
+这意味着这些模块需要指定为其他人导出哪些包
+看到。幸运的是，SDK使所有这些为你工作，但它是非常重要的
+作为模块开发人员，您了解这一规则。
+
+这很简单，SDK知道要导出哪些包是通过内省进行的
+每个配置，连接和组件返回和输入类型，然后获取它们的包。意即
+你永远不想在导出的类和另一个类之间共享一个包
+您*don't*想要导出。
+
+建议的软件包层次结构（我们用于模块的层次结构）是：
+
+----
+org.mule.module
+\--> .api.*
+\--> .internal.*
+----
+
+其中_api。* _包含将要导出和查看的所有类
+应用程序（返回类型，子类型，输入类型，连接接口）和
+  _ internal。* _包含所有包含模块特定行为的类
+（注释类，`Connection`和`Operation implementations`;以及内部类）。
+
+知道导出的包和返回类型。=== 
+
+建议*all*导出的类属于该模块，因此非常不鼓励
+并建议*never*从属于库的类中返回或接收对象
+该模块正在使用，因为最终可能会导致图书馆冲突
+模块与其他模块不兼容，应用程序依赖性甚至运行时。
+
+例如，想想接下来的场景：
+
+==== 第一种情况：导出相同的包
+
+我们有两个模块，它们有两个非常不同的操作，它们都使用相同的库，例如_GSON_
+解析json并返回一个`JsonObject`类的实例。其中一个使用_GSON_版本`1.1`和
+另一个_GSON_版本`2.3`。两者中的`JsonObject`类都位于相同的包中
+版本，但是实现在*very*之间彼此不同，这使得它们不兼容。
+
+模块的开发人员决定公开`JsonObject`是一个好主意
+类作为其操作的返回类型：
+
+
+第一模块操作
+[source, java, linenums]
+----
+public JsonObject getEmployee(@Connection EmployeesServiceConnection connection, String id) {
+  return new JsonObject(connection.getById(id));
+}
+----
+
+第二模块操作
+[source, java, linenums]
+----
+public JsonObject getAllProducts(@Connection ProductsServiceConnection connection) {
+  return new JsonObject(connection.getProdsJson());
+}
+----
+
+但现在部署mule应用程序时，mule开发人员会尝试使用这两个模块
+导出相同的包，mule将失败，因为你不能有两个不同的插件导出
+相同的包裹。
+
+==== 第二种情景：在不同版本中返回相同类的两个实例。
+
+让我们抓住上面的例子，但是这次这两次操作都不会导出_GSON_包
+他们会返回一个`java.lang.Object`。
+
+第一模块操作
+[source, java, linenums]
+----
+public Object getEmployee() {
+  // Here JsonObject is from GSON 1.1
+  return new JsonObject();
+}
+----
+
+第二模块操作
+[source, java, linenums]
+----
+public Object getAllProducts() {
+  // Here JsonObject is from GSON 2.3
+  return new JsonObject();
+}
+----
+
+现在当骡子开发者试图使用这两个模块并运行应用程序时，只有其中一个
+版本将被加载为应用程序，因为这两个类都完全相同
+完全限定名称，因此完全限定名称会发生​​冲突，从而导致其中一个模块（没有获取其加载包的版本）的不同行为，或者导致错误，如
+`ClassCastException`，`NoSuchMethodException`。
+
+===  @Export注释
+
+出于某种原因，模块需要导出类时，@Export注释可用于极端角落或复杂情况
+这不会由SDK自动导出。
+
+`@Export`注释接收要导出的类的数组。
+
+[WARNING]
+请记住，导出类最终会导出所有类
+包作为导出的类。

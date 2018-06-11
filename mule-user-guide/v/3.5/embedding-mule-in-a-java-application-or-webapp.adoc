@@ -1,0 +1,101 @@
+= 将Mule嵌入到Java应用程序或Web应用程序中
+
+本页描述了如何从Java应用程序启动和停止Mule，或者将它嵌入到Web应用程序（如JSP或servlet）中，以及如何在两种情况下通过代码与Mule进行交互。
+
+== 从Java应用程序启动Mule
+
+[TIP]
+====
+在Java应用程序或Web应用程序中以嵌入模式运行Mule之前，请确保手动更新应用程序的所有必需依赖项。 Mule Embedded Runtime JAR包含所有的Mule类，但您需要手动包含依赖关系。
+
+从https://developer.mulesoft.com/download-mule-esb-runtime下载Mule Embedded运行时JAR到
+在开始Mule之前添加到您的应用程序的类路径。
+====
+
+
+要从任何Java应用程序启动Mule，您可以调用其配置构建器之一。要使用Mule XML配置：
+
+[source, code, linenums]
+----
+DefaultMuleContextFactory muleContextFactory = new DefaultMuleContextFactory();
+SpringXmlConfigurationBuilder configBuilder = new SpringXmlConfigurationBuilder("mule-config.xml");
+muleContext = muleContextFactory.createMuleContext(configBuilder);
+----
+
+确保你存储了一个对MuleContext的引用，因为你需要它来阻止Mule。
+
+如果您有多个配置文件，则可以提供逗号分隔列表或一组配置文件：
+
+[source, code, linenums]
+----
+SpringXmlConfigurationBuilder configBuilder =
+     new SpringXmlConfigurationBuilder(new String[] { "mule-config.xml", "another-config.xml" });
+----
+
+然后调用`start`方法来启动服务器：
+
+[source, code, linenums]
+----
+muleContext.start();
+----
+
+== 停止Java应用程序中的Mule
+
+为了阻止骡，你停止这样的背景：
+
+[source, code, linenums]
+----
+muleContext.stop();
+muleContext.dispose();
+----
+
+将== 嵌入Webapp中
+
+[NOTE]
+====
+*Mule Standalone vs. Application Server* +
+
+下面列出的是运行Mule standalone与将它作为在应用程序服务器（Tomcat，WebSphere，JBoss等）中部署的Web应用程序运行的一些优点+
+
+*  *Wrapper control*：Mule Standalone使用Java Service Wrapper来控制操作系统中的JVM并启动Mule。包装器可以处理系统信号并提供JVM和底层操作系统之间更好的交互。
+*  *Smaller memory footprint*：Mule独立加载应用程序所需的资源;应用程序服务器添加自己的资源。
+*  *Anypoint DataMapper support*：仅在Mule Enterprise Standalone运行时支持DataMapper;其他应用程序服务器不支持DataMapper。
+*  *Deployment and Application Management*：通过Mule管理控制台，您可以完全控制在Mule Standalone上运行的应用程序，允许您部署/取消部署应用程序并重新启动/停止服务器。其他应用程序服务器不支持此可见性。
+====
+
+要将Mule嵌入到webapp中，您需要提供一个或多个配置文件位置作为上下文参数，并包含上下文侦听器来初始化Mule Server。如果您正在使用Mule XML配置，请使用以下命令：
+
+[source, xml, linenums]
+----
+<context-param>
+    <param-name>org.mule.config</param-name>
+    <param-value>mule-config-main.xml,mule-components.xml</param-value>
+</context-param>
+ 
+<listener>
+    <listener-class>org.mule.config.builders.MuleXmlBuilderContextListener</listener-class>
+</listener>
+----
+
+配置参数可以是类路径位置或文件位置。您还可以在类路径或文件系统中指定多个配置文件。
+
+== 与代码中的Mule交互
+
+要从应用程序，JSP或servlet与Mule服务器进行交互，可以使用 link:/mule-user-guide/v/3.6/using-the-mule-client[Mule客户端]。
+
+[source, code, linenums]
+----
+// in your servlet init() method save servletConfig.getServletContext() to a field
+MuleContext muleContext = servletContext.getAttribute(MuleProperties.MULE_CONTEXT_PROPERTY);
+// create a client
+MuleClient client = new MuleClient(muleContext);
+ 
+// send a jms message asynchronously
+client.dispatch("jms://my.queue", "some data", null);
+ 
+// or to receive a pop3 message via a configured mailbox
+MuleMessage message = client.receive("pop3://myInboxProvider", 3000);
+ 
+// or synchronous send a inter-vm message
+MuleMessage message2 = client.send("vm://my.object", "Some more data", null);
+----

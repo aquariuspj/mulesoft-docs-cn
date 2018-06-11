@@ -1,0 +1,217 @@
+=  APIkit解剖学参考
+:keywords: apikit, rest, api, raml, interface, console
+
+APIkit是构建Mule REST或SOAP API的工具。您可以使用以下其中一种建模语言开发API：
+
+*  RESTful API建模语言（RAML）1.0和0.8版本
+*  Web服务描述语言（WSDL）
+
+该参考提供了有关这些建模语言的信息。
+
+使用API​​kit的REST或SOAP项目具有以下部分：
+
+*  A http://raml.org/[肾错构瘤]或https://en.wikipedia.org/wiki/Web_Services_Description_Language[WSDL]界面
+* 主要流程
+* 后端流
+
+image::apikit-basic-anatomy-f5e73.png[REST vs SOAP Studio项目]
+
+您可以使用 link:/api-manager/designing-your-api#simulating-calls-to-the-api[APIkit控制台]或SOAP测试工具（例如https://en.wikipedia.org/wiki/SoapUI[SoapUI]）来模拟对API的调用。
+
+*Note:* APIkit控制台等效项不适用于基于WSDL的API。
+
+== 关于主要流程
+
+基于RAML的API的主要流程管理这些功能：
+
+* 使用HTTP或Jetty公开API。
+* 根据HTTP请求在接口和后端流之间路由请求。
+* 引用生成HTTP状态码响应的异常策略。
+
+image:apikitmainflow.png[Studio Visual Editor中的APIkit路由器]
+
+APIkit路由器任务包括路由消息，序列化响应以及验证有效负载，头文件，查询参数和uri-params。消息路由包括将传入的API请求路由到现有的Mule流，并将传出的HTTP响应代码返回到异常。
+
+基于WSDL的API的主要流程管理前两个任务。主流程中的逻辑接受请求，发送响应并促进接口和API过程之间的通信。主要流程通常由HTTP Listener和SOAP路由器组件组成。
+
+image:apikit-basic-anatomy-c4249.png[Studio中的TShirtService和SOAP路由器]
+
+== 关于后端流程
+
+APIkit为RAML中的每个 link:/apikit/v/3.x/apikit-basic-anatomy#interface[资源 - 行动配对]生成后端流。用于SOAP的APIkit为WSDL中的每个操作生成后端流。例如，RAML接口收到销售T恤的GET请求。后端流访问数据库以查找销售数据并响应请求。
+
+image:backend.png[Studio中的后端流程]
+
+用于SOAP的APIkit和APIkit分别支持以下流命名约定：
+
+*  RAML：`<action>:<resource path configuration name>`
++
+例如：post：/ sales：application / json：api-config
++
+*  SOAP：`<operation>:<service configuration name>`
++
+示例：OrderTshirt：/ TshirtService / TshirtServicePort / api-config
+
+每个后端流的名称对应于资源操作配对或某个操作服务映射。例如，名为`get:/machines:apiConfig`的后端流的XML代码映射到RAML资源`/machines`及其嵌套的`get:`操作。
+
+在生成后端流程之后，您将功能流程整合为预期输入并生成输出。从RAML开始，Studio会推出关于输入流的元数据的信息，并通过 link:/anypoint-studio/v/6/datasense[DataSense]公开这些信息。在REST API中，此输入可能以下列形式到达：
+
+* 请求正文
+* 查询参数
+*  URI参数
+* 集管
+
+后端流模拟REST API的模拟响应以模拟对API的调用。每个基于RAML的后端流都有一个或多个用于API Console仿真的消息处理器。
+
+每个后端流中的消息处理器接受请求，并使用RAML示例模拟对资源的预期操作。在 link:/apikit/v/3.x/apikit-tutorial[APIkit工作流程任务]的`get:/machines:apiConfig`后端流程中，消息处理器设置消息的属性并设置消息的有效负载以显示RAML示例中列出的自动售货机名称。
+
+[source,yaml,linenums]
+----
+/machines:
+  type: base
+  is: [filterable]
+  get:
+    responses:
+      201:
+        body:
+          example: |
+            {
+                "count" : 3,
+                "machines" : [
+                  {
+                    "id" : "ZX4102",
+                    "location" : "Starbucks, 442 Geary Street, San Francisco, CA 94102"
+                  },
+                  {
+                    "id" : "ZX5322",
+                    "location" : "Starbucks, 462 Powell Street, San Francisco, CA 94102"
+                  },
+                  {
+                    "id" : "ZX6792",
+                    "location" : "Cafe La Taza, 470 Post Street, San Francisco, CA 94102"
+                  }
+                ]
+            }
+----
+
+使用 link:/apikit/v/3.x/apikit-for-soap#hit-the-endpoint[DataWeave与SOAP API的APIkit]，您可以向后端流中的SOAP请求提供XML响应。
+
+=== 关于接口
+
+该接口定义API，指定包含或访问数据的资源并指定示例数据上的操作（如GET和PUT）。
+
+====  REST接口
+
+REST资源和操作之间的这种关系称为_resource-action pairing_。该接口公开REST服务请求的内部数据资产。
+
+您可以使用https://anypoint.mulesoft.com [Anypoint Platform]中的内置Studio编辑器或API Designer编写RAML界面。或者，当您 link:/apikit/v/3.x/apikit-tutorial#creating-a-new-project[创建APIkit项目]时，您可以将文件系统中的RAML导入Studio或引用位于外部的RAML的URL。
+
+====  SOAP接口
+
+由WSDL文件定义的接口公开了一些 http://www.w3.org/TR/wsdl#_services[服务]。每项服务都有一套操作。基础数据类型是由WSDL文件中的模式或导入的XSD文件定义的XML。
+
+== 关于错误处理
+
+用于SOAP的APIkit和APIkit分别便于处理基于RAML和WSDL的API的错误。
+
+=== 基于RAML的例外策略映射
+
+APIkit通过生成全局异常策略来处理最广泛使用的HTTP状态代码响应，从而促进基于RAML的错误处理。
+
+[%header,cols="10a,60a,30a"]
+|===
+| 状态码 | 例外| 消息
+|  400  |  org.mule.module.apikit.exception.BadRequestException  | 错误的请求
+|  404  |  org.mule.module.apikit.exception.NotFoundException  | 资源未找到
+|  405  |  org.mule.module.apikit.exception.MethodNotAllowedException  | 方法不被允许
+|  406  |  org.mule.module.apikit.exception.NotAcceptableException  | 不可接受
+|  415  |  org.mule.module.apikit.exception.UnsupportedMediaTypeException  | 不支持的媒体类型
+|===
+
+以下HTTP 400响应示例显示了异常策略的构建：
+
+[source,xml,linenums]
+----
+<apikit:mapping statusCode="400">
+   <apikit:exception value="org.mule.module.apikit.exception.BadRequestException" />
+   <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+   <set-payload value="{ &quot;message&quot;: &quot;Bad request&quot; }" doc:name="Set Payload"/>
+</apikit:mapping>
+----
+
+每次消息引发异常时，APIkit都会检查异常是否与项目中定义的任何`apikit:exceptions`的值匹配。 APIkit项目中的主流引用这些映射来发送HTTP错误响应：HTTP状态代码和相应的纯语言消息。
+
+* 如果匹配，APIkit使用异常映射中定义的属性和有效负载返回友好的HTTP状态码响应。例如，如果某个异常与以下软件包名称匹配，则APIkit会返回`400`错误，表明请求的内容不正确：
++
+`org.mule.module.apikit.exception.BadRequestException`
++
+* 如果不匹配，APIkit将返回`500 Internal Server Error`响应。此响应不会发送有效负载。
+
+您可以调整或添加到默认的异常策略映射，但如果这样做，则需要在主流程中 link:/apikit/v/3.x/apikit-using#generate-rest-backend-flows-and-reference-exception-strategies[引用映射]。以下示例显示添加异常策略映射以处理"500 Internal Server Error"响应：
+
+[source,xml,linenums]
+----
+        <apikit:mapping statusCode="500">
+            <apikit:exception value="java.lang.Exception" />
+            <set-property propertyName="Content-Type" value="application/json"/>
+            <set-payload value="#['{ &quot;message&quot;: &quot;Internal Server Error: ' + exception.message + '&quot; }']"/>
+        </apikit:mapping>
+----
+
+如果删除_all_异常映射，则项目中引发的错误会引发{{0}​​}响应。
+
+== 关于SOAP故障
+
+用于SOAP的APIkit将由WSDL定义的任何错误映射到由WSDL定义的操作。例如，TshirtFault映射到OrderTshirt，ListInventory和TrackOrder，如 link:/apikit/v/3.x/apikit-for-soap#using-typed-faults[用于SOAP教程的APIkit]中所述。您使用DataWeave来指定呈现给用户的消息。
+
+== 关于APIkit如何与RAML配合使用
+
+下图显示了APIkit构建的基于RAML的API如何处理最终用户请求。
+
+image:how_it_works.png[RAML API流程]
+
+. 最终用户向API发送HTTP请求。
+. 主流中的HTTP或Jetty端点接收请求并将消息传递给APIkit路由器。
+. 路由器检查接口以确认资源操作对存在于接口中。
+. 路由器检查是否将一个主体定义为请求的一部分。一般来说，请求只会使用PUT，POST和PATCH请求发送主体。
+. 如果请求包含正文，则路由器确定与正文关联的媒体类型，然后将请求内容类型与界面中定义的类型相匹配。
+. 如果为内容类型定义了模式，路由器会检查传入请求上的模式是否与界面中定义的模式匹配。如果模式无效，应用程序将拒绝该请求。
+. 路由器使用接口中包含的信息来确定哪个后端流应该接收请求。例如，根据请求和资源动作配对，路由器确定它应该将请求发送到flow2。
+. 路由器将请求发送到flow2。
+.  Flow2处理请求，访问资源并根据需要对数据进行操作。
+.  Flow2向路由器返回响应。
+. 路由器将响应推送到HTTP或Jetty端点。
+.  HTTP或Jetty端点将响应发送给最终用户。
+. 在控制台中，您可以通过Web用户界面提交请求来模拟API调用。
+
+=== 路由逻辑
+
+如果两个兄弟资源匹配请求，并且其中一个是静态的，另一个是参数化的，则使用静态的。
+
+例如：
+
+----
+/users:
+    /me:
+        get:
+    /{id}:
+        put:
+----
+
+结果是：
+
+*  get / users / me  - > 200 OK
+*  put / users / me  - > 405方法不允许
+* 将/ users / it  - > 200确定
+*  get / users / it  - > 405方法不允许
+
+如果在同一级别（同胞）有多个参数化资源，则该行为是不确定的。路由算法考虑到所有资源，即使它们没有定义方法。
+
+例如：
+
+`get /users -> 405 Method not allowed`
+
+== 另请参阅
+
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。

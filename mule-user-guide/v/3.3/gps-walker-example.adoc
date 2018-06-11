@@ -1,0 +1,234 @@
+=  GPS Walker示例
+
+此GPS Walker示例演示如何：
+
+* 使用 http://en.wikipedia.org/wiki/Ajax_(programming)[AJAX]从Mule Web服务与浏览器进行通信
+* 使用 link:/mule-user-guide/v/3.3/quartz-endpoint-reference[石英端点]来安排活动
+* 使用自动JSON绑定
+
+== 假设
+
+本文假定您熟悉 link:/mule-user-guide/v/3.3/essentials-of-using-mule-esb-3[骡子ESB]。有关基本操作的概述，例如启动服务器和查找Mule文件，请参阅 link:/mule-management-console/v/3.3/quick-start-guide-to-mule-esb-server-and-the-management-console[Mule ESB服务器和管理控制台快速入门指南]。
+
+== 设置
+
+完成以下步骤以运行GPS Walker示例。
+
+. 将文件`<MULE_HOME>/examples/gpswalker/mule-example-gpswalker-3.3.1.zip`复制到`<MULE_HOME>/apps`目录。
+. 启动Mule服务器，如果它尚未运行。 `<MULE_HOME>`是您Mule安装的根目录，例如`/opt/Mule/mule-standalone-3.3.1`。
+. 应用程序运行后，打开Web浏览器，然后导航到以下URL：http：// localhost：8081 / services / gps / index.html
+
+[TIP]
+====
+如何启动Mule服务器
+
+[%header%autowidth.spread]
+|===
+| image:check.png[查] a |
+
+有几种方法可以启动/停止Mule服务器：
+
+* 使用为 link:/mule-management-console/v/3.3/monitoring-a-server[管理服务器]提供图形界面的 link:/mule-management-console/v/3.3[Mule管理控制台]
+* 使用 link:/mule-management-console/v/3.3/quick-start-guide-to-mule-esb-server-and-the-management-console[命令行]
+
+通常，启动服务器的最简单方法是使用命令行：
+
+* 在Unix / Linux系统上，运行以下命令：
+
+* 在Windows系统上，通过运行以下命令转至`<MULE_HOME>\bin`目录：
+
+然后输入`mule`，然后按Enter键。运行`mule.bat`也会启动服务器。
+
+|===
+
+ 如何在不重新启动Mule服务器的情况下重新加载GPS Walker应用程序（Unix）
+
+[%header%autowidth.spread]
+|===
+| image:check.png[查] a |
+
+如果您在Mule运行时修改GPS Walker应用程序，则可以重新加载应用程序，而无需通过"touching"重新启动Mule（即更新文件`<MULE_HOME>/apps/mule-example-gpswalker-3.3.1/mule-config.xml`的时间戳）。
+
+要更新时间戳，请运行以下命令：
+
+Mule自动重新加载应用程序，激活任何修改。
+
+|===
+====
+
+[WARNING]
+该示例包含专门为`localhost`地址生成的Google地图密钥。尝试使用主机名或IP地址访问示例（例如，如果尝试从另一台计算机进行连接）将导致出现错误消息。
+
+=== 构建示例
+
+首先，确保您已经按照Mule的自述文件`<MULE_HOME>/README.txt`中的建议设置了MULE_HOME环境变量。
+
+[TIP]
+====
+MULE_HOME环境变量（来自Mule的README.txt文件）
+
+Mule使用MULE_HOME环境变量指向你的Mule安装位置。在您的环境中设置此变量是一种很好的做法。但是，如果它没有在启动时设置，Mule会根据启动脚本的位置临时设置它。
+
+您可能还想将MULE_HOME / bin目录添加到您的路径中。如果您使用Windows，则可以使用控制面板中的“系统”实用程序来添加MULE_HOME变量并编辑您的路径。或者，您可以在命令提示符处使用`export`或`set`命令（具体取决于您的操作系统），如+
+下面的例子：
+
+的Linux / Unix：
+
+视窗：
+====
+
+在系统上安装 http://maven.apache.org/guides/getting-started/index.html[Maven的]后，只需运行`<MULE_HOME/examples/gpswalker`目录中的`mvn`即可构建示例。此活动会编译示例类并生成一个zip文件，您可以将其复制到应用程序文件夹<`MULE_HOME> / apps`。
+
+== 它是如何工作的
+
+GPS Walker应用程序以三秒为间隔生成随机GPS坐标。它基于两个值计算每个坐标对（经度和纬度）：坐标对的前任和角度和距离的两个随机值。通过这种方式，应用程序可模拟链接连续坐标点的路径"walk,"。应用程序调用Google地图来显示该地区的地图，然后绘制链接生成的坐标的路径。
+
+image:gps.initial.position.png[gps.initial.position]
+
+应用程序的配置驻留在`<MULE_HOME/examples/gpswalker/src/main/app`的{​​{0}}文件中。以下部分介绍了它所调用的配置文件和源Java文件。有关文件的完整来源，请参阅<<Mule Configuration>>中的展开部分。
+
+===  StrollerService流程
+
+该应用程序包含一个流，即在`mule-config.xml`文件中定义的*StrollerService*流。
+
+[source, xml, linenums]
+----
+<flow name="StrollerService">
+        <quartz:inbound-endpoint repeatInterval="3000" startDelay="3000" jobName="walkGenerator">
+            <quartz:event-generator-job/>
+        </quartz:inbound-endpoint>
+        <component>
+            <singleton-object class="org.mule.example.gpswalker.CityStroller"/>
+        </component>
+        <ajax:outbound-endpoint channel="/gpswalker"/>
+    </flow>
+----
+
+StrollerService流包含一个 link:/mule-user-guide/v/3.3/quartz-endpoint-reference[石英入站端点]，每3秒调用一次*CityStroller*服务。 CityStroller生成随机GPS坐标，发布它们，然后使用每个坐标对的值生成距离的随机值，另一个用于角度。这两个随机值确定下一个坐标对。
+
+CityStroller服务在文件`<MULE_HOME>/examples/gpswalker/src/main/java/org/mule/example/gpswalker/CityStroller.java`中定义。
+
+//查看来源
+
+CityStroller服务产生`GPSCoord`对象。 `GPSCoord`对象是Java Bean; Mule会自动将它们序列化为JSON，以便浏览器中的JavaScript可以轻松读取它们。
+
+//查看来源
+
+请注意，`@JsonProperty`注释告诉Mule将此对象序列化为JSON字符串。 Mule使用https://github.com/codehaus/jackson[Jackson框架]来处理JSON。
+
+最后， link:/mule-user-guide/v/3.3/ajax-endpoint-reference[Ajax出站端点]在`/gpswalker`频道发布数据。
+
+===  Mule配置
+
+Mule将配置存储在`mule-config.xml`文件的`<MULE_HOME/apps/mule-example-gpswalker-3.3.1`中。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax"
+      xmlns:quartz="http://www.mulesoft.org/schema/mule/quartz"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/quartz http://www.mulesoft.org/schema/mule/quartz/current/mule-quartz.xsd
+        http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/current/mule-ajax.xsd
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+    <ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8081/services/gps" resourceBase="${app.home}/docroot"/>
+    <flow name="StrollerService">
+        <quartz:inbound-endpoint repeatInterval="3000" startDelay="3000" jobName="walkGenerator">
+            <quartz:event-generator-job/>
+        </quartz:inbound-endpoint>
+        <component>
+            <singleton-object class="org.mule.example.gpswalker.CityStroller"/>
+        </component>
+        <ajax:outbound-endpoint channel="/gpswalker"/>
+    </flow>
+</mule>
+----
+
+==== 配置文件概述
+
+在*Line 4*中，有一个新的'ajax'命名空间。这允许Mule将服务和流程绑定到浏览器上的Ajax频道。
+
+[source, code, linenums]
+----
+xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax"
+----
+
+在*Line 11*中，`ajax:connector`为此应用程序创建一个嵌入式Ajax服务器。请注意，`resourceBase`属性指定了一个目录，您可以在其中存储要在应用程序中发布的HTML和其他资源。当浏览器请求页面时，它们将从这个位置提供服务。 `resourceBase`是Mule中可用的新占位符，它引用了应用程序的根目录。
+
+[source, xml, linenums]
+----
+<ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8081/services/gps" resourceBase="${app.home}/docroot"/>
+----
+
+在*Line 18*中，我们将CityStroller组件声明为单例，因为我们在请求之间维持状态（当前坐标）。
+
+[source, xml, linenums]
+----
+<singleton-object class="org.mule.example.gpswalker.CityStroller"/>
+----
+
+最后，在*Line 16*中，我们定义一个名为`/gpswalker`的出站ajax频道。 CityStroller生成的GPSCoord数据将通过此频道发送给任何已订阅的收听者。请记住，Mule会自动将GPSCoord序列化为JSON。
+
+[source, xml, linenums]
+----
+<ajax:outbound-endpoint channel="/gpswalker"/>
+----
+
+== 客户端
+
+在浏览器中，我们使用 link:/mule-user-guide/v/3.3/ajax-transport-reference[Mule Javascript客户端]从服务器接收坐标。要使用Mule JavaScript客户端，您需要一个脚本导入：
+
+[source, xml, linenums]
+----
+<head>
+    <title>Mule GPS Walker Example</title>
+    <script type="text/javascript" src="mule-resource/js/mule.js"></script>
+</head>
+----
+
+当浏览器加载该脚本时，Mule客户端会自动加载并通过`mule`变量可用。
+
+[source, xml, linenums]
+----
+<script type="text/javascript">
+    var map = null
+    function init()
+    {
+        setupMap();
+        mule.subscribe("/gpswalker", callback);
+    }
+----
+
+现在我们可以创建发布到AJAX频道的Mule服务的订阅。我们在此订阅`/gpswalker`，这是我们的CityStroller服务发布的渠道。这就是让Mule ESB和浏览器彼此交谈所需的全部内容！
+
+`subscribe`方法需要传入`callback`方法，每次在`/gpswalker`通道上收到消息时都会调用该方法。
+
+[source, code, linenums]
+----
+function callback(message) {
+        if (message) {
+            var latLng = new GLatLng(message.data.latitude, message.data.longitude);
+            map.addOverlay(new GPolyline([marker.getPoint(),latLng]));
+            marker.setPoint(latLng);
+            map.setCenter(latLng);
+        }
+    }
+----
+
+该消息以JSON格式接收，这意味着数据很容易被JavaScript访问。我们根据服务器发送的经纬度创建一个新的`GLatLng`对象，并向Google地图添加叠加层。我们不会在本文档中介绍Google地图来源，但您可以在下面的可展开部分查阅`index.html`的完整源代码。
+
+//查看HTML
+
+image:gpswalker2.png[gpswalker2]
+
+Mule使用很少的编码就可以轻松创建面向Web服务的AJAX应用程序。这促进了服务器上的面向服务的体系结构，并且本质上要求数据和表示的清晰分离。在这个GPS Walker示例中，我们创建了一个由Quartz端点定期触发的Web服务，该端点将数据发布到客户端应用程序。我们使用JSON数据绑定来自动管理Java和JavaScript之间的数据传输，以及服务器和客户端之间进行通信的AJAX通道，这些通道将服务器中的数据绘制到Google地图上。
+
+== 相关主题
+
+有关配置Mule，使用转换器和其他主题的更多信息，请参阅 link:/mule-user-guide/v/3.3/mule-esb-user-guide[Mule ESB用户指南]的主页。此外，“用户指南”中的以下主题提供了有关上述概念的更多信息：
+
+* 有关配置各种类型组件的信息，请参阅 link:/mule-user-guide/v/3.3/configuring-components[配置组件]。
+* 有关您可以使用的传输类型的信息，请参阅 link:/mule-user-guide/v/3.3/transports-reference[运输参考]。
+* 有关使用翻译后字符串的信息，请参阅 link:/mule-user-guide/v/3.3/internationalizing-strings[国际化字符串]。

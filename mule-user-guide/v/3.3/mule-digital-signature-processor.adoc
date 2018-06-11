@@ -1,0 +1,410 @@
+=  Mule数字签名处理器
+
+将{数字签名添加到消息中== 
+
+*Mule Digital Signature Processor*向邮件有效负载或有效负载的一部分添加数字签名，以证明邮件发件人的身份。 Mule还可以验证收到的消息上的签名，以确认消息发件人的真实性。为了签署或验证邮件的签名，Mule使用以下两种数字签名策略之一：
+
+.  JCE签名者
+.  XML签名者
+
+作为邮件的发件人，当您希望通知邮件的收件人您是合法的发件人，并且保证其内容的全部或部分内容时，请使用数字签名。
+
+使用下表来确定哪种类型的数字签名策略最适合您的安全需求。
+
+[%header,cols="2*"]
+|===
+|数字签名策略 |特征
+| JCE签名者 |•使用密钥和算法对消息有效负载或有效负载的一部分进行签名
+| XML签名者 |使用密钥存储库签署消息有效内容或有效内容的一部分+
+•应用属性来指定算法的类型和签名的类型
+|===
+
+作为消息的接收者，当您需要验证身份并确认其发件人的合法性时，请使用数字签名功能。
+
+===  JCE签名者
+
+作为Mule的默认签名策略，Java Cryptology Extension（JCE）签名者通过数字签名丰富了消息有效载荷。
+
+[NOTE]
+本主题介绍全球元素的概念;如果您不熟悉此功能，请在继续之前访问 link:/mule-user-guide/v/3.3/understand-global-mule-elements[了解全球骡子元素]以了解更多信息。
+
+至少，您必须明确定义以下内容：
+
+*  a *Global Signature*元素
+您的Mule流中的* 个*Signature*消息处理器
+
+[TIP]
+====
+*Global vs. Local*
+
+要将数字签名应用于Mule中的消息，您必须使用两个元素，如上所述：Mule流中的*Signature message processor*和Signature消息处理器引用配置信息的*Global Signature*元素。
+
+下面的示例使用*Global Signature*元素应用数字签名的大部分属性配置，Mule需要应用数字签名的三个最低配置：默认签名者，算法和密钥。然后该示例使用Mule流中的本地*Signature*消息处理器来引用Global Signature元素。
+
+但是，您可以反转配置，以便本地*Signature*消息处理器包含大多数配置信息（包括最低配置），并且*Global Signature*元素仅包含默认签署者类型：JCE_SIGNER。
+
+这两种配置都没有问题，但如果您打算将相同类型的签名应用于Mule应用程序的多个流程中的消息，则可能希望使用前者。在这种情况下，全局元素使您无需在一个应用程序中多次编码相同的配置。
+
+请注意，在本地消息处理器中输入的任何配置都将进一步指定或覆盖全局元素中的任何配置，并将导致应用程序仅引用全局元素中与本地配置不冲突的配置。例如，您可以首先为*Algorithm*，*Keystore Path*和*Keystore Password*配置全局元素属性，并在一个应用程序中多次应用此全局元素。然后，在每个引用此全局元素的消息处理器中，可以为*Key*和*Key Password*配置本地属性，以指定每个特定消息处理器应该引用密钥库中的哪个密钥。您也可以选择与您在全局元素中配置的*Algorithm*不同的{{}}  - 此本地配置的算法将仅覆盖此消息处理器全局元素中指定的算法。
+====
+
+您可以在Global Signature元素或本地签名消息处理器中定义所需的配置。但是，请注意，您只能通过Global Signature元素中的配置指示Mule使用密钥库中的密钥。
+
+以下过程描述如何将JCE数字签名应用于在Mule流中处理的消息。
+
+. 在Mule Studio中，双击打开*Signature*消息处理器的*Pattern Properties*面板。或者，为您的XML配置添加一个`signature:sign`元素。
+. 为消息处理器输入*Display Name*，然后在签名消息处理器的*Operation*字段中选择`Sign`。 +
+
++
+image:JCE_sign1.png[JCE_sign1]
++
+
+[source, xml, linenums]
+----
+<signature:sign config-ref="" doc:name="Apply_Signature"/>
+----
+
+. 在*Input Reference*字段中，标识要应用签名的消息的有效负载。该值必须采用字节数组格式。
+. 在*Variable*字段中，指出Mule应存储丰富该消息的签名的位置。
+. 选择两个单选按钮中的一个来选择如何定义消息处理器的属性：+
+.. 选择*Reference or expression*单选按钮以使用表达式来引用您在应用程序的XML配置中其他位置定义的属性，或者引用bean中定义的配置。
+.. 选择*Define attributes*手动将值分配给下表中列出的属性。 “属性”列中的粗体字体表示必填字段; “值”列中的粗体字体表示默认值。 +
+ 请注意，如果您愿意，您可以在Global Signature元素中应用所需的配置，而不是此消息处理器。有关更多详细信息，请参阅全局与本地提示。
++
+[%header,cols="34,33,33"]
+|=========
+| {属性{1}}的值 |功能
+| *Algorithm*  |参考<<Appendix>>  |算法来加密密钥，如果使用密钥库不需要
+加密和解密消息的| *Key*  |   |唯一密钥
+|=========
+. 点击*Config Reference*字段旁边的 image:add.png[（加）]图标。
+
+. 在全局元素属性面板中，为您的全局元素输入一个*Name*。 +
+
++
+image:global_JCE_general.png[global_JCE_general]
++
+
+[source, xml, linenums]
+----
+<signature:config name="Global_JCE_Signature" doc:name="Signature"/>
+----
+
+. 在*Default Signer*字段中，选择`JCE_SIGNER`。此时，您可以点击*OK*来保存这个简单的Global Signature元素，而无需进一步配置。如果这样做，Mule将使用您在本地签名消息处理器（上述步骤5）中定义的配置对数字签名消息。
+. 点击*JceSigner*标签。 +
+
++
+image:global_JCE_Signer3.png[global_JCE_Signer3]
++
+
+. 选择两个单选按钮之一来配置全局元素的属性：+
+.. 选择*Reference or expression*单选按钮以使用表达式来引用您在应用程序的XML配置中其他位置定义的属性，或者引用bean中定义的配置。
+.. 选择*Define attributes*手动将值分配给下表中列出的属性。 “属性”列中的粗体字体表示必填字段; “值”列中的粗体字体表示默认值。
+
+请注意，如果您愿意，您可以在本地签名消息处理器中定义所有属性 - 保存*Keystore Path*和*Keystore Password*。有关更多详细信息，请参阅上面的全局与本地提示。
+
+[%header,cols="34,33,33"]
+|===
+| {属性{1}}的值 |功能
+| *Algorithm*  |参考<<Appendix>>  |算法来加密密钥，如果使用密钥库不需要
+| *Key*  |   |加密和解密消息的唯一密钥;或者，如果使用密钥库，密钥库中特定密钥的名称
+|密钥库路径 |   |指示密钥库文件的位置（即文件路径），如果使用密钥库
+|密钥库密码 |   |用于访问密钥库的密码，如果使用密钥库
+|密码密码 |   |用于读取密钥库中的密钥;仅当密钥库中的特定密钥具有其自己的密码时才需要
+|===
+
+[WARNING]
+====
+如果您使用的是*Keystore*，则还必须定义*Key*以指定应用程序应调用的密钥库中的哪个键。可以在全局元素属性窗口或模式属性窗口中配置密钥。
+
+* 如果在全局元素属性窗口中进行配置，则将针对引用该全局元素的所有构建块调用该键 - 除非在该构建块的本地“模式属性”窗口中指定了不同的键，因为本地配置将覆盖全局配置。
+* 如果在本地模式属性窗口中配置了该键，那么将仅为该构建块调用该键，因此同一流中也引用该全局元素的任何其他构建块都需要在其模式属性中配置的键视窗。
+====
+
+. 点击*OK*保存您的全局元素配置。
++
+
+[source, xml, linenums]
+----
+<signature:config name="Global_JCE_Signature" doc:name="Signature">
+        <signature:jce-signer-config algorithm="HmacMD5" key="1@s9bl&gt;1LOJ94z4"/>
+</signature:config>
+----
+
+. 点击*OK*保存您的本地签名消息处理器配置。
++
+
+[source, xml, linenums]
+----
+<signature:sign config-ref="Global_JCE_Signature" doc:name="Apply_Signature"/>
+----
+
+===  XML签名者
+
+XML签名者通过数字签名丰富消息有效载荷。
+
+[NOTE]
+本主题介绍全球元素的概念;如果您不熟悉此功能，请在继续之前访问 link:/mule-user-guide/v/3.3/understand-global-mule-elements[了解全球骡子元素]以了解更多信息。
+
+至少，您必须明确定义以下内容：
+
+*  a *Global Signature*元素
+您的Mule流中的* 个*Signature*消息处理器
+
+您可以在Global Signature元素或本地签名消息处理器中定义所需的配置。有关如何应用配置的更多信息，请参阅上面的全局与本地提示。但是，请注意，您只能通过Global Signature元素中的配置指示Mule使用密钥库中的密钥。
+
+以下过程描述如何将XML数字签名应用于在Mule流中处理的消息。
+
+. 在Mule Studio中，双击打开*Signature*消息处理器的*Pattern Properties*面板。或者，为您的XML配置添加一个`signature:sign-xml`元素。
+. 在签名消息处理器的*Operation*字段中选择`Sign xml`。 +
+ +
+image:xml_signature.png[xml_signature]
++
+
+[source, xml, linenums]
+----
+<signature:sign-xml config-ref="" doc:name="XML_Signature"/>
+----
+
+. 将下表中列出的属性应用于消息处理器，以指示Mule如何签署消息负载。 “属性”列中的粗体字体表示必填字段; “值”列中的粗体字体表示默认值。 +
+ 请注意，如果您愿意，您可以在Global Signature元素中应用所需的属性配置，而不是此消息处理器。有关更多详细信息，请参阅上面的全局与本地提示。
++
+[%header,cols="34,33,33"]
+|=========
+| {属性{1}}的值 |功能
+|输入 | *whole payload*  | Mule应用签名的有效载荷;必须是一个字节数组
+加密和解密消息的| *Key*  |   |唯一密钥
+具有分离签名类型的消息的|参考URI  |任何URI  |外部URI引用
+| *Digest Method Algorithm*  | RIPEMD160 +
+SHA1 +
+  *SHA256* +
+SHA512  | Mule用来加密摘要的算法
+| *Canonicalization Algorithm*  | *EXCLUSIVE* +
+与评论+排除
+INCLUSIVE +
+包含评论 | Mule用于XML规范化的算法
+| *Signature Method Algorithm*  | *RSA_SHA1* +
+DSA_SHA1 +
+HMAL_SHA1  |算法Mule用来保护消息免遭篡改
+| *Signature Type*  | DETACHED +
+  *ENVELOPED* +
+包络 |定义签名是否适用于：+
+•包含文档之外的数据（分离）+
+•包含文件的一部分（封装）+
+•它自身包含的数据（包含）
+|=========
+. 点击*Config Reference*字段旁边的 image:add.png[（加）]图标。
+
+. 在*Global Element Properties*面板中，为您的全局元素输入一个*Name*。
+. 在*Default Signer*字段中，选择`XML_SIGNER`。此时，您可以点击*OK*来保存这个简单的Global Signature元素，而无需进一步配置。如果这样做，Mule将使用您在本地签名消息处理器中定义的配置（上面的步骤3）对消息进行数字签名。 +
+ +
+image:XML_global_signature.png[XML_global_signature]
++
+
+[source, xml, linenums]
+----
+<signature:config name="Global_XML_Signature" doc:name="Signature" defaultSigner="XML_SIGNER"/>
+----
+
+. 点击*Xml Signer*标签。 +
+ +
+image:XML_Global_attributes.png[XML_Global_attributes]
+
+. 选择两个单选按钮之一来配置全局元素的属性：+
+.. 选择*Reference or expression*单选按钮以使用表达式来引用您在应用程序的XML配置中其他位置定义的属性，或者引用bean中定义的配置。
+.. 选择*Define attributes*手动将值分配给下表中列出的属性。 “属性”列中的粗体字体表示必填字段; “值”列中的粗体字体表示默认值。此表仅包含上述表中未列出的属性，在步骤3中
+ 请注意，如果您愿意，您可以在本地签名消息处理器中定义除*Keystore Path*和*Keystore Password*之外的所有属性。有关更多详细信息，请参阅上面的全局与本地提示。
++
+[%header,cols="34,33,33"]
+|====
+| {属性{1}}值 |功能
+|密钥库路径 |   |指示密钥库文件的位置（即文件路径），如果使用密钥库
+|密钥库密码 |   |用于读取存储在密钥库中的密钥，如果使用密钥库
+|====
++
+[WARNING]
+====
+如果您使用的是*Keystore*，则还必须定义*Key*以指定应用程序应调用的密钥库中的哪个键。可以在全局元素属性窗口或模式属性窗口中配置密钥。
+
+* 如果在全局元素属性窗口中进行配置，则将针对引用该全局元素的所有构建块调用该键 - 除非在该构建块的本地“模式属性”窗口中指定了不同的键，因为本地配置将覆盖全局配置。
+* 如果在本地模式属性窗口中配置了该键，那么将仅为该构建块调用该键，因此同一流中也引用该全局元素的任何其他构建块都需要在其模式属性中配置的键视窗。
+====
+
+. 点击*OK*保存您的全局元素配置。
++
+
+[source, xml, linenums]
+----
+<signature:config name="Global_XML_Signature" doc:name="Signature" defaultSigner="XML_SIGNER">
+        <signature:xml-signer-config digestMethodAlgorithm="SHA512" key="1@s9bl&gt;1LOJ94z4"/>
+    </signature:config>
+----
+
+. 点击*OK*保存您的本地签名消息处理器配置。
++
+
+[source, xml, linenums]
+----
+<signature:sign-xml config-ref="Global_XML_Signature" doc:name="XML_Signature"/>
+----
+
+== 签名的有效负载的示例
+
+以下是消息有效载荷的示例：一个_不带数字签名（下面，顶部），另一个带有XML数字签名（下面，底部）。
+
+*View the XML Without Digital Signature*
+
+[source, xml, linenums]
+----
+<PurchaseOrder>
+ <Item number="130046593231">
+  <Description>Video Game</Description>
+  <Price>10.29</Price>
+ </Item>
+ <Buyer id="8492340">
+  <Name>My Name</Name>
+  <Address>
+   <Street>One Network Drive</Street>
+   <Town>Burlington</Town>
+   <State>MA</State>
+   <Country>United States</Country>
+   <PostalCode>01803</PostalCode>
+  </Address>
+ </Buyer>
+</PurchaseOrder>
+----
+
+*View the XML With Digital Signature*
+
+[source, xml, linenums]
+----
+<PurchaseOrder>
+ <Item number="130046593231">
+  <Description>Video Game</Description>
+  <Price>10.29</Price>
+ </Item>
+ <Buyer id="8492340">
+  <Name>My Name</Name>
+  <Address>
+   <Street>One Network Drive</Street>
+   <Town>Burlington</Town>
+   <State>MA</State>
+   <Country>United States</Country>
+   <PostalCode>01803</PostalCode>
+  </Address>
+ </Buyer>
+<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/><Reference URI=""><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>tkrLEansVMTKqAOuW6b8Dx+OUNWk9bVpW6RFvfuEmM8=</DigestValue></Reference></SignedInfo><SignatureValue>PeeHVw+XvZkkhhPlEopRp1PBDfTcR9U2IBimTTo1gOMF5cWq1tFqZ0B4ScNBiZVtd0yS4j06xl3W
+B2Q87oobwA==</SignatureValue><KeyInfo><KeyValue><RSAKeyValue><Modulus>i8OP+VX/EORWwHiHiqLmMgpXz4IubPv2y+gHdiSCUzKoFfUYD6wFGBwi6vVmRSrmNbNZvZ9DFvST
+PZJEyUhn5w==</Modulus><Exponent>AQAB</Exponent></RSAKeyValue></KeyValue></KeyInfo></Signature></PurchaseOrder>
+----
+
+== 签署消息有效负载的一部分
+
+默认情况下，当您应用签名时，Mule在整个消息有效载荷上签名。但是，您可以使用Mule Expression来标记消息有效载荷的特定部分，而不是整个有效载荷。在JCE或XML签名消息处理器的*Input Reference*字段中输入Mule表达式，以定义您希望签名的有效负载的特定部分。
+
+== 使用MEL应用签名
+
+如上所述，要将数字签名应用于Mule中的消息，通常需要两个要素：
+
+定义全部或部分签名属性的*  *Global Signature*元素
+Mule流中的*  *Signature*消息处理器，它定义了全部或部分签名属性
+
+但是，您也可以将签名添加到消息中，而不将特征消息处理器添加到Mule流。为此，您需要：
+
+* 定义所有签名属性的*Global Signature*元素
+作为*message attribute*附加到消息处理器的*  a *Mule expression*，它引用Global Signature元素将签名应用于消息
+
+要通过另一个元素中的Mule表达式引用全局签名元素，必须首先将全局签名元素的*Enable Language*属性设置为true（下，左），然后应用所有全局签名属性（如下，右）。 +
+ +
+  image:enable_language3.png[enable_language3]
+
+[source, xml, linenums]
+----
+<signature:config name="hmacPlain" enableLanguage="true">
+        <signature:jce-signer-config algorithm="HmacMD5" key="JLfl5sER3kt4oVkzP2d39UQrUxrEK63LjmXAO45b6cU="/>
+</signature:config>
+----
+
+然后，将*message attribute*添加到流程中的某个元素（例如记录器），以根据Global Signature元素中的配置应用数字签名。 +
+ +
+  image:add_message.png[ADD_MESSAGE]
+
+[source, xml, linenums]
+----
+<flow name="testHmacPlain">
+        <logger level="ERROR" message="#[hmacPlain.usingJCESigner().sign(payload)]"/>
+ </flow>
+----
+
+== 验证数字签名
+
+除了签署消息之外，Mule还使用签名消息处理器来验证消息发件人的身份是否合法。 Mule在发现无效签名的地方丢弃该消息，不再进行处理。
+
+Mule根据任何可选属性的配置（如果明确定义的话）验证消息有效载荷上的签名（请参阅上面有关JCE和XML特定属性的列表）。
+
+[NOTE]
+本主题介绍全球元素的概念;如果您不熟悉此功能，请在继续之前访问 link:/mule-user-guide/v/3.3/understand-global-mule-elements[了解全球骡子元素]以了解更多信息。
+
+要验证Mule流中消息的JCE或XML签名，您至少必须创建：
+
+*  a *Global Signature*元素
+您的Mule流中的* 个*Signature*消息处理器
+
+以下过程介绍如何验证Mule流收到的消息上的数字签名。
+
+在您的Mule流程中，在Studio的流程中尽早添加一个*Signature*消息处理器，以验证待处理消息的签名。
+. 在*Operations field*中选择`Verify Signature`。或者，将Signature元素添加到您的流程中，配置为验证签名（请参阅下面的代码）。
++
+
+[source, xml, linenums]
+----
+<signature:verify-signature config-ref="" doc:name="Signature"/>
+----
+
+. 使用XML中的*Using*字段（或`using`属性）来指示签名的类型：` JCE_SIGNER`或`XML_SIGNER`。
+. （可选）在*Input Reference*字段中输入Mule表达式，以指示签名所应用的消息负载部分。换句话说，签名可能仅适用于消息有效负载的一部分。
+. 在*Expected Signature*字段中，输入一个Mule表达式，Mule可以用它来比较并验证它收到的消息上的签名是否真实。
+. 配置本地签名消息处理器的其他任何属性。有关属性配置的详细信息，请参阅上面的<<JCE Signer>>和<<XML Signer>>部分。此外，请参阅全局与本地提示，以确定在本地配置哪些属性，签名消息处理器以及要在全局签名元素中配置哪些属性。
+. 配置Global Signature元素的任何其他属性。再次请参阅上面的<<JCE Signer>>和<<XML Signer>>部分以了解属性配置详情。
+. 配置签名消息处理器以引用全局签名元素。
++
+
+[source, xml, linenums]
+----
+<signature:config name="Signature"  enableLanguage="true" doc:name="Signature">
+    <signature:jce-signer-config algorithm="HmacMD5" key="JLfl5sER3kt4oVkzP2d39UQrUxrEK63LjmXAO45b6cU="/>
+</signature:config>
+...
+ 
+ <flow name="Get_CC_information" doc:name="Get_CC_information">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <signature:verify-signature config-ref="Signature" input-ref="#[message.inboundProperties['user']]" expectedSignature="#[message.inboundProperties['token']]" doc:name="Verify User Signature" doc:description="Verify if the Signature is correct, so we can validate the User"/>
+        <set-payload value="#[new String(&quot;&lt;user&gt;&lt;name&gt;Royal Bank of Canada&lt;/name&gt;&lt;id&gt;Royal_Bank_Of_Canada&lt;/id&gt;&lt;cc&gt;&lt;company&gt;Visa&lt;/company&gt;&lt;number&gt;1234567890&lt;/number&gt;&lt;secret&gt;123&lt;/secret&gt;&lt;/cc&gt;&lt;/user&gt;&quot;)]" doc:name="Set Payload"/>
+        <encryption:encrypt config-ref="plainXml" doc:name="Encrypt the XML (only th CC Info)" using="XML_ENCRYPTER" input-ref="#[payload.toString()]"/>
+  </flow>
+----
+
+== 下一步
+
+检查说明如何验证消息的数字签名的 link:/mule-user-guide/v/3.3/anypoint-enterprise-security-example-application[Anypoint企业安全示例应用程序]。
+
+== 附录
+
+[%header,cols="1*"]
+|===
+| JCE签名者可用算法
+| HMACMD5
+| HMACSHA1
+| HmacSHA256
+| HmacSHA384
+| HmacSHA512
+| MD2WithRSAEncryption
+| MD4WithRSAEncryption
+| MD5WithRSAEncryption
+| RIPEMD128WithRSAEncryption
+| RIPEMD160WithRSAEncryption
+| RIPEMD256WithRSAEncryption
+| SHA1WithRSAEncryption
+| SHA224WithRSAEncryption
+| SHA256WithRSAEncryption
+|===

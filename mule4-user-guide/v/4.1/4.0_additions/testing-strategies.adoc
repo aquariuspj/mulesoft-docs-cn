@@ -1,0 +1,449 @@
+= 测试策略
+:keywords: testing, strategy, automated tests, unit tests
+
+为您的Mule项目构建一套全面的自动化测试是确保其长久性的主要因素：您可以获得安全网络的安全性，以便在应用程序离开工作站之前捕捉应用程序中的任何回退或不兼容的更改。
+
+我们在三个不同的方面看待测试：
+
+* 单元测试：这些测试的设计很快，测试的系统非常狭窄。骡通常不用于单元测试。
+* 功能测试：这些测试通常涉及运行Mule，尽管配置有限，并且应该运行得足够快以便在每个构建中执行。
+* 集成测试：这些测试使用尽可能接近生产的设置来运行完整的Mule应用程序。它们通常运行速度较慢，而不是常规构建的一部分。
+
+实际上，单元和功能测试通常合并在一起并执行。
+
+== 单元测试
+
+在一个Mule应用程序中，单元测试仅限于可以实际运行的代码，而无需在Mule本身内运行。作为一个经验法则，骡知道的代码（例如，依赖于注册表的代码）最好用功能测试
+
+考虑到这一点，以下是单元测试的最佳人选：
+
+* 自定义变形金刚
+* 自定义组件
+* 自定义表达式评估程序
+* 您的Mule应用程序使用的所有Spring bean。通常，这些bean会作为依赖JAR的一部分，并在构建时进行测试，从而减轻您在Mule应用程序项目中重新测试它们的需求。
+
+Mule提供抽象的父类来帮助进行单元测试。打开 link:/mule-user-guide/v/3.9/unit-testing[这里]以获取更多关于它们的信息。
+
+=== 功能测试
+
+功能测试是那些最广泛地执行应用程序配置的测试。在这些测试中，你有自由和工具来模拟快乐和不快乐的路径。
+
+您应包含的"paths"适用于：
+
+* 消息流
+* 基于规则的路由，包括这些流程中的验证处理
+* 错误处理
+
+如果你已经模块化了你的配置文件，那么你已经把自己置于开始功能测试的好位置。
+
+让我们看看为什么：
+
+* 可以单独测试导入的配置。这意味着您可以为每个不同的导入配置创建一个功能测试套件。这样可以减小被测系统的大小，从而更容易为需要覆盖的每种不同情况编写测试。
+* 并行传输配置允许传输交换和故障注入。这意味着在运行功能测试时不需要使用真正的传输（如HTTP，JMS或JDBC），但可以通过虚拟机内存队列运行所有内容。您还可以为目标服务创建存根，并使其无法轻松模拟不快乐的路径。
+
+真的运输还是不？这是您可能要问的问题，因为Mule应用程序连接到的不同基础架构（例如：ActiveMQ for JMS，HSQLDB for JDBC）中存在很多内存中的替代方案，所以这是一个有效的问题。真正的问题是：你真的在测试什么？是否与您的功能测试执行实际运输相关，知道它们已经通过MuleSoft测试，并且集成测试负责执行它们。
+
+Mule为实现功能测试提供了很多支持功能。让我们看看一个例子，并在我们去的时候发现它们。下图说明了我们正在测试的流程：
+
+该流程通过HTTP接收传入消息，验证它们并在它们可接受时将它们分派给JMS。对于实际的实现，我们使用Validator配置模式并检查传入消息有效负载是否为XML。请记住，如果您正在测试流程，则应用相同的测试原则和工具。
+
+== 使用并行配置进行测试
+
+我们来看看这个应用程序的配置文件。首先，我们有包含Validator的配置文件：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule-xml="http://www.mulesoft.org/schema/mule/xml"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd">
+ 
+  <validator name="WorkAcceptor"
+             inboundEndpoint-ref="NewWorkEndpoint"
+             ackExpression="#[string:OK:#[message:id]]"
+             nackExpression="#[string:NOT_XML]"
+             outboundEndpoint-ref="AcceptedWorkEndpoint">
+    <mule-xml:is-xml-filter/>
+  </validator>
+</mule>
+----
+
+请注意入站和出站端点如何实际引用全局端点。这些全局端点被配置在一个单独的配置文件中，该文件被设计为与上述端点并列加载。以下是它的内容，为简洁起见，省略了JMS连接器配置：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+     
+    <http:endpoint name="NewWorkEndpoint"
+                   host="${web.host}"
+                   port="8080"
+                   path="api/work">
+      <object-to-string-transformer/>
+    </http:endpoint>
+     
+    <!-- JMS connector configuration omitted -->
+     
+    <jms:endpoint name="AcceptedWorkEndpoint"
+                  queue="work"
+                  connector-ref="WorkQueueJmsConnector" />
+</mule>
+----
+
+请注意，此配置如何提供其他配置使用的全局端点的实际配置。为了在功能上对此进行测试，请创建一个替代配置，为全局终端提供相同的名称，但使用VM传输。这里是：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+ 
+    <vm:endpoint name="NewWorkEndpoint"
+                 path="work.new"
+                 exchange-pattern="request-response" />
+     
+    <vm:endpoint name="AcceptedWorkEndpoint"
+                 path="work.ok"
+                 exchange-pattern="one-way" />   
+</mule>
+----
+
+现在让我们写两个测试：每个可能的路径（消息是XML还是不是）。你可以继承Mule的FunctionalTestCase，这是一个抽象类，它被设计成所有功能测试的父类。
+
+FunctionalTestCase类是JUnit的TestCase类的后代。
+
+这里是测试类，没有Java导入声明：
+
+[source, code, linenums]
+----
+public class WorkManagerFunctionalTestCase extends FunctionalTestCase
+{
+    @Override
+    protected String getConfigResources()
+    {
+      return "mule-workmanager-config.xml,mule-test-transports-config.xml";
+    }
+ 
+    public void testValidJob() throws Exception
+    {
+      MuleClient client = new MuleClient(muleContext);
+      MuleMessage result = client.send("vm://work.new", "<valid_xml />", null);
+      assertTrue(result.getPayloadAsString().startsWith("OK:"));
+ 
+      MuleMessage dispatched = client.request("vm://work.ok", 5000L);
+      assertEquals("<valid_xml />", dispatched.getPayloadAsString());
+    }
+ 
+    public void testInvalidJob() throws Exception
+    {
+      MuleClient client = new MuleClient(muleContext);
+      MuleMessage result = client.send("vm://work.new", "not_xml", null);
+      assertTrue(result.getPayloadAsString().startsWith("NOT_XML"));
+ 
+      MuleMessage dispatched = client.request("vm://work.ok", 5000L);
+      assertNull(dispatched);
+    }
+----
+
+在`testValidJob()`中注意我们如何确保我们收到了对我们的有效呼叫的预期同步响应（从"OK:"开始），但我们如何通过从消息中请求消息来检查消息是否已正确分发到预期目标目标VM队列。相反，在`testInvalidJob()`中，我们验证没有任何内容发送到有效的工作端点。
+
+作为标准的JUnit测试，您现在可以从Eclipse或Maven的命令行运行这些测试。
+
+使用VM队列来积累消息并随后请求它们（就像我们对vm：//work.ok所做的那样）只能使用单向交换模式。使用请求 - 响应模式会让Mule寻找VM队列的使用者，因为预计会有同步响应。那么当我们必须测试请求响应端点时，我们该怎么做？我们使用功能测试组件！
+
+=== 使用功能测试组件删除
+
+功能测试组件（FTC）是一个可编程的存根，可用于消费来自终端的消息，积累这些消息，对其作出响应甚至抛出异常。让我们重温我们的榜样，看看FTC如何帮助我们，因为我们的要求正在发生变化。
+
+我们决定使用之前未使用的验证器功能，该功能可以确保消息已成功发送到接受的作业端点，否则向调用者返回失败消息。这是新的配置：
+
+[source, xml, linenums]
+----
+<validator name="WorkAcceptor"
+           inboundEndpoint-ref="NewWorkEndpoint"
+           ackExpression="#[string:OK:#[message:id]]"
+           nackExpression="#[string:NOT_XML]"
+           errorExpression="#[string:SERVER_ERROR]"
+           outboundEndpoint-ref="AcceptedWorkEndpoint">
+  <mule-xml:is-xml-filter/>
+</validator>
+----
+
+唯一的区别是添加了一个错误表达式。此添加会产生以下更改：
+
+* 现在，验证器的行为完全同步，阻止我们使用出站VM队列作为调度消息的累加器：我们使用FTC来扮演累加器的角色，
+* 测试新路径，因为我们希望在分派失败时检查系统的行为。我们也在这里使用FTC，配置它在消息消费时抛出异常。
+
+我们来看看如何引入FTC改变了我们的测试传输配置：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+        http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/current/mule-test.xsd">
+ 
+    <vm:endpoint name="NewWorkEndpoint"
+                 path="work.new"
+                 exchange-pattern="request-response" />
+     
+    <vm:endpoint name="AcceptedWorkEndpoint"
+                 path="work.ok"
+                 exchange-pattern="request-response" />   
+     
+    <simple-service name="WorkQueueProcessorStub"
+                    endpoint-ref="AcceptedWorkEndpoint">
+      <test:component />
+    </simple-service>
+</mule>
+----
+
+正如你所看到的，FTC表现为一个<test:component />元素。我们使用简单服务模式的便利，使其消耗发送给AcceptedWorkEndpoint的消息。
+
+FTC支持大量配置选项。请在此处阅读更多信息： link:/mule-user-guide/v/3.9/functional-testing[功能测试]。
+
+现在我们已经有了这个，让我们先看看我们如何测试新的故障路径。以下是添加到我们先前存在的功能测试用例中的新测试方法的源代码：
+
+[source, java, linenums]
+----
+public void testDispatchError() throws Exception
+{
+  FunctionalTestComponent ftc =
+      getFunctionalTestComponent("WorkQueueProcessorStub");
+  ftc.setThrowException(true);
+ 
+  MuleClient client = new MuleClient(muleContext);
+  MuleMessage result = client.send("vm://work.new", "<valid_xml />", null);
+  assertTrue(result.getPayloadAsString().startsWith("SERVER_ERROR"));
+}
+----
+
+注意我们如何获得我们感兴趣的特定FTC：我们使用getFunctionalTestComponent（父类提供的受保护方法）来定位位于我们简单服务（位于其名称位置）的核心组件。
+
+一旦我们获得了对FTC的引用，我们就为这个特定的测试对它进行配置，以便在它被调用时引发异常。有了这个，我们的测试工作：引发的异常使得Validator使用我们提供的错误表达式来构建它的响应消息。
+
+现在让我们看看我们如何重构现有的测试方法来使用FTC：
+
+[source, java, linenums]
+----
+public void testValidJob() throws Exception
+{
+  MuleClient client = new MuleClient(muleContext);
+  MuleMessage result = client.send("vm://work.new", "<valid_xml />", null);
+  assertTrue(result.getPayloadAsString().startsWith("OK:"));
+ 
+  FunctionalTestComponent ftc =
+      getFunctionalTestComponent("WorkQueueProcessorStub");
+  assertEquals("<valid_xml />", ftc.getLastReceivedMessage());
+}
+ 
+public void testInvalidJob() throws Exception
+{
+  FunctionalTestComponent ftc =
+      getFunctionalTestComponent("WorkQueueProcessorStub");
+  ftc.setThrowException(true);
+ 
+  MuleClient client = new MuleClient(muleContext);
+  MuleMessage result = client.send("vm://work.new", "not_xml", null);
+  assertTrue(result.getPayloadAsString().startsWith("NOT_XML"));
+}
+----
+
+在`testValidJob()`中，主要区别在于我们现在查询FTC以获取分派的消息，而不是从出站VM队列请求FTC。
+
+在`testInvalidJob()`中，主要区别在于我们将FTC配置为失败，如果邮件被分派尽管它是无效的。这种方法实际上导致了测试的更好的性能，因为之前，从调度队列请求不存在的消息被阻塞，直到5秒超时被踢入。
+
+=== 集成测试
+
+集成测试是我们需要添加以完全覆盖的最后一个测试层。这些测试实际上针对Mule在完整配置下运行。我们仅限于测试从外部进行系统整体运行时可以探索的路径。这意味着某些失败路径（如上面模拟出站JMS端点失败的失败路径）未经测试。
+
+尽管在运行集成测试之前可以使用Maven启动Mule，但我们建议您将应用程序部署到在生产环境中运行的容器（Mule standalone或Java EE容器）。
+
+由于集成测试在启用实际传输的情况下作为一个整体来运行应用程序，所以当这些测试运行时，外部系统会受到影响例如，在我们的例子中，JMS队列接收到一条消息：我们确保已收到此消息，这意味着没有其他系统会使用它（否则我们将不得不检查这些系统是否收到了预期的消息）。
+
+在共享环境中，这很难实现，并且通常需要所有系统对测试消息的概念达成一致。这些测试消息具有某些特性（属性或内容），所以其他系统意识到它们不应该消耗或处理它们。
+
+要详细了解测试消息以及更多测试策略和方法，请参阅LaSalle University的 link:http://www.lasalle.edu/~mccoey/cis679/TestDrivenEAI.pdf[企业集成项目中的测试驱动开发PDF]。
+
+另一个非常重要的方面是能够在消息通过Mule流进展并到达外部系统时跟踪消息：这是通过在每条消息上使用唯一的关联ID并将这些ID始终写入日志文件来实现的。正如您稍后看到的，我们还依靠独特的关联ID进行集成测试。现在，我们重构入站HTTP端点以确保Mule关联ID设置为与OK确认消息中返回的相同的消息ID值：
+
+[source, xml, linenums]
+----
+<http:endpoint name="NewWorkEndpoint"
+               host="${web.host}"
+               port="8080"
+               path="api/work">
+  <object-to-string-transformer/>
+  <message-properties-transformer>
+    <add-message-property key="MULE_CORRELATION_ID"
+                          value="#[message:id]" />
+  </message-properties-transformer>
+</http:endpoint>
+----
+
+剩下的就是Mule：它可以确保使用上面显示的消息属性变换器设置的相关ID传播到任何接收消息的内部流或外部系统。
+
+====  Maven Faail安全感觉安全
+
+为了保持我们的示例简单，我们假设没有其他系统尝试使用目标JMS队列上调度的消息：它们坐在那里直到我们使用它们。
+
+为了证明构建集成测试不需要特定工具，我们使用Java构建它们作为JUnit测试用例，并使用Maven的故障安全插件运行它们。随意使用，而不是你更熟悉的任何工具。
+
+对于我们目前的需求，soapUI与HermesJMS一起使用会为我们提供一个用于创建和运行集成测试的良好图形环境。有关更多信息，请参阅 link:http://www.soapui.org/JMS/getting-started.html[JMS测试简介]。另请注意，soapUI也可以从Maven运行： link:http://www.soapui.org/Test-Automation/maven-2x.html[Maven 2.X]。
+
+由于我们的应用程序的主要入口点是通过HTTP公开的，因此我们在测试中使用HttpUnit。让我们看看我们的无效工作提交的测试用例：
+
+[source, java, linenums]
+----
+@Test
+public void rejectInvalidWork() throws Exception
+{
+    String testPayload = "not_xml";
+    ByteArrayInputStream payloadAsStream = new ByteArrayInputStream(testPayload.getBytes());
+ 
+    WebConversation wc = new WebConversation();
+    WebRequest request = new PostMethodWebRequest(WORK_API_URI, payloadAsStream, "text/plain");
+    WebResponse response = wc.getResponse(request);
+ 
+    assertEquals(200, response.getResponseCode());
+    String responseText = response.getText();
+    assertTrue(responseText.startsWith("NOT_XML"));
+}
+----
+
+在这个测试中，这是一个Junit 4注释测试，我们向我们的工作经理发送一个错误的负载，并确保它按预期被拒绝。 WORK_API_URI常数当然指向被测试的Mule实例。
+
+有效提交的测试稍微涉及：
+
+[source, java, linenums]
+----
+@Test
+public void acceptValidWork() throws Exception
+{
+  String testPayload = "<valid_xml />";
+  ByteArrayInputStream payloadAsStream = new ByteArrayInputStream(testPayload.getBytes());
+ 
+  WebConversation wc = new WebConversation();
+  WebRequest request = new PostMethodWebRequest(WORK_API_URI, payloadAsStream, "application/xml");
+  WebResponse response = wc.getResponse(request);
+ 
+  assertEquals(200, response.getResponseCode());
+  String responseText = response.getText();
+  assertTrue(responseText.startsWith("OK:"));
+ 
+  String correlationId = responseText.substring(3);
+  Message jmsMessage = consumeQueueMessageWithSelector("work", "JMSCorrelationID='" + correlationId + "'", 5000L);
+ 
+  assertTrue(jmsMessage instanceof TextMessage);
+  assertEquals(testPayload, ((TextMessage) jmsMessage).getText());
+}
+ 
+private Message consumeQueueMessageWithSelector(String queueName,
+                                              String selector,
+                                              long timeout) throws JMSException
+{
+  ConnectionFactory connectionFactory = getConnectionFactory();
+  Connection connection = connectionFactory.createConnection();
+  connection.start();
+ 
+  Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+  MessageConsumer createConsumer = session.createConsumer(session.createQueue(queueName),
+      selector);
+  Message result = createConsumer.receive(timeout);
+  connection.close();
+  return result;
+}
+----
+
+请注意，`getConnectionFactory()`特定于正在使用的JMS实现，因此尚未包含在上述代码段中。
+
+重要的是，我们使用Validator返回的关联ID作为一种手段，从目标JMS队列中选择和检索调度的消息。正如您所看到的，Mule将其内部关联ID传播给JMS特定的内部关联ID，为测试消息的这种表征和跟踪打开了大门。
+
+现在是用Failsafe插件运行这两个测试的时候了。按照惯例，集成测试类被命名为IT或*IT or * ITCase，位于src / it / java下。这个路径在默认的标准Maven项目构建路径中不是默认的，所以我们需要一点点的jiggery-pokery来确保它们被编译和加载。因为我们不想总是将集成测试源路径添加到所有构建中，所以我们创建了一个Maven概要文件（将其命名）并将所有必需的配置存储在其中。
+
+*Note:*
+
+[source, xml, linenums]
+----
+<profile>
+  <id>it</id>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.mojohaus</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>add-test-source</id>
+            <phase>generate-test-sources</phase>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>src/it/java</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.mojohaus</groupId>
+        <artifactId>failsafe-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>integration-test</id>
+            <goals>
+              <goal>integration-test</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>verify</id>
+            <goals>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+  <dependencies>
+    <dependency>
+      <groupId>httpunit</groupId>
+      <artifactId>httpunit</artifactId>
+      <version>1.7</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</profile>
+----
+
+在你的pom.xml中有这样的配置，你可以运行这些命令来执行你的第一个自动Mule集成测试：
+
+[source,shell]
+----
+mvn -Pit verify
+----
+
+== 另请参阅
+
+*  link:/munit/v/1.2.0/[MUnit 1.2.0]
+
+
+
+

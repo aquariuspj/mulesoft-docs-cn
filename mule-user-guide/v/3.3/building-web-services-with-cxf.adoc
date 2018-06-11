@@ -1,0 +1,263 @@
+= 使用CXF构建Web服务
+
+本页介绍如何构建CXF Web服务并在Mule中使用它。
+
+Mule提供了三种构建Web服务的方式。
+
+. 使用JAX-WS前端构建采用JAXB数据绑定的标准JAX-WS注释的代码优先Web服务
+. 使用JAX-WS前端构建WSDL优先Web服务
+. 使用CXF中的"simple"前端从简单的POJO创建Web服务
+
+== 创建JAX-WS服务
+
+JAX-WS规范定义了一系列帮助您构建Web服务的API和注释。本节介绍如何创建一个非常简单的JAX-WS Web服务。
+
+你首先编写服务接口。如以下示例所示，您可以编写名为"sayHello"的操作来迎接通过Web浏览器提交其姓名的任何人：
+
+[source, java, linenums]
+----
+package org.example;
+ 
+import javax.jws.WebService;
+ 
+@WebService
+public interface HelloWorld {
+    String sayHi(String text);
+}
+----
+
+您的Web服务接口的实现如下所示：
+
+[source, java, linenums]
+----
+package org.example;
+ 
+import javax.jws.WebService;
+ 
+@WebService(endpointInterface = "org.example.HelloWorld",
+            serviceName = "HelloWorld")
+public class HelloWorldImpl implements HelloWorld {
+ 
+    public String sayHi(String text) {
+        return "Hello " + text;
+    }
+}
+----
+
+=== 配置服务
+
+要配置Mule使用该服务，只需声明您的服务并使用CXF端点，如以下示例所示：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:spring="http://www.springframework.org/schema/beans"
+  xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+  xsi:schemaLocation="
+               http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+               http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/3.1/mule-cxf.xsd">
+ 
+  <flow name="helloService">
+    <http:inbound-endpoint address="http://localhost:63081/hello" exchange-pattern="request-response">
+        <cxf:jaxws-service serviceClass="org.example.HelloWorld"/>
+    </http:inbound-endpoint>
+    <component class="org.example.HelloWorldImpl" />
+  </flow>
+...
+----
+
+导航到" http://localhost:63081/hello?wsdl "，显示由CXF生成的WSDL。
+
+要使用POJO而不是带注释的JAX-WS服务，请将POJO作为Mule中的组件，然后使用简单的前端客户端及其CXF入站端点。
+
+=== 将资源注入JAX-WS服务
+
+如果您需要访问JAX-WS资源，则可以将它们注入到您的服务实现类中。只需添加一个带注释的字段，例如：
+
+[source, java, linenums]
+----
+@WebService
+public class HelloWorldImpl implements HelloWorld {
+   
+    @Resource
+    private WebServiceContext context;
+}
+----
+
+为了实现注入你的服务类，把它声明为一个Spring bean，以便CXF处理器可以执行注入。
+
+
+[source, xml, linenums]
+----
+<spring:bean class="org.apache.cxf.bus.spring.Jsr250BeanPostProcessor" />
+<spring:bean id="hello" class="org.example.HelloWorldImpl" />
+ 
+ <flow name="helloService">
+    <http:inbound-endpoint address="http://localhost:63081/hello" exchange-pattern="request-response">
+        <cxf:jaxws-service serviceClass="org.example.HelloWorld"/>
+    </http:inbound-endpoint>
+    <component>
+      <spring-object bean="hello" /> 
+    </component>
+ </flow>
+----
+
+[WARNING]
+====
+如果您的组件和注入在不同的线程上执行，CXF中的限制会导致注入失败。实际上，这可以防止您在注入时使用以下内容：
+
+不使用请求 - 响应交换模式的* 端点。
+*  `<async/>`流构造。
+====
+
+== 创建一个WSDL第一个JAX-WS服务
+
+除了上述的代码优先方法之外，您还可以使用CXF来实现WSDL优先服务。 CXF发行版包含许多其他如何执行此操作的示例。
+
+通常，您首先为您的WSDL生成Web服务接口。您可以使用CXF中的 http://cxf.apache.org/docs/wsdl-to-java.html[WSDL到Java]工具或 http://cxf.apache.org/docs/maven-cxf-codegen-plugin-wsdl-to-java.html[Maven插件]来执行此操作。
+
+接下来，编写一个实现您的服务接口的服务实现类，然后完全按照前面的示例在Mule配置中使用此实现类。
+
+=== 将原始WSDL提供给CXF
+
+您可以使用@WebService属性将原始WSDL指定为CXF：
+
+[source, java, linenums]
+----
+@WebService(endpointInterface = "demo.hw.server.HelloWorld",
+            serviceName = "HelloWorld",
+            wsdlLocation="foo/bar/hello.wsdl")
+public class HelloWorldImpl implements HelloWorld
+----
+
+另一种方法涉及在端点上指定wsdlLocation属性：
+
+[source, xml]
+----
+<cxf:jaxws-service wsdlLocation="foo/bar/hello.wsdl" />
+----
+CXF能够在您的web应用程序，类路径或文件系统内找到这个WSDL。
+
+== 创建简单的前端Web服务
+
+简单的前端允许您创建不需要注释的Web服务。首先，你编写服务接口。如上例所示，您可以编写名为"sayHello"的操作，向任何提交其姓名的人提供"Hello"。
+
+[NOTE]
+您可以使用实现类而不是服务接口，但服务接口可以更容易地使用该服务。有关更多信息，请参阅 link:/mule-user-guide/v/3.6/consuming-web-services-with-cxf[消费Web服务]。
+
+[source, java, linenums]
+----
+package org.example;
+ 
+public interface HelloWorld {
+    String sayHi(String text);
+}
+----
+
+你的实现将如下所示：
+
+[source, java, linenums]
+----
+package org.example;
+ 
+public class HelloWorldImpl implements HelloWorld {
+ 
+    public String sayHi(String text) {
+        return "Hello " + text;
+    }
+}
+----
+
+=== 配置服务
+
+要配置Mule使用该服务，只需声明您的服务并使用CXF消息处理器，如以下示例所示：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:spring="http://www.springframework.org/schema/beans"
+  xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf"
+  xsi:schemaLocation="
+               http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+               http://www.mulesoft.org/schema/mule/cxf http://www.mulesoft.org/schema/mule/cxf/3.1/mule-cxf.xsd">
+ 
+  <flow name="helloService">
+    <http:inbound-endpoint address="http://localhost:63081/hello" exchange-pattern="request-response">
+        <cxf:simple-service serviceClass="org.example.HelloWorld"/>
+    </http:inbound-endpoint>
+    <component class="org.example.HelloWorldImpl" />
+  </flow>
+...
+----
+
+如果转到" http://localhost:63081/hello?wsdl "，您将看到CXF生成的WSDL。
+
+== 高级配置
+
+=== 验证邮件
+
+以下代码通过向您的服务声明添加validationEnabled属性来启用传入消息的模式验证：
+
+[source, xml, linenums]
+----
+<simple-service validationEnabled="true"/>
+<jaxws-service validationEnabled="true"/>
+<proxy-service validationEnabled="true"/>
+----
+
+=== 更改数据绑定
+
+您可以在端点上使用databinding属性来配置将与该服务一起使用的数据绑定。 CXF提供以下数据绑定类型：
+
+.  AegisDatabinding
+.  JAXBDatabinding（默认）
+.  StaxDatabinding
+.  JiBXDatabinding
+
+以下代码指定了数据绑定类：
+
+[source, xml, linenums]
+----
+<cxf:simple-service serviceClass="com.acme.MyService">
+    <cxf:aegis-databinding/>
+</cxf:simple-service>
+----
+
+*<cxf:databinding>*元素可以用于任何CXF前端。
+
+=== 设置绑定URI
+
+bindingUri属性指定您的服务操作如何映射到资源。您可以按如下方式配置此属性：
+
+[source, xml, linenums]
+----
+<cxf:jaxws-service serviceClass="com.acme.MyService" bindingUri="http://www.w3.org/2003/05/soap/bindings/HTTP/" />
+----
+
+=== 更改默认消息样式
+
+默认情况下，CXF使用文档/文字消息样式。但是，您可以将服务更改为RPC（而不是文档）或将其配置为将`wrapped`而不是`literal`发送为复杂类型。要更改消息样式，请在服务的界面上设置@SOAPBinding批注，并指定以下内容：
+
+*  `style`
+*  `use`
+*  `parameterStyle`（可选）
+
+在以下示例中，参数样式设置为BARE。这意味着每个参数都作为消息根的子元素放入消息正文中。这是默认情况下被WRAPPED。
+
+[source, java, linenums]
+----
+@SOAPBinding(style=SOAPBinding.Style.DOCUMENT,
+             use=SOAPBinding.Use.LITERAL,
+             parameterStyle=SOAPBinding.ParameterStyle.BARE)
+@WebService
+public interface Echo
+{
+    String echo(String src);
+}
+----
+
+有关支持的消息样式的更多信息，请参阅：https：//cwiki.apache.org/confluence/display/CXF20DOC/Developing+a+Service#DevelopingaService-OptionalAnnotations [可选注释]。

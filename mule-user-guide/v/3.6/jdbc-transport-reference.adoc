@@ -1,0 +1,1347 @@
+=  JDBC传输参考
+:keywords: jdbc
+
+[WARNING]
+====
+从Anypoint Studio 2014年5月起，使用3.5.0 Runtime及其新数据库连接器*JDBC Transport is deprecated*。使用JDBC传输的应用程序可以继续使用3.6.0 Enterprise Runtime，但该连接器在Studio调色板中不再可用于添加到应用程序。
+
+访问 link:/mule-user-guide/v/3.6/database-connector[数据库连接器]的文档以利用新设计的功能。
+====
+
+某些功能仅适用于下面提到的JDBC传输的Mule Enterprise版本。 JDBC传输使您可以使用JDBC协议与数据库发送和接收消息。常见用法包括检索，插入，更新和删除数据库记录，以及调用存储过程，例如动态创建新表。
+
+*Note*：在本指南的代码示例中，`spring-beans-current.xsd`是一个占位符。要找到正确的版本，请参阅http://www.springframework.org/schema/beans/。
+
+== 传输信息
+
+[%header,cols="10,9,9,9,9,9,9,9,9,9,9"]
+|===
+|运输 |文档 |入站 |外向 |要求 |交易 |流 |重试{{ 8}} MEP的 |默认MEP  | Maven Artifact
+| JDBC  | http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/transport/jdbc/package-summary.html[的JavaDoc]  | image:check.png[（蜱）]  | image:check.png[（蜱）]  | image:check.png[（蜱）] {{12} } image:check.png[（蜱）]（local，XA） | image:error.png[（错误）]  | image:check.png[（蜱）]  |单向请求响应{{16}方法 | org.mule.transport：骡子运输-JDBC
+
+|===
+
+传说
+
+*Transport*  - 交通工具的名称/协议+
+*Docs*  - 链接到transport +的JavaDoc和SchemaDoc
+*Inbound*  - 传输是否可以接收入站事件并可用于入站端点+
+*Outbound*  - 传输是否可以生成出站事件并与出站端点+一起使用
+*Request*  - 此端点是否可以通过请求调用直接查询（通过MuleClient或EventContext）+
+*Transactions*  - 交易是否受交通工具支持。支持事务的传输可以在本地或分布式两阶段提交（XA）事务中进行配置。 +
+*Streaming*  - 此传输是否可以处理输入流中传入的消息。这可以非常有效地处理大数据。有关更多信息，请参阅流式传输。 +
+*Retry*  - 此传输是否支持重试策略。请注意，所有传输都可以配置Retry策略，但只有在这里标记的传输才能被MuleSoft +官方支持
+*MEPs*  - 此传输+支持的消息交换模式
+*Default MEP*  - 使用此传输的端点的默认MEP，它没有明确配置MEP +
+*Maven Artifact*  - 组名称为 http://maven.apache.org/[Maven的]中此传输的工件名称
+
+== 命名空间和语法
+
+XML名称空间（社区版本）：
+
+[source, xml]
+----
+xmlns:jdbc="http://www.mulesoft.org/schema/mule/jdbc"
+----
+
+XML名称空间（企业版）：
+
+[source, xml]
+----
+xmlns:jdbc="http://www.mulesoft.org/schema/mule/ee/jdbc"
+----
+
+XML模式位置（社区版本）：
+
+[source, xml, linenums]
+----
+http://www.mulesoft.org/schema/mule/jdbc http://www.mulesoft.org/schema/mule/jdbc/3.6/mule-jdbc.xsd
+----
+
+XML模式位置（企业版）：
+
+[source, xml, linenums]
+----
+http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/3.6/mule-jdbc-ee.xsd">
+----
+
+[cols="1*"]
+|===
+一个|
+对于Community或Enterprise，如果您在Mule配置文件中创建Spring bean，则必须包含以下命名空间：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:jee="http://www.springframework.org/schema/jee"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xmlns:jdbc="http://www.mulesoft.org/schema/mule/jdbc"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.springframework.org/schema/jee http://www.springframework.org/schema/jee/spring-jee-2.5.xsd
+       http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-2.5.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+       http://www.mulesoft.org/schema/mule/jdbc http://www.mulesoft.org/schema/mule/jdbc/3.5/mule-jdbc.xsd">
+----
+
+|===
+
+*Note*：在这些代码示例中，`spring-beans-current.xsd `是一个占位符。要找到正确的版本，请参阅 http://www.springframework.org/schema/beans/[http://www.springframework.org/schema/beans/]。
+
+连接器语法（社区版本）：
+
+[source, xml, linenums]
+----
+<spring:bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+    <spring:property name="driverName" value="org.apache.derby.jdbc.EmbeddedDriver"/>
+    <spring:property name="url" value="jdbc:derby:muleEmbeddedDB;create=true"/>
+</spring:bean>
+
+<jdbc:connector name="jdbcConnector" dataSource-ref="jdbcDataSource" pollingFrequency="10000"
+                queryRunner-ref="queryRunner" queryTimeout="10" resultSetHandler-ref="resultSetHandler"
+                transactionPerMessage="true"/>
+----
+
+连接器语法（企业版）：
+
+[source, xml, linenums]
+----
+<spring:bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+    <spring:property name="driverName" value="org.apache.derby.jdbc.EmbeddedDriver"/>
+    <spring:property name="url" value="jdbc:derby:muleEmbeddedDB;create=true"/>
+</spring:bean>
+
+<jdbc:connector name="jdbcEeConnector" pollingFrequency="1000" dataSource-ref="jdbcDataSource"
+                queryRunner-ref="queryRunner" queryTimeout="10" resultSetHandler-ref="resultSetHandler"
+                transactionPerMessage="true">
+    <jdbc:ackSqlCommandExecutorFactory ref="ackSqlCommandExecutorFactory"/>
+    <jdbc:sqlCommandRetryPolicyFactory ref="sqlCommandRetryPolicyFactory"/>
+    <jdbc:query key="myQuery" value="select * from table"/>
+    <jdbc:sqlCommandExecutorFactory ref="sqlCommandExecutorFactory"></jdbc:sqlCommandExecutorFactory>
+    <jdbc:sqlStatementStrategyFactory ref="sqlStatementStrategyFactory"/>
+</jdbc:connector>
+----
+
+*Endpoint Syntax*
+
+*Inbound endpoints:* +
+您可以通过两种不同的方式来定义您的端点：
+
+. 前缀端点（对社区和企业JDBC端点均有效）：
++
+[source, xml, linenums]
+----
+<jdbc:inbound-endpoint queryKey="selectQuery" name="jdbcInbound" pollingFrequency="10000" queryTimeout="10"
+                       connector-ref="jdbcConnector" exchange-pattern="one-way">
+    <jdbc:transaction action="ALWAYS_BEGIN" />
+</jdbc:inbound-endpoint>
+----
+
+. 没有前缀的URI：
++
+[source, xml]
+----
+<inbound-endpoint address="jdbc://getTest?type=1"/>
+----
+
+
+出站端点：
+
+. 前缀端点（对CE和EE jdbc端点均有效）：
++
+[source, xml, linenums]
+----
+<jdbc:outbound-endpoint queryKey="selectCount" exchange-pattern="one-way" connector-ref="jdbcConnector" queryTimeout="10" >
+    <jdbc:transaction action="ALWAYS_BEGIN"/>
+</jdbc:outbound-endpoint>
+----
+
+. 没有前缀的URI：
++
+[source, xml]
+----
+<outbound-endpoint address="jdbc://writeTest?type=2"/>
+----
+
+
+== 注意事项
+
+如果您尚未为您的应用程序定义数据库抽象层，那么使用JDBC传输是一个好主意。它可以为您节省编写自己的数据库客户端代码的麻烦，并且如果您决定在未来更改数据库，它将更具可移植性。如果您的应用程序使用数据库抽象层，那么通常最好使用它而不是JDBC传输。
+
+== 特点
+
+Mule Enterprise JDBC Transport提供了关键功能，性能改进，转换器以及Mule社区版本中没有的示例。下表总结了功能差异。
+
+[%header,cols="4*"]
+|===
+|功能 |总结 | Mule社区 | Mule Enterprise
+| <<Inbound SELECT Queries>>  |使用入站端点上配置的SQL SELECT语句检索记录。 | *x*  | *x*
+| <<Large Dataset Retrieval>>  |通过以较小批次消费记录来启用检索任意大型数据集。 |  | *x*
+|确认语句 |支持在读取记录后更新源表或其他表的ACK SQL语句。 | *x*
+|基本插入/更新/删除语句 |在出站端点上指定的单个SQL INSERT，UPDATE和DELETE查询。每次执行一项声明。 | *x*  | *x*
+|批量插入/更新/删除语句 |支持JDBC批量INSERT，UPDATE和DELETE语句，以便可以一起执行多个语句。 |  | {{ 0}}
+| <<Transformers>>  | XML和CSV转换器可轻松转换为以这些常见格式的数据集并从中转换。 |  | *x*
+| <<Outbound SELECT Queries>>  |使用出站端点上配置的SQL SELECT语句检索记录。支持具有动态运行时参数的同步查询。 | *x*  | *x*
+| <<Outbound Stored Procedure Support - Basic>>  |能够在出站端点上调用存储过程。支持IN参数，但不支持OUT参数。 | *x*  | *x*
+| <<Outbound Stored Procedure Support - Advanced>>  |与Basic相同，但同时包含IN和OUT参数支持。 OUT参数可以是简单的数据类型或光标 |  | *x*
+| <<Unnamed Queries>>  |可以从组件或其他Java代码中以编程方式调用的查询。这是最灵活的选项，但也需要编写代码。 | *x*  | *x*
+| <<Flexible Data Source Configuration>>  |支持通过JNDI，XAPool或Spring配置数据源。 | *x*  | *x*
+| <<Transactions>>  |通过基础事务管理器支持事务。 | *x* a |
+*x*
+|===
+
+在此功能部分中，由_ *Enterprise*标识的项目表示仅在企业版中可用的功能。
+
+=== 入站SELECT查询
+
+入站SELECT查询是定期执行的查询（根据连接器上设置的`pollingFrequency`）。
+
+这里是一个例子：
+
+[source, xml, linenums]
+----
+<spring:bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+  <spring:property name="driverName" value="oracle.jdbc.driver.OracleDriver"/>
+  <spring:property name="url" value="jdbc:oracle:thin:user/pass@host:1521:db"/>
+</spring:bean>
+...
+<jdbc:connector name="jdbcConnector" pollingFrequency="10000" dataSource-ref="jdbcDataSource"> ❷
+        <jdbc:query key="selectLoadedMules"
+                    value="SELECT ID, MULE_NAME, RANCH, COLOR, WEIGHT, AGE from mule_source"/>
+</jdbc:connector>
+...
+    <flow name="AllMules">
+        <jdbc:inbound-endpoint queryKey="selectLoadedMules" exchange-pattern="request-response"/> ❶
+...
+    </flow>
+...
+----
+
+在这个例子中，_selectLoadedMules_将每10秒调用一次（_pollingFrequency_ = 10000 ms）。结果集中的每个记录都被转换成一个Map（由列/值对组成）。
+
+入站SELECT查询是有限的，因为（1）通常它们不能被同步调用（未命名的查询是一个例外），（2）它们不支持运行时参数。
+
+=== 大型数据集检索
+
+_ *Enterprise* _
+
+==== 概述
+
+大型数据集检索是一种通过以更小，更易管理的批次提取记录来检索大型数据集的策略。 Mule Enterprise提供实施广泛这些策略所需的关键组件和变压器。
+
+==== 何时使用它
+
+* 当要检索的数据集的大小足以覆盖内存和连接资源时。
+* 保留消息顺序非常重要。
+* 当需要可恢复的处理时（即，即使在服务中断之后，数据集的检索也可以从其停止的地方取回）。
+* 在集群Mule节点间负载均衡数据检索时。
+
+==== 它是如何工作的
+
+大数据集检索不使用传统的入站SELECT查询来检索数据。相反，它使用Batch Manager组件来计算要检索的下一批记录的ID范围。出站SELECT查询使用此范围实际获取记录。批次管理器还控制批次处理流程，确保在上一批处理完成之前不会处理下一批次。
+
+这里是一个例子：
+
+[source, xml, linenums]
+----
+<spring:bean id="idStore" class="com.mulesoft.mule.transport.jdbc.util.IdStore"> ❶
+     <spring:property name="fileName" value="/tmp/large-dataset.txt"/>
+</spring:bean>
+<spring:bean id="seqBatchManager" class="com.mulesoft.mule.transport.jdbc.components.BatchManager"> ❷
+    <spring:property name="idStore" ref="idStore"/>
+    <spring:property name="batchSize" value="10"/>
+    <spring:property name="startingPointForNextBatch" value="0"/>
+</spring:bean>
+<spring:bean id="noArgsWrapper"
+             class="com.mulesoft.mule.transport.jdbc.components.NoArgsWrapper"> ❸
+    <spring:property name="batchManager" ref="seqBatchManager"/>
+</spring:bean>
+<flow name="LargeDataSet">
+        <vm:inbound-endpoint exchange-pattern="one-way" path="vm://next.batch"/>
+        <spring-object bean="noArgsWrapper" />
+...
+----
+
+首先设置保存下一批记录starting的起点ID的文件。接下来你定义你的BatchManager并设置idStore，batchSize和起始点❷。然后你定义一个'noArgsWrapper'spring bean并设置批处理管理器的引用。 ❹是您定义在入站端点触发后被调用的组件的位置。您的出站端点可以使用
+
+----
+#[map-payload:lowerId]
+----
+
+和
+
+----
+#[map-payload:upperId]
+----
+
+引用一批数据库行。
+
+==== 重要限制
+
+大数据集检索需要：
+
+. 源数据包含唯一的连续数字ID。记录也应该按照这个ID升序排列。
+. 这些ID没有大的差距（不大于配置的批量大小）。
+
+==== 与批量插入结合使用
+
+将大数据集检索与批量插入组合可以支持简单但强大的ETL用例。
+
+=== 确认（ACK）语句
+
+ACK语句是与入站SELECT查询配对的可选SQL语句。当Mule调用入站SELECT查询时，查询返回的*for each record*调用ACK语句。通常，ACK语句是UPDATE，INSERT或DELETE。
+
+一个ACK语句将被配置如下：
+
+[source, xml, linenums]
+----
+...
+<jdbc:connector name="jdbcConnector" pollingFrequency="10000" dataSource-ref="jdbcDataSource">
+    <jdbc:query key="selectLoadedMules"
+                value="SELECT ID, PROCESSED from mule_source WHERE PROCESSED is null order by ID"/>
+    <jdbc:query key="selectLoadedMules.ack"
+                value="update mule_source set PROCESSED='Y'  where ID = #[map-payload:ID] "/>
+</jdbc:connector>
+...
+----
+
+注意将追加".ack"扩展名到查询名称所需的约定。这个约定让Mule知道哪个入站SELECT查询与ACK语句配对。
+
+另请注意，ACK语句支持参数。这些参数绑定到来自入站SELECT查询的任何列值（如上述情况下的＃[map-payload：ID]）。
+
+当您希望入站SELECT查询不超过一次从源表中检索记录时，ACK语句很有用。但是，使用具有较大结果集的ACK语句时要小心。如前所述，为每个检索到的记录发出一个ACK语句，即使每秒钟的记录数量适中（> 100），这也会非常耗费资源。
+
+=== 基本插入，更新和删除语句
+
+在出站端点上指定SQL INSERT，UPDATE和DELETE语句。这些语句通常使用参数进行配置，这些参数与从上游组件传递到出站端点的值绑定。
+
+*Basic*语句一次只执行一条语句，而*batch*语句一次执行多条语句。基本语句适用于低容量记录处理（每秒<20条记录），而批处理语句适用于高容量记录处理（每秒记录数千条记录）。
+
+[NOTE]
+====
+请注意，Mule根据所接收数据的格式对JDBC语句进行不同的处理：
+
+* 如果消息有效载荷是*collection*，Mule使用批处理来处理语句
+* 如果消息有效载荷是**_not_ a collection**，Mule使用基本来处理语句
+
+例如，如果您使用DataMapper将ArrayList提供给应用程序中的JDBC端点，那么Mule将使用批处理并为ArrayList中从DataMapper出现的每个项目执行一次JDBC语句。
+====
+
+例如，当带有`java.util.Map`有效负载的消息被发送到基本的插入/更新/删除端点时，语句中的参数与映射中的相应条目绑定。在下面的配置中，如果消息包含带`{ID=1,TYPE=1,DATA=hello,ACK=0}`的映射有效内容，则会发出以下插入：`INSERT INTO TEST (ID,TYPE,DATA,ACK) values (1,1,'hello',0)`。
+
+[source, xml, linenums]
+----
+<jdbc:connector name="jdbcConnector" pollingFrequency="10000" dataSource-ref="jdbcDataSource">
+    <jdbc:query key="outboundInsertStatement"
+              value="INSERT INTO TEST (ID, TYPE, DATA, ACK) VALUES (#[map-payload:ID],
+                    #[map-payload:TYPE],#[map-payload:DATA], #[map-payload:ACK])"/>
+</jdbc:connector>
+...
+<flow name="ExampleFlow">
+    <inbound-endpoint address="vm://doInsert"/>
+    <jdbc:outbound-endpoint queryKey="outboundInsertStatement"/>
+</flow>
+...
+----
+
+=== 批量插入，更新和删除语句
+
+_ *Enterprise* _
+
+如上所述，*batch*声明对其*basic*对应项表现出显着的性能提升。使用此功能可以以每秒千次的速度插入记录。
+
+批处理INSERT，UPDATE和DELETE语句的用法与基本语句相同，除了发送到VM端点的有效内容应该是地图列表而不是单个Map之外。
+
+批处理可调用语句也支持。用法与批量插入/更新/删除相同。
+
+[NOTE]
+====
+请注意，Mule根据所接收数据的格式对JDBC语句进行不同的处理：
+
+* 如果消息有效载荷是*collection*，Mule使用批处理来处理语句
+* 如果消息有效载荷是**_not_ a collection**，Mule使用基本来处理语句
+
+例如，如果您使用DataMapper将ArrayList提供给应用程序中的JDBC端点，那么Mule将使用批处理并为ArrayList中从DataMapper出现的每个项目执行一次JDBC语句。
+====
+
+=== 高级JDBC相关的变形金刚
+
+_ *Enterprise* _
+
+常见的集成用例涉及将CSV和XML数据从文件移动到数据库并返回。本节介绍执行这些操作的变压器。这些变压器仅在Mule Enterprise中提供。
+
+====  XML-JDBC转换器
+
+XML Transformer在XML和JDBC格式的地图之间转换。 JDBC出站端点可以使用JDBC格式映射（用于选择，插入，更新或删除操作）。
+
+变压器详细信息：
+
+[%header,cols="4*"]
+|===
+| {名称{1}} {类{2}}输入 |输出
+| XML  - > Maps  | com.mulesoft.mule.transport.jdbc.transformers.XMLToMapsTransformer  | java.lang.String（XML） | java.util.List +
+ （地图列表，每个地图对应于XML中的"record"。）
+|地图 - > XML  | com.mulesoft.mule.transport.jdbc.transformers.MapsToXMLTransformer  | java.util.List +
+ （地图列表，每个地图将被转换为XML中的 | java.lang.String（XML）中的{{1}
+|===
+
+另外，XML消息有效内容（作为字符串传入或传出）必须遵守特定的模式格式：
+
+[source, xml, linenums]
+----
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="table">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="record"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="record">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element maxOccurs="unbounded" ref="field"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="field">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:NMTOKEN">
+          <xs:attribute name="name" use="required" type="xs:NCName"/>
+          <xs:attribute name="type" use="required" type="xs:NCName"/>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+----
+
+这是一个有效的XML实例的例子：
+
+[source, xml, linenums]
+----
+<table>
+    <record>
+  <field name="id" type="java.math.BigDecimal">0</field>
+  <field name="name" type="java.lang.String">hello</field>
+    </record>
+</table>
+----
+
+变换器使用"fields"将每个"record"元素转换为列/值对的映射。地图集合返回列表中。
+
+以下内容在浏览器中转到“http：// localhost：8080 / first20”时返回XML格式的所有处理行：
+
+[source, xml, linenums]
+----
+<jdbc:connector name="jdbcConnector" dataSource-ref="jdbcDataSource">
+        <jdbc:query key="selectLoadedMules"
+                    value="SELECT ID, PROCESSED from mule_source WHERE PROCESSED is null order by ID"/>
+        <jdbc:query key="selectLoadedMules.ack"
+          value="update mule_source set PROCESSED='Y'  where ID = #[map-payload:ID]"/>
+    </jdbc:connector>
+
+    <jdbc:maps-to-xml-transformer name="XMLResponseTransformer"/>
+
+    <message-properties-transformer name="XMLContentTransformer">
+        <add-message-property key="Content-Type" value="text/xml"/>
+    </message-properties-transformer>
+
+    <flow name="ReportModel">
+            <inbound-endpoint address="http://localhost:8080/first20" responseTransformer-refs="XMLResponseTransformer XMLContentTransformer" exchange-pattern="request-response"/>
+            <jdbc:outbound-endpoint queryKey="selectLoadedMules" exchange-pattern="request-response"/>
+    </flow>
+----
+
+====  CSV-JDBC Transformer
+
+CSV转换器可以在CSV数据和JDBC格式的地图之间进行转换。 JDBC出站端点可以使用JDBC格式映射（用于选择，插入，更新或删除操作）。
+
+变压器详细信息：
+
+[%header,cols="4*"]
+|===
+| {名称{1}} {类{2}}输入 |输出
+| CSV  - >地图 | com.mulesoft.mule.transport.jdbc.transformers.CSVToMapsTransformer  | java.lang.String +
+ （CSV数据） | java.util.List +
+ （地图列表，每个地图对应CSV中的"record"）
+|地图 - > CSV  | com.mulesoft.mule.transport.jdbc.transformers.MapsToCSVTransformer  | java.util.List +
+ （地图列表，每个地图将被转换为CSV  |中的"record"} String +
+ （CSV数据）
+|===
+
+下表总结了可在此变压器上设置的属性：
+
+[%header,cols="2*"]
+|=====
+|属性 |说明
+|分隔符 | CSV文件中使用的分隔符。默认为逗号。
+|限定符 | CSV文件中使用的限定符字符。用于表示文本是否包含分隔符。缺省值为双引号。
+| ignoreFirstRecord  |指示转换器忽略第一条记录。如果您的第一行是列名称列表，请使用此名称。默认为false。
+| mappingFile  |映射文件的位置。需要。可以是物理文件位置或类路径资源名称。映射文件的DTD格式可以在http://flatpack.sourceforge.net/flatpack.dtd找到。有关此格式的示例，请参阅http://flatpack.sourceforge.net/documentation/index.html。
+|=====
+
+此配置会在数据库的“mule_source”表中加载CSV文件：
+
+[source, xml, linenums]
+----
+<jdbc:connector name="jdbcConnector" dataSource-ref="jdbcDataSource">
+    <jdbc:query key="commitLoadedMules"
+                value="insert into mule_source
+                (ID, MULE_NAME, RANCH, COLOR, WEIGHT, AGE)
+                values
+                (#[map-payload:ID;int;in], #[map-payload:MULE_NAME], #[map-payload:RANCH], #[map-payload:COLOR], #[map-payload:WEIGHT;int;in], #[map-payload:AGE;int;in])"/>
+</jdbc:connector>
+
+<file:connector name="fileConnector" autoDelete="false" pollingFrequency="100000000"/>
+<file:endpoint path="/tmp/data" name="get" connector-ref="fileConnector"/>
+<custom-transformer name="ObjectToString" class="org.mule.transformer.simple.ObjectToString"/>
+<jdbc:csv-to-maps-transformer name="CSV2Maps" delimiter="," mappingFile="/tmp/mules-csv-format.xml" ignoreFirstRecord="true"/>
+
+<flow name="CSVLoader">
+    <file:inbound-endpoint ref="get" transformer-refs="ObjectToString CSV2Maps">
+        <file:filename-wildcard-filter pattern="*.csv"/>
+    </file:inbound-endpoint>
+    <echo-component/>
+    <jdbc:outbound-endpoint queryKey="commitLoadedMules"/>
+</flow>
+----
+
+=== 出站SELECT查询
+
+入站SELECT查询根据指定的轮询频率在入站端点上调用。入站SELECT查询的主要改进是出站SELECT查询，该查询可以在出站端点上调用。因此，出站SELECT查询可以执行许多入站SELECT查询无法执行的操作，例如：
+
+. 支持同步调用查询。例如，您可以使用HTTP入站端点和出站SELECT查询端点来实现为数据库中的内容提供服务的网页的经典用例。
+. 允许参数在运行时将值绑定到查询。这要求消息包含一个包含与参数名称匹配的密钥名称的Map有效内容。例如，可以使用以下配置来检索出站SELECT查询：
++
+[source, xml, linenums]
+----
+<jdbc:connector name="jdbcConnector" dataSource-ref="jdbcDataSource">
+        <jdbc:query key="selectMules"
+                    value="select * from mule_source where ID between 0 and #[header:inbound:max]"/>
+</jdbc:connector>
+<jdbc:maps-to-xml-transformer name="XMLResponseTransformer"/>
+<message-properties-transformer name="XMLContentTransformer">
+    <add-message-property key="Content-Type" value="text/xml"/>
+</message-properties-transformer>
+<flow name="ExampleModel">
+    <inbound-endpoint address="http://localhost:8080/getMules" exchange-pattern="request-response" responseTransformer-refs="XMLResponseTransformer XMLContentTransformer"/>
+    <jdbc:outbound-endpoint queryKey="selectMules" exchange-pattern="request-response"/>
+</flow>
+----
+
+在这种情况下，如果URL `http://localhost:8080/getMules?max=3`被击中，则执行以下查询：
+
+[source, xml, linenums]
+----
+SELECT * FROM mule_source WHERE ID between 0 and 3
+----
+
+数据库行将转换为您在浏览器中看到的XML。
+
+=== 出站存储过程支持 - 基本
+
+存储过程在Mule的出站端点上受支持。像任何其他查询一样，存储过程查询可以列在查询映射中。以下是如何定义存储过程查询的示例：
+
+[source, xml, linenums]
+----
+<jdbc:connector name="jdbcConnector" pollingFrequency="10000" dataSource-ref="jdbcDataSource">
+    <jdbc:query key="storedProc" value="CALL addField()"/>
+</jdbc:connector>
+----
+
+为了表示我们要执行一个存储过程，而不是简单的SQL查询，我们必须从文本*CALL*开始，然后是存储过程的名称。
+
+存储过程的参数可以通过在配置中传递静态参数或使用与SQL查询相同的语法来转发（请参阅下面的"Passing in Parameters"）。例如：
+
+[source, xml, linenums]
+----
+<jdbc:query key="storedProc1" value="CALL addFieldWithParams(24)"/>
+<jdbc:query key="storedProc2" value="CALL addFieldWithParams(#[map-payload:value])"/>
+
+<flow name="ExampleModel">
+    <inbound-endpoint address="http://localhost:8080/get" exchange-pattern="request-response"/>
+    <jdbc:outbound-endpoint queryKey="storedProc1" exchange-pattern="request-response"/>
+</flow>
+
+<flow name="ExampleModel">
+    <inbound-endpoint address="http://localhost:8080/get2" exchange-pattern="request-response"/>
+    <jdbc:outbound-endpoint address="jdbc://storedProc2?value=25"/>
+</flow>
+----
+
+如果您不想轮询数据库，则可以编写一个使用HTTP启动Mule流的存储过程。存储过程可以从Oracle触发器中调用。如果采取这种方法，确保交换模式是“单向”。否则，触发器/事务将不会提交，直到HTTP邮件返回。
+
+请注意，存储过程仅在出站端点上受支持。如果要设置定期调用存储过程的流，可以定义一个 link:/mule-user-guide/v/3.6/quartz-transport-reference[石英]入站端点，然后在出站端点中定义存储过程调用。
+
+==== 传入参数
+
+要传入参数值并从Oracle中的存储过程或存储函数获取返回值，可以使用以下语法在JDBC连接器的JDBC查询键/值对中声明参数名称，方向和类型：
+
+[source, xml, linenums]
+----
+Call #[<return parameter name>;<int | float | double | string | resultSet>;<out>] :=
+<Oracle package name>.<stored procedure/function name>($PARAM1, $PARAM2, ...)
+----
+
+其中使用以下语法指定`$PARAMn`：
+
+[source, xml, linenums]
+----
+#[<parameter name>;<int | float | double | string | resultSet>;<in | out | inout>]
+----
+
+例如：
+
+[source, xml, linenums]
+----
+<jdbc:query key="SingleCursor"  value="call MULEPACK.TEST_CURSOR(#[mules;resultSet;out])"/>
+----
+
+此SQL语句在MULEPACK包中调用存储过程TEST_CURSOR，指定名称为`java.sql.ResultSet`的{​​{0}}的out参数。
+
+这是另一个例子：
+
+[source, xml, linenums]
+----
+<jdbc:query key="itcCheckMsgProcessedOrNot"
+value="call #[mules;int;out] := ITCPACK.CHECK_IF_MSG_IS_HANDLED_FNC(487568,#[mules1;string;out],
+#[mules2;string;out],#[mules3;int;out],#[mules4;string;out])"/>
+----
+
+此SQL语句在`ITCPACK`包中调用存储函数`CHECK_IF_MSG_IS_HANDLED_FNC`，并在指定其他参数时将整数返回值指定给名称为"mules"的参数，例如，参数{{ 3}}是一个输出字符串参数。
+
+存储过程和函数只能在JDBC出站端点上调用。一旦这些值从数据库中返回，它们将被放入带有键/值对的`java.util.HashMap`。键是参数名称，例如"mules2"，而值是Java数据值（整数，字符串等）。这个哈希映射是MuleMessage的有效载荷，返回给调用者或根据Mule配置发送到下一个端点。
+
+=== 出站存储过程支持 - 高级
+
+_ *Enterprise* _
+
+Mule Enterprise为出站端点提供高级存储过程支持，超出了Mule社区版本中的可用范围。本节介绍高级支持。
+
+====  OUT参数
+
+在Mule Enterprise中，您可以使用_out_和_inout_标量参数来执行存储过程。这些参数的语法是：
+
+[source, xml, linenums]
+----
+<jdbc:query key="storedProc1" value="CALL myProc(#[a], #[b;int;inout], #[c;string;out])"/>
+----
+
+您必须指定每个输出参数（OUT，INOUT）的类型及其数据类型（int，string等）。这种存储过程的结果是一个包含（输出参数名称，值）条目的映射。
+
+====  Oracle游标支持
+
+仅对于Oracle数据库，OUT参数可以返回一个游标。以下示例显示了这是如何工作的。
+
+如果要将光标作为`java.sql.ResultSet`处理，请参阅下面的"cursorOutputAsResultSet"流程，该流程使用"MapLookup"转换器返回ResultSet。
+
+如果要通过将`java.sql.ResultSet`提取到一组Map对象来处理游标，请参见下面的"cursorOutputAsMaps"流程，该流程使用"MapLookup"和"ResultSet2Maps"变换器来实现这个结果。
+
+[source, xml, linenums]
+----
+<jdbc:connector name="jdbcConnector" pollingFrequency="1000" cursorTypeConstant="-10"
+      dataSource-ref="jdbcDataSource">
+    <jdbc:query key="SingleCursor"  value="call TEST_CURSOR(#[mules;resultSet;out])"/>
+</jdbc:connector>
+
+<custom-transformer class="org.mule.transformer.simple.MapLookup" name="MapLookup">
+    <spring:property name="key" value="mules"/>
+</custom-transformer>
+
+<jdbc:resultset-to-maps-transformer name="ResultSet2Maps"/>
+
+<flow name="SPModel">
+    <vm:inbound-endpoint path="returns.maps" responseTransformer-refs="ResultSet2Maps MapLookup"/>
+    <jdbc:outbound-endpoint queryKey="SingleCursor"/>
+</flow>
+<flow name="cursorOutputAsResultSet">
+    <vm:inbound-endpoint  path="returns.resultset"  responseTransformer-refs="MapLookup"/>
+    <jdbc:outbound-endpoint queryKey="SingleCursor"/>
+</flow>
+----
+
+在上面的例子中，请注意也可以调用返回游标ref的函数。例如，如果TEST_CURSOR2（）返回一个游标ref，则可以使用以下语句将该游标作为ResultSet获取：
+
+[source, xml, linenums]
+----
+<jdbc:query key="SingleCursor"  value="call #[mules;resultSet;out] := TEST_CURSOR2()"/>
+----
+
+[WARNING]
+*Important note on transactions*：调用返回游标的存储过程或函数（ResultSet）时，建议您在事务中处理ResultSet。
+
+=== 未命名的查询
+
+SQL语句也可以在不配置Mule配置文件中的查询的情况下执行。对于给定的端点，要执行的查询可以指定为URI的地址。
+
+[source, xml, linenums]
+----
+MuleMessage msg = eventContext.receiveEvent("jdbc://SELECT * FROM TEST", 0);
+----
+
+=== 灵活的数据源配置
+
+您可以将JDBC连接器用于任何JDBC数据源库。下面的"myDataSource"引用指的是在Spring中创建的DataSource bean：
+
+[source, xml, linenums]
+----
+<jdbc:connector name="jdbcConnector" pollingFrequency="10000" dataSource-ref="myDataSource">
+        ...
+</jdbc:connector>
+----
+
+您也可以创建一个JDBC连接池，这样您就不会为每条消息创建到数据库的新连接。您可以使用 http://xapool.ow2.org/[xapool]轻松地在Spring中创建合并数据源。以下示例显示了如何在Mule配置文件中创建Spring bean。
+
+[source, xml, linenums]
+----
+<spring:bean id="pooledDS" class="org.enhydra.jdbc.standard.StandardXADataSource" destroy-method="shutdown">
+  <spring:property name="driverName" value="oracle.jdbc.driver.OracleDriver"/>
+  <spring:property name="url" value="jdbc:oracle:thin:user/pass@host:1521:db"/>
+  <spring:property name="user" value="USER" />
+  <spring:property name="password" value="PWD" />
+  <spring:property name="minCon" value="10" />
+  <spring:property name="maxCon" value="100" />
+</spring:bean>
+----
+
+如果您需要更多地控制池的配置，则可以使用标准JDBC类。例如，你可以在Spring配置文件中创建以下bean（你也可以在Mule配置文件中创建它们，只需在Spring命名空间中加上前缀）：
+
+[source, xml, linenums]
+----
+<bean id="c3p0DataSource" class="com.mchange.v2.c3p0.ComboPooledDataSource" destroy-method="close">
+        <property name="driverClass">
+            <value>oracle.jdbc.driver.OracleDriver</value>
+        </property>
+        <property name="jdbcUrl">
+            <value>jdbc:oracle:thin:@MyUrl:MySID</value>
+        </property>
+
+        <property name="user">
+            <value>USER</value>
+        </property>
+        <property name="password">
+            <value>PWD</value>
+        </property>
+
+        <property name="properties">
+            <props>
+                <prop key="c3p0.acquire_increment">5</prop>
+                <prop key=" c3p0.idle_test_period">100</prop>
+                <prop key="c3p0.max_size">100</prop>
+                <prop key="c3p0.max_statements">1</prop>
+                <prop key=" c3p0.min_size">10</prop>
+                <prop key="user">USER</prop>
+                <prop key="password">PWD</prop>
+            </props>
+        </property>
+    </bean>
+----
+
+然后，您可以在您的Mule配置中引用`c3p0DataSource` bean：
+
+[source, xml, linenums]
+----
+<connector name="C3p0Connector" className="org.mule.providers.jdbc.JdbcConnector">
+  <properties>
+    <container-property name="dataSource" reference="c3p0DataSource"/>
+      <map name="queries">
+        <property name="test1" value="select * from Tablel"/>
+        <property name="test2" value="call testd(1)"/>
+      </map>
+  </properties>
+</connector>
+----
+
+或者你可以从你的应用程序中调用它，如下所示：
+
+[source, xml, linenums]
+----
+JdbcConnector jdbcConnector = (JdbcConnector) MuleServer.getMuleContext().getRegistry().lookupConnector("C3p0Connector");
+ComboPooledDataSource datasource = (ComboPooledDataSource)jdbcConnector.getDataSource();
+Connection connection = (Connection)datasource.getConnection();
+
+String query = "select * from Table1"; //any query
+Statement stat = connection.createStatement();
+ResultSet rs = stat.executeQuery(query);
+----
+
+要从JNDI存储库中检索数据源，可以按如下方式配置连接器：
+
+[source, xml, linenums]
+----
+<spring:beans>
+  <jee:jndi-lookup id="myDataSource" jndi-name="yourJndiName" environment-ref="yourJndiEnv" />
+  <util:map id="jndiEnv">
+    <spring:entry key="java.naming.factory.initial" value="yourJndiFactory" />
+   </util:map>
+</spring:beans>
+----
+
+=== 交易
+
+事务在JDBC端点上受支持。有关详细信息，请参阅 link:/mule-user-guide/v/3.6/transaction-management[交易管理]。
+
+== 用法
+
+将您的JDBC客户机jar复制到您的安装的<MULE_HOME> / lib / user目录。
+
+如果您想在您的配置中包含JDBC传输，那么这些是您需要定义的命名空间：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:jdbc="http://www.mulesoft.org/schema/mule/jdbc"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+       http://www.mulesoft.org/schema/mule/jdbc http://www.mulesoft.org/schema/mule/jdbc/3.5/mule-jdbc.xsd">
+...
+----
+
+对于JDBC传输的企业版本：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:jdbc="http://www.mulesoft.org/schema/mule/ee/jdbc"
+      xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+       http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/3.5/mule-jdbc-ee.xsd">
+...
+----
+
+然后你需要定义一个连接器：
+
+[source, xml, linenums]
+----
+<spring:bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+    <spring:property name="driverName" value="org.apache.derby.jdbc.EmbeddedDriver"/>
+    <spring:property name="url" value="jdbc:derby:muleEmbeddedDB;create=true"/>
+</spring:bean>
+
+<jdbc:connector name="jdbcConnector" dataSource-ref="jdbcDataSource" pollingFrequency="10000"
+                queryRunner-ref="queryRunner" queryTimeout="10" resultSetHandler-ref="resultSetHandler"
+                transactionPerMessage="true"/>
+----
+
+最后，您定义一个入站或出站端点。
+
+* 如果要更改数据库以触发Mule流，请使用入站端点
+* 使用出站端点更改数据库数据或将数据库数据返回到入站端点，例如使用http端点显示数据库数据。
+
+*Endpoints*
+
+入站端点：
+
+[source, xml, linenums]
+----
+<jdbc:inbound-endpoint queryKey="selectQuery" name="jdbcInbound" pollingFrequency="10000" queryTimeout="10"
+                       connector-ref="jdbcConnector" exchange-pattern="one-way">
+    <jdbc:transaction action="ALWAYS_BEGIN" />
+</jdbc:inbound-endpoint>
+----
+
+出站端点：
+
+[source, xml, linenums]
+----
+<jdbc:outbound-endpoint queryKey="selectCount" exchange-pattern="one-way" connector-ref="jdbcConnector" queryTimeout="10" >
+    <jdbc:transaction action="ALWAYS_BEGIN"/>
+</jdbc:outbound-endpoint>
+----
+
+[WARNING]
+如果您使用的是Mule Enterprise版本，那么您必须使用JDBC传输的EE版本。因此，如果您要从CE迁移到EE，请按照上文所述将名称空间和schemaLocation声明更新为EE版本。
+
+===  Exchange模式
+
+支持单向和请求 - 响应交换模式。如果交易模式未定义，则“单向”是默认值。
+
+=== 轮询传输
+
+JDBC传输的入站端点使用轮询来查找新数据。默认情况是每秒检查一次，但可以通过连接器上的“pollingFrequency”属性进行更改。
+
+本模块支持的功能=== 
+
+jdbc传输支持大多数标准传输特性：事务，重试，表达式等。JDBC传输不支持流。
+
+== 示例配置
+
+以下示例演示了如何将数据库中的行写入其自己的文件。
+
+*Writing database rows to their own files*
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:jdbc="http://www.mulesoft.org/schema/mule/jdbc"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.6/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/jdbc http://www.mulesoft.org/schema/mule/jdbc/3.5/mule-jdbc.xsd">
+
+    <!-- This placeholder bean lets you import the properties from the db.properties file. -->
+    <spring:bean id="property-placeholder" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer"> ❶
+        <spring:property name="location" value="classpath:db.properties"/>
+    </spring:bean>
+
+    <!-- This data source is used to connect to the database using the values loaded from the properties file -->
+    <spring:bean id="jdbcDataSource"
+        class="org.enhydra.jdbc.standard.StandardDataSource"
+        destroy-method="shutdown">
+        <spring:property name="driverName" value="${database.driver}"/> ❷
+        <spring:property name="url" value="${database.connection}"/> ❸
+    </spring:bean>
+
+    <jdbc:connector name="jdbcConnector" dataSource-ref="jdbcDataSource" pollingFrequency="5000" transactionPerMessage="false"> ❹
+        <jdbc:query key="read" value="SELECT id, type, data FROM test3 WHERE type=1"/> ❺
+        <jdbc:query key="read.ack" value="UPDATE test3 SET type=2 WHERE id=#[map-payload:id]"/> ❻
+    </jdbc:connector>
+
+    <file:connector name="output" outputAppend="true" outputPattern="#[function:datestamp].txt" /> ❼
+
+    <flow name="allDbRows">
+        <jdbc:inbound-endpoint queryKey="read" connector-ref="jdbcConnector"/> ❽
+        <object-to-string-transformer /> ❾
+        <file:outbound-endpoint connector-ref="output" path="/tmp/rows"/> ❿
+    </flow>
+</mule>
+----
+
+数据库认证信息存储在名为'db.properties'的属性文件中。对于MySQL数据库，该文件看起来与此类似：+
+  database.driver = com.mysql.jdbc.Driver +
+  = database.connection JDBC：MySQL的：//本地主机/测试用户= <user>＆密码= <password>
+
+属性文件中的值用于在❷和❸中配置数据源bean。 jdbc连接器引用数据源并定义一些入站端点将使用的查询（❺和❻）。 'read'查询检查数据库中'type'列设置为1的行。'read.ack'查询会自动为每个找到的新记录运行，并将'type'列设置为2，所以它不会是由隐藏的端点再次拾起。在defined定义文件连接器，将找到的每一行写入带有日期标记名称的文件。接下来，定义了在入站端点calls上调用jdbc'read'查询的流程。然后新的数据库行由对象到字符串转换器处理，最后写入'/ tmp / rows'目录。
+
+此示例显示如何在浏览器中显示数据库行：
+
+*Display database rows in a browser*
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:jdbc="http://www.mulesoft.org/schema/mule/ee/jdbc"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.6/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/3.5/mule-jdbc-ee.xsd">
+
+    <!-- This placeholder bean lets you import the properties from the db.properties file. -->
+    <spring:bean id="property-placeholder" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <spring:property name="location" value="classpath:db.properties"/>
+    </spring:bean>
+
+    <!-- This data source connects to the database using the values loaded from the properties file -->
+    <spring:bean id="jdbcDataSource"
+        class="org.enhydra.jdbc.standard.StandardDataSource"
+        destroy-method="shutdown">
+        <spring:property name="driverName" value="${database.driver}"/>
+        <spring:property name="url" value="${database.connection}"/>
+    </spring:bean>
+    <jdbc:connector name="jdbcConnector" dataSource-ref="jdbcDataSource">
+        <jdbc:query key="selectRows"
+                    value="select * from mule_source where ID between 0 and #[header:inbound:max]"/> ❶
+    </jdbc:connector>
+    <jdbc:maps-to-xml-transformer name="XMLResponseTransforer"/> ❷
+    <message-properties-transformer name="XMLContentTransformer"> ❸
+        <add-message-property key="Content-Type" value="text/xml"/>
+    </message-properties-transformer>
+    <flow name="ExampleModel">
+        <inbound-endpoint address="http://localhost:8080/rows" exchange-pattern="request-response" responseTransformer-refs="XMLResponseTransformer XMLContentTransformer"/> ❹
+        <jdbc:outbound-endpoint queryKey="selectRows" exchange-pattern="request-response"/> ❺
+    </flow>
+</mule>
+----
+
+*Note*：在这些代码示例中，` spring-beans-current.xsd `是一个占位符。要找到正确的版本，请参阅 http://www.springframework.org/schema/beans/[http://www.springframework.org/schema/beans/]。
+
+这个例子需要Mule Enterprise运行。 using使用在请求URL中传递的'max'参数定义选择数据库查询。我们在❷和define定义一些变换器将数据库行转换为XML，并为浏览器设置正确的Content-type以正确显示它。 ❹使用URL ` http://localhost:8080/rows `声明HTTP入站端点。由于我们在select查询中使用入站参数，因此我们还需要在请求的URL中包含“max”参数，例如` http://localhost:8080/rows?max=5 `。 ❺是HTTP端点触发后，JDBC出站端点调用'selectRows'查询的位置。
+
+== 配置参考
+
+=== 社区
+
+== 连接器
+
+<connector...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| pollingFrequency  | long  |否 |   |在随后两次轮询数据库期间将使用的延迟毫秒数。这仅适用于在入站端点上配置的查询。
+| dataSource-ref  |字符串 |是 |   |引用JDBC DataSource对象。这个对象通常使用Spring创建。在使用XA事务时，必须提供XADataSource对象。
+| queryRunner-ref  |字符串 |否 |   |引用QueryRunner对象，它是实际运行查询的对象。这个对象通常使用Spring创建。默认是org.apache.commons.dbutils.QueryRunner。
+| resultSetHandler-ref  |字符串 |否 |   |引用ResultSetHandler对象，该对象是确定处理哪个java.sql.ResultSet的对象。这个对象通常使用Spring创建。缺省值是org.apache.commons.dbutils.handlers.MapListHandler，它逐步通过ResultSet并将记录作为Map对象存储在List上。
+| transactionPerMessage  |布尔值 |否 |   |是否应在单独的事务中接收每个数据库记录。如果为false，则整个结果集将会有一个事务。默认值是true。
+| queryTimeout  |整数 |否 |  -  1  |将用作SQL语句查询超时的超时时间（以秒为单位）
+|===
+
+<connector...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|====
+| {名称{1}}基数 |说明
+| abstract-sqlStatementStrategyFactory  | 0..1  |根据提供的SQL确定执行策略的工厂。
+|抽象查询 | 0 .. *  |定义一组查询。每个查询都有一个键和一个值（SQL语句）。查询稍后由密钥引用。
+|====
+
+== 入站端点
+
+从数据库接收或提取数据。您可以引用SQL select语句或调用入站端点上的存储过程。根据pollingInterval定期调用入站端点的语句。包含插入，更新或删除的语句不被允许。
+
+<inbound-endpoint...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|====
+| {名称{1}}输入 |必 |缺省 |说明
+| pollingFrequency  | long  |否 |   |在随后两次轮询数据库期间将使用的延迟毫秒数。
+| queryTimeout  |整数 |否 |  -  1  |将用作SQL语句查询超时的超时时间（以秒为单位）
+| queryKey  |字符串 |否 |   |要使用的查询的关键字。
+|====
+
+<inbound-endpoint...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+|抽象查询 | 0 .. *  | 
+|===
+
+== 出站端点
+
+您可以引用任何SQL语句或在出站端点上调用存储过程。出站端点上的语句被同步调用。 SQL select语句或存储过程可能会返回由ResultSetHandler处理的输出，然后作为有效负载附加到消息。
+
+<outbound-endpoint...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|====
+| {名称{1}}输入 |必 |缺省 |说明
+| queryTimeout  |整数 |否 |  -  1  |将用作SQL语句查询超时的超时时间（以秒为单位）
+| queryKey  |字符串 |否 |   |要使用的查询的关键字。
+|====
+
+<outbound-endpoint...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+|抽象查询 | 0 .. *  | 
+|===
+
+=== 企业
+
+== 连接器
+
+<connector...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|======
+| {名称{1}}输入 |必 |缺省 |说明
+| handleOutputResultSets  |布尔值 |否 | false  |是否应使用ResultSetHandler对象处理输出java.sql.ResultSet实例。当执行将java.sql.ResultSet实例作为输出参数返回的存储过程时，此属性非常有用。默认为false。
+|======
+
+<connector...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|====
+| {名称{1}}基数 |说明
+| sqlCommandExecutorFactory  | 0..1  |为读取SQL语句创建命令执行程序的工厂。
+| ackSqlCommandExecutorFactory  | 0..1  |为确认SQL语句创建命令执行程序的工厂。
+| sqlCommandRetryPolicyFactory  | 0..1  |创建重试策略的工厂，它决定是否必须在发生错误时重新执行SQL语句。
+|====
+
+== 入站端点
+
+<inbound-endpoint...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+|===
+
+== 出站端点
+
+<outbound-endpoint...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+|===
+
+=== 变压器
+
+在jdbc传输的企业版中可以找到以下变换器：
+
+== 映射到xml转换器
+
+将`Map`对象的`List`转换为XML。地图列表与您使用默认ResultSetHandler所得到的相同。 XML模式格式在文档中提供。
+
+<maps-to-xml-transformer...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+|===
+
+==  Xml映射变换器
+
+将XML转换为`Map`对象的`List`。地图列表与您使用默认ResultSetHandler所得到的相同。 XML模式格式在文档中提供。
+
+<xml-to-maps-transformer...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+|===
+
+== 映射到csv转换器
+
+将`Map`个对象的`List`转换为CSV文件。地图列表与您使用默认ResultSetHandler所得到的相同。
+
+<maps-to-csv-transformer...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|分隔符 |字符串 |否 |   | CSV文件中使用的分隔符。默认值是逗号。
+| {mappingFile {1}}串 | {无{3}}为|
+用于描述CSV文件的"mapping file"的名称。看到
+
+http://flatpack.sourceforge.net
+
+了解详情。
+
+| ignoreFirstRecord  |布尔值 |否 |   |是否忽略第一条记录。如果第一条记录是标题，则应该忽略它。
+|限定词 |字符串 |否 |   |用于转义包含分隔符的文本的字符。
+|===
+
+<maps-to-csv-transformer...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+|===
+
+==  Csv映射变压器
+
+将CSV文件转换为`Map`对象的`List`。地图列表与您使用默认ResultSetHandler所得到的相同。
+
+<csv-to-maps-transformer...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|分隔符 |字符串 |否 |   | CSV文件中使用的分隔符。默认值是逗号。
+| {mappingFile {1}}串 | {无{3}}为|
+用于描述CSV文件的"mapping file"的名称。看到
+
+http://flatpack.sourceforge.net
+
+了解详情。
+
+| ignoreFirstRecord  |布尔值 |否 |   |是否忽略第一条记录。如果第一条记录是标题，则应该忽略它。
+|限定词 |字符串 |否 |   |用于转义包含分隔符的文本的字符。
+|===
+
+<csv-to-maps-transformer...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+|===
+
+== 结果集来映射变换器
+
+将`java.sql.ResultSet`转换为`Map`对象的`List`，就像默认的ResultSetHandler一样。用于返回游标的Oracle存储过程（ResultSets）。
+
+<resultset-to-maps-transformer...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+|===
+
+==  Javadoc API参考
+
+http://www.mulesoft.org/docs/site/3.6.0/apidocs/org/mule/transport/jdbc/package-summary.html[用于JDBC传输的Javadoc]
+
+有关企业版jdbc传输javadoc的信息，请参阅EE分发。
+
+== 的Maven
+
+JDBC传输由mule-transport-jdbc模块实现。您可以在transports / jdbc下找到jdbc传输的源代码。
+
+如果您使用maven构建应用程序，请使用以下依赖片段将JDBC传输包含在您的项目中：
+社区版本：
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-email</artifactId>
+  <version>3.4.0</version>
+</dependency>
+----
+
+
+企业版本：
+[source, xml, linenums]
+----
+<dependency>
+    <groupId>com.mulesoft.muleesb.transports</groupId>
+    <artifactId>mule-transport-jdbc-ee</artifactId>
+    <version>3.4.0</version>
+</dependency>
+----
+
+== 最佳实践
+
+* 将您的数据库连接和凭据信息放入单独的属性文件中。这允许你将你的配置文件移植到不同的环境中。有关如何完成的示例，请参阅<<Example Configurations>>
+
+== 数据源配置
+
+数据源配置变得更加简单。以前，必须使用Spring配置数据源：
+
+[source, xml, linenums]
+----
+<spring:bean id="dataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+    <spring:property name="driverName" value="com.mysql.jdbc.Driver"/>
+    <spring:property name="url" value="jdbc:mysql://localhost/mule"/>
+    <spring:property name="user" value="mysql"/>
+    <spring:property name="password" value="secret"/>
+</spring:bean>
+----
+
+现在这大大简化了：
+
+[source, xml, linenums]
+----
+<jdbc:mysql-data-source name="dataSource" database="mule" user="mysql" password="secret"/>
+----
+
+
+=== 数据源
+
+以下元素可与以下列出的所有特定于数据库的数据源一起使用：
+
+[%header,cols="2*"]
+|====
+| {属性{1}}说明
+| *loginTimeout*  |登录超时。
+| *transactionIsolation*  |在新创建的`javax.sql.Connection`对象上设置事务隔离级别。
+|====
+
+=== 德比
+
+Derby数据源被创建为嵌入式数据源。所以用户和密码的定义不是必需的。
+
+[WARNING]
+====
+*Tip*
+
+使用jdbc：derby-data-source配置元素来配置Derby。如果您使用常规Bean，则在取消部署或重新部署应用程序时可能会收到错误。
+====
+
+例：
+
+[source, xml, linenums]
+----
+<jdbc:derby-data-source name="dataSource" database="mule"/>
+----
+
+`derby-data-source`元素提供以下属性：
+
+[%header,cols="2*"]
+|===
+| {属性{1}}说明
+| *create*  |如果`true`数据库将在首次访问时创建。有关详细信息，请参阅 http://db.apache.org/derby/docs/10.7/ref/rrefattrib26867.html[德比文档]。
+| *database*  |要连接的数据库的名称。此属性不能与`url`属性一起使用。
+| *name*  |数据源的唯一标识符。使用此名称来引用来自JDBC连接器的数据源。
+连接到数据库时要使用的| *url*  | JDBC URL。此属性不能与`database`属性一起使用。
+|===
+
+=== 的MySQL
+
+例：
+
+[source, xml, linenums]
+----
+<jdbc:mysql-data-source name="dataSource" database="mule" user="mysql" password="secret"/>
+----
+
+`mysql-data-source`元素提供以下属性：
+
+[%header,cols="2*"]
+|====
+| {属性{1}}说明
+| *database*  |要连接的数据库的名称。此属性不能与`url`属性一起使用。
+| *host*  |要连接到的数据库主机。此属性不能与`url`属性一起使用。
+| *name*  |数据源的唯一标识符。使用此名称来引用来自JDBC连接器的数据源。
+| *password*  |连接数据库的密码。该属性是必需的。
+要连接到的数据库端口| *port*  |。此属性不能与`url`属性一起使用。
+连接到数据库时要使用的| *url*  | JDBC URL。此属性不能与`database`，`host`或`port`属性一起使用。
+| *user*  |连接到数据库的用户。该属性是必需的。
+|====
+
+=== 的Oracle
+
+例：
+
+[source, xml, linenums]
+----
+<jdbc:oracle-data-source name="dataSource" user="scott" password="tiger"/>
+----
+
+`oracle-data-source`元素提供以下属性：
+
+[%header,cols="2*"]
+|====
+| {属性{1}}说明
+| *host*  |要连接到的数据库主机。此属性不能与`url`属性一起使用。
+| *instance*  | Oracle实例连接到。此属性不能与`url`属性一起使用。
+| *name*  |数据源的唯一标识符。使用此名称来引用来自JDBC连接器的数据源。
+| *password*  |连接数据库的密码。该属性是必需的。
+要连接到的数据库端口| *port*  |。此属性不能与`url`属性一起使用。
+连接到数据库时要使用的| *url*  | JDBC URL。此属性不能与`instance`，`host`或`port`属性一起使用。
+| *user*  |连接到数据库的用户。该属性是必需的。
+|====
+
+===  PostgreSQL的
+
+例：
+
+[source, xml, linenums]
+----
+<jdbc:postgresql-data-source name="dataSource" database="mule" user="postgres" password="secret"/>
+----
+
+`mysql-data-source`元素提供以下属性：
+
+[%header,cols="2*"]
+|====
+| {属性{1}}说明
+| *database*  |要连接的数据库的名称。此属性不能与`url`属性一起使用。
+| *host*  |要连接到的数据库主机。此属性不能与`url`属性一起使用。
+| *name*  |数据源的唯一标识符。使用此名称来引用来自JDBC连接器的数据源。
+| *password*  |连接数据库的密码。该属性是必需的。
+要连接到的数据库端口| *port*  |。此属性不能与`url`属性一起使用。
+连接到数据库时要使用的| *url*  | JDBC URL。此属性不能与`database`，`host`或`port`属性一起使用。
+| *user*  |连接到数据库的用户。该属性是必需的。
+|====

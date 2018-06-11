@@ -1,0 +1,167 @@
+=  HTTP连接器XML参考
+:keywords: connectors, http, https, configuration
+
+HTTP连接器侦听事件或执行基于HTTP或HTTPS协议的操作。使用HTTPS协议需要配置中的TLS上下文子元素，如下一节所示。 Mule 4.0及更高版本支持用于访问Listener和Request属性的DataWeave语法。 Mule继续支持Mule表达语言（MEL）。本文档中的表格将一种语法映射到另一种语法。
+
+== 监听器
+
+监听器配置父元素在子监听器连接元素内部组织连接元素，例如listen端口和tls：context。连接元素是http：listener-config的子元素，如以下代码所示。
+
+[source,xml,linenums]
+----
+<http:listener-config name="lisConfig" basePath="api">
+  <http:listener-connection protocol="https" port="${serverPort}" host="localhost" usePersistentConnections="true">
+    <tls:context>
+      <tls:key-store path="keystore.jks" keyPassword="key" password="pass"/>
+    </tls:context>	
+  </http:listener-connection>
+</http:listener-config>
+
+----
+
+以下代码将HTTP侦听器放入流中：
+
+[source,xml,linenums]
+----
+<flow name="server">
+  <http:listener path="test" allowedMethods="GET" config-ref="lisConfig"/>
+  <logger message="HEY"/>
+</flow>
+----
+
+要访问HTTP侦听器属性，请使用下表所示的DataWeave语法。
+
+[%header,cols="15a,45a,40a",]
+|===
+| HTTP对象 |  3.x  |  4.x
+| 方法 | ＃[inboundProperties.'http.method”]  | ＃[attributes.method]
+|  {路径{1}}＃[inboundProperties.'http.listener.path”]  | ＃[attributes.listenerPath]
+| 相对路径 | ＃[inboundProperties.'http.relative.path']  | ＃[attributes.relativePath]
+| 请求URI  | ＃[inboundProperties.'http.request.uri']  | ＃[attributes.requestUri]
+| 查询字符串 | ＃[inboundProperties.'http.query.string']  | ＃[attributes.queryString]
+| 查询参数 | ＃[inboundProperties.'http.query.params']  | ＃[attributes.queryParams]
+|  URI参数 | ＃[inboundProperties.'http.uri.params']  | ＃[attributes.uriParams]
+|  {版{1}}＃[inboundProperties.'http.version”]  | ＃[attributes.version]
+|  {方案{1}}＃[inboundProperties.'http.scheme”]  | ＃[attributes.scheme]
+|  {头{1}}＃[inboundProperties]  | ＃[attributes.headers]
+| 远程地址 | ＃[inboundProperties.'http.remote.address']  | ＃[attributes.remoteAddress]
+| 客户端证书 | ＃[inboundProperties.'http.client.cert']  | ＃[attributes.clientCertificate]
+|===
+
+==  HTTP请求
+
+与侦听器一致，request-config父元素在子请求连接元素内部组织请求的连接元素，如以下代码所示。
+
+[source,xml,linenums]
+----
+<http:request-config name="reqConfig" basePath="api/v2">
+  <http:request-connection protocol="HTTP" port="${clientPort}" host="localhost">
+    <tls:context>
+      <tls:trust-store path="ssltest-cacerts.jks" password="changeit"/>
+    </tls:context>
+    <http:authentication>
+      <{{0}}" password="#[password]" preemptive="#[preemptive]" />
+    </http:authentication>
+  </http:request-connection>
+</http:requester-config>
+----
+
+以下代码将HTTP请求放入流中。 HTTP请求返回HttpResponseAttributes。
+
+[source,xml,linenums]
+----
+<flow name="client">
+   <http:request path="/" config-ref="reqConfig"/>
+</flow>
+----
+
+要访问HTTP请求属性，请使用下表所示的DataWeave语法：
+
+[%header,cols="15a,45a,40a",]
+|===
+| HTTP对象 |  3.x  |  4.x
+| 状态码 | ＃[inboundProperties.'http.status]  | ＃[attributes.statusCode]
+| 原因短语 | ＃[inboundProperties.'http.reason']  | ＃[attributes.reasonPhrase]
+|  {头{1}}＃[inboundProperties]  | ＃[attributes.headers]
+|===
+
+==  HTTP请求，响应和错误响应正文
+
+定义HTTP请求的主体，响应和错误响应是可选的。当你没有明确定义body元素时，请求或响应返回默认的有效载荷。
+
+以下示例请求定义了一个自定义正文，一个键=值查询参数，一个以`custom`为值的X-Custom标题。 `uriParamsMap`变量填充URI参数`uriParam`。
+
+[source,xml,linenums]
+----
+<http:request path="/{uriParam}/test"  config-ref="reqConfig">
+   <http:body>
+       #['Custom body']
+   </http:body>
+   <http:headers>
+       #[{'X-Custom' : 'custom'}]
+   </http:headers>
+   <http:query-params>
+       #[{'key’' : 'value’'}]
+   </http:query-params>
+   <http:uri-params>
+       #[uriParamsMap]
+   </http:uri-params>
+</http:request>
+----
+
+以下代码缺少明确定义的主体元素。返回的值是默认有效负载。有效负载定义了对成功执行的响应，该响应由200个状态代码和标题为`Name`的{​​{0}}原因短语组成，`content`为值，`Something` `someValue`的值。
+
+[source,xml,linenums]
+----
+<http:listener path="test" allowedMethods="GET" config-ref="lisConfig">
+   <http:response statusCode="200" reasonPhrase="Ok">
+       <http:headers>
+           #[{"Name" : "content", "Something" : someValue}]
+       </http:headers>
+   </http:response>
+</http:listener>
+----
+
+以下代码定义了对执行失败的响应，该响应返回502状态代码和标题为`Error`且`FIRE`为`Oops, something went terribly wrong`的`Failure`原因短语作为身体。
+
+[source,xml,linenums]
+----
+<http:listener path="test" allowedMethods="GET" config-ref="lisConfig">
+   <http:error-response statusCode="502" reasonPhrase="Failure">
+       <http:body>
+           #[‘Oops, something went terribly wrong.’]
+       </http:body>
+       <http:headers>
+           #[{"Error" : "FIRE"}]
+       </http:headers>
+   </http:error-response>
+</http:listener>
+----
+
+==  HTTP操作参考
+
+以下代码显示了加载静态资源操作的语法：
+
+[source,xml,linenums]
+----
+<flow name="server">
+   <http:listener path="test" allowedMethods="GET" config-ref="lisConfig"/>
+   <http:load-static-resource resourceBasePath="root" defaultFile="index.html"/>
+</flow>
+----
+
+以下示例显示了基本安全筛选器操作的语法：
+
+[source,xml,linenums]
+----
+<flow name="listenerBasicAuth">
+   <http:listener config-ref="listenerConfigBasicAuth" path="/basic"/>
+   <http:basic-security-filter realm="mule-realm"/>
+   <logger message="TestBasicAuthOk"/>
+</flow>
+----
+
+== 另请参阅
+
+*  link:/connectors/http-about-http-connector[关于HTTP连接器]
+*  link:/connectors/http-documentation[HTTP连接器技术参考]

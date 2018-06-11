@@ -1,0 +1,516 @@
+=  EDIFACT EDI连接器
+：imagesdir：./_images
+
+_Premium_
+
+EDIFACT EDI连接器允许您将EDIFACT消息转换为和转换
+使用列表和地图的DataWeave兼容表示。此连接器支持EDIFACT D.93A，D.95B，D.96A，D.97A，D.98B，D.99A，D.99B，D.00A，D.01B，D.02A，D.03A所有标准消息的模式定义。
+
+== 先决条件
+
+本文档假定您熟悉EDIFACT，Mule，Anypoint
+连接器，Anypoint Studio，Mule流和Mule全局元素。
+
+有关兼容性信息，请参阅发行说明。链接到
+发布说明列在本文档的另请参见部分。
+
+要在生产环境中使用EDIFACT EDI连接器，您必须
+已经为Anypoint B2B购买了MuleSoft许可证。
+
+== 此连接器的新增功能
+
+EDIFACT EDI连接器2.x对EDIFACT EDI连接器1.x实现的配置和处理进行了一些更改：
+
+*  EDIFACT EDI连接器1.x仅支持来自单一版本标准的消息。 Mule 4 EDIFACT EDI连接器2.x支持来自多个版本标准的消息。消息头（UNH段）数据中的版本信息用于标识标准版本，消息标识符确定特定模式。
+
+* 识别参数不再用于读取和写入操作。您可以配置传递给写操作的实际消息数据中的所有参数值。
+
+* 在将任何数据写入输出流之前，将检查所有正在写入的消息是否有错误。
+
+*  EDIFACT EDI连接器2.x的未公开的"default"模式配置现在正式支持EDIFACT EDI连接器2.x.如果在配置中没有引用任何模式，则从类路径中查找每个消息的模式的标准版本并用于读取和写入。完成后，消息数据结构中没有可用的元数据，因为实际消息在设计时是未知的。
+
+== 在Anypoint Studio 7中安装此连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+您必须更改默认的Anypoint配置才能使用EDIFACT EDI连接器2.0.0。
+
+== 创建模式
+
+如果您的实现约定与标准不同，则可以根据实现来创建模式来描述消息。发行版中包含所有已定义EDIFACT消息和支持版本的标准版本模式。
+
+=== 关于EDI模式语言
+
+EDIFACT EDI模块使用名为ESL（用于EDI模式语言）的YAML格式来表示EDI模式。基本ESL根据结构（EDIFACT术语中的消息），组，段，组合和元素来定义EDI消息的结构。包括EDIFACT版本d00a，d01b，d02a，d03a，d93a，d95b，d96a，d97a，d98b，d99a和d99b的ESL。
+
+您可以通过定义覆盖模式来自定义EDIFACT模式定义以适应您的数据。覆盖模式是一种特殊的ESL形式，允许您使用特定约定修改基本模式，例如EDIFACT D.98B ORDERS模式。如果您使用的是标准定义的结构，则不需要覆盖模式，但大多数EDI交换都会修改实现约定中的基础定义。
+
+您也可以从头开始定义自己的模式，或者复制和编辑基本的EDIFACT模式定义以适合您的数据。有关更多详细信息，请参阅 link:/anypoint-b2b/edi-schema-language-reference[EDI模式语言参考]。
+
+[NOTE]
+====
+YAML使用列表和一组键值对。的顺序
+只要所需物品存在，价值并不重要。行情
+（单引号或双引号）用于可能包含的值
+的数字，但意味着被解释为字符串（因为否则的
+YAML解析器将这些值视为数字）。缩进用于显示列表的嵌套。
+
+为了便于阅读，这里显示的ESL结构定义了所有简单的键值
+在属于相同定义的任何列表之前配对。
+====
+
+=== 用覆盖架构来定义您的实施公约
+
+要根据您的实施惯例指定模式，您可以按照以下流程进行操作：
+
+. 创建一个覆盖架构，用于导入您要自定义的基础架构 - 例如EDIFACT 005010 850。
+. 自定义细分使用情况，职位，群组和计数的总体结构。
+. 自定义细分，包括使用情况和计数。
+
+覆盖架构在结构上与 link:/anypoint-b2b/edi-schema-language-reference[完整的模式定义]非常相似，但不提供架构结构的所有细节，而只是列出更改。覆盖模式指定如何使用与特定贸易伙伴的实施约定来扩展和自定义标准。
+
+以下示例提供了修改基本EDIFACT D.98B ORDERS消息定义的示例叠加架构的开始。本示例定制PAI段并指定它未使用，从而确保它在Anypoint Studio中的映射结构中隐藏。
+
+[source,yaml, linenums]
+----
+form: EDIFACT
+version: 'd98b'
+imports: [ '/edifact/d98b/ORDERS.esl' ]
+structures:
+- idRef: 'ORDERS'
+  name: Purchase Order
+  heading:
+  - { idRef: 'PAI', position: '0040', usage: U }
+----
+
+=== 结构覆盖
+
+结构覆盖详细说明对EDIFACT消息的基本模式定义的修改。大多数情况下，这些修改采用将基本定义中的片段或组标记为未使用的形式，但允许使用或重复计数更改。
+
+以下是结构覆盖所采用的形式：
+
+[source,yaml, linenums]
+----
+- idRef: 'ORDERS'
+  heading:
+  - { idRef: 'PAI', position: '0040', usage: U }
+  - { idRef: 'IMD', position: '0060', usage: U }
+  - groupIdRef: 'Segment group 15'
+    position: '0560'
+    items:
+    - { idRef: 'HAN', position: '0570', usage: U }
+    - { idRef: 'MEA', position: '0580', usage: U }
+    - { idRef: 'FTX', position: '0590', usage: U }
+----
+
+此示例中的修改指定不使用标准ORDERS标题的PAI和IMD分段以及分段组15中的选定分段。
+
+结构级别的键值对是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| idRef  |被修改消息的ID。
+|名称 |消息名称（可选）。
+|标题，明细，摘要 |结构每个部分中的分段和分组修改列表。这些是可选的，只有在对该部分进行了修改时才使用。
+|===
+
+结构不同部分（标题，细节，摘要）的分段修改列表都使用相同的结构。列表中的每个项目都是段引用或组定义。段引用使用紧凑的YAML语法显示，其中每个引用的值都以逗号分隔的键值对的形式给出，并用大括号括起来。
+
+这些值是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| idRef  |引用的段ID。这是可选的，如果提供了验证，但是被忽略。位置值用于唯一标识段中的段。
+|位置 |消息部分中的段位置。
+|用法 |使用代码，可能是M代表强制性，O代表可选，C代表条件或U代表未使用。
+| count  |最大重复计数值，可能是一个数字或特殊值`>1`，表示任意数量的重复。计数值是可选的，如果未指定值，则使用基本定义值。
+|===
+
+组覆盖图以展开的形式显示，键值对位于不同的行上。
+
+组定义中的值是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| groupIdRef  |引用的组ID。这个密钥是可选的，并且如果提供，则被验证，否则被忽略位置值用于唯一标识某个部分中的一个组。
+|位置 |消息部分中的段位置。
+|用法 |使用代码，可能是M代表强制性，O代表可选，C代表条件或U代表未使用。
+| count  |最大重复计数值，可能是一个数字或特殊值`>1`，表示任意数量的重复。计数值是可选的，如果未指定值，则使用基本定义值。
+|项 |构成组的分段列表（以及潜在的嵌套组）。
+|===
+
+=== 分段覆盖图
+
+段叠加详细说明对基本模式定义的修改。大多数情况下，这些修改的形式是将基本定义中的元素或组合标记为未使用，但允许使用或重复计数更改。
+
+示例分段覆盖：
+
+[source,yaml, linenums]
+----
+segments:
+- { idRef: FTX, trim: 20 }
+- idRef: LIN
+  items:
+  - { position: 40, usage: U }
+- { idRef: ALC, trim: 30 }
+- idRef: PCI
+  items:
+  - { position: 20, usage: U }
+  - { position: 40, usage: U }
+----
+
+上面的示例使用紧凑形式进行只包含截断的段修改，而对各个值进行更改的修改则以展开形式表示。与所有其他YAML示例一样，这两种形式实际上是等效的，可以互换使用。
+
+段叠加中的键值对是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| idRef  |分段标识符。
+| trim  |修剪段中的位置，表示此时所有值都被标记为未使用（可选）。
+|项目 |个别值修改列表。
+|===
+
+项目列表按照位置引用段中的值。这些参考值是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+|位置 |段中的值位置。
+|名称 |段中的值的名称（如果未指定，则使用可选的基本定义值）。
+|用法 |使用代码，可能是M代表强制性，O代表可选，C代表条件或U代表未使用。
+|计数 |最大重复计数值，可以是任何数字或特殊值`>1`，表示任意数量的重复。计数值是可选的，如果未指定值，则使用基本定义值。
+|===
+
+=== 确定EDIFACT架构位置
+
+要使用连接器，您需要知道模式的位置
+在你的项目中。如果您使用的是开箱即​​用的EDIFACT架构和
+没有定制任何东西，架构位置跟在
+`/edifact/{version}/{message}.esl`模式，因此对于ORDERS消息的D.98B版本，您的模式位置是"/edifact/d98b/ORDERS.esl"。
+
+如果您使用一个或多个自定义模式，则应将其置于下方
+`src/main/resources`并引用相对于此目录的位置。
+例如，如果您已将ORDERS架构（覆盖或全部）放在src / main / resources / mypartner / ORDERS.esl中，
+您的架构位置是`/mypartner/ORDERS.esl`。
+
+== 在Anypoint Studio 7中创建一个Mule项目
+
+在安装连接器并自定义模式（如果需要）后，可以开始使用连接器。为每个实施约定创建单独的配置。
+
+. 单击画布底部的全局元素选项卡，然后单击创建。
+. 在Choose Global Type向导中，找到并选择EDIFACT EDI：Configuration，然后单击OK。
+. 单击确定以保存全局连接器配置。
+. 返回到Studio中的消息流选项卡。
+
+按照以下部分所述设置全局元素属性中的每个选项卡。
+
+=== 关于常规选项卡
+
+image:edifact-edi-general.jpg[常规选项卡属性]
+
+常规选项卡允许您配置读取和写入EDIFACT消息的设置：
+
+* 手动创建或编辑要使用的消息结构的模式定义列表。
+* 字符串替换字符，用于替换字符串数据中的无效字符。
+* 分隔符用法，无论指定值是仅用于写入还是用于读取的默认值。
+* 默认数据元素分隔符。
+* 默认的组件元素分隔符。
+* 默认重复分隔符。
+* 默认段结束符字符。
+* 默认释放字符。
+
+=== 关于“身份”选项卡
+
+image:edifact-edi-identity.jpg[标识选项卡属性]
+
+标识选项卡允许您在EDIFACT EDI连接器配置中为您和贸易伙伴配置交换标题（UNB）标识符值。所有这些值都是可选的。如果配置了任何值，则在读取输入消息时验证值，并在输出数据中未指定值时写入输出消息时用作默认值。
+
+可以设置的值是Mule应用程序和合作伙伴的交换ID限定符和交换ID。 Mule值指定接收消息中的接收方字段（UNB3.1 / UNB3.2），并填充发送消息中的发送方字段（UNB2.1 / UNB2.2）字段。
+
+=== 关于解析器选项卡
+
+image:edifact-edi-parser.jpg[解析器选项卡属性]
+
+如果需要，您可以设置以下选项来控制接收消息的解析器验证：
+
+* 强制接收值的最小和最大长度。
+* 强制接收值的重复次数限制。
+* 为UNOA / UNOB语法级别强制使用有效字符。
+* 允许消息中的未知段。
+* 在消息中强制分段顺序。
+* 允许在消息中标记为“未使用”的段。
+* 强制消息中的分段重复次数限制。
+
+其他解析器选项可让您：
+
+* 覆盖接收消息的字符编码。
+* 要求唯一的交换控制参考（UNB.5）。
+* 要求全球唯一的消息参考号码（UNH.1）。
+* 设置存储交换和消息编号以检查唯一性的最少天数。
+
+=== 关于Writer选项卡
+
+image:edifact-edi-writer.jpg[编写器选项卡属性]
+
+写信息的设置：
+
+* 设置用于编写消息的字符编码。编码必须在EDIFACT语法版本中定义。
+* 设置语法版本（UNB1.2）。
+* 启用在段之间写入的行结束，以使输出更具可读性。
+* 始终发送UNA服务段（通常仅在使用非标准分隔符时发送）。
+* 为UNOA和UNOB语法级别强制使用有效字符。
+* 使用确认请求字段请求确认发送交换（UNB.9）。
+* 设置要在发送交换中使用的测试指示符号码（UNB.11）。
+
+== 示例：EDIFACT Studio
+
+以下流程可以加载到项目的XML中。
+
+image:edifact-edi-mapping-flow.jpg[映射流程图]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" 
+xmlns:edifact="http://www.mulesoft.org/schema/mule/edifact"
+xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns="http://www.mulesoft.org/schema/mule/core" 
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core
+http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http 
+http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/edifact 
+http://www.mulesoft.org/schema/mule/edifact/current/mule-edifact.xsd
+http://www.mulesoft.org/schema/mule/ee/core 
+http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+  <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config">
+    <http:listener-connection host="localhost" port="8081" />
+  </http:listener-config>
+  <edifact:config name="EDIFACT_EDI_Config" doc:name="EDIFACT EDI Config"
+    interchangeIdSelf="mule" 
+    interchangeIdQualifierSelf="ZZZ" 
+    interchangeIdPartner="partner" 
+    interchangeIdQualifierPartner="ZZZ">
+    <edifact:schemas>
+      <edifact:schema value="/edifact/d96a/ORDERS.esl"/>
+      <edifact:schema value="/edifact/d99b/CUSRES.esl"/>
+    </edifact:schemas>
+  </edifact:config>
+  <flow name="edifactmappingFlow">
+     <http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/map" />
+     <edifact:read doc:name="Read" config-ref="EDIFACT_EDI_Config"/>
+     <ee:transform doc:name="Transform Message">
+       <ee:message >
+         <ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+    Messages: {
+        D96A: {
+            ORDERS: payload.Messages.D96A.ORDERS
+        }
+    }
+}]]></ee:set-payload>
+       </ee:message>
+     </ee:transform>
+     <edifact:write doc:name="Write" config-ref="EDIFACT_EDI_Config"/>
+  </flow>
+</mule>
+----
+
+XML中的=== 配置选项
+
+Studio配置中列出的所有值都可以直接以XML格式设置。
+
+常规参数控制发送和接收文档处理（全部是可选的，具有默认值，如图所示）：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+|架构=值列表 |连接器要使用的架构的路径列表。路径可以是文件系统或类路径。
+| stringSubstitutionChar  |当使用语法级别UNOA或UNOB时，用于替换字符串值中的无效字符的替换字符。
+| separatorUsage = "USE_DEFAULTS" "USE_SPECIFIED_FOR_WRITES" "USE_SPECIFIED_FOR_ALL"  |使用指定的分隔符/释放字符作为消息的默认值。
+| dataSeparator = "+"  |数据元素分隔符。
+| componentSeparator = ":"  |组件元素分隔符。
+| repeatitionSeparator = "*"  |重复分隔符。
+| segmentTerminator = "'"  |段结束符。
+| releaseCharacter = "?"  |释放字符。
+|===
+
+自我识别参数可选择识别您的贸易伙伴关系方：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| interchangeIdSelf  |交换发送者/接收者ID（UNB2.1 / UNB3.1）。
+| interchangeIdQualifierSelf  |互换发送者/接收者ID限定符（UNB2.2 / UNB3.2）。
+|===
+
+合作伙伴识别参数可选择识别您的合作伙伴
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| interchangeIdPartner  | Mule应用程序的合作伙伴交换发件人/收件人ID（UNB2.1 / UNB3.1）。
+| interchangeIdQualifierPartner  |合作伙伴交换发件人/收件人ID限定符（UNB2.2 / UNB3.2）。
+|===
+
+解析器参数控制解析器操作以及导致接收消息被拒绝的错误条件类型（全部都是可选的，具有默认值，如下所示）：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| enforceLengthLimits = "true"  |强制接收值的最小和最大长度。
+| enforceValueRepeats = "true"  |为接收值强制执行重复次数限制。
+| enforceReadCharacters = "true"  |强制读取有效字符（仅在使用语法级别UNOA和UNOB时适用）。
+| allowUnknownSegments = "false"  |允许消息中的未知段。
+| enforceSegmentOrder = "true"  |在消息中强制分段顺序。
+| allowUnusedSegments = "false"  |允许在消息中标记为“未使用”的段。
+| enforceSegmentRepeats = "true"  |强制消息中的分段重复次数限制。
+| receiveEncodingOverride = "false"  |用于接收消息的Java字符编码（覆盖接收UNB）。
+| requireUniqueInterchanges = "true"  |要求唯一的交换控制参考（UNB.5））。默认行为是记录先前处理的交换号码，并拒绝来自同一伙伴的任何重复交换号码（由交换发送者和接收者标识确定）。如果为false，则允许继续处理接收到的交换并将其留给应用程序流以跟踪数字并进行适当处理。
+| requireUniqueMessages = "false"  |为接收到的消息强制使用全局唯一的消息参考号码（UNH.1）。默认情况下，消息引用号码只需要在特定交换处是唯一的。如果属实，则需要消息参考号码在从同一伙伴和应用程序收到的所有交换中都是唯一的（由交换发件人和收件人标识确定）。
+| daysToStore = "30"  |用于检查唯一性的存储交换，组和消息编号的最少天数。
+|===
+
+写入器参数控制写入器操作（全部都是可选的，使用默认值，如下所示）：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| characterEncoding = "ASCII_B"  |用于编写消息的字符编码（必须是在EDIFACT语法版本中定义的编码）。
+| sendSyntaxVersion = "VERSION4"  |发送消息的语法版本，也用于确定用于发送和接收的服务段和DataSense元数据中的CONTRL确认消息结构的数据结构。
+| lineEnding = "NONE" "LF" "CRLF" "CR"  |结束于段之间添加的行，默认为NONE。这使您可以在段之间添加行尾，以提高输出消息文本的可读性。
+| alwaysSendUNA = "false"  |总是发送UNA服务段。默认设置为false时，如果设置为true，则语法分隔符字符与语法版本和字符编码的缺省值不匹配时，UNA仅包含在交换中。如果设置为true，则始终发送UNA。
+| enforceWriteCharacters = "true"  |强制写入有效字符（仅在使用语法级别UNOA和UNOB时适用）。
+| sendUniqueMessageNumbers = "false"  |发送唯一的消息参考号码（UNH.1）。默认情况下，消息参考号码在每个交换内按顺序分配，并在不同的交换中重复使用。如果设置为true，则代之以在发送给同一合作伙伴的所有交换处（由交换发件人和收件人标识确定）分配唯一的交易集编号。
+| initialInterchangeReference = "1"  |用于传出消息的初始交换控制参考。
+| initialMessageReference = "1"  |用于传出消息的初始消息引用号。
+| requestAcks = "false"  |使用确认请求字段（UNB.9）请求确认发送交换。
+| testIndicator = ""  |测试指示符数字以用于发送交换（UNB.11）。默认情况下，交换不作为测试发送。
+|===
+
+== 设置您的架构位置
+
+您可以在Anypoint Studio XML视图中配置架构位置。
+
+在Anypoint Studio中，通过单击配置XML切换到XML视图，并通过为每种文档类型添加一个`+<{{0}}>+`元素来修改EDIFACT EDI配置，以包含您希望包含的所有模式的列表：
+
+[source, xml, linenums]
+----
+<edifact-edi:config name="EDIFACT_EDI__Configuration" identKeys="true" doc:name="EDIFACT EDI: Configuration">
+  <edifact-edi:schemas>
+    <edifact:schema value="/edifact/d96a/ORDERS.esl"/>
+  </edifact-edi:schemas>
+</edifact-edi:config>
+----
+
+在为EDIFACT EDI创建全局元素后，配置任何模式和操作。
+
+== 关于EDIFACT消息结构
+
+该连接器可以将EDIFACT文档读入或写入规范的EDI消息结构。此结构表示为Java地图和列表的层次结构，可以使用DataWeave或代码进行操作。如上所述，每个事务都有自己的架构，如架构中所定义的。
+
+该消息本身包含以下键（其中一些仅适用于读操作或写操作，如所示）：
+
+[%header%autowidth.spread]
+|===
+|密钥名称 |说明
+|分隔符（可选） |用于消息的分隔符（基于读取操作处理的最后一个交换进行设置）。如果设置为写入操作，则会覆盖模块配置中的值。字符串中的字符根据位置进行解释，顺序如下：（数据元素分隔符），（组件元素分隔符），（重复分隔符），（段结束符），（释放字符）。
+|错误（只读） |与整个输入相关联的错误列表，或与没有有效消息的交换错误列表。请参阅下面的阅读和验证EDIFACT EDI消息部分中的EdifactError结构描述。
+| FunctionalAcksGenerated（只读） |在读取操作期间由模块生成的CONTRL确认消息的列表。要发送确认，请参阅下面的发送确认部分。
+| FunctionalAcksToSend（只写） |写操作期间模块要发送的CONTRL确认消息列表。
+|交换（只写） |写入交换时用作默认值的UNB交换标题段值的映射。
+|消息 |模块在​​读取操作期间读取的消息或在写入操作期间由模块发送的消息的层次结构。此顶级密钥的值是以标准版本为密钥的映射，格式为"D96A"（例如）。例如，如果您使用的是版本D96.A ORDERS和CUSRES消息，则消息将包含带有一个密钥"D96A"的映射。这个键的值将是另一个映射，这个映射有两个键"ORDERS"和"CUSRES"。其中每一个都会包含您可以处理的单个ORDERS和CUSRES消息的列表。
+|===
+
+个别消息具有自己的地图，并具有以下关键字：
+
+[%header%autowidth.spread]
+|===
+|键 |说明
+|详细信息 |消息详细信息部分的段或循环的映射。值是针对最多发生一次的段或循环的映射，可以重复的值的映射列表。
+|错误（只读） |与消息相关的错误列表。 （请参阅下面“阅读和验证EDI消息”部分中的EdifactError类描述。）
+|标题 |消息标题部分的段或循环的映射。值是最多一次出现的段或循环的映射。地图列表用于可能重复的值。
+| ID  |消息ID，它必须与包含消息列表的密钥相匹配。
+|交换 | UNB交换标题段值的映射。阅读消息时，此地图是封闭交换中的实际数据（从交换中的所有消息链接的单个地图）。编写消息时，这些值用于创建封闭交换（将具有相同交换值的消息收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值默认为消息级别的交换映射中的值。
+| MessageHeader  | UNH消息标题段值的映射。这给出了读取操作的实际标题数据，并允许您为写入操作提供配置设置的覆盖。
+|名称 |消息名称。
+|摘要 |消息摘要部分中的段或循环的映射。值是最多一次出现的段或循环的映射。地图列表用于可能重复的值。
+|===
+
+生成的CONTRL功能确认消息与处理交换信息时收到的消息不同：
+
+[%header%autowidth.spread]
+|===
+|密钥名称 |说明
+|交换 | UNB交换标题段值的映射。对于由接收处理生成的功能性确认，该映射是与发送方和接收方标识组件（UNB2.1 / UNB2.2和UNB2.1 / UNB3.2）交换的包含交换数据的副本。编写消息时，这些值用于创建封闭交换（将具有相同交换值的消息收集到一个交换中，而不管实际的地图是否相同）。未在此映射中填充的值默认为消息级别的交换映射中的值。
+|===
+
+== 读取和验证EDIFACT EDI消息
+
+. 要读取EDIFACT消息，请搜索EDIFACT EDI的调色板，然后将EDIFACT读取操作拖到流程中。
+. 转到属性视图，选择您在上面创建的连接器配置并选择读取操作。该操作将任何字节流读入由EDIFACT架构描述的结构。
+
+EDIFACT模块在读取消息时验证消息。消息验证包括检查信封段UNB和UNZ的语法和内容以及消息中的实际消息。正常情况下，错误将被记录并累积并在CONTRL确认消息中报告，并且所有接受的消息（无论是无错的还是非致命错误）都会作为输出消息Map的一部分传递进行处理。读取输入数据时出错导致抛出异常。
+
+在接收数据映射中输入的错误数据使用EdifactError类，它是具有以下属性的只读JavaBean：
+
+[%header%autowidth.spread]
+|===
+|属性 |说明
+|段 |导致错误的段的输入内的从零开始的索引。
+|致命 |标记致命错误，表示相关的消息，组或交换由于错误而被拒绝。
+| errorCode  | EDIFACT语法错误代码。
+| errorText  |错误的文本描述。
+|===
+
+读取操作将错误数据作为可选列表在数据结构的根级别和消息级别使用"Errors"键返回。在消息级别，此列表包含解析该消息期间遇到的非致命错误。在根级别，该列表包含交换错误和致命的消息错误。
+
+== 编写EDIFACT EDI消息
+
+要编写传出消息，请搜索EDIFACT EDI的调色板，然后将EDIFACT写入操作拖到流中。根据以上定义的结构构建传出的EDIFACT EDI消息，以输入到写入操作。如果在写操作中没有发现致命错误，则正常流程继续。否则，抛出描述错误的异常。
+
+== 发送功能性确认
+
+发送生成的功能确认（CONTRL消息）与编写任何其他EDI消息相同，除了将事务设置为在读取操作期间生成的确认。
+
+例如：
+
+image:edifact-edi-ack-flow.jpg[Ack流程图]
+
+[source, xml, linenums]
+----
+<edifact-edi:read config-ref="EDIFACT_EDI__Configuration" doc:name="Read EDI Doc"/>
+  ...
+<dw:transform-message doc:name="Create Outgoing Acks Message">
+    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	FunctionalAcksToSend: payload.FunctionalAcksGenerated
+}]]></dw:set-payload>
+</dw:transform-message>
+<edifact-edi:write config-ref="EDIFACT_EDI__Configuration" doc:name="Send Acks"/>
+----
+
+生成的功能确认具有交换数据，用于发回原始消息的发件人，因此您无需在交易中更改任何内容以进行发送。
+
+== 另请参阅
+
+*  link:/release-notes/edifact-edi-connector-release-notes[EDIFACT EDI连接器发行说明]。
+*  link:/anypoint-b2b/edi-schema-language-reference[EDI模式语言参考]。
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。

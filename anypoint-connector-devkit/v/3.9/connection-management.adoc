@@ -1,0 +1,266 @@
+= 连接管理
+:keywords: devkit, connection, connectivity, test, authentication
+:keywords: devkit, connection, authentication, annotations, test connectivity, pooling, disconnect, validate, identify, reconnect on
+
+连接管理框架为连接器提供了多租户功能（为应用程序中的每个连接器管理具有不同凭据的多个同时连接），以及连接池和实例池。这些优势适用于除OAuth之外的大多数身份验证方案，以及不需要身份验证的API。基本身份验证在具有`@ConnectionManagement`属性的连接器中指定。
+
+本文档描述了连接管理框架，通过它公开的Java注释，以及如何在连接器中实现基本认证支持以对您的服务进行认证。本讨论中的示例显示了使用基本身份验证和基本用户名和密码身份验证（最常见），但它们可以轻松地推广到其他非OAuth协议，如SAML，Kerberos，LDAP，NTLM或创建自定义连接。
+
+对于基于OAuth的认证，DevKit使用与OAuth相关的注释提供功能。有关详情，请参阅 link:/anypoint-connector-devkit/v/3.9/oauth-v1[OAuth V1]和 link:/anypoint-connector-devkit/v/3.9/oauth-v2[OAuth V2]。
+
+== 先决条件
+
+本文档假定您熟悉 link:/anypoint-connector-devkit/v/3.9[Anypoint连接器DevKit]，已经 link:/anypoint-connector-devkit/v/3.9/creating-an-anypoint-connector-project[创建一个连接器项目]，并准备在您的连接器上实施身份验证。此外，它假定您熟悉各种 link:/anypoint-connector-devkit/v/3.9/authentication-methods[认证方法]，比较了不同的 link:/anypoint-connector-devkit/v/3.9/authentication[Devkit认证支持选项]和选择的基本身份验证以连接到您的API。
+
+== 关于连接管理
+
+连接管理框架通过连接器开发人员的最小努力提供以下好处：
+
+*  *Transparent multi-tenancy*  -  Mule应用程序可以使用不同凭据打开与单个目标的许多连接，以代表许多用户同时进行连接。
+*  *Connection pooling*  - 自动管理连接器类的实例池，以有效地管理连接资源。
+*  *Exceptions*  - 自动使异常连接无效并根据需要重新连接的功能。
+
+=== 连接管理框架和身份验证协议
+
+您可以将连接管理框架与大多数身份验证协议（如用户名和密码身份验证（最常见），SAML，Kerberos，LDAP和NTLM）结合使用。
+
+对于基于OAuth的认证，DevKit使用与OAuth相关的注释提供功能。有关详情，请参阅 link:/anypoint-connector-devkit/v/3.9/oauth-v1[OAuth V1]和 link:/anypoint-connector-devkit/v/3.9/oauth-v2[OAuth V2]。
+
+== 连接管理注释
+
+Anypoint DevKit通过创建新的`@ConnectionStrategy`，可以轻松地为连接器添加连接管理功能，只需创建一个新类并使用`@ConnectionManagement`对其进行注释即可。
+
+下表介绍了`@ConnectionManagement`注释的参数。
+
+[%header,cols="4*"]
+|===
+|参数 |描述 |是否必需？ |默认值
+一个|
+*friendlyName*
+
+  |定义将在弹出的连接器配置中显示的名称。 | ✓ | 
+一个|
+*configElementName*
+
+  |定义要在Mule应用中使用的配置的名称。 |   |  config
+|===
+
+== 连接管理DevKit注释
+
+要在连接器中使用连接管理，请在`@ConnectionManagement`注释类中定义和注释以下方法：
+
+*  `@Connect`方法 - 创建一个连接
+*  `@Disconnect`方法 - 显式关闭连接
+*  `@ValidateConnection`方法 - 如果连接仍然有效，则返回true，否则返回false
+*  `@ConnectionIdentifier`方法 - 返回用于为连接池中的连接器实例生成唯一标识符的前缀
+
+这些方法的具体实现取决于目标。有关注释的更多信息，请参阅 link:http://mulesoft.github.io/mule-devkit/[Anypoint DevKit API参考]。
+
+[source,java, linenums]
+----
+@ConnectionManagement(friendlyName="Connector Connection")
+public class ConnectionManagementStrategy{
+   @Connect
+   @TestConnectivity
+   public void connect(@ConnectionKey String username, @Password String password){
+      ...
+   }
+
+   @Disconnect
+   public void disconnect() {
+       client = null;
+   }
+
+   @ValidateConnection
+   public boolean isConnected() {
+       return client != null;
+   }
+
+   @ConnectionIdentifier
+   public String connectionId() {
+       return client.toString();
+   }
+}
+----
+
+这些方法根据DevKit框架的需要自动调用;你永远不会直接从你的代码中调用它们。
+
+
+=== 将@ConnectionManagement注释添加到@Connector类
+
+给定`@ConnectionManagement`类，这是将其添加到`@Connector`类中的方式。
+
+[source,java, linenums]
+----
+@Connector(name = "connector")
+public class MyConnectorWithConnectionManagement
+{
+    @ConnectionStrategy
+    private ConnectionManagementStrategy strategy;
+
+    /**
+    * Processors
+    */
+}
+----
+
+确保策略有一个公共的getter和setter（未显示）。
+
+===  @ Connect方法
+
+此方法负责创建到目标的连接。当连接器启动时，或者与API的连接已经丢失并且必须重新建立，Mule会自动调用`@Connect`方法。当此方法结束时，如果认证成功，则连接器实例已准备好进行操作。
+
+用`@Connect`注释的方法必须：
+
+* 公开
+* 抛出`org.mule.api.ConnectionException`（并且没有其他例外）
+* 有一个`void`返回类型
+* 仅使用`@Connect`注释一种方法
+* 使用`@TestConnectivity`注释`@Connect`方法
+* 用`@ConnectionKey`注释至少一个参数
+
+实现实际连接的特定代码取决于API。以下是`@Connect`方法的示例实现：
+
+[source,java, linenums]
+----
+@Connect
+@TestConnectivity
+   public void connect(@ConnectionKey String username, @Password String password)
+     throws ConnectionException {
+        try{
+           setClient(new SendGrid(username, password));
+        }catch(Exception e){
+           throw new ConnectionException(INCORRECT_CREDENTIALS,”” , e.getMessage());
+        }
+      }
+----
+
+此方法所需的参数是认证所需的凭证，在这种情况下是用户名和密码。由于此方法使用`@Connect`进行了注释，Anypoint DevKit使这些参数在该连接器的配置元素中都可用（与`@Configurable`字段一样），以及在消息处理器被拖入时流量。指定的凭据会覆盖配置元素中设置的凭据。
+
+===  @ TestConnectivity
+
+在配置连接器时，`@TestConnectivity`注释在Anypoint Studio中显示一个按钮，此按钮允许用户测试连接是否成功。
+
+`@TestConnectivity`运行`@Connect`方法，并期望`org.mule.api.ConnectionException`，如果发生此异常，则测试失败，如果不成功，则认为连接成功。
+
+`@TestConnectivity`可以通过设置来轻松禁用：
+
+[source,java, linenums]
+----
+@TestConnectivity(active = false)
+----
+
+===  @ ConnectionKey和连接池
+
+在上面的示例中，`@Connect`方法中的用户名参数用`@ConnectionKey`标注。如果启用了池，Mule将保留一个同时连接池，根据需要使用该池来拨打电话。
+
+`@ConnectionKey`注释标记此字段用作连接池中此特定连接的关键字，因此一旦创建此用户名的连接并将其添加到池中，它就会被重用，而不是为每个请求重新创建。
+
+==== 选择连接密钥
+
+对于用户名和密码认证，用户名是`@ConnectionKey`的明显选择。对于其他协议，请确定最明显与不同用户关联的值和连接到您的服务的访问权限，并将此值用作您的`@ConnectionKey`。
+
+===  @断开连接方法
+
+此注释指示负责处理连接的`@ConnectionManagement`类中的方法。当连接器关闭或连接明确终止时调用此方法。
+
+用`@Disconnect`注释的方法必须：
+
+* 公开
+* 不要输入参数
+* 有一个`void`返回类型
+* 该类必须只有一个带注释的`@Disconnect`方法
+
+[source,java, linenums]
+----
+@Disconnect
+public void disconnect()
+{
+   if (connection != null)
+   {
+     try
+         {
+         connection.logout();
+         }
+     catch (ConnectionException e)
+         {
+         e.printStackTrace();
+         }
+     finally
+         {
+         connection = null;
+         }
+   }
+}
+----
+
+如果连接器当前打开了连接，则此代码将调用`connection.logout()`，该客户端方法会显式解除身份验证并关闭连接。最后一个模块确保，如果注销由于某种原因失败，则连接仍然设置为空，因此连接器不会再尝试引用该连接器实例。
+
+===  @ ValidateConnection方法
+
+这个方法被Mule调用来检查连接是否实际打开。
+
+用`@ValidateConnection`注释的方法必须：
+
+* 公开
+* 不要输入参数
+* 返回`boolean`或`java.lang.Boolean`
+* 只能使用`@ValidateConnection`对类中的一个方法进行注释
+
+[source,java, linenums]
+----
+@ValidateConnection
+public boolean isConnected()
+{
+    return connection != null;
+}
+----
+
+在这个例子中，为了确定连接是否处于活动状态，代码只检查连接参数是否为空。取决于协议，其他连接器可能需要不同的实现。
+
+===  @ ConnectionIdentifier方法
+
+此注释标识`@ConnectionManagement`类中的一个方法，该方法返回连接的唯一标识符，用于记录和调试。
+
+用`@ConnectionIdentifier`注释的方法必须：
+
+* 公开
+* 不是静态的
+* 不接受参数
+* 返回`java.lang.String`
+* 仅使用`@ConnectionIdentifier`注释一种方法
+
+此代码返回连接SessionId作为标识符（如果可用）。在这种情况下，SessionHeader对象包含有关当前连接到API的头信息，包括会话ID。
+
+[source,java, linenums]
+----
+@ConnectionIdentifier
+public String connectionId() {
+if (connection != null){
+    return connection.getSessionHeader().getSessionId();
+    } else {
+        return  null;
+    }
+}
+----
+
+===  @ReconnectOn注释
+
+此注释不赞成`@InvalidateConnectionOn`注释。它现在收到一个异常列表，而不是只有一个异常，并且可以在类和处理器级别使用。
+
+此注释用于与连接相关的异常处理。它可以在课堂级别或方法级别使用。如果连接器或处理器引发此类的异常，则`@ReconnectOn`会自动使连接失效。 `@ReconnectOn`接收包含要捕获的例外类别的列表（请参阅下面的示例）。发生异常时，`@ReconnectOn`行为基于配置的重新连接策略。看到
+link:/mule-user-guide/v/3.7/configuring-reconnection-strategies[配置重新连接策略]
+更多细节。
+
+[source,java, linenums]
+----
+@Processor
+@ReconnectOn(exceptions = {InvalidSessionFault.class, PasswordChangedException.class})
+public void myOperation(@Optional String source,
+                        @Optional Object destination) throws InvalidSessionFault, PasswordChangedException, InvalidParameterException
+{
+    /**
+    * CODE FOR MY OPERATION
+    */
+}
+----

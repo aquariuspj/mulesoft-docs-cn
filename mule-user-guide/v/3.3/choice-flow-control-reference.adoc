@@ -1,0 +1,338 @@
+= 选择流量控制参考
+
+*Version 3.3.2 and 3.3.1 Only*
+
+*choice flow control*根据消息有效负载或属性动态路由消息。它将条件编程添加到流中，类似于`if/then/else`代码块。
+本文档仅描述Mule Studio 3.3.1和3.3.2的*Choice Flow Control*的行为。 *choice flow control*根据消息有效负载或属性动态路由消息。它将条件编程添加到流中，类似于`if/then/else`代码块。
+
+选择流量控制使用 link:/mule-user-guide/v/3.3/mule-expression-language-mel[表达式]来评估消息的内容，然后将消息路由到其范围内的*routing options*之一（参见下图）。它将消息定向到与路由配置相匹配的范围中的第一个路由选项（即，计算结果为true）。如果没有任何表达式计算结果为真，则选择流控制会将消息引导至*default*（即`else`）路由。
+
+image:Choice_schematic.png[Choice_schematic]
+
+<<Complete Example Code>>
+
+== 添加选择流量控制
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+In Studio, drag the *Choice* icon from the Studio palette to the canvas, positioning it within the sequence of link:/mule-user-guide/v/3.3/studio-building-blocks[building blocks] that form the flow (below). 
+
+image:Studio_Choice_add.png[Studio_Choice_add]
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+Add a `choice` element in your flow, with one attribute and, at minimum, two child elements as per the table below. Refer to the code sample below.
+
+[%header,cols="20,75"]
+|===
+|Attribute |Value
+|*doc:name* |unique name for the choice element (not required for Standalone)
+|*Child Element* |*Attribute*
+|*when* |expression
+|*otherwise* |n/a
+|===
+
+[source, xml, linenums]
+----
+<flow name="New_Studio_ProjectFlow1" doc:name="New_Studio_ProjectFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <choice doc:name="Choice">
+            <when expression="">
+                <processor-chain>
+                </processor-chain>
+            </when>
+            <otherwise>
+                <processor-chain>
+                </processor-chain>
+            </otherwise>
+        </choice>
+        <scripting:component doc:name="Groovy">
+            <scripting:script engine="Groovy"/>
+        </scripting:component>
+</flow>
+----
+....
+------
+
+== 配置选择流量控制
+
+要配置选择流量控制，您需要确定以下消息路由详细信息：
+
+* 选择流路由器应评估的内容以确定路由
+* 提供选择流量控制的路由选项的数量
+*  Mule应该为每个路由选项执行处理
+* 默认路由选项
+
+一旦确定了路由目标，请按照以下步骤来定义路由选项，然后定义路由指令。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Insert message processors within the dashed line area that signifies the choice flow control scope to define the routing options, making sure to place one of them within the "Default" box to define it as the default routing option. Note that you can place several message processors in a chain for each routing option, as needed. In our example, shown below, we have defined three routing options.
++
+image:Studio_Choice_routingoptions.png[Studio_Choice_routingoptions]
++
+
+[TIP]
+====
+.. Drag, then drop a message processor into the blank area above the default box within the dashed line which signifies the scope of the choice flow control. This is the first message processor in the flow control’s first routing option. In the example (below), we use the Expression transformer as the first message processor in the first routing option.
++
+image:Studio_Choice_add1.png[Studio_Choice_add1]
++
+.. To add additional processing steps to a routing option, drag and drop another message processor into the space immediately after the message processor you just added, still within the scope of the choice flow control. In the example (below), we add the Session Variable transformer as the second message processor in the first routing option.
++
+image:Studio_Choice_Add2.png[Studio_Choice_Add2]
+
+.. To add another routing option, drag and drop a message processor into the choice flow control scope. In the example below, we add an Attachment transformer as our second routing option.
++
+image:Studio_Choice_Add3.png[Studio_Choice_Add3]
+
+.. Next, add a message processor within the "Default" box to set the default routing option. In our example below, we add an FTP endpoint.
++
+image:Studio_Choice_add4.png[Studio_Choice_add4]
+====
+
+[start="2"]
+. Double-click to open the Choice Flow Control's *Pattern Properties* panel (below).
++
+image:Studio_Choice_PatternProperties.png[Studio_Choice_PatternProperties]
+
+. Mule displays a table with two columns: *When* and *Route Message to*. Notice, in the image above, that Mule displays a line item for each routing option. Mule identifies each routing option by its first message processor. Double-click the first line item in the *Route Message to* column to open the *Route Properties* panel (below).
++
+image:Studio_Choice_RouteProperties_Expression.png[Studio_Choice_RouteProperties_Expression]
+
+. In the *Expression* field, enter an expression for the choice router to use to evaluate the contents of a message. For example:
++
+`#[payload['name'] == null]`
+
+. Repeat the two preceding steps until you have supplied the choice flow control with a *When* expression for each non-default routing option (see example below).
++
+image:Studio_Choice_PatternProperties_configured1.png[Studio_Choice_PatternProperties_configured1]
+
+. Double-click the **Default **line item to open its Route Properties panel. 
++
+Notice that:
++
+.. you cannot edit the *Expression* field
+.. the *Otherwise* box is checked
++
+image:Studio_Choice_default_routeproperties.png[Studio_Choice_default_routeproperties]
++
+The *Otherwise* box identifies this route as the *Default* for the choice flow control. If the flow control cannot route a message to any of the preceding routing options in its scope, it directs the message to the default route.
+
+. Click *OK* to save the routing configurations.
+. As it processes messages, Mule evaluates the expressions defined in your routing options in order, top down, until one of them evaluates to "true". If necessary, drag and drop building blocks within the choice flow control scope on the canvas to reorder routing options.
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+. To the first `when` element within your choice element, add message processors as child elements to form a routing option to which the choice element can direct messages. In the code sample below, we have added an expression-transformer and a session-variable-transformer.
++
+[source, xml, linenums]
+----
+<flow name="New_Studio_ProjectFlow1" doc:name="New_Studio_ProjectFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <choice doc:name="Choice">
+            <when expression="">
+                <processor-chain>
+                    <expression-transformer doc:name="Expression"/>
+                    <session-variable-transformer doc:name="Session Variable"/>
+                </processor-chain>
+            </when>
+            <otherwise>
+            </otherwise>
+        </choice>
+        <scripting:component doc:name="Groovy">
+            <scripting:script engine="Groovy"/>
+        </scripting:component>
+</flow>
+----
+
+. Configure the contents of one or more additional `when` elements to define multiple routing options for your choice element. Refer to code sample below.
+. Configure the contents of the `otherwise` child element to define the default routing option to which your choice router can direct messages if all the previous when expressions evaluate to false. Refer to code sample below.
++
+[source, xml, linenums]
+----
+<flow name="New_Studio_ProjectFlow1" doc:name="New_Studio_ProjectFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <choice doc:name="Choice">
+            <when expression="">
+                <processor-chain>
+                    <expression-transformer doc:name="Expression"/>
+                    <session-variable-transformer doc:name="Session Variable"/>
+                </processor-chain>
+            </when>
+            <when expression="">
+                <processor-chain>
+                    <attachment-transformer doc:name="Attachment"/>
+                </processor-chain>
+             </when>
+            <otherwise>
+                <processor-chain>
+                    <ftp:outbound-endpoint host="localhost" port="21" responseTimeout="10000" doc:name="FTP"/>
+                <processor-chain>
+            </otherwise>
+        </choice>
+        <scripting:component doc:name="Groovy">
+            <scripting:script engine="Groovy"/>
+        </scripting:component>
+    </flow>
+----
+
+. For each `when` element, enter an expression for the choice router to use to evaluate the contents of a message. If, during processing, the expression associated with a routing option evaluates to true, Mule directs the message to that route. Refer to example expression below.
++
+[source, xml, linenums]
+----
+<when expression="#[payload['name'] == null]">
+----
+
+. As it processes messages, Mule evaluates the expressions defined in your routing options in the order they appear in the config, top down, until one of them evaluates to "true". Adjust the order of the `when` elements in your flow with this in mind. +
+
+=== Configuration Summary
+
+[%header,cols="10,85"]
+|===
+|Element |Description
+|*choice* |Dynamically routes messages based on message payload or properties, adding conditional programming to a flow, similar to an `if/then/else` code block.
+|===
+
+[%header,cols="20,75a"]
+|===
+|Element Attribute |Description
+|*doc:name* |Customize to display a unique name for the flow control in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+|===
+
+[%header,cols="20,75"]
+|===
+|Child Element |Description
+|*when* |Use to define all non-default routing options within the choice flow control.
+|===
+
+[%header,cols="10,10,75"]
+|===
+|Child Element Attribute |Value |Description
+|*expression* |Mule expression |Use MEL to define an expression that the choice router will use to evaluate the contents of a message. If the expression evaluates to "true", Mule directs the message to this routing option.
+|===
+
+[%header,cols="20,75"]
+|===
+|Child Element |Description
+|*otherwise* |Use to define the default routing option for the message, should none of the preceding `when` expressions evaluate to "true"
+|===
+....
+------
+
+== 更改默认路由
+
+您可以更改选择流量控制配置以识别不同的默认路由选项。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Double-click to open the choice flow control icon, then, in the table, double-click the line item of whichever routing option that you would like to specify as the new default route.
++
+image:Studio_Choice_newdefault1.png[Studio_Choice_newdefault1]
+
+. Check the *Otherwise* box (see below), then click *OK*.
++
+image:choice4.png[choice4]
+
+. Mule applies the *Default* label to the new default routing option in the table on the pattern properties panel (below). (Note that the FTP routing option now needs a "when" expression defined.) Click *OK*.
++
+image:Studio_Choice_newdefault3.png[Studio_Choice_newdefault3]
+
+. Mule applies the new routing order to the building blocks on the canvas. The new default routing option appears at the bottom of the scope.
++
+image:Studio_Choice_NewOrder.png[Studio_Choice_NewOrder]
+
+. Define a `when` expression for the routing option previously identified as the default. (In the example, the FTP routing option.)
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+Adjust your XML configuration to swap the contents of a `when` element and the `otherwise` element.
+
+The code sample below has been adjusted to make the Attachment transformer the default routing option and change the FTP outbound endpoint to a `when` element. Note that the `otherwise` element requires no further configuration, but we defined a new expression for the new `when` element.
+ +
+[source, xml, linenums]
+----
+<flow name="ChoiceFlowFlow1" doc:name="ChoiceFlowFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <choice doc:name="Choice">
+            <when expression="#[payload['name'] == null]">
+                <processor-chain>
+                    <expression-transformer doc:name="Expression"/>
+                    <session-variable-transformer doc:name="Session Variable"/>
+                </processor-chain>
+            </when>
+            <when expression="#[payload['amount'] &gt; 30000]">
+                <processor-chain>                
+                    <ftp:outbound-endpoint host="localhost" port="21" responseTimeout="10000" doc:name="FTP"/>
+                </processor-chain>
+            </when>
+            <otherwise>
+                <processor-chain>
+                    <attachment-transformer doc:name="Attachment"/>
+                </processor-chain>
+            </otherwise>
+        </choice>
+        <scripting:component doc:name="Groovy">
+            <scripting:script engine="Groovy"/>
+        </scripting:component>
+    </flow>
+----
+....
+------
+
+== 完整的示例代码
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:ftp="http://www.mulesoft.org/schema/mule/ee/ftp" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.3.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+ 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+ 
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+ 
+http://www.mulesoft.org/schema/mule/ee/ftp http://www.mulesoft.org/schema/mule/ee/ftp/current/mule-ftp-ee.xsd
+ 
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd ">
+ 
+    <flow name="ChoiceFlowFlow1" doc:name="ChoiceFlowFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <choice doc:name="Choice">
+            <when expression="#[payload['name'] == null]">
+                <processor-chain>
+                    <expression-transformer doc:name="Expression"/>
+                    <session-variable-transformer doc:name="Session Variable"/>
+                </processor-chain>
+            </when>
+            <when expression="#[payload['amount']] &gt; 30000]">
+                <processor-chain>
+                    <ftp:outbound-endpoint host="localhost" port="21" responseTimeout="10000" doc:name="FTP"/>
+                </processor-chain>
+            </when>
+            <otherwise>
+                <processor-chain>
+                    <attachment-transformer doc:name="Attachment"/>
+                </processor-chain>
+            </otherwise>
+        </choice>
+        <scripting:component doc:name="Groovy">
+            <scripting:script engine="Groovy"/>
+        </scripting:component>
+    </flow>
+</mule>
+----
+
+== 另请参阅
+
+* 有关Choice Flow Control的更多信息，请参阅Routing Message Processors页面上的<<Configuring the Choice Flow Control>>部分。

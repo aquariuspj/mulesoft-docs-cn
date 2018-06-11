@@ -1,0 +1,142 @@
+使用Spring Security的= 组件授权
+:keywords: authorization, spring, spring security
+
+本页描述如何在组件上使用Spring Security配置方法级授权，以便具有不同角色的用户只能调用某些方法。
+
+保证流程组件的安全。== 
+
+要保护`MethodInvocations`，您必须将正确配置的`MethodSecurityInterceptor`添加到应用程序上下文中。需要安全的bean被链接到拦截器中。这个链接使用Spring的`ProxyFactoryBean`或`BeanNameAutoProxyCreator`完成。或者，Spring Security提供了一个`MethodDefinitionSourceAdvisor`，您可以在Spring的`DefaultAdvisorAutoProxyCreator`中使用`MethodDefinitionSourceAdvisor`来自动将安全拦截器链接到`MethodSecurityInterceptor`定义的任何bean前面。
+
+除了`daoAuthenticationProvider`和`inMemoryDaoImpl` bean（请参阅 link:/mule-user-guide/v/3.8/configuring-security[配置安全性]），还必须配置以下bean：
+
+*  `MethodSecurityInterceptor`
+
+*  `AuthenticationManager`
+
+*  `AccessDecisionManager`
+
+*  `AutoProxyCreator`
+
+*  `RoleVoter`
+
+===  MethodSecurityInterceptor
+
+`MethodSecurityInterceptor`配置了对以下内容的引用：
+
+*  `AuthenticationManager`
+
+*  `AccessDecisionManager`
+
+以下是拦截对组件`myComponent`的方法调用的安全拦截器，该组件定义了两种方法：`delete`和`writeSomething`。角色在这些方法上设置，如下面的属性`securityMetadataSource`所示。
+
+[source, xml, linenums]
+----
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:mule="http://www.mulesource.org/schema/mule/core"
+       xmlns:mule-ss="http://www.mulesource.org/schema/mule/spring-security"
+       ...cut...
+  <bean id="myComponentSecurity" class="org.springframework.security.access.intercept.aopalliance.MethodSecurityInterceptor">
+    <property name="authenticationManager" ref="authenticationManager"/>
+    <property name="accessDecisionManager" ref="accessDecisionManager"/>
+    <property name="securityMetadataSource">
+          <value>
+                com.foo.myComponent.delete=ROLE_ADMIN
+                com.foo.myComponent.writeSomething=ROLE_ANONYMOUS
+          </value>
+    </property>
+  </bean>
+----
+
+*Note:*由于Spring的限制，您必须引用组件实现，而不是在定义安全bean时实现的接口。
+
+===  AuthenticationManager
+
+这个bean负责通过一系列`AuthenticationProvider`对象传递请求。
+
+[source, xml, linenums]
+----
+<bean id="authenticationManager" class="org.springframework.security.authentication.ProviderManager">
+      <constructor-arg>
+            <list>
+                 <ref local="daoAuthenticationProvider"/>
+            </list>
+      </constructor-arg>
+</bean>
+----
+
+===  AccessDecisionManager
+
+该bean指定如果用户具有`securityMetadataSource`中指定的任何一个角色，则可以访问受保护的方法。
+
+[source, xml, linenums]
+----
+<bean id="accessDecisionManager" class="org.springframework.security.access.vote.AffirmativeBased">
+      <constructor-arg>
+            <list>
+                  <ref bean="roleVoter"/>
+            </list>
+      </constructor-arg>
+</bean>
+----
+
+===  AutoProxyCreator
+
+这个bean为受保护的bean定义了一个代理。当一个应用程序向Spring请求一个`myComponent` bean时，它会代替这个代理。
+
+[source, xml, linenums]
+----
+<bean id="autoProxyCreator" class="org.springframework.aop.framework.autoproxy.BeanNameAutoProxyCreator">
+    <property name="interceptorNames">
+        <list>
+            <value>myComponentSecurity</value>
+        </list>
+    </property>
+    <property name="beanNames">
+        <list>
+            <value>myComponent</value>
+        </list>
+    </property>
+    <property name="proxyTargetClass" value="true"/>
+</bean>
+----
+
+使用`BeanNameAutoProxyCreator`为安全性创建所需的代理时，配置必须包含设置为`true`的属性`proxyTargetClass`。否则，传递给`MethodSecurityInterceptor.invoke`的方法是代理的调用者，而不是代理的目标。
+
+===  RoleVoter
+
+如果`ConfigAttribute`以`ROLE_`开头，则`RoleVoter`类将投票。 `RoleVoter`在比较以及`ROLE_`前缀时区分大小写。
+
+* 如果`GrantedAuthority`返回字符串表示形式（通过`getAuthority()`方法），它将投票授予访问权限，该表达式完全等于一个或多个`ConfigAttribute`对象，以`ROLE`。
+
+* 如果任何以`ROLE_`开头的`ConfigAttribute`都没有完全匹配，`RoleVoter`将投票拒绝访问。
+
+* 如果`ConfigAttribute`没有以`ROLE_`开头，则投票者将弃权。
+
+[source, xml, linenums]
+----
+<bean id="roleVoter" class="org.springframework.security.access.vote.RoleVoter"/>
+----
+
+== 设置安全提供程序的安全属性
+
+您可以在`securityProperties`地图中向安全提供商添加任何其他属性。例如，此映射可用于将Spring Security的默认安全策略更改为以下之一：
+
+*  `MODE_THREADLOCAL`：允许在当前线程上设置身份验证（这是Spring Security使用的默认策略）
+
+*  `MODE_INHERITABLETHREADLOCAL`：允许从父线程继承身份验证
+
+*  `MODE_GLOBAL`：允许在所有线程上设置身份验证
+
+=== 保护异步系统中的组件
+
+Spring Security策略的使用对异步系统特别有用，因为我们必须在安全提供程序上添加一个属性，以便在多个线程上设置身份验证。在这种情况下，我们将使用`MODE_GLOBAL`，如下例所示：
+
+[source, xml, linenums]
+----
+<mule-ss:security-manager>
+    <mule-ss:delegate-security-provider name="memory-dao" delegate-ref="authenticationManager">
+        <mule-ss:security-property name="securityMode" value="MODE_GLOBAL"/>
+    </mule-ss:delegate-security-provider>
+</mule-ss:security-manager>
+----

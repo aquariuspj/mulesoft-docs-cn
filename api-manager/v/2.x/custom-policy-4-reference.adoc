@@ -1,0 +1,109 @@
+= 自定义政策一般参考
+
+Mule 4引擎比其前身更强大的构建利用Mule核心概念和语言的定制策略。
+
+策略的定义以`http-policy:proxy`元素和名称开头。
+策略的逻辑可以在源或操作上或两者上执行。所有消息处理器在源和操作元素内都受支持。
+
+`execute-next`元素需要继续处理链，这可以触发另一个策略或应用程序流的执行。任何策略都可以通过不执行`execute-next`来阻止执行链。
+
+*Note:* `execute-next`之前在源上执行的处理器与早期版本的Before块等效。之后执行的处理器将属于After块。
+
+以下是该模板的一个示例：
+
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xmlns:http-policy="http://www.mulesoft.org/schema/mule/http-policy">
+   
+    <http-policy:proxy name="policy-template">
+       <http-policy:source>
+            ...
+           <http-policy:execute-next/>
+            ...
+        </http-policy:source>
+
+        <http-policy:operation>
+           <http-policy:execute-next/>
+        </http-policy:operation>
+    </http-policy:proxy>
+</mule>
+----
+
+Mule 4能够通过操作元素将策略应用于出站请求。
+
+== 车把
+
+策略支持Handlebars，这是一种用于解析策略的可配置参数并实现语义逻辑（如条件）的模板引擎。
+
+*Note:* Handlebars是Mustache的扩展，在早期版本中使用。
+
+可以在策略上配置或由API Manager设置的属性需要用大括号括起来：
+
+`{{{myproperty}}}`
+
+// [待定：由API Manager发送的列表属性]
+
+以下示例显示如何在自定义策略中使用Handlebars：
+
+----
+{{#if isWsdlEndpoint}}
+	<ee:set-payload>#[output application/xml --- Soap::buildErrorMessage(payload, 'client', '$(error.description)')]</ee:set-payload>
+{{else}}
+    <ee:set-payload>output application/json --- {"error": "$(error.description)"}</ee:set-payload>
+{{/if}}
+----
+
+== 切入点
+
+在早期版本中，需要使用切入点元素来配置自定义策略。它指定了策略将应用于哪个API。
+
+在Mule 4中，你不需要配置切入点。此信息由API Manager在应用策略时提供。未在线应用策略时，请参阅离线策略以了解配置指导原则。
+
+== 策略文件夹
+
+从API Manager检索策略时，模板存储在`policy-templates`文件夹中。当有多个API应用相同的策略时，对模板的检索进行优化。该API策略的特定配置存储在其自己的文件夹中，其中包含策略定义JSON文件和策略XML。
+
+== 修改HTTP请求和响应
+
+在Mule 4.1.0和更高版本中，Mule扩展可用于策略。该扩展简化了HTTP请求和响应的修改。有关更多信息，请参阅HTTP策略转换扩展文档的链接（下面）。
+
+== 错误处理
+
+策略通过支持错误处理程序组件来利用Mule 4中引入的错误处理功能。如果在策略中发生错误，则会执行其错误处理程序，并将错误路由到匹配的处理程序。
+
+以下示例显示策略上的错误处理程序：
+
+----
+<error-handler>
+    <on-error-continue
+            type="CLIENT-ID-ENFORCEMENT:INVALID_API, CLIENT-ID-ENFORCEMENT:INVALID_CLIENT"
+            logException="false">
+
+        <http-transform:set-response statusCode="401" reasonPhrase="policyReasonPhrase">
+            <http-transform:body>#[output application/json --- {"error": "$(error.description)"}]</http-transform:body>
+            <http-transform:headers>#[
+                {
+                    'WWW-Authenticate': 'Basic realm="mule-realm"'
+                }
+            ]</http-transform:headers>
+        </http-transform:set-response>
+    </on-error-continue>
+</error-handler>
+----
+
+on-error-continue处理程序使用执行结果。由于未调用`execute-next`组件，因此执行链将停止。
+
+在提供的示例中，处理程序设置了401状态码和WWW-Authenticate标头。响应的类型为HttpPolicyResponseAttributes非常重要。
+
+// [缺少有关链接错误的更多信息]
+
+
+== 另请参阅
+
+// * [示例添加Mule 4中的标题策略]
+// * [错误处理关于Mule 4的文档解释更多关于错误继续和错误传播的信息]
+*  link:/api-manager/v/2.x/http-policy-transform[HTTP策略转换扩展]
+*  link:/api-manager/v/2.x/upload-policy-exchange-task[将自定义策略上传到Exchange]
+*  link:/api-manager/v/2.x/policies-4-concept[关于政策]
+*  link:/api-manager/v/2.x/policy-scope-size-concept[关于政策包装，范围和规模]

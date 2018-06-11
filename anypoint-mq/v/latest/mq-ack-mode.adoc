@@ -1,0 +1,203 @@
+= 关于确认模式
+:keywords: mq, ack, nack, exception, strategy, mode
+：imagesdir：./_images
+
+Anypoint MQ允许您确定如何使用Anypoint MQ连接器在Anypoint Studio中处理消息。
+
+可能会发生两个确认响应：
+
+*  *Acknowledgement*（ack） - 表示应用程序已收到消息。
+*  *Negative Acknowledgement*（nack） - 表示应用程序没有
+想要当前消息。 MQ将消息返回到队列
+另一个应用程序可以收到该消息。
+
+Anypoint MQ连接器提供了用于在Studio应用程序中全局或本地设置这些状态的工具。
+
+*Notes:*
+
+* 使用Mule 4 Anypoint MQ连接器时，使用Ack和Nack组件时，您需要传递AnypointMQMessageContext对象。此对象位于Subscriber或Consumer组件的MQ连接器属性中。您可以在订阅者或使用者之后的Ack或Nack组件中插入`#[attributes]`，并且MQ连接器会为您传递AnypointMQMessageContext对象。
+* 其他操作可能会用新值覆盖`#[attributes]`，因此如果您的流中存在Subscriber或Consumer与Ack / Nack之间的流操作符，请确保将Subscriber或Consumer的属性保存在变量中以避免失去它。
+
+流程示例：
+
+[source,xml,linenums]
+----
+<flow name="flow">
+    <anypoint-mq:subscriber doc:name="Subscriber" config-ref="Anypoint_MQ_Default_subscriber" destination="test"/>
+    <logger level="INFO" doc:name="Logger" message="Received MQ msg: #[payload]"/>
+    <anypoint-mq:ack doc:name="Ack" config-ref="Anypoint_MQ_Default_subscriber" messageContext="#[attributes]"/>
+</flow>
+----
+
+== 全球和本地国家
+
+Anypoint MQ连接器提供全局和本地状态，用于指定Studio应用程序如何从队列接收消息。
+
+=== 全球状态
+
+让您指定使用Studio全局元素属性菜单来指定处理流中所有消息的策略。全球国家提供这些选择：
+
+*  *AUTO*  - 根据MQ连接器检测到Catch Exception Strategy（ACK）还是异常策略（NACK），Anypoint MQ连接器会自动在流程结束时发送Ack或Nack。有关示例，请参见xref：autoflow [在Anypoint Studio中创建自动确认流程]。
++
+有两种可能的结果：
++
+**  ACK  - 流成功或出现Catch Exception Strategy。此代码显示了Catch Exception Strategy：
++
+[source,xml,linenums]
+----
+<catch-exception-strategy doc:name="Catch Exception Strategy"
+    when="exception.causedBy(UnsupportedOperationException)">
+    <logger message="Will ACK" level="ERROR" doc:name="Logger"/>
+</catch-exception-strategy>
+----
++
+**  NACK  - 发生回退异常策略：
++
+[source,xml,linenums]
+----
+<rollback-exception-strategy doc:name="Rollback Exception Strategy">
+    <logger message="Will NACK" level="ERROR" doc:name="Logger"/>
+</rollback-exception-strategy>
+----
++
+*  *MANUAL*  - 应用程序指示它使用Anypoint MQ连接器本地状态发送自己的Ack或Nack。 MQ连接器不会自动提供任何操作。有关示例，请参见xref：manualflow [在Anypoint Studio中创建手动确认流程]。
+*  *NONE*  - 应用程序收到消息，MQ连接器立即确认并删除消息。如果消息没有被正确使用，这种状态有可能丢失消息，但是当消息不断更新时，通常会使用此消息，比如新闻消息源，其中每个后续消息都提供有关消息前的任何消息的更多详细信息。这种状态会带来风险，但会使编码更容易。有关示例，请参见xref：noneflow [在Anypoint Studio中创建无确认流程]。在Mule 4 MQ中，NONE被称为IMMEDIATE，但具有相同的功能。
++
+您可以在*Acknowledgement Mode*字段中设置全局状态：
++
+image:mq-global-mode-set.png[MQ-全球模式设置]
+
+=== 本地状态
+
+允许您根据应用程序是接收还是拒绝消息，将*Operation*字段设置为*ack*或*nack*，手动将Anypoint MQ连接器实例添加到您的流程中。
+
+您可以使用Anypoint MQ连接器的*Operation*字段设置本地状态：
+
+image:mq-connector-ops.png[MQ连接器-OPS]
+
+[[autoflow]]
+== 在Anypoint Studio中创建自动确认流程
+
+如果您使用的是*auto*状态，请设置`choice-exception-strategy`，Anypoint MQ连接器根据您所做的例外选择自动发送确认或确认。下面的代码说明了*auto*状态的使用。
+
+以下代码演示了Studio流程：
+
+image:mq-ack-flow.png[MQ确认模式流程]
+
+在这个例子中，这两个流程是：
+
+*  *autoHttp*  - 设置HTTP连接器以在`0.0.0.0:8081`处侦听，设置Anypoint MQ连接器以发布消息，并将确认模式设置为*auto*。
+*  *autoMq*  - 设置任意点MQ连接器以使用消息并使用Java类xref：randomerror [RandomError]创建可能的例外，以使自动功能发送确认或否定确认，具体取决于选择。记录器在控制台上列出ACK或NACK选项。
++
+该流程的错误处理部分包含一个Catch异常策略以使MQ连接器发送ACK，还有一个回滚异常策略以导致MQ连接器发送NACK。
+
+=== 自动XML代码
+
+自动确认模式的XML代码是：
+
+[source,xml,linenums]
+----
+include::_sources/mq-ack-modes-01.xml[]
+----
+
+[NOTE]
+====
+确保您在属性文件中设置客户端ID（mq.clientId）和客户端密钥（mq.clientSecret）值。在这种情况下，它们设置在/ackmodes/classes/ackmodes.properties文件中，其中包含：
+
+[source,code,linenums]
+----
+# Contents of this file are not meant to be shared with the wide public
+
+mq.clientId=<Client_ID>
+mq.clientSecret=<Client_Secret>
+
+----
+====
+
+有关如何使用Java测试程序抛出异常的说明，请参阅xref：randomerror [Random Error Generator]。该测试程序在此声明中调用：
+
+[source,xml]
+----
+<component class="ackmodes.RandomError" doc:name="Java"/>
+----
+
+[[manualflow]]
+== 在Anypoint Studio中创建手动确认流程
+
+您可以从Anypoint MQ连接器的全局元素属性中设置手动确认模式：
+
+image:mq-global-mode-set.png[MQ-全球模式设置]
+
+在手动流程中，选择 - 例外策略也在流程中设置。在这种情况下，应用程序使用单个Anypoint MQ连接器实例，并将操作设置为Ack或Nack，具体取决于xref：randomerror [Random Error Java Class]发送的异常。
+
+image:mq-manual-flow.png[MQ-手册流]
+
+=== 手动XML代码
+
+手动确认模式的XML代码是：
+
+[source,xml,linenums]
+----
+include::_sources/mq-ack-modes-02.xml[]
+----
+
+有关如何使用Java测试程序抛出异常的说明，请参阅xref：randomerror [Random Error Generator]。该测试程序在此声明中调用：
+
+[source,xml]
+----
+<component class="ackmodes.RandomError" doc:name="Java"/>
+----
+
+[[noneflow]]
+== 在Anypoint Studio中创建一个无确认模式
+
+您可以从Anypoint MQ连接器的全局元素属性中设置NONE确认模式：
+
+image:mq-global-mode-set.png[MQ-全球模式设置]
+
+在NONE流程中，无论出现什么情况，Anypoint MQ连接器始终发送一个ACK。
+在Mule 4 Anypoint MQ连接器中，*Note:* NONE被称为IMMEDIATE，即使功能相同。
+
+下面的例子强调了使用Java类xref：randomerror [RandomError]创建可能的异常但忽略异常并发送ACK的风险：
+
+[source,xml,linenums]
+----
+<component class="ackmodes.RandomError" doc:name="Java"/>
+<logger level="ERROR" doc:name="Logger" message="Always ACKs as soon as a message is received"/>
+----
+
+image:mq-none-flow.png[MQ-无流]
+
+使用此模式可简化应用程序，但会增加风险。当消息不断相互更新时，这种模式是最好的，比如在新闻事件中展现细节的新闻源中。如果发生异常，下一条消息将有机会获得正确的内容。
+
+=== 无XML代码
+
+无确认模式的XML代码是：
+
+[source,xml,linenums]
+----
+include::_sources/mq-ack-modes-03.xml[]
+----
+
+[[randomerror]]
+== 随机错误生成器
+
+以下Java测试程序会生成可用于测试应用程序的随机错误。这个程序得到一个0到100之间的随机整数，并根据这个值做出这些选择：
+
+[%header,cols="10a,30a,60a"]
+|===
+|值 |错误状态 | Studio Flow中会发生什么
+| 0  -  32  |无错误，返回传递的事件上下文。 |传递并且应用程序发送ACK
+| 33  -  65  |错误，返回非法状态异常。 |应用程序发送一个NACK
+| 66  -  100  |错误，返回不支持的操作异常。 |应用程序发送ACK
+|===
+
+[source,java,linenums]
+----
+include::_sources/mq-ack-modes-04.java[]
+----
+
+== 另请参阅
+
+*  link:/anypoint-mq[Anypoint MQ]
+

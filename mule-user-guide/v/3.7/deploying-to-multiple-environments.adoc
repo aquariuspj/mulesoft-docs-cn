@@ -1,0 +1,278 @@
+= 部署到多个环境
+:keywords: deploy, deploying, cloudhub, on premises, on premise
+
+[NOTE]
+====
+此页面描述了当前使用**Mule Studio (December 2013)**提供的功能。下载并启动 link:http://www.mulesoft.com/mule-esb-open-source-esb[最新版本的Mule Studio]以利用此功能。
+====
+
+在整个开发生命周期的不同阶段（如QA，预生产或生产）中，您的应用程序可能需要配置不同，因为服务器名称，凭证和其他类似参数会有所不同。
+
+作为面临这种变化的开发人员，您的目标是为您的所有环境生成一个Mule应用程序，并将所有环境特定的配置参数外部化。这是可重复部署的关键。
+
+您可以配置您的Mule应用程序，以便部署到许多不同的环境之一，无论是在本地还是在云中。为此，您必须完成以下宏步骤：
+
+. 在您的应用程序中，为每个环境创建一个属性文件。
+
+. 在您的应用程序中配置一个属性占位符，以便在启动时查找部署环境。
+
+. 在应用程序部署期间配置环境变量以指向特定的环境。
+
+考虑将配置的其他方面进行外部化，例如超时值，轮询频率等等，即使它们在环境之间不变化。这将有助于调整和试验，因为整个Mule应用程序可以通过单个属性文件进行配置。
+
+link:_attachments/connect_with_SFDC.zip[下载示例Studio应用程序]
+
+[TIP]
+====
+如果您需要加密属性文件中的密码，请考虑使用 link:/mule-user-guide/v/3.7/mule-credentials-vault[Mule证书库]。有关在Mule中保护应用程序的更多信息，请参阅 link:/mule-user-guide/v/3.7/anypoint-enterprise-security[Anypoint企业安全]的文档。
+====
+
+== 假设
+
+本文档假定您熟悉在Mule Studio中构建和部署Mule应用程序的练习。
+
+== 基本解剖学
+
+[WARNING]
+====
+如果您通过 link:/mule-user-guide/v/3.7/shared-resources[共享资源]结构部署多个应用程序，则不应在属性文件中设置任何内容，因为共享域的各种应用程序之间可能存在冲突。相反，您可以在部署的应用程序，其域以及该域下的其他应用程序的范围内设置环境变量。
+
+如共享资源页面中所述，在Studio中，您可以通过*Run Configurations menu*的{​​{0}}创建这些变量，并通过Play按钮旁边的下拉菜单访问这些变量。
+====
+
+考虑下面的Mule配置片段，它定义了具有变量配置的HTTP连接器：
+
+[source, xml, linenums]
+----
+<http:listener-config name="HttpListenerConfiguration"
+                    doc:name="HTTP Listener Configuration"
+                    host="${mule.env.host}"
+                    port="${mule.env.port}"
+                    basePath="${mule.env.path}" />
+----
+
+这个例子使用Spring的属性占位符解析机制。可变位清晰可见：对于部署此连接器的每个环境，*base path*，*host*和*port*可能会有所不同。部署应用程序时，`mule.env`可以动态替换为您部署到的特定环境，例如`qa`或`prod`。
+
+为了提供这些变量的值，我们使用一个标准的Java属性文件：
+
+[source, code, linenums]
+----
+qa.basePath=test/products
+qa.host=localhost
+qa.port=8082
+----
+
+然后，您可以添加另一个属性文件，并将其他值分配给相同的变量，并完全避免必须触摸应用程序的代码才能更改这些值：
+
+[source, code, linenums]
+----
+prod.basePath=products
+prod.host=www.acme.com
+prod.port=8081
+----
+
+[TIP]
+====
+为您的属性使用一致的命名策略，并使其在应用程序中保持唯一：这将极大地促进跨团队的重用。
+
+一个好的策略是在默认和覆盖属性文件名中使用应用程序名称或ID。
+====
+
+== 配置应用程序以在多个环境中部署
+
+按照以下步骤使用变量属性配置您的应用程序。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Define a list of environments you wish to support in your application. For example, one common use case involves configuring the application to support both Production and a QA environments.
+
+. Right-click the  `src/main/resources`  folder, then select  *New*  >  *File*   to create a properties file for each environment you wish to support. For example:
+** `qa.properties`
+** `production.properties`
++
+image:properties_files.png[properties_files]
+
+. Double-click each of these new files to open them in new tabs in Studio. By editing hem, you can configure the properties of the environment that correspond to the filename. For example, in `production.properties`, you may wish to add the properties as per the image below.  Keep in mind that you can use these properties anywhere in your application.
++
+image:properties.png[properties]
++
+[TIP]
+====
+Learn how to encrypt a properties file using the link:/mule-user-guide/v/3.7/mule-credentials-vault[Mule Credentials Vault].
+====
+
+. Close the properties files.
+
+. Click in the Global Elements tab of your Studio project, below the canvas.
+
+. *Create* a new global element.  When selecting the element type, pick *Property Placeholder*  under *Component Configurations*.
+
+. Set the value of the *Location* field to  `${mule.env}.properties`
++
+[TIP]
+====
+Learn more about link:/mule-user-guide/v/3.7/configuring-properties[configuring variable properties].
+====
+
+. To configure Studio to use a specific environment when  *deploying on-premise* , *debugging*  or  *using {{0}}*  to retrieve metadata from a SaaS provider, double-click to open your application's  `mule-project.xml` file, located in the root directory of your project.
++
+[WARNING]
+====
+If you deploy your application to the cloud, right click on your application in the package explorer and select *Deploy to Anypoint Platform* -> *Cloud*. Studio allows you to specify your environment variables prior to deployment, effectively enabling you to choose your deployment environment at runtime.
+====
+
+. Add an environment variable named *`mule.env`* with a value that matches the environment to which you wish to deploy by default (in the image below, the value is `qa`).
++
+image:runtime_env.png[runtime_env]
+
+. Close the `mule-project.xml` file, then save your application. When you debug your application or deploy it on-premise, Studio deploys to the environment you specified in the `mule-project.xml` file. 
+
+. To change the default deployment environment at any time, change the value of the environment variable key. For example, to deploy to a test environment – assuming you have a `test.properties` file in your application– change the value to `test`.
+....
+[tab,title="XML Editor"]
+....
+. Define a list of environments you wish to support in your application. For example, one common use case involves configuring the application to support both Production and a QA environments.
+
+. Right-click the  `src/main/resources`  folder, then select  *New*  >  *File*   to create a properties file for each environment you wish to support. For example:
+
+** `qa.properties`
+** `production.properties`
++
+image:properties_files.png[properties_files]
+
+. Double-click each of these new files to open them in new tabs in Studio. By editing hem, you can configure the properties of the environment that correspond to the filename. For example, in `production.properties`, you may wish to add the properties as per the image below.  Keep in mind that you can use these properties anywhere in your application.
++
+image:properties.png[properties]
++
+[TIP]
+====
+Learn how to encrypt a properties file using the link:/mule-user-guide/v/3.7/mule-credentials-vault[Mule Credentials Vault].
+====
+
+. Close the properties files.
+
+. At the top of your XML config, above all other flows, add a  **<context: property-placeholder/>** element with a *`resources`* attribute configured as per below.
++
+[source, xml, linenums]
+----
+<context:property-placeholder resources="$mule.env.properties"/>
+----
++
+[TIP]
+====
+Learn more about link:/mule-user-guide/v/3.7/configuring-properties[configuring variable properties].
+====
+
+. To configure Studio to use a specific environment when  *deploying on-premise* , *debugging*  or  *using {{0}}*  to retrieve metadata from a SaaS provider, double-click to open your application's  `mule-project.xml` file, located in the root directory of your project. +
++
+[WARNING]
+====
+If you deploy your application to the cloud, right click on your application in the package explorer and select *Deploy to Anypoint Platform* -> *Cloud*. Studio allows you to specify your environment variables prior to deployment, effectively enabling you to choose your deployment environment at runtime.
+====
+
+.  Add an environment variable named *`mule.env`* with a value that matches the environment to which you wish to deploy by default (in the image below, the value is `qa`).
++
+image:runtime_env.png[runtime_env]
+
+. Close the `mule-project.xml` file, then save your application. When you debug your application or deploy it on-premise, Studio deploys to the environment you specified in the `mule-project.xml` file. 
+
+. To change the default deployment environment at any time, change the value of the environment variable key. For example, to deploy to a test environment – assuming you have a `test.properties` file in your application– change the value to `test`.
+....
+------
+
+== 部署到特定环境
+
+使用以下步骤从Studio中将应用程序部署到特定环境 - 生产，qa，测试等。
+
+[tabs]
+------
+[tab,title="On-Premise"]
+....
+=== Studio
+
+. In the Package Explorer, right-click the filename of the project you wish to deploy, then select *Run As* > *Mule Application*.
+
+. Studio automatically deploys your application according the environment variable you specified in the `mule-project.xml` file in the procedure above.
+
+=== Standalone
+
+Identify the the environment in which to deploy your application at runtime with an environment variable. Execute the command to run your mule application as per the example below.
+
+[source, code, linenums]
+----
+/.bin/mule -M-Dmule.env=production
+----
+
+[source, code, linenums]
+----
+$ mule -M-Dmule.env=production
+----
+....
+[tab,title="CloudHub"]
+....
+. In the Package Explorer, right-click the filename of the project you wish to deploy, then select *Deploy to Anypoint Platform* -> *Cloud*.
+
+. Then enter your Anypoint Platform credentials and domain particulars
+
+. Click the *plus* sign under "environment variables" to add a new environment variable. Set the *Key* of this new variable to *mule.env* and it's value to the environment you wish to deploy to (QA in this example).
++
+image:deploy_cloudhub.png[deploy_cloudhub]
+
+. Click *Finish* to deploy.
++
+[TIP]
+====
+To learn more about deploying to test environments in CloudHub, access the *CloudHub Sandbox Environments* documentation.
+====
+....
+------
+
+== 覆盖属性
+
+要覆盖部分或全部属性，请创建一个my-mule-app-override.properties文件并将其放入`$MULE_HOME/conf`中。
+
+仅在需要的环境中创建属性覆盖文件，并且只需要实际需要覆盖的属性。
+
+这是一个完成这个的方法：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:context="http://www.springframework.org/schema/context"
+  xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/core
+            http://www.mulesoft.org/schema/mule/core/3.6/mule.xsd
+      http://www.springframework.org/schema/beans
+            http://www.springframework.org/schema/beans/spring-beans-current.xsd
+      http://www.springframework.org/schema/context
+            http://www.springframework.org/schema/context/spring-context-3.0.xsd">
+  <spring:beans>
+    <context:property-placeholder
+             location="classpath:my-mule-app.properties,
+                       classpath:my-mule-app-override.properties" />
+  </spring:beans>
+</mule>
+----
+
+如果您的操作团队无法删除Mule目录层次结构中的文件，则可以选择配置占位符配置程序以从已知位置获取覆盖文件，如下所示：
+
+[source, xml, linenums]
+----
+<context:property-placeholder
+         location="classpath:my-mule-app.properties,
+                   file:///etc/mule/conf/my-mule-app-override.properties" />
+----
+
+== 另请参阅
+
+* 详细了解如何使用 link:/mule-user-guide/v/3.7/mule-credentials-vault[Mule证书库]加密属性文件。
+
+* 要了解有关在CloudHub中部署到测试环境的更多信息，请访问CloudHub Sandbox Env​​ironments文档。
+
+* 详细了解Mule中的 link:/mule-user-guide/v/3.7/configuring-properties[属性占位符]。
+
+* 了解如何在使用 link:/mule-user-guide/v/3.7/shared-resources[共享资源]部署多个应用程序时继续操作

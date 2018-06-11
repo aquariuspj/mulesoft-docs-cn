@@ -1,0 +1,96 @@
+= 从MMC 3.4.1（仅）对于MS-SQL Server升级到MMC 3.5.0（对于MS-SQL Server）
+
+== 概述
+
+适用于MS-SQL Server的MMC版本3.4.1允许您将 link:/mule-management-console/v/3.5/persisting-mmc-data-to-ms-sql-server[坚持MMC数据到MS SQL Server]而不是MMC的默认内部数据库。此版本的MMC的用户应升级到MS-SQL Server的MMC 3.5.0。
+
+升级到针对MS-SQL Server修补的MMC 3.5.0要求您在MS-SQL Server上运行迁移脚本。或者，您还可以运行其他脚本来删除未在MMC 3.5.0中使用的索引。本页介绍运行这两个脚本的过程。
+
+[NOTE]
+在运行MMC 3.5.0之前，您还需要执行 link:/mule-management-console/v/3.5/upgrading-to-mmc-3.5.0-with-an-external-database[使用外部数据库升级到MMC 3.5.0]中描述的步骤。此外，如果您当前的MMC安装使用LDAP进行用户验证，则必须完成 link:/mule-management-console/v/3.5/upgrading-to-mmc-3.5.0-with-ldap[使用LDAP升级到MMC 3.5.0]中描述的步骤。
+
+== 下载MMC 3.5.0 .war文件
+
+从客户门户网站下载文件`mmc-gwt-ui-3.5.0.war`。
+
+下载后，展开MMC 3.5.0 .war文件，但不要运行MMC 3.5.0。
+
+== 下载迁移SQL脚本
+
+*See the migration script for copy-paste*
+
+[source, code, linenums]
+----
+USE [MMC_PERSISTENCY]
+GO
+CREATE TABLE [dbo].[OPENJPA_SEQUENCE_TABLE](
+    [ID] [tinyint] NOT NULL,
+    [SEQUENCE_VALUE] [bigint] NULL,
+PRIMARY KEY CLUSTERED
+(
+    [ID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+INSERT INTO [dbo].[OPENJPA_SEQUENCE_TABLE]
+SELECT 0, SEQUENCE_VALUE FROM [dbo].[OPENJPA_SEQUENCES_TABLE] WHERE ID = 'EVENTS'
+GO
+/* VERIFY SEQUENCE_VALUE IN OPENJPA_SEQUENCE_TABLE IS THE SAME AS SEQUENCE_VALUE IN OPENJPA_SEQUENCES_VALUE */
+/* THEN DROP OLD TABLE */
+DROP TABLE [dbo].[OPENJPA_SEQUENCES_TABLE]
+GO
+----
+
+*See the optional drop indexes script for copy-paste*
+
+[source, code, linenums]
+----
+USE [MMC_PERSISTENCY]
+DROP INDEX [EVENT_PROPERTIES].[e_properties_value]
+GO
+DROP INDEX [EVENTS].[e_flow_name]
+GO
+DROP INDEX [EVENTS].[e_message_id]
+GO
+DROP INDEX [EVENTS].[e_server_id]
+GO
+DROP INDEX [EVENTS].[e_server_name]
+GO
+DROP INDEX [EVENTS].[e_timestamp]
+GO
+DROP INDEX [EVENTS].[e_type]
+GO
+DROP INDEX [EVENTS].[events_name]
+GO
+DROP INDEX [TRANSACTION_SUMMARIES].[t_s_processing_time]
+GO
+DROP INDEX [TRANSACTION_SUMMARIES].[t_s_status_ordinal]
+GO
+----
+
+== 在MS-SQL Server上运行脚本
+
+在运行脚本之前，请按照下列步骤操作：
+
+* 确保没有任何MMC实例连接到MS-SQL Server  - 换句话说，确保您已停止MMC 3.4.1，并且MMC 3.4.2未启动或未连接到MS-SQL Server上的数据库
+* 在MMC跟踪（Business Events）数据库中，备份`SEQUENCE_TABLE`字段（位于`OPENJPA_SEQUENCES_TABLE`唯一一行中）的当前值。
+* 这两个脚本都使用数据库`MMC_PERSISTENCY`。如果您的MMC数据数据库具有不同的名称，请按照以下步骤修改脚本中的名称：+
+. 找到语句`USE [MMC_PERSISTENCY]`。
+. 将`MMC_PERSISTENCY`替换为数据库的名称。
+
+完成上述步骤后，运行迁移脚本`sqlServerCustomersMigrate_341_to_342.sql`，直到以下语句：
+
+[source, code, linenums]
+----
+SELECT 0, SEQUENCE_VALUE FROM [dbo].[OPENJPA_SEQUENCES_TABLE] WHERE ID = 'EVENTS'
+----
+
+运行上述语句后，请验证`OPENJPA_SEQUENCE_TABLE`中的`SEQUENCE_VALUE`与`OPENJPA_SEQUENCES_TABLE`中的`SEQUENCE_VALUE`是否相同。之后，运行脚本的其余部分。
+
+[NOTE]
+如果您在运行迁移脚本并且`OPENJPA_SEQUENCE_TABLE`已经存在之前运行连接到MS-SQL Server的MMC 3.4.2，那么如果跳过表创建语句并从{{1} }声明。
+
+== 另请参阅
+
+* 阅读 link:/mule-management-console/v/3.5/configuring-mmc-for-external-databases-quick-reference[为外部数据库配置MMC]的概述，其中包括指向每个支持的数据库服务器的详细说明的链接。
+* 阅读持久MMC 3.4.2数据到MS SQL Server的配置细节。

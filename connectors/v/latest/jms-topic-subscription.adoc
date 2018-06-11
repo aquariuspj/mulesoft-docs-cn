@@ -1,0 +1,63 @@
+= 使用主题订阅
+:keywords: jms, connector, consume, source, listener, topic, subscription
+：TOC：
+：TOC标题：
+
+JMS中的主题允许您配置订阅如何处理消费者连接的行为，以及消费者如何互相交互。
+
+使用Mule的JMS连接器，您可以在`consumer`和`listener`操作中使用'topic-consumer'配置来处理Topic订阅的各个方面。
+
+== 注册持久订阅
+
+持久订阅允许您在消费者脱机时接收发布到该主题的消息。
+一旦持久订阅被注册，每次消费者可用时，它将接收在连接被建立之前发布的所有消息：
+
+[source, xml, linenums]
+----
+<jms:consume config-ref="JMS_config" destination="#[vars.destination]">
+    <jms:consumer-type>
+        <jms:topic-consumer durable="true" subscriptionName="SampleSub"/>
+    </jms:consumer-type>
+</jms:consume>
+----
+
+然后，JMS提供程序将发送或发布到主题的消息存储起来，因为它将存储发送到队列的消息。如果此应用程序或其他应用程序使用相同的连接及其客户端ID，相同的主题和相同的订阅名称创建“主题 - 使用者”，则会重新激活订阅，并且JMS提供程序将订阅者发布时发送的消息无效。
+
+允许同一订阅上的多个使用者== 
+
+在JMS 1.1中，一个主题的订阅一次不允许有多个使用者，这意味着处理主题订阅上的消息的工作不能共享，从而限制了应用程序的可伸缩性。通过引入*shared subscriptions*，JMS 2.0中删除了此限制。
+
+JMS连接器*when configured with a JMS 2.0 connection*允许您将任何“主题 - 使用者”声明为`shared`订阅的一部分：
+
+[source, xml, linenums]
+----
+<jms:listener config-ref="config" destination="InvoiceEventsTopic">
+    <jms:consumer-type>
+        <jms:topic-consumer shared="true" subscriptionName="ClusterSubscription"/>
+    </jms:consumer-type>
+</jms:listener>
+----
+
+通过在两个不同的`listener`实例上进行此配置，当消息发布到发票目标时，它只会传递给其中一个侦听器，而不会传递给其他侦听器。
+
+
+== 如何忽略自己发布的消息
+
+在某些情况下，您可能不希望收到由同一应用程序发布到主题的消息。对于这种情况，您可以在'topic-consumer'中使用`noLocal`参数，从而防止消费者接收发布到主题*by the same Connection*的消息：
+
+[source, xml, linenums]
+----
+<jms:listener config-ref="config" destination="${notificationsChannel}">
+    <jms:consumer-type>
+        <jms:topic-consumer noLocal="true"/>
+    </jms:consumer-type>
+</jms:listener>
+----
+
+配置为`noLocal` *can't*的消费者成为`shared`订阅的一部分。
+
+
+== 另请参阅
+
+*  link:jms-listener[收听新消息]
+*  link:jms-consume[消费消息]

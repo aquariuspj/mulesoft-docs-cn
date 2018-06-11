@@ -1,0 +1,593 @@
+= 使用Anypoint MQ REST API
+:keywords: mq, destinations, queues, exchanges
+
+Anypoint MQ API允许您使用REST发送和接收消息，管理队列和消息交换以及分析结果。
+
+Anypoint MQ提供这些API：
+
+*  xref：mqadminapi [Anypoint MQ管理API]
+*  xref：mqbrokerapi [Anypoint MQ Broker API]
+*  xref：mqstatapi [Anypoint MQ Statistics API]
+
+Anypoint MQ门户在https://anypoint.mulesoft.com/exchange/portals/anypoint-platform-eng/ [开发者门户]中可用。
+
+[[getoeb]]
+== 获取组织ID，环境ID和访问令牌
+
+使用 link:/access-management/audit-logging#to-configure-anypoint-mq-audit-logging[MQ审计日志记录]，
+您可以轻松查看Anypoint Platform为MQ中的任何可审计操作创建的`payload.txt`文件中的组织标识和环境标识。
+
+但是，获取访问（承载）令牌需要使用像curl这样的命令或像Postman这样的应用程序。下面的例子使用curl。
+如果您是Windows用户，则需要链接：https：//curl.haxx.se/download.html [下载卷曲
+命令]在访问信息之前。
+
+*Note:*访问令牌的默认生存时间为1小时。这与用户登录Anypoint平台时所获得的TTL是相同的。在默认会话超时值中，组织的访问管理屏幕中设置了TTL。
+
+获取API访问信息：
+
+. 登录Anypoint平台。
+. 点击MQ，客户端应用，然后点击蓝色加圈图标创建应用。
+. 获取客户端ID和客户端密钥，并将这些值插入到下面的curl命令中，替换`CLIENT_ID`和`CLIENT_SECRET`：
++
+[source]
+----
+curl -X POST -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=CLIENT_ID&client_secret=CLIENT_SECRET&grant_type=client_credentials" "https://mq-us-east-1.anypoint.mulesoft.com/api/v1/authorize"
+----
++
+有关区域MQ和FIFO可用，请参阅 link:/anypoint-mq/[Anypoint MQ起始页面]。
++
+. 提交curl命令。
++
+这返回输出类似于：
++
+[source,xml]
+----
+{"access_token":"<token>","simple_client":{"envId":"<env_ID>","orgId":"<org-ID>"},"token_type":"bearer"}
+----
+
+== 关于API的工作流程
+
+以下Broker API示例说明了访问API的工作流程：
+
+image:mq-api-workflow.png[MQ-API的工作流程]
+
+脚步：
+
+. 应用程序向Anypoint MQ发送一个请求，并设置锁定消息的时间。
+.  Anypoint MQ发送消息和锁ID。
+. 应用程序确认消息并请求Anypoint MQ删除消息，或者应用程序否定确认消息并请求Anypoint MQ将消息提供给其他应用程序。应用程序将消息ID和锁定ID发送到Anypoint MQ。有关设置自动确认或nack的更多信息，请参阅 link:/anypoint-mq/mq-ack-mode[确认模式]指南。
+. 如果不采取任何行动并且锁定的生存时间持续到期，则消息被否定确认并返回队列以供其他应用程序使用。
+
+== 关于API访问示例
+
+以下示例允许您从xref：excoliuscu [命令行使用curl]或从外部参照：expostbro [Postman，Anypoint Studio和浏览器的组合]测试Anypoint MQ。
+
+[[excoliuscu]]
+=== 关于示例：使用卷曲的命令行
+
+本节中的示例使用https://anypoint.mulesoft.com/exchange/portals/anypoint-platform-eng/f1e97bc6-315a-4490-82a7-23abe036327a.anypoint-platform/anypoint-mq-broker/[MQ Broker API]发布和使用消息。您需要用占位符字符串`42544254-4254-4254-4254-425442544254`替换适用于授权和令牌字符串的值。这些示例使用Postman访问队列。
+
+以下*curl*命令发布消息：
+
+[source,xml,linenums]
+----
+curl -X PUT -H "Content-Type: application/json" \
+-H "Authorization: bearer 42544254-4254-4254-4254-425442544254" \
+-H "Cache-Control: no-cache" \
+-H "Postman-Token: 42544254-4254-4254-42544254-425442544254" \
+-d '{ \
+  "properties": {
+    "userDefinedHeader": "User defined stuff",
+    "anotherUserDefinedHeader": "Random stuff"
+  },
+
+  "body": "This is a message payload"
+}
+' "https://mq-us-east-1.anypoint.mulesoft.com/api/v1/organizations/42544254-4254-4254-4254-425442544254/environments/42544254-4254-4254-4254-425442544254/destinations/postmanExchange/messages/552"
+----
+
+以下curl命令会收到一条消息：
+
+[source,xml,linenums]
+----
+curl -X GET -H "Authorization: bearer 42544254-4254-4254-4254-425442544254" \
+-H "Cache-Control: no-cache" \
+-H "Postman-Token: 42544254-4254-4254-4254-425442544254" \
+"https://mq-us-east-1.anypoint.mulesoft.com/api/v1/organizations/42544254-4254-4254-4254-425442544254/environments/42544254-4254-4254-4254-425442544254/destinations/postmanQueue/messages?pollingTime=10000&batchSize=1&lockTtl=10000"
+----
+
+有关区域MQ和FIFO可用，请参阅 link:/anypoint-mq/[Anypoint MQ起始页面]。
+
+[[expostbro]]
+=== 关于示例：邮递员，工作室和浏览器
+
+通过此示例，您可以从这些产品访问Anypoint MQ API：
+
+* 外部参照：postsetup [邮差]
+*  xref：studiosetup [Anypoint Studio]
+*  xref：browsersetup [A浏览器]
+
+[[postsetup]]
+==== 设置邮差
+
+https://www.getpostman.com/[Postman]应用程序提供了访问Anypoint MQ API的平台。
+下载并安装Postman后，提供此信息以创建一个环境：
+
+*  xref：getoeb [组织ID]
+*  xref：getoeb [环境ID]
+*  xref：getoeb [承载（认证）令牌]
+* 主机ID（来自Anypoint Platform / MQ）
+* 客户端ID（来自Anypoint Platform / MQ）
+* 客户端密钥（来自Anypoint Platform / MQ）
+* 队列名称 - 您可以在Postman中进行设置
+
+在您能够授权Anypoint MQ API后，发布消息，使用消息并从正文中返回的信息中获取锁ID。
+
+例如，这些信息是从消费（GET）命令返回的：
+
+[source,xml,linenums]
+----
+{
+    "properties": {
+      "anotherUserDefinedHeader": "Random stuff",
+      "userDefinedHeader": "User defined stuff"
+    },
+    "headers": {
+      "messageId": "514",
+      "lockId": "<lockIDvalue>",
+      "created": "Fri, 24 Jun 2016 21:17:57 GMT",
+      "deliveryCount": "2"
+    },
+    ...
+----
+
+获得锁ID后，可以将其添加到Postman环境中以便于将来的请求。
+
+[[studiosetup]]
+=== 设置用于API Access的Anypoint Studio
+
+Anypoint Studio允许您创建使用Anypoint MQ连接器的Mule应用程序。
+总结本节中的步骤。
+
+您可以使用以下设置Studio项目：
+
+*  HTTP连接器：主机0.0.0.0，端口8081和属性菜单中设置为`/mq/{messageId}`值的路径。
+* 具有您从Anypoint Platform> MQ获取的客户端ID和秘密的Anypoint MQ连接器，并且将目标设置为您在Postman中创建的队列。
+* 记录器，消息设置为`#[payload]`值。
+
+在Package Explorer窗口中右键单击项目名称，然后单击*Run As*> *Mule Application*。
+
+确保控制台消息以"DEPLOYED"值结尾。
+
+回到Postman并发布一条新消息。
+
+[[browsersetup]]
+=== 为API访问设置浏览器
+
+浏览到这个地址：+0.0.0.0：8081+。
+浏览器显示Postman发送的消息，Anypoint MQ连接器收到的消息以及HTTP连接器发送给浏览器。
+
+[[mqadminapi]]
+== 关于Anypoint MQ Admin API
+
+https://anypoint.mulesoft.com/exchange/portals/anypoint-platform-eng/f1e97bc6-315a-4490-82a7-23abe036327a.anypoint-platform/anypoint-mq-admin/[Admin API]  - 创建和管理应用程序，队列和消息交换。
+
+在管理API门户中，单击下载将RAML或API下载为Mule插件。
+
+image:mq-rest-admin-portal.png[MQ-休息管理员门户]
+
+== 在管理API门户中创建一个FIFO队列
+
+您可以通过添加新的`"fifo": true`字段，从Admin API门户创建一个FIFO队列。
+
+*Note:*您使用管理门户的组织必须具有Anypoint MQ FIFO权利。请参阅链接：/ anypoint-mq /用于MQ可用的区域。
+
+如果需要，请参阅xref：getoeb [获取组织ID，环境ID和承载令牌]。
+
+对于使用`PUT`操作的以下路径：
+
+[source]
+/组织/ {} organizationId /环境/ {} environmentId /地区/ {} regionId /目的地/队列/ {} queueId
+
+使用这个身体：
+
+[source,json,linenums]
+----
+{
+  "defaultTtl" : 120000,
+  "defaultLockTtl" : 10000,
+  "encrypted" : false,
+  "fifo" : true
+}
+----
+
+[[mqbrokerapi]]
+== 关于Anypoint MQ Broker门户
+
+https://anypoint.mulesoft.com/exchange/portals/anypoint-platform-eng/f1e97bc6-315a-4490-82a7-23abe036327a.anypoint-platform/anypoint-mq-broker/[Broker API]  - 发布，使用，ack ，并且在队列和消息交换之间消息消息。
+
+在Broker API门户中，单击下载将RAML或API下载为Mule插件。
+
+image:mq-rest-broker-portal.png[MQ-休息经纪门户]
+
+[[mqstatapi]]
+== 关于MQ Stats Portal的Anypoint
+
+https://anypoint.mulesoft.com/exchange/portals/anypoint-platform-eng/f1e97bc6-315a-4490-82a7-23abe036327a.anypoint-platform/anypoint-mq-stats/[Stats API]  - 对队列进行统计分析性能。
+
+在Stats API门户中，单击下载将RAML或API下载为Mule插件。
+
+image:mq-rest-stats-portal.png[MQ-REST的统计门户]
+
+[[exstatapi]]
+== 示例：MQ Stats API使用
+
+提供这些统计数据：
+
+*  messagesVisible  - 可以从队列中检索的消息数量。
+*  messagesSent  - 添加到队列的消息数量。
+*  messagesReceived  - 队列中收到的消息数量。
+*  messagesAcked  - 已确认的消息数量。还包括使用Anypoint Platform> MQ删除的任何消息
+用户界面。
+
+列出2018年7月26日至7月28日统计数据的示例请求：
+
+[source,json,linenums]
+----
+curl -X GET \
+'https://anypoint.mulesoft.com/mq/stats/api/v1/organizations/ORGANIZATION_ID/environments/ENV_ID/regions/us-east-1/queues/randomQueue/?startDate=Thu%2C%2026%20Jul%202018%2000%3A00%3A00%20GMT&endDate=Sat%2C%2028%20Jul%202018%2020%3A00%3A00%20GMT&period=600' \
+  -H 'authorization: Bearer BEARER_TOKEN' \
+  -H 'cache-control: no-cache' \
+  -H 'postman-token: ACCESS_TOKEN'
+----
+
+xref：getoeb [获取占位符中缺失的信息]。
+
+响应示例：
+
+[source,json,linenums]
+----
+{
+  "destination": "myDestination",
+  "messages": [
+    {
+      "date": "2018-07-26T00:00:00.000+0000",
+      "value": 2126
+    },
+    {
+      "date": "2018-07-27T00:00:00.000+0000",
+      "value": 2126
+    },
+    {
+      "date": "2018-07-28T00:00:00.000+0000",
+      "value": 587
+    }
+  ],
+  "inflightMessages": [
+    {
+      "date": "2018-07-26T00:00:00.000+0000",
+      "value": 0
+    },
+    {
+      "date": "2018-07-27T00:00:00.000+0000",
+      "value": 0
+    },
+    {
+      "date": "2018-07-28T00:00:00.000+0000",
+      "value": 0
+    }
+  ],
+  "messagesVisible": [
+    {
+      "date": "2018-07-26T00:00:00.000+0000",
+      "value": 2126
+    },
+    {
+      "date": "2018-07-27T00:00:00.000+0000",
+      "value": 2126
+    },
+    {
+      "date": "2018-07-28T00:00:00.000+0000",
+      "value": 587
+    }
+  ],
+  "messagesSent": [
+    {
+      "date": "2018-07-26T00:00:00.000+0000",
+      "value": 0
+    },
+    {
+      "date": "2018-07-27T00:00:00.000+0000",
+      "value": 0
+    },
+    {
+      "date": "2018-07-28T00:00:00.000+0000",
+      "value": 0
+    }
+  ],
+  "messagesReceived": [
+    {
+      "date": "2018-07-26T00:00:00.000+0000",
+      "value": 0
+    },
+    {
+      "date": "2018-07-27T00:00:00.000+0000",
+      "value": 0
+    },
+    {
+      "date": "2018-07-28T00:00:00.000+0000",
+      "value": 0
+    }
+  ],
+  "messagesAcked": [
+    {
+      "date": "2018-07-26T00:00:00.000+0000",
+      "value": 0
+    },
+    {
+      "date": "2018-07-27T00:00:00.000+0000",
+      "value": 0
+    },
+    {
+      "date": "2018-07-28T00:00:00.000+0000",
+      "value": 0
+    }
+  ]
+}
+----
+
+== 示例：创建队列和交换
+
+要以编程方式创建队列和交换，可以使用
+像groovy这样的语言。
+
+以下示例由`cloudhub.properties`文件组成
+列出要创建的队列和交换，以及一个脚本文件
+引用属性文件。
+
+=== 关于日期
+
+Anypoint MQ允许您以标准ISO 8601格式指定Stats API的开始和结束日期。
+
+例如：`2018-03-01T13:00:00Z`
+
+=== 调用一个命令
+
+修改外部参照：groovyprops [属性文件]进行访问后
+到您的Anypoint平台帐户，使用此命令启动
+xref：groovyscript [脚本文件]：
+
+`groovy <program_name>.groovy`
+
+[[groovyprops]]
+=== 关于属性文件
+
+以下示例属性文件定义访问凭证，
+xref：getoeb [组织和环境ID]，区域ID，
+以及要创建的队列和交换的名称：
+
+[source,xml,linenums]
+----
+username="<anypoint_platform_username>"
+password="<anypoint_platform_password>"
+organizationID="<organization_ID>"
+environmentID {
+    development="<development_environment_ID>"
+    qa="<qa_environment_ID>"
+    staging="<staging_environment_ID>"
+    production="<production_environment_ID>"
+}
+regionID="us-east-1"
+
+queues=[
+    "Queue1",
+    "Queue2",
+    "QueueN",
+]
+
+exchanges=[
+    "Exchange1",
+    "Exchange2",
+    "ExchangeN"
+]
+----
+
+有关区域MQ和FIFO可用，请参阅 link:/anypoint-mq/[Anypoint MQ起始页面]。
+
+[[groovyscript]]
+=== 关于脚本文件
+
+以下示例脚本创建列出的队列和交换
+在外部参照：groov****s [属性文件]。
+
+[source,xml,linenums]
+----
+package guru.oso.mule
+
+@Grab(group = 'org.apache.httpcomponents', module = 'httpclient', version = '4.5.3')
+
+import groovy.json.JsonBuilder
+import groovy.json.JsonSlurper
+import org.apache.http.client.methods.HttpGet
+import org.apache.http.client.methods.HttpPost
+import org.apache.http.client.methods.HttpPut
+import org.apache.http.entity.StringEntity
+import org.apache.http.impl.client.HttpClientBuilder
+
+class AnypointMQAdminClient {
+
+  static String HOST = "https://anypoint.mulesoft.com"
+
+    static void main(String[] args) {
+
+        def props
+
+        if (args) {
+            props = new ConfigSlurper().parse(new File(args[0]).toURI().toURL())
+        } else {
+            props = new ConfigSlurper().parse(new File("cloudhub.properties").toURI().toURL())
+        }
+
+        def envID = props.environmentID.production
+
+        def token = authenticate(props.username, props.password)
+
+        retrieveDestinations(props, token, envID)
+
+//        def creator = new AnypointMQCreator()
+//        creator.createQueues(props, token, envID)
+//        creator.createExchanges(props, token, envID)
+
+    }
+
+    static authenticate(String username, String password) {
+
+      // build JSON
+        def map = [:]
+        map["username"] = username
+        map["password"] = password
+        def jsonBody = new JsonBuilder(map).toString()
+
+        // build HTTP POST
+        def url = HOST + '/accounts/login'
+        def post = new HttpPost(url)
+
+        post.addHeader("Content-Type", "application/json")
+        post.setEntity(new StringEntity(jsonBody))
+
+        // execute
+        def client = HttpClientBuilder.create().build()
+        def response = client.execute(post)
+
+        // read and print response
+        def bufferedReader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()))
+        def jsonResponse = bufferedReader.getText()
+        println "response: \n" + jsonResponse
+
+        // parse and return token
+        def slurper = new JsonSlurper()
+        def resultMap = slurper.parseText(jsonResponse)
+
+        return resultMap["access_token"]
+
+    }
+
+    static retrieveDestinations(ConfigObject props, String token, String envID) {
+
+        def orgID = props.organizationID
+        def regionID = props.regionID
+
+        // build HTTP GET
+        def getDestinationsURL = HOST + '/mq/admin/api/v1/organizations/' + orgID + '/environments/' + envID + '/regions/' + regionID + '/destinations'
+        def getDestinations = new HttpGet(getDestinationsURL)
+
+        // set token
+        getDestinations.setHeader("Authorization", "Bearer " + token)
+
+        // execute
+        def client = HttpClientBuilder.create().build()
+        def response = client.execute(getDestinations)
+
+        // parse and print results
+        def bufferedReader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()))
+        def jsonResponse = bufferedReader.getText()
+        println "response: \n" + jsonResponse
+
+    }
+
+    static retrieveQueue(ConfigObject props, String token, String envID, String queueID) {
+
+        def orgID = props.organizationID
+        def regionID = props.regionID
+
+        // build HTTP GET
+        def getQueueURL = HOST + '/mq/admin/api/v1/organizations/' + orgID + '/environments/' + envID + '/regions/' + regionID + '/destinations/queues/' + queueID
+        def getQueue = new HttpGet(getQueueURL)
+
+        // set token
+        getQueue.addHeader("Authorization", "Bearer " + token)
+
+        // execute
+        def client = HttpClientBuilder.create().build()
+        def response = client.execute(getQueue)
+
+        // parse and print results
+        def bufferedReader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()))
+        def jsonResponse = bufferedReader.getText()
+        println "response: \n" + jsonResponse
+
+    }
+
+    static createQueues(ConfigObject props, String token, String envID) {
+
+        def orgID = props.organizationID
+        def regionID = props.regionID
+
+        def queues = props.queues
+
+        queues.each { queueID ->
+
+            def putQueueURL = HOST + '/mq/admin/api/v1/organizations/' + orgID + '/environments/' + envID + '/regions/' + regionID + '/destinations/queues/' + queueID
+            def putQueue = new HttpPut(putQueueURL)
+
+            putQueue.addHeader("Content-Type", "application/json")
+            putQueue.addHeader("Authorization", "Bearer " + token)
+
+            def queueMap = [:]
+            queueMap["defaultTtl"] = 604800000
+            queueMap["defaultLockTtl"] = 120000
+            queueMap["encrypted"] = false
+            queueMap["fifo"] = false
+
+            def putQueueJSONBody = new JsonBuilder(queueMap).toString()
+            putQueue.setEntity(new StringEntity(putQueueJSONBody))
+
+            def client = HttpClientBuilder.create().build()
+            def response = client.execute(putQueue)
+
+            def bufferedReader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()))
+            def jsonResponse = bufferedReader.getText()
+            println "response: \n" + jsonResponse
+
+        }
+
+    }
+
+    static createExchanges(ConfigObject props, String token, String envID) {
+
+        def orgID = props.organizationID
+        def regionID = props.regionID
+
+        def exchanges = props.exchanges
+
+        exchanges.each { exchangeID ->
+
+            def putExchangeURL = HOST + '/mq/admin/api/v1/organizations/' + orgID + '/environments/' + envID + '/regions/' + regionID + '/destinations/exchanges/' + exchangeID
+            def putExchange = new HttpPut(putExchangeURL)
+
+            putExchange.addHeader("Content-Type", "application/json")
+            putExchange.addHeader("Authorization", "Bearer " + token)
+
+            def exchangeMap = [:]
+            exchangeMap["encrypted"] = false
+
+            def putExchangeJSONBody = new JsonBuilder(exchangeMap).toString()
+            putExchange.setEntity(new StringEntity(putExchangeJSONBody))
+
+            def client = HttpClientBuilder.create().build()
+            def response = client.execute(putExchange)
+
+            def bufferedReader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()))
+            def jsonResponse = bufferedReader.getText()
+            println "response: \n" + jsonResponse
+
+        }
+
+    }
+
+}
+----
+
+== 另请参阅
+
+*  link:/anypoint-mq[Anypoint MQ]

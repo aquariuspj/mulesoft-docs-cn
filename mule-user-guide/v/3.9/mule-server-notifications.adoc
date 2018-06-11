@@ -1,0 +1,223 @@
+=  Mule服务器通知
+:keywords: server notifications, log, downtime, monitor
+
+Mule提供了一个内部通知机制，您可以使用该机制来访问Mule Server上发生的更改，例如添加的流组件，正在初始化的Mule模型或正在启动的Mule模型。您可以设置代理或流程组件来对这些通知作出反应。
+
+== 配置通知
+
+消息通知提供了进出Mule服务器的所有信息的快照。只要收到或发送消息，就会触发这些通知。这些额外的通知对性能有一定的影响，所以它们在默认情况下是禁用的。要启用消息通知，您可以使用Mule配置文件中的`<notifications>`元素设置要启用的消息类型。您还将通知侦听器和关联接口注册到特定通知。
+
+例如，首先为通知侦听器创建bean，并指定要接收的通知类型的类：
+
+[source, xml, linenums]
+----
+<spring:bean name="componentNotificationLogger" class="org.myfirm.ComponentMessageNotificationLogger"/>
+<spring:bean name="endpointNotificationLogger"
+class="org.myfirm.EndpointMessageNotificationLogger"/>
+----
+
+接下来，您使用`<notification>`元素指定要接收的通知，然后使用`<notification-listener>`元素注册侦听器：
+
+[source, xml, linenums]
+----
+<notifications>
+  <notification event="COMPONENT-MESSAGE"/>
+  <notification event="ENDPOINT-MESSAGE"/>
+  <notification-listener ref="componentNotificationLogger"/>
+  <notification-listener ref="endpointNotificationLogger"/>
+</notifications>
+----
+
+当您指定COMPONENT-MESSAGE通知时，会在调用组件之前和之后发送通知。设置ENDPOINT-MESSAGE时，无论何时在端点上发送，分派或接收消息时都会发送通知。由于侦听器为他们想要接收的通知类型实现接口（例如，`ComponentMessageNotificationLogger`类将实现`org.mule.api.context.notification.ComponentMessageNotificationListener`），侦听器将接收正确的通知。
+
+有关通知类型的列表，请参阅 link:/mule-user-guide/v/3.9/notifications-configuration-reference[通知配置参考]。有关通知侦听器接口的列表，请参阅下面的<<Notification Interfaces>>。
+
+=== 指定不同的界面
+
+如果您想更改与通知关联的界面，请使用`interface-class`和`interface`属性指定新界面：
+
+[source, xml, linenums]
+----
+<notifications>
+  <notification event="COMPONENT-MESSAGE" interface-class="org.myfirm.MyMessageNotifications" interface="myComponentListener"/>
+----
+
+=== 配置自定义通知
+
+如果您创建自定义通知，则还需要指定`event-class`属性：
+
+[source, xml, linenums]
+----
+<notifications>
+  <notification event="CUSTOM-MESSAGE" event-class="org.myfirm.MyMessageNotificationsCustomMessage"
+interface-class="org.myfirm.MyMessageNotifications" interface="myCustomListener"/>
+...
+----
+
+=== 禁用通知
+
+如果您想阻止特定接口接收通知，请使用`<disable-notification>`元素指定它。您可以指定要阻止的通知类型（事件），事件类，接口和/或接口类。
+
+[source, xml, linenums]
+----
+<notifications>
+  <disable-notification interface="ComponentMessageNotificationListener"/>
+...
+----
+
+=== 使用订阅
+
+注册侦听器时，可以指定它只使用`subscription`属性接收来自特定组件的通知。例如，要指定侦听器只接收来自名为"MyService1"的流组件的通知，您可以按以下方式配置侦听器：
+
+[source, xml]
+----
+<notification-listener ref="endpointNotificationLogger" subscription="MyService1"/>
+----
+
+您还可以注册监听器并从Java代码中过滤订阅：
+
+[source]
+----
+muleContext.registerListener(listener, "MyService1");
+----
+
+要注册来自名称中"Service"的所有流组件的通知的兴趣，可以使用通配符字符串，如下所示：
+
+[source]
+----
+muleContext.registerListener(listener, "*Service*");
+----
+
+有关更多信息，请参阅下面的<<Registering Listeners Programmatically>>。
+
+== 激发自定义通知
+
+自定义通知可以由Mule中的对象触发以通知自定义侦听器。例如，发现代理可能会在客户端连接时触发“发现客户端”通知。
+
+您按如下方式启动自定义通知：
+
+[source, code, linenums]
+----
+CustomNotification n = new CustomNotification("Hello");
+muleContext.fireNotification(n);
+----
+
+任何实现`CustomNotificationListener`的对象都会收到此通知。为您的自定义通知类型扩展`CustomNotification`并定义操作是个不错的主意。例如：
+
+[source, code, linenums]
+----
+DiscoveryNotification n = new DiscoveryNotification(client, DiscoveryNotification.CLIENT_ADDED);
+muleContext.fireNotification(n);
+----
+
+请注意，Mule中的非系统对象只能通过管理器触发自定义通知。尝试触发{{0}​​}等其他通知会导致`UnsupportedOperationException`。
+
+== 通知接口
+
+下表介绍了Mule服务器通知和 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/api/context/notification/package-summary.html[org.mule.api.context.notification]类中的接口。一个对象可以实现成为该通知的侦听器。所有监听器都扩展`ServerNotificationListener`接口。
+
+[%header,cols="34a,33a,33a"]
+|===
+| {通知{1}}说明 |接口
+|组件消息通知 |消息由流组件处理。这些通知非常适合追踪，但它们并未默认启用，因为它们会影响效果。 | `ComponentMessageNotificationListener`
+|连接通知 |连接到其基础资源的连接器或释放连接，或连接尝试失败。 | `ConnectionNotificationListener`
+|自定义通知 |可由对象自己触发自定义通知侦听器，并可用于自定义代理，流程组件，连接器等的通知。 | `CustomNotificationListener`
+|端点消息通知 |已从端点发送或接收消息。这些通知非常适合追踪，但它们并未默认启用，因为它们会影响效果。 | `EndpointMessageNotificationListener`
+|例外通知 |抛出异常。 | `ExceptionNotificationListener`
+|管理通知 | Mule实例或其资源的状态已更改。 | `ManagementNotificationListener`
+|模型通知 |状态在模型上发生变化，例如初始化，启动和停止，或模型中的流程组件正在注册或取消注册。 | `ModelNotificationListener`
+| Mule上下文通知 | Mule Manager上发生了一件事。 | `MuleContextNotificationListener`
+|注册表通知 |注册表发生了一件事。 | `RegistryNotificationListener`
+|路由通知 |发生路由事件，例如发生异步回复未命中。 | `RoutingNotificationListener`
+|安全通知 |请求被拒绝安全访问。 | `SecurityNotificationListener`
+|交易通知 |在交易开始，提交或回滚之后的交易生命周期内。 | `TransactionNotificationListener`
+|异步消息通知 |到达了异步消息。 a2}}
+`AsyncMessaheNotificationListener`
+
+|管道消息通知 |一条管道消息到达。 | `PipelineMessageNotificationListener`
+|消息处理器通知 |调用消息处理器。 | `MessageProcessorNotificationListener`
+|例外策略通知 |调用了例外策略。 | `ExceptionStrategyNotificationListener`
+|===
+
+监听器接口都有一个方法：
+
+[source, java]
+----
+public void onNotification(T notification);
+----
+
+其中T是通知类（最后没有“侦听器”的侦听器类）。
+
+根据实现的监听器，只会收到特定的通知。例如，如果对象实现`ManagerNotificationListener`，则只会接收`ManagerNotification`类型的通知。对象可以实现多个侦听器来接收更多类型的通知。
+
+== 以编程方式注册听众
+
+您可以在Mule上下文中注册监听器，如下所示：
+
+[source]
+----
+muleContext.registerListener(listener);
+----
+
+=== 动态注册听众
+
+默认情况下，Mule启动后，您无法在Mule环境中注册监听器。因此，在开始Mule之前，您需要在您的代码中注册您的听众。例如：
+
+[source, code, linenums]
+----
+MuleContext context = new DefaultMuleContextFactory().createMuleContext
+(new SpringXmlConfigurationBuilder("foo-config.xml"));
+context.registerListener(listener, "*Service*");
+context.start();
+----
+
+要更改此行为，以便您可以在运行时动态添加侦听器，可以在`<notifications>`元素上设置`dynamic`属性。如果您只想为特定连接器启用动态通知，则可以在连接器上设置`dynamicNotification`属性。
+
+[TIP]
+根据应用的性质，您可能需要拨打`context.unregisterListener()`以防止内存泄漏。
+
+=== 通知操作代码
+
+每个通知都有一个确定通知类型的操作代码。可以查询动作代码以确定其类型。例如：
+
+*MyObject.java*
+
+[source, java, linenums]
+----
+public class MyObject implements ConnectionNotificationListener<ConnectionNotification>, MuleContextAware
+{
+
+    // muleContext injection and field omitted for brevity
+
+    public void onNotification(ConnectionNotification notification)
+    {
+        if (notification.getAction() == ConnectionNotification.CONNECTION_FAILED)
+        {
+            System.out.println("Connection failed");
+        }
+    }
+}
+----
+
+有关每种通知类型的可用操作代码列表，请参阅 link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/context/notification/package-summary.html[org.mule.context.notification]包的Javadoc，然后单击所需通知类型的类。
+
+== 通知有效负载
+
+所有通知都会扩展`java.util.EventObject`，并且可以使用`getSource()`方法访问对象的有效负载。下表介绍了每种通知的有效载荷。
+
+[%header,cols="4*"]
+|===
+|通知 |有效内容类型 |资源ID  |说明
+|组件消息通知 |组件 |组件名称 |触发此通知的流组件
+|连接通知 |可连接 | `<connector-name>.receiver(<endpoint-uri>)`  |已连接的消息接收器或消息分派器
+|自定义通知 |任何对象 |任何字符串 |对象类型是触发通知的对象的自定义
+|端点消息通知 | ImmutableEndpoint  |端点URI  |触发此通知的端点
+|例外通知 | Throwable  |组件名称 |触发此通知的流程组件
+|管理通知 |对象 |对象ID  |触发此通知的受监控对象
+|模型通知 |模型 |模型名称 | Mule上下文中的Model实例。相当于调用MuleContext.getRegistry（）。lookupModel（）
+| Mule上下文通知 | MuleContext  | Mule上下文ID  | Mule上下文实例。相当于调用getMuleContext（）。
+|注册表通知 |注册表 | Mule注册表ID  | Mule注册表。相当于调用MuleContext.getRegistry（）。
+|路由通知 | MuleMessage  |消息ID  |发送或接收的消息
+|安全通知 | SecurityException  |异常消息 |发生的安全异常
+|交易通知 |交易 |组件名称 |触发此通知的组件
+|===

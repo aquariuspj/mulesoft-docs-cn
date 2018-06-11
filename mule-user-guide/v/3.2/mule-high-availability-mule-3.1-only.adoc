@@ -1,0 +1,200 @@
+=  Mule高可用性（仅适用于Mule 3.1.x）*_Enterprise Edition_*
+
+
+*Mule 3.1.x only!*
+
+本页列出的限制和其他信息适用于Mule 3.1.x *ONLY*，仅供使用仍在运行Mule 3.1.x的客户使用。本页中没有任何内容适用于当前的Mule版本或任何版本3.2.0或更高版本。 *If you are using Mule 3.1.x and wish to implement High Availability Clustering, MuleSoft strongly recommends that you first upgrade to the current version of Mule.*有关Mule高可用性（以及高可靠性，性能和可伸缩性）当前状态的更多信息，请参阅[Mule高可用性（HA）群集]。
+
+
+[cols="2*"]
+|===
+一个|
+Mule高可用性为Mule ESB提供基本的故障切换功能。当主Mule实例变得不可用时（例如，由于致命的JVM或硬件故障或因脱机进行维护），备份Mule实例会立即成为主节点，并恢复处理失败实例中断的情况。系统管理员恢复失败的Mule实例并使其恢复联机后，它将自动成为备份节点。
+
+无缝故障转移由分布式内存存储实现，该存储分享群集Mule实例之间的所有瞬态信息。这可以包含SEDA服务事件队列和内存消息队列中的信息。
+
+Mule高可用性目前可用于以下传输：
+
+*  HTTP（包括CXF Web服务）
+*  JMS
+*  WebSphere MQ
+*  JDBC
+* 文件
+*  FTP
+*  VM
+
+| image:HA-arch.png[HA-拱]
+|===
+
+== 支持的体系结构
+
+Mule高可用性支持以下体系结构：
+
+* 两个Mule实例独立运行
+* 主动 - 被动拓扑：一个主节点，一个备份
+* 基于套接字的传输（HTTP，Web服务和TCP）所需的反向代理服务器（例如 http://www.apachetutor.org/admin/reverseproxies[阿帕奇]）将请求转发给当前活动节点
+* 必须在安装Mule的每台服务器上启用多播
+* 高可用性是*not*取代交易，并不保证可靠性。如果您的消息流不是事务性的，那么在发生故障切换的情况下，您可能会遭受丢失，部分或重复的消息。
+
+有关当前版本中不支持的特定功能的详细信息，请参阅下面的限制。
+
+== 启用和配置Mule高可用性
+
+您必须安装和配置两个完全相同的Mule实例：主实例和备份实例。尽管这些实例可能位于同一台机器上，但理想情况下应将它们分开（不同物理位置的不同机器）以避免出现单点故障。
+
+请务必按照本节中关于Mule的两个实例的步骤进行操作。
+
+=== 配置系统属性
+
+高可用性需要设置一些系统属性才能启动。默认情况下，这些属性在您的`conf/wrapper.conf`文件中被注释掉。为了启用高可用性，您可以在启动Mule之前简单地取消注释该文件中的属性（不需要更改它们的值）。请注意，最后一个`mule.clusterNodeBackupId`需要针对所有备份实例取消注释，但不是主实例。
+
+[source, code, linenums]
+----
+############################## High Availability settings#############################
+wrapper.java.additional.4=-Dmule.clusterId=DEFAULTwrapper.java.additional.5=-Dmule.clusterNodeId=1wrapper.java.additional.6=-Dmule.clusterSchema=partitioned-sync2backup# Uncomment for all but one node in the cluster#wrapper.java.additional.7=-Dmule.clusterNodeBackupId=1#############################
+----
+
+[TIP]
+====
+或者，您可以在启动Mule时从命令行设置这些属性，或者在以编程方式启动Mule时将它们设置为Java代码。
+====
+
+=== 修改您的配置文件
+
+要使用Mule高可用性功能，您必须对Mule XML配置文件进行一些更改。
+
+[TIP]
+====
+未来的Mule版本将使高可用性更加透明，并且可能不再需要对配置进行以下更改。当这种情况发生时，Mule企业迁移工具将有助于配置的任何迁移。
+====
+
+* 导入"cluster"命名空间
+
+[source, xml, linenums]
+----
+<mule xmlns="...cut...             xmlns:cluster="http://www.mulesoft.org/schema/mule/ee/cluster"        xsi:schemaLocation="        ...cut...         http://www.mulesoft.org/schema/mule/ee/cluster http://www.mulesoft.org/schema/mule/ee/cluster/3.1/mule-cluster-ee.xsd">
+----
+
+* 用`<cluster:service>`替换`<service>`个元素
+
+*Before*
+
+[source, xml, linenums]
+----
+<model name="ClusterExample">    <service name="Service1">       ...cut...    </service>    <service name="Service2">       ...cut...    </service></model>
+----
+
+*After*
+
+[source, xml, linenums]
+----
+<model name="ClusterExample">    <cluster:service name="Service1">       ...cut...    </cluster:service>    <cluster:service name="Service2">       ...cut...    </cluster:service></model>
+----
+
+[IMPORTANT]
+====
+不支持配置文件中`<service>`和`<cluster:service>`元素的混合。所有服务必须为`<cluster:service>`。
+====
+
+* 将VM传输（连接器和端点）替换为集群传输
+
+*Before*
+
+[source, xml, linenums]
+----
+<vm:connector name="queueConnector"/>...cut...    <inbound>        <vm:inbound-endpoint name="InQueue" path="queue.in" />    </inbound>    <outbound>        <pass-through-router>            <vm:outbound-endpoint name="OutQueue" path="queue.out" />        </pass-through-router>    </outbound>
+----
+
+*After*
+
+[source, xml, linenums]
+----
+<cluster:connector name="queueConnector"/>...cut...    <inbound>        <cluster:inbound-endpoint name="InQueue" path="queue.in" />    </inbound>    <outbound>        <pass-through-router>            <cluster:outbound-endpoint name="OutQueue" path="queue.out" />        </pass-through-router>    </outbound>
+----
+
+* 用集群事务替换VM事务
+
+*Before*
+
+[source, xml, linenums]
+----
+<vm:inbound-endpoint queue="InQueue">    <vm:transaction action="BEGIN_OR_JOIN"/></vm:inbound-endpoint>
+----
+
+*After*
+
+[source, xml, linenums]
+----
+<cluster:inbound-endpoint queue="InQueue">    <cluster:transaction action="BEGIN_OR_JOIN"/></cluster:inbound-endpoint>
+----
+
+[WARNING]
+此时只有集群传输支持本地事务。集群传输尚不支持XA事务。
+
+=== 有状态组件
+
+[TIP]
+该功能将在即将发布的Mule中提供
+
+如果您的自定义组件是有状态的（也就是说，它们使用变量来存储消息/事件之间的信息），则必须确保使用提供的分布式存储机制来存储这些变量。否则，在故障转移的情况下，此状态信息将丢失。
+
+== 运行Mule高可用性
+
+如上所述启用并配置High Availability后，启动您的Mule实例。他们现在应该以高可用性模式运行，因为您可以在启动时从启动屏幕进行验证。
+
+[source, code, linenums]
+----
+ Application: default                                               ** OS encoding: MacRoman, Mule encoding: UTF-8                        *                                                                    * Agents Running:                                                    **   High Availability mode is: PRIMARY                               *   JMX Agent                                                        **
+----
+
+主要实例将完全启动。备份实例将运行，但其服务将停止，因此不会在任何入站端点上接收消息。如果主节点不可用，备份节点将成为主节点，导致其服务启动并开始接收来自入站端点的消息。系统管理员能够使故障实例恢复联机后，它将成为新的备份节点（正在运行，但其服务已停止）。
+
+== 示例应用程序
+
+Mule Enterprise提供了一个简单的示例应用程序 link:/mule-user-guide/v/3.2/widget-example[Widget工厂]，以说明高可用性的用法。此示例位于Mule主目录下的`examples/widget`目录中。请参阅该目录中的`README.txt`文件以获取有关运行该示例的信息。
+
+== 对Mule ESB 3.1.x版Mule高可用性的限制
+
+*  Mule高可用性旨在与两个相同的Mule ESB实例一起使用。这些实例必须配置相同。
+
+*  Mule高可用性目前不支持流或Mule配置模式。但是，通过使用事务和集群式JMS服务器，可以在流中实现高可用性。如果您需要进一步的帮助，请联系MuleSoft。
+
+*  Mule HA目前仅适用于单应用程序部署。请注意，此应用程序可以包含多个Mule服务。
+
+*  Mule高可用性目前支持的唯一传输是：JMS，JDBC，HTTP，文件和FTP。异步HTTP，邮件传输和流式传输有一些已知的兼容性问题，不应使用。
+
+* 如果自定义组件是有状态的（即，如果变量用于存储消息/事件之间的信息），它将在故障转移后失去其状态信息。状态组件的故障转移将在未来的Mule版本中得到支持。
+
+* 有状态的路由器（如以下内容）可能会在故障转移后导致丢失，部分或重复的消息：
+
+[%header,cols="2*a"]
+|===
+| XML元素 |类
+| `<correlation-resequencer-router>`  | `org.mule.routing.inbound.CorrelationEventResequencer`
+| `<idempotent-receiver-router>`  | `org.mule.routing.inbound.IdempotentReceiver`
+| `<idempotent-secure-hash-receiver-router>`  | `org.mule.routing.inbound.IdempotentSecureHashReceiver`
+| `<message-chunking-aggregator-router>`  | `org.mule.routing.inbound.MessageChunkingAggregator`
+| `<collection-aggregator-router>`  | `org.mule.routing.inbound.SimpleCollectionAggregator`
+| `<custom-correlation-aggregator-router>`  |自定义类
+|===
+
+状态路由器的故障切换将在未来的Mule版本中得到支持。
+
+* 入站JMS主题可能会出现意外的行为。 JMS队列以及出站主题应该正常工作。
+
+基于会话的信息（如安全上下文或Servlet上下文以及可能的HTTPS证书）将在故障转移后丢失。* 
+
+*  XA事务尚不支持群集传输。 （完全支持本地交易。）
+
+* 通过Mule MMC暂停或停止服务，连接器或代理等生命周期更改将在故障转移后丢失，并且所有实体都将返回到其默认状态，通常为"started"。
+
+* 基于Quartz的计划（例如接收器轮询间隔和Quartz传输）将在故障转移后重新启动。因此，可能会出现小于指定时间段的单个间隔。
+
+* 诸如消息吞吐量之类的统计信息收集是每个Mule实例。故障转移后，聚合统计信息将不可用。
+
+[IMPORTANT]
+====
+*Transactions*
+
+Mule高可用性是*not*交易的替代品。如果您的消息流不是事务性的，那么在发生故障切换的情况下，您可能会遭受丢失，部分或重复的消息。对于Mule高可用性，对于单个Mule实例（文件系统，FTP，HTTP）不是事务性的传输仍然不是事务性的。
+====

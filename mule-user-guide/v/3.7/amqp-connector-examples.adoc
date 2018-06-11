@@ -1,0 +1,480 @@
+=  AMQP连接器示例
+:keywords: anypoint, components, elements, connectors, amqp
+
+有许多方法可以使用AMQP连接器和端点;以下示例演示了一些常见用例。
+
+== 连接后备
+
+您可以定义一个`<host>:<port>`或`<host>`代理列表，以便在主连接失败时尝试连接。如果只指定主机，则使用默认端口。
+
+[source,xml, linenums]
+----
+<amqp:connector name="amqpConnectorWithFallback"
+  host="rabbit1"
+  port="9876"
+  fallbackAddresses="rabbit1:9875,rabbit2:5672,rabbit3"
+  virtualHost="mule-test"
+  username="my-user"
+  password="my-pwd" />
+----
+
+`fallbackAddresses`属性是您可以指定为"host:port"或"host"的代理的逗号分隔列表。如果与主代理（主代理）的连接失败，该列表将定义AMQP尝试连接的回退代理。每次尝试连接时，地址都会与主要地址一起使用：如果第一次尝试失败（主地址），则使用下一个地址尝试连接，等等。这意味着只有在出现故障并且触发重新连接策略时，连接才会发生变化。
+
+注意：回退尝试是为了定义地址 - 主地址总是第一个，后备地址在后。
+
+=== 重新连接策略
+
+回退重新连接策略按照您在`fallbackAddresses`属性中定义的代理顺序进行连接尝试。您在列表中指定的第一个代理被称为主地址或主代理。您指定后续经纪人的订单定义了主经纪人出现故障时每个经纪人的订单。如果主代理失败，则非主代理仅与连接。如果主代理失败，控制权将转到列表中的下一个代理。如果该经纪人失败，并且主经纪人已恢复在线状态，则控制权将转回给主经纪人。如果主代理仍处于脱机状态，则控制权会转到联机列表中的下一个代理。
+
+如果未设置回退并且主代理没有响应，则AMQP将失败。如果设置了回退并且主代理没有响应，则会发生回退，并且控制权将移至列表中的下一个代理。
+
+== 使用Exchange重新声明和队列创建来收听邮件
+
+这是一种典型的AMQP模式，消费者重新声明他们想要绑定队列的交易所。
+
+[source,xml, linenums]
+----
+<amqp:connector name="amqpAutoAckLocalhostConnector"
+  virtualHost="my-vhost"
+  username="my-user"
+  password="my-pwd"
+  activeDeclarationsOnly="true" />
+ 
+<amqp:inbound-endpoint exchangeName="my-exchange"
+  exchangeType="fanout"
+  exchangeAutoDelete="false"
+  exchangeDurable="true"
+  queueName="my-queue"
+  queueDurable="false"
+  queueExclusive="false"
+  queueAutoDelete="true"
+  connector-ref="amqpAutoAckLocalhostConnector" />
+----
+
+== 使用Exchange重新声明和专用队列创建来收听邮件
+
+在前面例子的这个变体中，Mule创建了一个独占的服务器命名的自动删除非持久队列;并将其绑定到重新申报的交易所。
+
+[source,xml, linenums]
+----
+<amqp:connector name="amqpAutoAckLocalhostConnector"
+  virtualHost="my-vhost"
+  username="my-user"
+  password="my-pwd"
+  activeDeclarationsOnly="true" />
+ 
+<amqp:inbound-endpoint exchangeName="my-exchange"
+  exchangeType="fanout"
+  exchangeAutoDelete="false"
+  exchangeDurable="true"
+  connector-ref="amqpAutoAckLocalhostConnector" />
+----
+
+== 在预先存在的Exchange上收听消息
+
+在此模式下，如果交换不预先存在，则入站连接将失败。
+
+这种行为由`activeDeclarationsOnly=false`执行，这意味着Mule在尝试订阅它之前严格确保交换的先存。
+
+[source,xml, linenums]
+----
+<amqp:connector name="amqpAutoAckStrictLocalhostConnector"
+  virtualHost="my-vhost"
+  username="my-user"
+  password="my-pwd"
+  activeDeclarationsOnly="false" />
+ 
+<amqp:inbound-endpoint exchangeName="my-exchange"
+  queueName="my-queue"
+  queueDurable="false"
+  queueExclusive="false"
+  queueAutoDelete="true"
+  queueName="my-queue"
+  connector-ref="amqpAutoAckStrictLocalhostConnector" />
+----
+
+== 监听预先存在的队列上的消息
+
+与前面的示例类似，如果队列不预先存在，则入站连接将失败。
+
+[source,xml, linenums]
+----
+<amqp:connector name="amqpAutoAckStrictLocalhostConnector"
+  virtualHost="my-vhost"
+  username="my-user"
+  password="my-pwd"
+  activeDeclarationsOnly="false" />
+ 
+<amqp:inbound-endpoint queueName="my-queue"
+  connector-ref="amqpAutoAckStrictLocalhostConnector" />
+----
+
+== 在已声明但未绑定的队列上收听消息
+
+在这种情况下，队列被声明，但没有绑定到任何自定义交换，除了缺省绑定所有声明队列的默认交换。
+
+要触发队列创建，需要配置任何`queueDurable`，`queueAutoDelete`或`queueExclusive`属性。
+
+[source,xml, linenums]
+----
+<amqp:inbound-endpoint queueName="my-queue"
+  queueDurable="true" />
+----
+
+== 手动消息确认和拒绝
+
+到目前为止，所有传入的消息都由AMQP客户端自动确认。
+
+以下示例显示如何根据您选择的条件手动确认或拒绝流中的消息。
+
+[source,xml, linenums]
+----
+<amqp:connector name="amqpManualAckLocalhostConnector"
+  virtualHost="my-vhost"
+  username="my-user"
+  password="my-pwd"
+  ackMode="MANUAL" />
+ 
+<flow name="amqpChoiceAckNackService">
+  <amqp:inbound-endpoint queueName="my-queue"
+     connector-ref="amqpManualAckLocalhostConnector" />
+  <choice>
+    <when ...condition...>
+      <amqp:acknowledge-message />
+    </when>
+    <otherwise>
+      <amqp:reject-message requeue="true" />
+    </otherwise>
+  </choice>
+</flow>
+----
+
+== 手动频道恢复
+
+要手动恢复与当前消息关联的频道，请使用：
+
+[source,xml]
+----
+<amqp:reject-message />
+----
+
+如果您希望邮件重新排队，请使用：
+
+[source,xml]
+----
+<amqp:reject-message requeue="true" />
+----
+
+== 流量控制
+
+根据前面的示例进行扩展，可以通过相应地配置连接器来限制消息的传递。
+
+以下演示了一个接一个取消消息的连接器和一个使用手动确认来限制消息传递的流程。
+
+[source,xml, linenums]
+----
+<amqp:connector name="amqpThrottledConnector"
+  virtualHost="my-vhost"
+  username="my-user"
+  password="my-pwd"
+  prefetchCount="1"
+  ackMode="MANUAL" />
+ 
+<flow name="amqpManualAckService">
+  <amqp:inbound-endpoint queueName="my-queue"
+  connector-ref="amqpThrottledConnector" />
+  <!--
+  components, routers... go here
+  -->
+  <amqp:acknowledge-message />
+</flow>
+----
+
+== 将消息发布到重新声明的Exchange
+
+这是一种典型的AMQP模式，制片人重新宣布他们打算发布的交易所。
+
+[source,xml, linenums]
+----
+<amqp:connector name="amqpLocalhostConnector"
+  virtualHost="my-vhost"
+  username="my-user"
+  password="my-pwd"
+  activeDeclarationsOnly="true" />
+ 
+<amqp:outbound-endpoint routingKey="my-key"
+  exchangeName="my-exchange"
+  exchangeType="fanout"
+  exchangeAutoDelete="false"
+  exchangeDurable="false"
+  connector-ref="amqpLocalhostConnector" />
+----
+
+== 将邮件发布到预先存在的Exchange
+
+也可以发布到预先存在的交易所：
+
+[source,xml, linenums]
+----
+<amqp:outbound-endpoint exchangeName="my-exchange"
+  connector-ref="amqpLocalhostConnector" />
+----
+
+在向其发布之前严格执行这种交换的存在可能是可取的。这是通过配置连接器来执行被动声明来完成的：
+
+[source,xml, linenums]
+----
+<amqp:connector name="amqpStrictLocalhostConnector"
+  virtualHost="my-vhost"
+  username="my-user"
+  password="my-pwd"
+  activeDeclarationsOnly="false" />
+ 
+<amqp:outbound-endpoint routingKey="my-key"
+  exchangeName="my-exchange"
+  connector-ref="amqpStrictLocalhostConnector" />
+----
+
+== 声明和绑定出站队列
+
+也可以在出站端点中声明队列，如下所示：
+
+[source,xml, linenums]
+----
+<amqp:outbound-endpoint exchangeName="amqpOutBoundQueue-exchange"
+  exchangeType="fanout"
+  queueName="amqpOutBoundQueue-queue"
+  queueDurable="true" />
+----
+
+请注意，队列是以懒惰的方式声明和绑定的，也就是说，仅在使用出站端点时。
+
+Exchange和路由密钥的== 消息级别覆盖
+
+可以使用*outbound-scoped*消息属性覆盖一些出站端点属性：
+
+*  `routing-key`将覆盖`routingKey`属性，
+*  `exchange`将覆盖`exchangeName`属性。
+
+== 强制和即时交付和返回消息处理
+
+该连接器支持强制和即时发布标志，如下所述。
+
+如果使用此连接器发送的消息无法传递，AMQP代理将异步返回它。
+
+AMQP传输提供了将这些返回的消息分发给用户定义的端点进行自定义处理的可能性。
+
+您可以在连接器级别定义负责处理返回消息的端点。这是一个以VM端点为目标的例子：
+
+[source,xml, linenums]
+----
+<vm:endpoint name="flowReturnedMessageChannel" path="flow.returnedMessages" />
+ 
+<flow name="amqpMandatoryDeliveryFailureFlowHandler">
+  <!--
+  inbound endpoint, components, routers ...
+  -->
+ 
+  <amqp:return-handler>      
+    <defaultReturnListener-ref="flowReturnedMessageChannel" />
+  </amqp:return-handler>
+ 
+  <amqp:outbound-endpoint routingKey="my-key"
+    exchangeName="my-exchange"
+    connector-ref="mandatoryAmqpConnector" />
+</flow>
+----
+
+也可以在流级别定义返回的消息端点：
+
+[source,xml, linenums]
+----
+<vm:endpoint name="flowReturnedMessageChannel" path="flow.returnedMessages" />
+ 
+<flow name="amqpMandatoryDeliveryFailureFlowHandler">
+  <!--
+  inbound endpoint, components, routers ...
+  -->
+ 
+  <amqp:return-handler>
+    <vm:outbound-endpoint ref="flowReturnedMessageChannel" />
+  </amqp:return-handler>
+ 
+  <amqp:outbound-endpoint routingKey="my-key"
+    exchangeName="my-exchange"
+    connector-ref="mandatoryAmqpConnector" />
+</flow>
+----
+
+如果两者均已配置，则流中定义的处理程序将取代连接器中定义的处理程序。如果没有配置，Mule将记录一条警告，其中包含返回消息的完整详细信息。
+
+== 请求响应发布
+
+可以执行同步（请求 - 响应）出站操作：
+
+[source,xml, linenums]
+----
+<amqp:outbound-endpoint routingKey="my-key"
+  exchange-pattern="request-response"
+  exchangeName="my-exchange"
+  connector-ref="amqpLocalhostConnector" />
+----
+
+在这种情况下，Mule：
+
+* 创建一个临时自动删除私人回复队列
+* 将其设置为当前消息的回复属性
+* 将消息发布到指定的交易所
+* 等待响应被发送到回复队列（通过默认交换）
+
+== 交易支持
+
+AMQP本地事务通过使用标准的Mule事务配置元素来支持。例如，以下代码声明了一个AMQP入站端点，它为每个新收到的消息启动一个新的事务：
+
+[source,xml, linenums]
+----
+<amqp:inbound-endpoint queueName="amqpTransactedBridge-queue"
+        connector-ref="amqpConnector">
+    <amqp:transaction action="ALWAYS_BEGIN" />
+</amqp:inbound-endpoint>
+----
+
+以下声明一个事务AMQP桥：
+
+[source,xml, linenums]
+----
+<bridge name="amqpTransactedBridge" exchange-pattern="one-way" transacted="true">
+    <amqp:inbound-endpoint queueName="amqpTransactedBridge-queue"
+           connector-ref="amqpConnector">
+        <amqp:transaction action="ALWAYS_BEGIN" />
+    </amqp:inbound-endpoint>
+    <amqp:outbound-endpoint exchangeName="amqpOneWayBridgeTarget-exchange"
+           connector-ref="amqpConnector">
+        <amqp:transaction action="ALWAYS_JOIN" />
+    </amqp:outbound-endpoint>
+</bridge>
+----
+
+如果在入站端点处理消息时发生错误，交易将自动回滚。否则，事务在成功分派到出站端点后提交。
+
+默认情况下，回滚时不执行通道恢复。要修改此行为，请在事务元素上配置`recoverStrategy`属性，如下所示。
+
+[source,xml]
+----
+<amqp:transaction action="ALWAYS_BEGIN" recoverStrategy="REQUEUE" />
+----
+
+`recoverStrategy`选项的有效值为：`NONE`，`NO_REQUEUE`和`REQUEUE`。
+
+AMQP中的事务不像JMS事务。强烈建议您在使用事务之前阅读此 http://www.rabbitmq.com/amqp-0-9-1-reference.html#class.tx[AMQP 0.91中的交易支持概述]。理解当一个事务在Mule管理的频道上开始（例如，通过`<amqp:transaction action="ALWAYS_BEGIN"/>`）时，该频道在其整个生命周期中保持事务性是很重要的。
+
+== 交换和队列声明参数
+
+AMQP在声明交换和队列期间支持自定义参数。 AMQP连接器支持这些自定义参数，您必须分别针对交换或队列参数将其作为名称前缀为`amqp-exchange.`或`amqp-queue.`的端点属性传递。
+
+以下示例声明在交换声明期间使用`alternate-exchange`参数并在队列声明期间使用`x-dead-letter-exchange`参数的全局端点：
+
+[source,xml, linenums]
+----
+<amqp:endpoint name="amqpEndpointWithArguments" exchangeName="target-exchange"
+    exchangeType="fanout" exchangeDurable="true" exchangeAutoDelete="false"
+    queueName="target-queue" queueDurable="true" queueAutoDelete="false"
+    queueExclusive="true" routingKey="a.b.c">
+    <properties>
+        <spring:entry key="amqp-exchange.alternate-exchange"
+            value="some-exchange" />
+        <spring:entry key="amqp-queue.x-dead-letter-exchange"
+            value="some-queue" />
+    </properties>
+</amqp:endpoint>
+----
+
+== 程序化消息请求
+
+可以以编程方式从AMQP队列中获取消息。
+
+为了实现这一点，您首先需要构建一个标识要从中使用的AMQP队列的URI。以下是使用的语法，可选参数放在方括号中：
+
+[source,xml]
+----
+amqp://[${exchangeName}/]amqp-queue.${queueName}[?connector=${connectorName}[&...other parameters...]]
+----
+
+例如，以下内容将标识名为"my-queue"的预先存在的队列，以便与Mule配置中提供的唯一AMQP连接器一起使用：
+
+[source,xml]
+----
+amqp://amqp-queue.my-queue
+----
+
+以下示例使用指定连接器上提供的路由键创建并绑定名为"new-queue"的非持久性自动删除非排他性队列到名为"my-exchange"的预先存在的交换中：
+
+[source,xml]
+----
+amqp://my-exchange/amqp-queue.new-queue?connector=amqpAutoAckLocalhostConnector&queueDurable=false&queueExclusive=false&queueAutoDelete=true
+----
+
+一旦定义了URI，就可以使用Mule Client从队列中检索消息，如以下代码示例所示。
+
+[source,xml]
+----
+MuleMessage message = new MuleClient(muleContext).request("amqp://amqp-queue.my-queue", 2500L);
+----
+
+上面的消息等待2.5秒，之后如果没有消息出现在队列中，则返回空值。
+
+==  SSL连接
+
+传输可以使用SSLv3或TLS连接到代理。为此，请使用带有下面列出的XML名称空间声明的AMQPS连接器。
+
+[source,xml]
+----
+xmlns:amqps="http://www.mulesoft.org/schema/mule/amqps" http://www.mulesoft.org/schema/mule/amqps http://www.mulesoft.org/schema/mule/amqps/current/mule-amqps.xsd
+----
+
+使用SSLv3进行连接（默认），并使用信任管理器接受所有证书为有效的：
+
+[source,xml]
+----
+<amqps:connector name="amqpsDefaultSslConnector" />
+----
+
+使用TLS进行连接并使用信任管理器接受所有证书为有效的：
+
+[source,xml]
+----
+<amqps:connector name="amqpsTlsConnector" sslProtocol="TLS" />
+----
+
+使用SSLv3进行连接（默认）并使用自定义信任管理器：
+
+[source,xml]
+----
+<amqps:connector name="amqpsTrustManagerConnector" sslTrustManager-ref="myTrustManager" />
+----
+
+使用TLS进行连接并使用自定义信任管理器：
+
+[source,xml]
+----
+<amqps:connector name="amqpsTlsTrustManagerConnector" sslProtocol="TLS" sslTrustManager-ref="myTrustManager" />
+----
+
+连接关键和信任商店：
+
+[source,xml,linenums]
+----
+<amqps:connector name="amqpsTlsKeyStores">
+  <amqps:ssl-key-store path="keycert.p12" type="PKCS12" algorithm="SunX509" keyPassword="MySecretPassword" storePassword="MySecretPassword" />
+  <amqps:ssl-trust-store path="trustStore.jks" type="JKS" algorithm="SunX509" storePassword="rabbitstore" />
+</amqps:connector>
+----
+
+== 另请参阅
+
+* 访问 link:/mule-user-guide/v/3.7/amqp-connector-reference[AMQP连接器参考]以获取所有AMQP连接器配置属性的完整列表和描述。
+
+
+
+
+

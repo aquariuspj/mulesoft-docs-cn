@@ -1,0 +1,129 @@
+= 示例：定义自定义添加功能
+:keywords: studio, anypoint, transform, transformer, format, xml, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+此示例采用一组物料价格和库存量，并使用若干函数计算小计，扣除折扣并添加税金。
+
+它使用以下内容：
+
+*  `map`函数遍历输入中的所有项目。
+* 基本数学运算，如`*`，`+`和`-`。
+* 与`++`进行字符串连接。
+*  `as`将字符串值强制为数字。
+* 在标题中固定值以设置税额和折扣金额。
+* 标题中的自定义函数，用于定义一次并在代码中多次使用。
+*  `reduce`函数可将各种项目汇总为一个项目。
+
+
+.DataWeave
+[source,Dataweave,linenums]
+----
+%dw 2.0
+output application/json
+var tax = 0.085
+var discount = 0.05
+fun getSubtotal (items) = items reduce ((item, accumulator = 0) ->
+        accumulator + (item.unit_price * item.quantity * (1 - discount)))
+---
+invoice: {
+    header: payload.invoice.header,
+    items: { (payload.invoice.items map {
+        item : {
+            description: $.description,
+            quantity: $.quantity,
+            unit_price: $.unit_price,
+            discount: (discount * 100) as Number ++ "%",
+            subtotal: $.unit_price * $.quantity * (1 - discount)
+        }
+    }) },
+    totals:
+    {
+        subtotal: getSubtotal(payload.invoice.items ),
+        tax: (tax * 100) as Number ++ "%",
+        total: getSubtotal(payload.invoice.items ) * (1 + tax)
+    }
+}
+----
+
+。输入JSON
+[source,json,linenums]
+----
+{
+  "invoice": {
+    "header": {
+      "customer_name": "ACME, Inc.",
+      "customer_state": "CA"
+    },
+    "items": [
+      {
+        "description": "Product 1",
+        "quantity": "2",
+        "unit_price": "10"
+      },
+      {
+        "description": "Product 2",
+        "quantity": "1",
+        "unit_price": "30"
+      }
+    ]
+  }
+}
+----
+
+.OUTPUT
+[source, json, linenums]
+----
+{
+  "invoice": {
+    "header": {
+      "customer_name": "ACME, Inc.",
+      "customer_state": "CA"
+    },
+    "items": {
+      "item": {
+        "description": "Product 1",
+        "quantity": "2",
+        "unit_price": "10",
+        "discount": "5.00%",
+        "subtotal": 19.00
+      },
+      "item": {
+        "description": "Product 2",
+        "quantity": "1",
+        "unit_price": "30",
+        "discount": "5.00%",
+        "subtotal": 28.50
+      }
+    },
+    "totals": {
+      "subtotal": 47.50,
+      "tax": "8.500%",
+      "total": 51.53750
+    }
+  }
+}
+----
+
+
+
+
+== 相关示例
+
+*  link:dataweave-cookbook-map[映射数据]
+
+*  link:dataweave-cookbook-use-constant-directives[使用常量指令]
+
+*  link:dataweave-cookbook-conditional-list-reduction-via-function[通过函数有条件地减少列表]
+
+*  link:dataweave-cookbook-define-function-to-flatten-list[定义在列表中展平数据的函数]
+
+*  link:dataweave-cookbook-pass-functions-as-arguments[将函数作为参数传递]
+
+
+== 另请参阅
+
+
+*  link:dw-core[DataWeave核心功能]
+
+*  link:dataweave-selectors[DataWeave选择器]
+
+*  link:dataweave-cookbook[DataWeave食谱]

@@ -1,0 +1,296 @@
+= 出站路由器
+
+== 概述
+
+组件处理完消息后，可使用出站路由器确定下一个消息的发送位置。您在出站路由器上配置出站端点，而不是在`<outbound>`元素上。出站路由器允许您为任何给定的消息定义多个路由约束。如果没有路由器接受当前消息，则可以指定要调用的 link:/mule-user-guide/v/3.2/catch-all-strategies[全面战略]。
+
+=== 匹配所有路由器
+
+默认情况下，消息只能由匹配条件的第一个出站路由器处理。如果您希望消息由所有出站路由器处理，则可以将`matchAll`属性设置为true。例如，假设您始终想要将存款确认回复给原始存款人。另外假设如果存款超过10万美元，您希望向“高净值客户经理”发送通知消息以进行后续跟踪。在这种情况下，您可以在`<outbound>`定义上设置`matchAll`属性，如下所示：
+
+[source, xml, linenums]
+----
+<outbound matchAll="true">    <filtering-router>        <endpoint address="jms://deposit.queue"/>    </filtering-router>    <filtering-router>        <jms:outbound-endpoint queue="large.deposit.queue"/>        <mulexml:jxpath-filter expression="deposit/amount >= 100000"/>    </filtering-router></outbound>
+----
+
+在这个例子中，消息总是与第一个路由器匹配，因为它没有过滤器。此外，如果存款金额> = $ 100000，则该消息将与第二台路由器匹配，在这种情况下，两台路由器都将被调用。
+
+=== 出站示例
+
+[source, xml, linenums]
+----
+<outbound>    <catch-all-strategy>        <jms:outbound-endpoint queue="default.queue"/>    </catch-all-strategy>    <filtering-router>       <smtp:outbound-endpoint to="exceptions@muleumo.org" subject="Exception!" from="mule@mycompany.com!">            <transformer ref="ExceptionToEmail"/>       </smtp:outbound-endpoint>       <payload-type-filter expectedType="java.lang.Exception"/>    </filtering-router>    <filtering-router>        <vm:endpoint path="my.component"/>        <and-filter>            <payload-type-filter expectedType="java.lang.String"/>            <regex-filter pattern="the quick brown (.*)"/>        </and-filter>    </filtering-router></outbound>
+----
+
+以下各节介绍每个Mule出站路由器以及如何配置它们。出站路由器配置起来可能更复杂，因为它们允许根据一个或多个过滤器中定义的逻辑来选择不同的路由路径。有关出站路由器配置元素和属性的更多详细信息，请参阅 link:/mule-user-guide/v/3.2/outbound-router-configuration-reference[出站路由器配置参考]。
+
+=== 的ReplyTo
+
+所有出站路由器都可以有一个<<ReplyTo>>，用于定义邮件收件人完成处理之后邮件路由的位置。
+
+在以下示例中，第一个服务设置路由，包括将消息传递到出站端点并指定将从第二个服务接收结果的答复端点。
+
+[source, xml, linenums]
+----
+<service name="Requester">  <inbound>    <vm:inbound-endpoint path="IN" synchronous="true"/>  </inbound>  <outbound>    <pass-through-router>      <jms:outbound-endpoint queue="RequestQueue"synchronous="true"/>      <reply-to address="jms://ReplyQueue"/>    </pass-through-router>  </outbound></service><service name="Replier">  <inbound>    <jms:inbound-endpoint queue="RequestQueue" synchronous="true"/>  </inbound>  <echo-component/></service>
+----
+
+`<reply-to>`端点仅由流中的下一个服务使用。例如，假设流中有三个服务，并且第一个服务具有带回复端点的出站路由器。流程中的第二个服务会将其调用结果发送到该回复端点，并将消息传递给第三个服务。但是，第三项服务正常处理消息，而不会将结果发送到答复端点。
+
+`<reply-to>`端点可以是任何有效的 link:/mule-user-guide/v/3.2/mule-endpoint-uris[Mule端点URI]。有关哪些传输支持回复的信息，请参阅 link:/mule-user-guide/v/3.2/transports-reference[传输参考]。
+
+请注意，添加回复端点会使出站端点异步，因此不会将回复发送给调用者，而仅发送给回复端点。如果您想要将回复发回给主叫方，除回复信息外，还可以添加一个 link:/mule-user-guide/v/3.2/asynchronous-reply-routers[异步回复路由器]。
+
+== 直通路由器
+
+该路由器始终匹配并通过其配置的一个端点发送或发送消息。
+
+这台路由器的配置如下：
+
+*2.0:*
+
+[source, xml, linenums]
+----
+<outbound>  <outbound-pass-through-router>    <smtp:outbound-endpoint to="ross@muleumo.org"/>  </outbound-pass-through-router></outbound>
+----
+
+*2.1 and later:*
+
+[source, xml, linenums]
+----
+<outbound>  <pass-through-router>    <smtp:outbound-endpoint to="ross@muleumo.org"/>  </pass-through-router></outbound>
+----
+
+您还可以使用直通路由器执行协议桥接到另一个出站端点。例如：
+
+[source, xml, linenums]
+----
+<service name="HttpProxyService">  <inbound>    <!-- WSDL URL: +{{0}}" synchronous="true"/>    </pass-through-router>  </outbound></service>
+----
+
+默认情况下，传递路由器不返回响应。如果您确实需要返回响应，请在出站端点上将同步设置为true，或者使用链接路由器（默认情况下会返回响应）。
+
+== 过滤路由器
+
+该路由器使用过滤器来确定是否使用该路由器（请参阅下面的过滤器）。如果满足过滤条件，过滤路由器只指定消息路由到的一个端点。如果您需要在路由器中指定多个端点，请使用不同的出站路由器并在其各个端点上设置过滤器。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<outbound>  <forwarding-catch-all-strategy>    <jms:outbound-endpoint queue="error.queue"/>  </forwarding-catch-all-strategy>  <filtering-router>    <smtp:outbound-endpoint to="ross@muleumo.org"/>      <payload-type-filter expectedType="java.lang.Exception"/>  </filtering-router>  <filtering-router>    <jms:outbound-endpoint queue="string.queue"/>    <and-filter>      <payload-type-filter expectedType="java.lang.String"/>      <regex-filter pattern="the quick brown (.*)"/>    </and-filter>  </filtering-router></outbound>
+----
+
+首先将过滤器应用于消息，然后应用变压器。如果您需要在应用过滤器之前转换消息，则可以在应用过滤器之前在该路由器上设置将应用于消息的转换器。
+
+[source, xml, linenums]
+----
+<outbound>  <filtering-router>    <smtp:outbound-endpoint to="ross@muleumo.org"/>    <payload-type-filter expectedType="java.lang.Exception"/>    <transformer ref="aTransformer"/>  </filtering-router></outbound>
+----
+
+== 收件人列表路由器
+
+收件人列表路由器可用于通过单个端点将相同的消息发送到多个端点，或者实现路由滑移行为，其中消息的下一个目标是根据消息属性或有效负载确定的。 Mule提供了一个抽象的收件人列表实现 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/routing/outbound/AbstractRecipientList.html[org.mule.routing.outbound.AbstractRecipientList]，它为专门的实现提供了线程安全的基础。
+
+Mule提供了一个静态收件人列表路由器，该路由器从当前消息或端点上的静态声明列表中获取配置的端点列表。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<outbound>  <static-recipient-list-router>    <payload-type-filter expectedType="javax.jms.Message"/>    <recipients>      <spring:value>jms://orders.queue</spring:value>      <spring:value>jms://tracking.queue</spring:value>    </recipients>  </static-recipient-list-router></outbound>
+----
+
+Mule还提供了表达式收件人列表路由器，它允许您创建静态列表以及使用表达式来确定列表。
+
+[source, xml, linenums]
+----
+<outbound>  <expression-recipient-list-router evaluator="headers-list" expression="recipient1,recipient2,recipient3"/></outbound>
+----
+
+== 多播路由器
+
+多播路由器可用于通过多个端点发送相同的消息。使用此路由器时，请务必在端点上配置正确的变换器以处理消息源类型。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<outbound>  <multicasting-router>    <jms:endpoint queue="test.queue" transformer-refs="StringToJmsMessage"/>    <http:endpoint host="10.192.111.11" transformer-refs="StringToHttpClientRequest"/>    <tcp:endpoint host="10.192.111.12" transformer-refs="StringToByteArray"/>    <payload-type-filter expectedType="java.lang.String"/>  </multicasting-router></outbound>
+----
+
+如果您将端点设置为同步，则每个端点都会按顺序处理原始消息，并将结果收集到单个回复中，然后发送到回复地址。例如：
+
+[source, xml, linenums]
+----
+<outbound>  <multicasting-router>    <jms:endpoint queue="test.queue" transformer-refs="StringToJmsMessage" synchronous="true"/>    <http:endpoint host="10.192.111.11" transformer-refs="StringToHttpClientRequest" synchronous="true"/>    <tcp:endpoint host="10.192.111.12" transformer-refs="StringToByteArray" synchronous="true"/>    <payload-type-filter expectedType="java.lang.String"/>    <reply-to address="jms:reply.queue"/>  </multicasting-router></outbound>
+----
+
+如果您希望端点同时处理消息并发回各个回复，请将端点设置为异步（synchronous = "false"）。个人回复将从每个端点返回给调用者。如果要在发送答复之前收集异步响应，请使用异步端点，为多播路由器设置replyTo，然后使用 link:/mule-user-guide/v/3.2/asynchronous-reply-routers[收集异步回复路由器]。例如：
+
+[source, xml, linenums]
+----
+<outbound>  <multicasting-router>    <jms:endpoint queue="test.queue" transformer-refs="StringToJmsMessage" synchronous="false"/>    <http:endpoint host="10.192.111.11" transformer-refs="StringToHttpClientRequest" synchronous="false"/>    <tcp:endpoint host="10.192.111.12" transformer-refs="StringToByteArray" synchronous="false"/>    <payload-type-filter expectedType="java.lang.String"/>    <reply-to address="jms:reply.queue"/>  </multicasting-router></outbound><async-reply failOnTimeout="false" timeout="2000">  <jms:inbound-endpoint queue="reply.queue"/>  <collection-async-reply-router/></async-reply>
+----
+
+== 链接路由器
+
+链接路由器可用于通过多个端点使用第一个调用的结果作为下一个输入的输入来发送消息。例如，如果要将同步请求 - 响应调用（如Web服务调用）的结果发送到JMS队列，这可能很有用。端点转换器可用于将消息转换为下一个端点所需的格式。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<outbound>  <chaining-router>    <axis:outbound-endpoint address="http://localhost:8081/services/xyz?method=getSomething"/>    <jms:outbound-endpoint queue="something.queue">      <transformer ref="SomethingToJmsMessage"/>    </jms:outbound-endpoint>  </chaining-router></outbound>
+----
+
+在链接路由器中指定的端点始终是同步的，并在单个线程中传递消息。例外情况是最后一个端点，如果您不想向呼叫方发送响应，您可以在该端点上设置`synchronous="false"`。
+
+请注意，如果链中的任何端点返回null，则路由器将退出。
+
+== 列表消息分配器
+
+消息分离器可用于将传出消息分解为多个部分，并通过路由器上配置的不同端点分发这些部分。列表消息拆分器接受将被路由到不同端点的对象列表。用于列表中每个对象的实际端点由端点本身配置的过滤器决定。如果端点的过滤器接受该对象，则该端点将用于路由该对象。
+
+默认情况下，AbstractMessageSplitter在出站消息上设置关联ID和关联序列，以便入站路由器（例如Collection Aggregator或Correlation Resequencer）能够重新排序或组合拆分消息。
+
+下面的路由器配置预计消息有效负载为`java.util.List`，并将路由列表中`com.foo.Order`，`com.foo.Item`和`com.foo.Customer`类型的对象。路由器将允许任何数量和这些对象的组合。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<outbound>  <list-message-splitter-router">    <jms:outbound-endpoint queue="order.queue">      <payload-type-filter expectedType="com.foo.Order"/>    </jms:outbound-endpoint>    <jms:outbound-endpoint queue="item.queue">      <payload-type-filter expectedType="com.foo.Item"/>    </jms:outbound-endpoint>    <jms:outbound-endpoint queue="customer.queue">      <payload-type-filter expectedType="com.foo.Customer"/>    </jms:outbound-endpoint>    <payload-type-filter expectedType="java.util.List"/>  </list-message-splitter-router></outbound>
+----
+
+请注意，路由器上也有一个过滤器，可确保收到的消息有效负载的类型为`java.util.List`。如果列表中存在与任何端点过滤器不匹配的对象，则将向该日志写入警告，并继续处理。要将任何不匹配的对象类型路由到另一个端点，请在没有过滤器的情况下将该端点添加到列表末尾。
+
+== 过滤XML消息分配器
+
+该路由器与列表消息分离器类似，但是对XML文档进行操作。支持的负载类型是：
+
+*  `org.dom4j.Document`个对象
+*  `byte[]`
+*  `java.lang.String`
+
+如果未找到匹配项，则将其忽略并记录在WARN级别。
+
+路由器根据`splitExpression`属性将有效载荷分成节点。用于列表中每个对象的实际端点由端点本身配置的过滤器决定。如果端点的过滤器接受该对象，则该端点将用于路由该对象。实际返回的每个部分都是作为新的DOM4J文档返回的。
+
+路由器可以选择对外部XML模式文档执行验证。要执行验证，请将`externalSchemaLocation`设置为类路径中的XSD文件。设置此属性将覆盖您在XML标头中声明的任何模式文档。
+
+默认情况下，如果没有端点过滤器匹配有效负载，则路由器将失败。为防止路由器在这种情况下失败，可以将`failIfNoMatch`属性设置为`false`。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<outbound>  <mulexml:filter-based-splitter splitExpression="root/nodes" validateSchema="true" externalSchemaLocation="/com/example/TheSchema.xsd">    <vm:outbound-endpoint path="order">      <payload-type-filter expectedType="com.foo.Order"/>    </vm:outbound-endpoint>    <vm:outbound-endpoint path="item">      <payload-type-filter expectedType="com.foo.Item"/>    </vm:outbound-endpoint>    <vm:outbound-endpoint path="customer">      <payload-type-filter expectedType="com.foo.Customer"/>    </vm:outbound-endpoint>    <payload-type-filter expectedType="org.dom4j.Document"/>  </mulexml:filter-based-splitter></outbound>
+----
+
+== 表达式分配器路由器
+
+此路由器与列表消息拆分器路由器类似，但它基于 link:/mule-user-guide/v/3.2/expressions-configuration-reference[表达]拆分消息。该表达式必须返回一个或多个消息部分才能生效。
+
+[source, xml, linenums]
+----
+<outbound>  <expression-splitter-router evaluator="xpath" expression="/mule:mule/mule:model/mule:service" disableRoundRobin="true" failIfNoMatch="false">    <outbound-endpoint ref="service1">      <expression-filter evaluator="xpath" expression="/mule:service/@name = 'service splitter'"/>    </outbound-endpoint>    <outbound-endpoint ref="service2">      <expression-filter evaluator="xpath" expression="/mule:service/@name = 'round robin deterministic'"/>    </outbound-endpoint>  </expression-splitter-router></outbound>
+----
+
+== 循环消息分配器
+
+循环消息拆分器将根据`splitExpression`属性将DOM4J文档拆分为节点。然后它会将这些文档片段发送到以循环方式指定的端点列表。或者，您可以指定包含前缀/名称空间映射的名称空间属性映射。
+
+例如，以下片段会将文档内的"/a:orders/a:order"节点路由到robin1和robin2端点。
+
+[source, xml, linenums]
+----
+<outbound>    <mxml:round-robin-splitter splitExpression="/a:orders/a:order" deterministic="false">        <outbound-endpoint ref="robin1"/>        <outbound-endpoint ref="robin2"/>        <mxml:namespace prefix="a" uri="http://acme.com"/>    </mxml:round-robin-splitter></outbound>
+----
+
+路由器可以选择对外部XML模式文档执行验证。要执行验证，请将`externalSchemaLocation`设置为类路径中的XSD文件。设置此属性将覆盖您在XML标头中声明的任何模式文档。
+
+[source, xml, linenums]
+----
+<outbound>    <mxml:round-robin-splitter splitExpression="/a:orders/a:order" deterministic="false" externalSchemaLocation="mySchema.xsd" validateSchema="true">        <outbound-endpoint ref="robin1"/>        <outbound-endpoint ref="robin2"/>        <mxml:namespace prefix="a" uri="http://acme.com"/>    </mxml:round-robin-splitter></outbound>
+----
+
+== 消息块出站路由器
+
+此路由模式允许您将单条消息拆分为多条固定长度的消息，这些消息将全部路由到相同的端点。它会根据为路由器配置的`messageSize`属性将消息拆分为多个较小的块。如果您未配置`messageSize`，或者其值为零，则不会拆分消息，并且整个消息将按原样路由到目标端点。路由器首先将消息转换为一个字节数组，然后将这个数组分成块。如果消息无法转换为字节数组，则会引发`RoutingException`。
+
+如果您在使用特定传输时遇到带宽问题（或大小限制），则消息分块路由器很有用。如果您希望能够将原始邮件的不同部分路由到不同的端点，请考虑使用<<List Message Splitter>>或<<Filtering XML Message Splitter>>路由器。
+
+要再次将分块的项目重新组合起来，可以使用Message Chunking Aggregator作为下一个服务的入站路由器。
+
+=== 示例配置
+
+[source, xml, linenums]
+----
+<service name="chunkingService">    <inbound>        <vm:inbound-endpoint path="fromClient"/>    </inbound>    <outbound>        <message-chunking-router messageSize="4">            <vm:outbound-endpoint path="toClient"/>        </message-chunking-router>    </outbound></service>
+----
+
+在上面的示例中，在vm `toClient`端点发送之前，vm `fromClient`端点上接收的任何数据都会分块为4个字节的消息。如果我们向此服务发送"The quick brown fox jumped over the lazy dog"，监听vm `toClient`端点的任何内容都将收到以下消息（为更好的可读性，空格已被替换为下划线）：
+
+[%header,cols="2*",width=10%]
+|===
+|消息＃ |内容
+| 1 +  | The_
+| 2  | QUIC
+| 3  | k_br
+| 4  | own_
+| 5  | fox_
+| 6  |跳
+| 7  | ed_o
+| 8  | ver_
+| {9 {1}} the_
+| 10  |懒惰
+| {11 {1}} _狗
+|===
+
+== 基于异常的路由器
+
+基于异常的路由器可用于通过选择可连接到传输的第一个端点来通过端点发送消息。这对于设置重试很有用。当第一个端点失败时，第二个端点将被调用，如果失败，它将尝试下一个端点。请注意，此路由器在查找成功的发送时将覆盖端点模式以同步，并将采取端点模式用于列表中的最后一项。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<outbound>  <exception-based-router>    <tcp:endpoint host="10.192.111.10" port="10001" />    <tcp:endpoint host="10.192.111.11" port="10001" />    <tcp:endpoint host="10.192.111.12" port="10001" />  </exception-based-router></outbound>
+----
+
+此路由器的另一个变体是`recipient-list-exception-based-router`，它使用动态而非静态的端点/收件人列表。
+
+[source, xml, linenums]
+----
+<outbound>  <recipient-list-exception-based-router evaluator="xpath" expression="//Endpoint/Address" /></outbound>
+----
+
+== 模板端点路由器
+
+模板端点路由器允许在运行时根据当前消息上设置的属性或端点属性上设置的回退值更改端点。模板值使用属性名称周围的方括号表示，例如：
+
+[source, code, linenums]
+----
+axis: http://localhost:8082/MyService?method=[SOAP_METHOD]
+----
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<outbound>  <template-endpoint-router>     <outbound-endpoint address="foobar://server:1234/path/path/path?param1=[header1]&param2=[header2]"/>  </template-endpoint-router></outbound>
+----
+
+header1和header2参数被当前消息的实际值替换。这些参数仅可用于查询字符串中，因为方括号对于授权和路径URI组件无效。
+
+== 自定义出站路由器
+
+您可以通过在`<custom-outbound-router>`元素上指定自定义路由器类并使用Spring属性来配置自定义出站路由器。
+
+这台路由器的配置如下：
+
+[source, xml, linenums]
+----
+<outbound>  <custom-outbound-router class="org.my.CustomOutboundRouter" transformers-ref="Transformer1">    <tcp:endpoint host="10.192.111.10" port="10001" />    <tcp:endpoint host="10.192.111.11" port="10001" />    <mulexml:jxpath-filter expression="msg/header/resultcode = 'success'"/>    <spring:properties>      <spring:property key="key1" value="value1"/>       <spring:property key="key2" value="value2"/>     </spring:properties>  </custom-outbound-router></outbound>
+----

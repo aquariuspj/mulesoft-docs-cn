@@ -1,0 +1,107 @@
+= 连接器配置
+:keywords: devkit, strategy, connector, oauth, config, connection, authentication
+
+自Devkit 3.6以来，`@Connector`级别（不包括OAuth V1）不再支持连接，但现在已在另一个组件中定义并通过注释带有`@Config`的字段注入`@Connector`。这为开发连接器提供了更好的环境，并为创建多种认证类型提供了最简单的方法。
+
+*Note*：OAuth V1支持*not*作为`@Config`。
+
+== 先决条件
+
+本文假设您熟悉 link:/anypoint-connector-devkit/v/3.7[Anypoint连接器DevKit]，并且准备好在您的连接器上实施身份验证。您还应该熟悉 link:/anypoint-connector-devkit/v/3.7/authentication-methods[认证方法]。
+
+== 将@Config添加到@Connector
+
+要添加`@Config`：
+
+. 为连接策略创建一个新的Java类。
+. 使用DevKit身份验证方法之一对类进行注释。在这个例子中，我们使用`@ConnectionManagement`。
+. 开发您的身份验证逻辑或连接管理。
+. 最后，将`@Connector`设置为引用连接策略类，方法是创建一个引用新策略的`@Config`字段。然后`@Connector`与服务的连接方式脱离。
+
+== 示例
+
+以下示例显示连接器中的`@Connector`和`@Config`块：
+
+[source,java, linenums]
+----
+@Connector(name="myconnector", schemaVersion="1.0", friendlyName="Connector")
+public class MyConnector
+{
+    @Config
+    private ConnectionManagementStrategy strategy;
+
+    public void setMyProperty(ConnectionManagementStrategy strategy)
+    {
+        this.strategy = strategy;
+    }
+
+    public ConnectionManagementStrategy getStrategy()
+    {
+        return this.strategy;
+    }
+        ...
+}
+----
+
+下一个示例声明连接器中的`@ConnectionManagement`块：
+
+[source,java, linenums]
+----
+@ConnectionManagement(friendlyName="Connection Management", configElementName="demo-config")
+public class ConnectionManagementStrategy
+{
+   Private Service service;
+   @Connect
+   public void connect(@ConnectionKey String username, @Password String password)
+       throws ConnectionException {
+         service = new Service(username);
+       try{
+         service.connect(password);
+       }catch(Exception){
+       throw new ConnectionException(...);
+       }
+   }
+
+   @Disconnect
+   public void disconnect() {
+       service.disconnect();
+   }
+
+   @ValidateConnection
+   public boolean isConnected() {
+       return service.connectionStatus();
+   }
+
+   @ConnectionIdentifier
+   public String connectionId() {
+       return service.getConnectionId();
+   }
+}
+----
+
+== 在一个连接器中支持多种身份验证模式
+
+Anypoint DevKit在同一连接器中支持多种身份验证模型。 LDAP连接器说明如何构造连接器代码以支持此功能。
+
+[source,java,linenums]
+----
+public class LDAPConnector
+{ ... @Config AbstractConfig config; ... }
+public abstract class AbstractConfig
+{ ... }
+
+@ConnectionManagement(friendlyName = "Configuration", configElementName = "config")
+public class LDAPCacheConfig extends AbstractConfig { ... }
+@ConnectionManagement(friendlyName = "TLS Configuration", configElementName = "tls-config")
+public class LDAPTlsConfig extends AbstractConfig
+{ ... }
+----
+
+用户可以使用不同的连接策略声明抽象基类或接口，这些连接策略共享为子类，并在适用的情况下实现身份验证逻辑和连接管理。
+
+在同一连接器中同时支持OAuth和基本身份验证意味着在同一个XML名称空间中有两个配置元素。要启用此功能，您可以使用连接策略注释的参数configElementName。
+
+例如，在LDAP连接器中，`LDAPTlsConnection`类将configElementName设置为tls-config，而不是默认值config，`LDAPCacheConnection`使用默认值`configElementName` 。因此，在XML中，
+ 使用`ldap:tls-config`或`ldap:config`来选择所需的连接器版本。 Anypoint Studio在配置显示此屏幕的连接器时呈现此内容：
+
+image:LDAPtypes.png[LDAPtypes] +

@@ -1,0 +1,130 @@
+=  Hello World示例
+
+本页描述Mule ESB发行版提供的Hello World示例的配置和行为。
+
+当您将Web浏览器指向预定义地址（`+http://localhost:8888/?name=Ross+`）时，Mule会解析`?name=`后输入的值，进行一些验证，并使用名为`greeter`的Java类将一些文本添加到该字符串在传递给另一个流之前。第二个流程添加文本，然后通过浏览器传回。有更简单的方法可以做到这一点，但本示例使用流和HTTP传输来说明Mule应用程序中的消息路由和转换。
+
+image:HelloW.png[HelloW]
+
+== 运行应用程序
+
+如果您正在使用Mule IDE，则可以根据Hello World示例简单地创建一个新项目，并按照 link:/mule-user-guide/v/3.2/hello-mule[你好Mule页]中的描述从Eclipse运行它。
+
+如果您不使用Mule IDE，请执行以下操作：+
+只需将预构建的应用程序存档（mule-example-hello-3.0.0.zip）复制到应用程序文件夹（$ MULE_HOME / apps）并启动Mule。访问Web服务调用
+
+`+http://localhost:8888/?name=Ross+`
+
+从您的浏览器。
+
+要停止Mule，请在Mule控制台窗口中键入'CTRL-C'。
+
+== 构建示例
+
+首先，确保您已经按照Mule的README.txt中的建议设置了MULE_HOME环境变量
+
+根据您使用的构建工具（Ant或Maven），您可以通过简单运行"ant"或"mvn"来构建示例。这将编译示例类，生成应用程序zip文件并将其复制到$ MULE_HOME / apps。
+
+== 它是如何工作的
+
+Hello World应用程序在您的Mule主目录下的`examples/hello/src/main/app`的{​​{0}}文件中进行配置。本节将介绍它所调用的配置和源Java文件。
+
+=== 资源文件
+
+消息文本来自`examples\hello\src\main\resources\messages`文件夹中的`hello-example-messages.properties`文件，该文件夹中包含以下条目：
+
+[source,java]
+----
+1=, how are you?2=Hello 3=Please enter your name: 4=Please provide a valid name with at least one character!
+----
+
+在您可以指定的相同文件夹中有此属性文件的翻译版本，例如，如果您想以德文而不是英文显示字符串。
+
+=== 类
+
+Mule配置文件调用两个Java类来处理消息。第一个是`Greeter`类，它使用`LocalMessage`类中的方法从属性文件中提取字符串"Hello"。然后`Greeter`类的方法`greet()`将"Hello"添加到此人的姓名中。
+
+[source,java]
+----
+public class Greeter{    private String greeting = "";    public Greeter()    {        greeting = LocaleMessage.getGreetingPart1();    }    public Object greet(NameString person)    {        Object payload = person;        if (person.isValid())        {            person.setGreeting(greeting);        }        else        {            payload = new Exception(LocaleMessage.getInvalidUserNameError());        }        return payload;    }}
+----
+
+
+第二个类是`ChitChatter`，它将", how are you?"附加到字符串。
+
+[source,java]
+----
+public class ChitChatter{    private String chitchat = "";    public ChitChatter()    {        chitchat = LocaleMessage.getGreetingPart2();    }    public void chat(ChatString string)    {        string.append(chitchat);    }}
+----
+
+
+=== 一起连接类
+
+Mule配置文件从名为Hello World的`<flow>`中调用这些类，它将三个入站端点组合为一个复合源元素，以接收HTTP，Servlet和VM请求。
+
+Hello World流程使用此复合源元素来获取在浏览器中输入的名称，调用迎接类，并将意外错误路由到名为systemErorHandler的单独处理程序。
+
+[source,xml]
+----
+    <flow name="Hello World">         <composite-source>            <!-- Incoming HTTP requests -->            <inbound-endpoint address="http://localhost:8888" transformer-refs="HttpRequestToNameString" exchange-pattern="request-response">                <not-filter>                    <wildcard-filter pattern="/favicon.ico"/>                   </not-filter>            </inbound-endpoint>            <!-- Incoming Servlet requests -->            <inbound-endpoint address="servlet://name" transformer-refs="HttpRequestToNameString" exchange-pattern="request-response">                <not-filter>                    <wildcard-filter pattern="/favicon.ico"/>                   </not-filter>            </inbound-endpoint>            <!-- Incoming VM requests -->            <vm:inbound-endpoint path="greeter" transformer-refs="StringToNameString" exchange-pattern="request-response"/>        </composite-source>        ...        </flow>
+----
+
+
+`<inbound-endpoint>`元素使用HTTP传输接收入站消息。 transformer-refs属性指定在Greeter收到消息之前调用的入站转换器。变压器在配置文件的前面定义如下：
+
+[source,xml]
+----
+    <custom-transformer name="HttpRequestToNameString" class="org.mule.example.hello.HttpRequestToNameString"/>
+----
+
+
+该转换器将它从HTTP连接器接收到的HTTP请求转换为一个NameString对象，该对象是Greeter类中的greet（）方法所期望的数据类型。请注意，当您指定组件时，您不需要指定在该类中调用的特定方法 -  Mule可以根据该消息的数据类型确定适当的方法。
+
+在Greeter类已将"Hello"添加到用户输入之后，将在端点vm：// chitchatter上分派消息。这将调用ChitChat流，该流调用自定义转换器类NameStringToChatString，将NameString对象转换为ChatString对象。
+
+[source,xml]
+----
+   <flow name="ChitChat">        <vm:inbound-endpoint path="chitchatter" transformer-refs="NameStringToChatString"             responseTransformer-refs="ChatStringToString" exchange-pattern="request-response"/>        <component class="org.mule.example.hello.ChitChatter"/>    </flow>
+----
+
+
+为了进一步演示转换器，`ChitChatter`类需要一个ChatString对象，所以我们有一个`NameStringToChatString`转换器，它在组件接收到消息之前将消息的有效载荷从NameString转换为一个ChatString。该消息在`vm://chitchatter`上接收，Greeter类派发消息的端点。
+
+处理完消息后，消息将作为HTTP响应发送回去。注意这个组件上的响应变换器。即使没有出站提供程序，还有一个转换器`ChatStringToString`，它将有效内容从ChatString转换为纯字符串，以便它可以由HTTP传输器处理并显示在HTTP响应中。
+
+== 配置Servlet传输
+
+在Web容器（如Tomcat）中部署Mule是常见的，并使用Web服务器而不是Mule HTTP传输来管理与Mule的HTTP连接。要通过Servlet调用Hello服务，请提交一个Web表单，例如：
+
+[source,xml]
+----
+<form method="POST" action="/mule-examples/rest?endpoint=greeter">    <input type="text" name="payload"/>    <input type="submit" value="POST" /></form>
+----
+
+
+使用Servlet传输，可以将以下端点添加到配置中（注意：由于HttpRequestToParameter转换器仅支持servlet，因此REST端点当前仅适用于servlet传输）：
+
+[source,xml]
+----
+<inbound-endpoint address="servlet://name" transformer-refs="HttpRequestToNameString" exchange-pattern="request-response">    <not-filter>        <wildcard-filter pattern="/favicon.ico"/>       </not-filter></inbound-endpoint><inbound-endpoint address="servlet://rest" transformer-refs="HttpRequestToParameter StringToNameString" responseTransformer-refs="PlainTextResponseTransformer" exchange-pattern="request-response"/>
+----
+
+
+== 配置VM传输
+
+该示例还演示了如何使用Mule Client以编程方式连接到Mule中的服务。
+
+[source,xml]
+----
+<vm:inbound-endpoint path="greeter" transformer-refs="StringToNameString" exchange-pattern="request-response"/>
+----
+
+
+然后使用Mule Client API调用该服务：
+
+[source,java]
+----
+MuleClient client = new MuleClient(muleContext);client.send("vm://greeter", "Ross", null);MuleMessage response = client.send("vm://greeter", "Ross", null);System.out.println("response = " + response.getPayload());
+----
+
+

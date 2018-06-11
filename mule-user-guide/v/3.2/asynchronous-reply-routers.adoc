@@ -1,0 +1,87 @@
+= 异步回复路由器
+
+== 概述
+
+异步回复路由器用于请求/响应场景，其中消息流量由请求触发，流量需要在给出响应之前合并。这方面的典型例子是提出请求和任务并行执行的地方。每个任务必须完成执行，并且在响应可以被发回之前处理结果。
+
+异步回复路由器仅对使用同步调用的服务有用，因为在异步分派消息时没有响应。 Mule提供了聚合路由器，可以与消息分离器或收件人列表路由器一起使用，以在返回响应之前聚合消息。有关这些路由器的更多信息，请参阅 link:/mule-user-guide/v/3.2/outbound-routers[出站路由器]。
+
+=== 示例
+
+考虑LoanBroker配置中的入站配置和异步回复路由器：
+
+[source, xml, linenums]
+----
+<service name="LoanBroker">
+    <inbound>
+        <vm:inbound-endpoint path="Loan.Requests"/>
+    </inbound>
+    <component class="org.mule.samples.loanbroker.SyncLoanBroker">
+    <outbound>
+        <static-recipient-list-router>
+            <reply-to address="jms://Loan.Quotes"/>
+            <message-property-filter expression="recipients!=null"/>
+        </static-recipient-list-router>
+    </outbound-router>
+    <async-reply>
+        <jms:inbound-endpoint queue="Loan.Quotes"/>
+        <custom-async-reply-router class="org.mule.samples.loanbroker.routers.BankQuotesResponseAggregator"/>
+    </async-reply>
+</service>
+----
+
+此配置指定贷款代理将接收来自`vm://Loan.Requests`的请求，并通过出站路由器将多个请求分派到不同的银行。银行端点在名为“收件人”的列表中定义，该列表是出站邮件的属性。出站路由器上的重要设置是<`reply-to> ` endpoint, which tells Mule to route all responses to the `将jms：//Loan.Quotes ` endpoint, which is the endpoint on which the async-reply router is listening. When all responses are received, the ` BankQuotesResponseAggregator ` selects the cheapest quotes and returns it. Mule then handles returning this to the requester. The ` <reply-to>端点应用于下一个服务调用。例如，如果service1分派到service2，并且service1具有带回复端点的出站路由器，则service2会将其调用结果发送到回复端点。有关更多信息，请参阅 link:/mule-user-guide/v/3.2/outbound-routers[回复]。
+
+=== 响应变形金刚
+
+如果您希望转换响应消息而不对响应做任何其他工作，则可以在响应路由器上设置`transformers`属性，而无需任何其他路由配置。
+
+[source, xml, linenums]
+----
+<response-router transformers="OrderConfirmationToXml XmlToWebPage"/>
+----
+
+=== 超时
+
+超时设置决定了Mule在返回结果之前应该等待多长时间。默认值由为Mule实例配置的`defaultSynchronousEventTimeout`属性值确定。 （有关更多信息，请参阅 link:/mule-user-guide/v/3.2/global-settings-configuration-reference[全局设置配置参考]。）您还可以使用`async-reply`元素上的可选`timeout`属性为给定服务的异步回复指定独立超时值。
+
+可选的`failOnTimeout`属性决定在收到所有预期消息之前路由器超时的情况下是否抛出异常。如果设置为false（默认），则返回当前消息进行处理。
+
+例如：
+
+[source, xml, linenums]
+----
+<async-reply failOnTimeout="false" timeout="2000">
+  <inbound-endpoint ref="replyEndpoint"/>
+  <collection-async-reply-router/>
+</async-reply>
+----
+
+本页的其余部分描述了您可以使用的异步回复路由器。有关您为异步回复路由器配置的元素的详细信息，请参阅 link:/mule-user-guide/v/3.2/asynchronous-reply-router-configuration-reference[异步回复路由器配置参考]。
+
+== 单一异步回复
+
+单一异步回复路由器配置单个响应路由器。该路由器返回它在回复端点上收到的第一条消息，并丢弃其余消息。
+
+[source, xml, linenums]
+----
+<single-async-reply-router/>
+----
+
+== 收集异步回复
+
+Collection Asynchronous Reply路由器配置集合响应路由器。该路由器返回一个MuleMessageCollection消息类型，其中包含为当前关联收到的所有消息。
+
+[source, xml, linenums]
+----
+<collection-async-reply-router/>
+----
+
+== 自定义异步回复
+
+自定义异步回复路由器允许您配置自定义异步回复路由器。要配置自定义路由器，请将class属性设置为自定义路由器类。
+
+[source, xml, linenums]
+----
+<custom-async-reply-router class="org.mule.CustomAsyncReplyRouter"/>
+----

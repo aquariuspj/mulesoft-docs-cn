@@ -1,0 +1,176 @@
+Mule中的= 类加载器控制
+:keywords: deploy, amc, cloudhub, on premises, on premise, class loading
+
+本主题将向您介绍Mule中的类加载，并向您展示如何覆盖应用程序和插件中的类加载。
+
+注意：将用户第三方库存储在Mule版本目录下的`lib/user`目录中。例如，对于3.6.0 Mule Enterprise发行版，将库存放在`mule-enterprise-3.6.0/lib/user`目录中。
+
+在Mule中== 类加载
+
+Mule定义了一个类加载器的层次结构来查找和加载要执行的类。该层次结构默认使用"parent first"模型，这意味着每个类加载器都会尝试使用其父类加载器加载类，然后尝试自行完成。
+
+虽然这种类加载架构可满足大多数类加载需求，但有时您可能需要重写默认的类加载方案。例如，假设应用程序需要与其捆绑的第三方库。这可能与域类加载器将加载的库版本（即，已与Mule捆绑的库的版本）冲突。你如何确保所需的库的版本与应用程序一起使用？为了满足这些要求，Mule支持 link:/mule-user-guide/v/3.6/fine-grain-classloader-control[细粒度的类加载控制]，使您可以覆盖默认的类加载。
+
+不同工件的类加载器层次结构包括：
+
+.  Java虚拟机创建的*bootstrap*，扩展和CLASSPATH类加载器。这个类加载器加载核心Java库。
+
+.  *Mule System class loader*。该类加载器加载标准的Mule库，即`<MULE_HOME>/lib`子目录中的库，其中`<MULE_HOME>`是Mule ESB的安装目录。子目录按给定顺序加载：`/boot, /user, /mule and /opt`。这意味着位于给定文件夹上的类将优先于位于加载后的文件夹中的具有相同名称的类。
+
+.   *Domain classloader* *.*域用于在属于它的应用程序之间共享资源和库。该类加载器包含位于`<MULE_HOME>/domains/<mydomain>`中的所有库
++
+[NOTE]
+在3.5.0之前的Mule版本中，域的概念有点不同。在这些版本中，域由<MULE_HOME> / lib / shared / <DOMAIN_NAME>中的文件夹定义，并且仅用于共享库文件（每个应用程序都有它们自己的实例）文件）属于它的应用程序。该功能仍然受支持，但新的域名概念是首选。
+
+. 如果应用程序包含应用程序插件，则会添加*Plugins classloader*。这个类加载器将包含所有的插件类和库
++
+[NOTE]
+插件类加载器支持细粒度类加载，并且为这个类加载器的配置通过合并所有应用程序插件的细粒度类加载配置而获得。这意味着插件在应用程序内部不是彼此隔离的。
+
+. 一个或多个*Mule application class loaders*从Mule应用程序加载类或库，即`<MULE_HOME>/apps/<myapp>/classes`和`<MULE_HOME>/apps/<myapp>/lib`目录中的类和库，其中`<myapp>`是应用程序的名称。除了Mule应用程序中包含的资源之外，每个应用程序类加载器都将加载位于`<MULE_HOME>\lib\mule\per-app directory`中的所有库。
++
+image:CE-classloading-3.6.png[CE-类加载-3.6]
+
+下图说明了Mule classloader的顺序：
+
+[%header,cols="2*"]
+|===
+|类加载器 |文件夹位置
+| JVM引导类加载器 | JDK类
+| Mule系统类加载器a |
+----
+
+${MULE_HOME}/lib/boot
+----
+
+----
+
+${MULE_HOME}/lib/user
+----
+
+----
+
+${MULE_HOME}/lib/mule
+----
+
+----
+
+${MULE_HOME}/lib/opt
+----
+
+| Mule共享域"Domain1"的类加载器{a} |
+----
+
+${MULE_HOME}/domains/domain1/lib
+----
+
+
+用于"Application1" a |
+的|应用程序插件类加载器
+----
+
+${MULE_HOME}/apps/application1/plugins/plugin1/classes
+----
+
+
+----
+
+${MULE_HOME}/apps/application1/plugins/plugin1/lib
+----
+
+
+---
+...
+---
+
+----
+${MULE_HOME}/apps/application1/plugins/pluginN/classes
+----
+
+
+----
+
+${MULE_HOME}/apps/application1/plugins/pluginN/lib
+----
+
+
+"Application1" a |
+的|应用程序类加载器
+----
+
+${MULE_HOME}/lib/mule/per-app
+----
+
+
+----
+
+${MULE_HOME}/apps/application1/classes
+----
+
+
+----
+
+${MULE_HOME}/apps/application1/lib
+----
+
+
+|===
+
+== 扩展Mule EE类加载模型
+
+Mule EE提供了一个插件框架来在Mule服务器级别添加插件。
+
+当Mule EE服务器包含Mule插件时，类加载模型与先前描述的层次结构有点不同。主要区别是应用程序可以访问Mule插件导出的资源。
+
+为了支持这种情况，每个Mule插件都有一个支持 link:/mule-user-guide/v/3.6/fine-grain-classloader-control[细粒类加载]的类加载器。这些类加载器是使用Mule系统类加载器作为父类创建的。 Mule插件可以包含许多类，库和资源，但只能从应用程序访问它们中的一部分。为了避免从Mule插件中导出不必要的资源，使用了一个类加载器过滤器。然后，Mule应用程序中使用的类加载器将成为一个Composite ClassLoader，其中包含一个类加载器列表。该列表中的第一个类加载器将是前面描述的Mule Application类加载器，以下元素将是每个已安装的Mule插件的类加载器过滤器。
+
+
+image:EE-Classloading-3.6.png[EE-类加载-3.6]
+
+[%header,cols="2*"]
+|===
+|类加载器 |文件夹位置
+| JVM引导类加载器 | JDK类
+| Mule系统类加载器a |
+$ \ {} MULE_HOME / lib目录的/ boot
+
+$ \ {} MULE_HOME / lib目录/用户
+
+$ \ {} MULE_HOME / lib目录/骡
+
+$ \ {} MULE_HOME / lib目录的/ opt
+
+|为"Domain1"  |共享域分类加载器$ \ {MULE_HOME} / domains / domain1 / lib
+用于"Application1" a |
+的|应用程序插件类加载器
+$ \ {} MULE_HOME /应用程序/应用1 /插件/ plugin1 /班
+
+$ \ {} MULE_HOME /应用程序/应用1 /插件/ plugin1 / lib目录
+
+...
+
+$ \ {} MULE_HOME /应用程序/应用1 /插件/ pluginN /班
+
+$ \ {} MULE_HOME /应用程序/应用1 /插件/ pluginN / lib目录
+
+"Application1" a |
+的|应用程序类加载器
+$ \ {} MULE_HOME / lib目录/骡/每个应用
+
+$ \ {} MULE_HOME /应用程序/应用1 /班
+
+$ \ {} MULE_HOME /应用程序/应用1 / lib目录
+
+| Mule Plugin for "Plugin 1" a |
+$ \ {} MULE_HOME /插件/ plugin1 /班
+
+$ \ {} MULE_HOME /插件/ plugin1 / lib目录
+
+|===
+
+== 另请参阅
+
+* 了解 link:/mule-user-guide/v/3.6/fine-grain-classloader-control[细粒级加载器控制]（仅限EE）
+*  link:/mule-user-guide/v/3.6/mule-application-deployment-descriptor[Mule应用程序部署描述符]
+*  link:/mule-user-guide/v/3.6/mule-esb-plugin-for-maven[Maven Mule插件格式]
+*  link:/mule-user-guide/v/3.6/application-plugin-format[应用程序插件格式]

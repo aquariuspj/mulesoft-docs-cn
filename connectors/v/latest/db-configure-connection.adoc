@@ -1,0 +1,169 @@
+= 配置数据库连接
+:keywords: db, connector, Database, connection
+
+
+数据库连接器可以连接到JDBC驱动程序可用的任何数据库。为了更方便地连接到最流行的数据库，连接器包含一系列不同的连接类型。
+
+本节中的示例显示了连接类型的配置。它们还说明了更高级的用例，例如连接到全局数据源，提供JDBC驱动程序的配置以及设置连接池。
+
+== 连接到MySQL
+
+[source,xml,linenums]
+----
+<db:config name= "dbConfig">
+  <db:my-sql-connection host="0.0.0.0" port="3306" user="Max" password="POWERS" database="someSchema"/>
+</db:config>
+----
+
+== 连接到Oracle
+
+[source,xml,linenums]
+----
+<db:config name="dbConfig">
+  <db:oracle-connection host="192.168.99.100" port="1521" instance="xe" user="system" password="oracle" />
+</db :config >
+----
+
+== 连接到德比
+
+[source,xml,linenums]
+----
+<db:config name= "dbConfig" >
+  <db:derby-connection url=" jdbc:derby:muleEmbeddedDB;create=true" />
+</db:config >
+----
+
+[[generic_db]]
+== 连接到通用数据库
+
+通用连接类型在这些情况下很有用：
+
+* 当你想连接到MuleSoft没有提供特定连接类型的数据库时。
+* 当您想连接到其中一个受支持的数据库时，但您使用的连接类型中未包含自定义选项。
+
+通用连接只需要：
+
+* 驱动程序类名称
+* 连接网址
+
+以下示例显示如何连接到H2数据库：
+
+[source,xml,linenums]
+----
+<db:config name="dbConfig">
+    <db:generic-connection driverClassName="org.h2.Driver" url="jdbc:h2:file:/tmp/datasenseDB"/>
+</db:config>
+----
+
+== 连接到全局数据源
+
+当您设置<<generic_db, generic connection>>时，连接器将使用您提供的信息生成JDBC `DataSource`。在某些情况下，您可能需要创建自己的`DataSource`。为此，数据库配置支持`data-source-connection`元素，该元素允许您引用通过Spring模块定义的`DataSource`。
+
+要连接到全球`DataSource`：
+
+. 创建一个包含Bean的Spring配置文件，例如：
++
+[source,xml,linenums]
+----
+<bean id="jdbcDataSource" class="org.enhydra.jdbc.standard.StandardDataSource" destroy-method="shutdown">
+   <property name="driverName" value="org.apache.derby.jdbc.EmbeddedDriver"/>
+   <property name="url" value="jdbc:derby:muleEmbeddedDB;create=true"/>
+</bean>
+----
++
+上面的示例创建了一个连接到Derby数据库的自定义enhydra `DataSource`。
++
+. 使用Spring模块引用您的Spring配置文件，并在连接中使用`DataSource`：
++
+[source,xml,linenums]
+----
+<spring:config name="datasource" files="datasource-config.xml" />
+
+<db:config name="dbConfig">
+   <db:data-source-connection dataSourceRef="jdbcDataSource" />
+</db:config>
+----
+
+== 设置JDBC驱动程序
+
+既然您知道如何配置连接，那么您可以提供JDBC驱动程序。下面的例子显示了如何为MySQL数据库提供驱动程序。
+
+请注意，任何数据库的步骤都是相同的。唯一的区别是需要驱动程序依赖。
+
+. 将驱动程序作为依赖项添加到项目的`pom.xml`文件中：
++
+[source,xml,linenums]
+----
+<dependency>
+    <groupId>mysql</groupId>
+    <artifactId>mysql-connector-java</artifactId>
+    <version>5.1.6</version>
+</dependency>
+----
++
+. 通过您的`pom.xml`，让Mule Runtime将驱动程序依赖项暴露给数据库连接器，例如：
++
+[source,xml,linenums]
+----
+<build>
+    <plugins>
+        <!-- Only used to declare the shared libraries-->
+        <plugin>
+            <groupId>org.mule.tools.maven</groupId>
+            <artifactId>mule-maven-plugin</artifactId>
+            <version>1.0.0</version>
+            <configuration>
+                <sharedLibraries>
+                    <sharedLibrary>
+                        <groupId>mysql</groupId>
+                        <artifactId>mysql-connector-java</artifactId>
+                    </sharedLibrary>
+                </sharedLibraries>
+            </configuration>
+        </plugin>
+    </plugins>
+</build>
+----
+
+== 配置连接池
+
+建立连接在连接器和RDBMS网络和处理开销方面成本很高。解决方案是构建一个提供大量可用连接的连接池。为此，您使用`<db:pooling-profile>`元素，而不是标准的Mule `<pooling-profile>`元素。
+
+这个例子展示了如何使用`db:pooling-profile`元素：
+
+[source,xml,linenums]
+----
+<db:config name="dbConfig">
+    <db:my-sql-connection database="mozart_test" host="${host}" password="${password}" port="${port}" user="${user}">
+        <db:pooling-profile acquireIncrement="1" maxPoolSize="5" maxWait="0" maxWaitUnit="SECONDS" minPoolSize="0" preparedStatementCacheSize="5"/>
+    </db:my-sql-connection>
+</db:config>
+----
+
+除全局数据源引用外，所有连接配置元素都接受池化配置文件。在JDBC中，池在数据源级别发生。要进行池化，您必须配置全局数据源。该软件无法实时添加。
+
+[TIP]
+请注意，与其他连接器（如FTP或SFTP）不同，使用`<db:pooling-profile>`元素代替标准`<pooling-profile>`。这是因为数据库具有特殊的池属性，例如`preparedStatementCacheSize`，这对通用元素没有意义。
+
+有关连接类型的参数和功能的更多详细信息，请参阅 link:database-documentation[数据库连接器技术参考]。
+
+== 使用TNS名称创建Oracle数据库连接
+
+创建一个依赖于tnsnames.ora文件的Oracle连接
+可以使用数据库连接器并在中提供配置详细信息
+连接器配置。为此，您必须添加 http://download.oracle.com/otn/utilities_drivers/jdbc/11204/ojdbc6.jar[ojdbc6.jar]
+作为项目构建路径的依赖项。
+
+*Note:*如果防火墙位于Mule实例和数据库本身之间，
+使用ENABLE = BROKEN参数在TNS连接上启用保持活动状态。
+如果未设置，则连接可能会因无效定时器过期而导致流量下降。
+
+例如，您可以在数据库中配置数据库URL
+Anypoint Studio中的连接器常规选项卡，并提供此URL：
+
+`jdbc:oracle:thin:${oracle.user}/${oracle.password}@(DESCRIPTION=(ENABLE=BROKEN)(FAILOVER=ON)(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=${oracle.host1})(PORT=${oracle.port}))(ADDRESS=(PROTOCOL=TCP)(HOST=${oracle.host2})(PORT=${oracle.port}))(CONNECT_DATA=(SERVICE_NAME=${oracle.service})))`
+
+== 另请参阅
+
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。

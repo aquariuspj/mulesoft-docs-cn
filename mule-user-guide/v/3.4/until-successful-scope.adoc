@@ -1,0 +1,82 @@
+= 直到成功范围
+
+**until-successful**作用域通过其作用域内的处理器处理消息，直到操作成功。直到成功的处理与主流异步发生。在向成功范围传递消息后，主流立即重新获得线程的控制权。
+
+直到成功反复重试以处理试图完成诸如以下活动的消息：
+
+例如，在调用可能存在可用性问题的远程Web服务时，* 调度到出站端点
+* 执行组件方法，例如，在可能依赖不可靠资源的Spring bean上执行时
+* 执行子流程
+
+[source, xml, linenums]
+----
+<until-successful objectStore-ref="objectStore" maxRetries="5" secondsBetweenRetries="60" doc:name="Until Successful">
+    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" method="POST" doc:name="HTTP"/>
+</until-successful>
+----
+
+== 成功与失败
+
+由于这个范围继续处理消息直到成功，因此理解Mule消息处理环境中的成功定义非常重要。
+
+[%autowidth.spread]
+|===
+| FAILURE  |成功范围内的消息处理器将引发异常。
+| SUCCESS  |成功范围内的消息处理器不返回消息（即，单向端点）
+| _ conditional _  |在你配置了一个失败表达式的地方（见下面），Mule根据表达式计算返回消息，以动态确定动作是失败还是成功。
+| FAILURE  |成功范围内的消息处理器包含异常有效负载。
+| SUCCESS  |成功范围内的消息处理器不包含异常有效负载。
+|===
+
+=== 配置failureExpression
+
+以下说明如何在直至成功范围上配置`failureExpression`：
+
+[source, xml, linenums]
+----
+<until-successful objectStore-ref="objectStore"
+                  failureExpression="#[header:INBOUND:http.status != 202]"
+                  maxRetries="6"
+                  secondsBetweenRetries="600">
+    <http:outbound-endpoint address="http://acme.com/api/flakey"
+                            exchange-pattern="request-response"
+                            method="POST" />
+</until-successful>
+----
+
+=== 配置死信队列
+
+要管理在成功范围内已经用完`maxRetries`数量的消息，您可以定义Mule可以发送此类消息的DLQ（死信队列）端点。有关示例配置，请参阅下面的代码示例。
+
+[source, xml, linenums]
+----
+<until-successful objectStore-ref="objectStore"
+                  deadLetterQueue-ref="dlqChannel"
+                  maxRetries="3"
+                  secondsBetweenRetries="10">
+...
+</until-successful>
+----
+
+== 直到成功和对象存储
+
+此消息处理器需要一个 http://www.mulesoft.org/docs/site/3.2.0-SNAPSHOT/apidocs/index.html?org/mule/api/store/ListableObjectStore.html[ListableObjectStore]实例才能保留待处理（重新）处理的消息。 Mule中有几种可用的实现方式，包括：
+
+*  DefaultInMemoryObjectStore：默认的内存中存储
+*  DefaultPersistentObjectStore：默认持久存储
+*  FileObjectStore：基于文件的商店
+*  QueuePersistenceObjectStore：全局队列存储
+*  SimpleMemoryObjectStore：内存中存储
+
+有关Mule中对象商店的更多信息，请参阅 link:/mule-user-guide/v/3.4/mule-object-stores[骡子对象商店]。以下代码示例说明如何配置内存存储：
+
+[source, xml, linenums]
+----
+<spring:bean id="objectStore" class="org.mule.util.store.SimpleMemoryObjectStore" />
+----
+
+=== 另请参阅
+
+* 详细了解Mule中的 link:/mule-user-guide/v/3.4/tuning-performance[调整性能]。
+* 了解有关Mule中 link:/mule-user-guide/v/3.4/scopes[领域]的更多信息。
+* 详细了解 link:/mule-user-guide/v/3.4/flows-and-subflows[流量和子流量]

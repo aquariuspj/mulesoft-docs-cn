@@ -1,0 +1,353 @@
+Microsoft Dynamics 365 for Operations Connector。= 
+:keywords: microsoft, dynamics, 365, operations, connector, oauth, dynamics 365 for operations
+
+_选择_
+
+版本：1.0.0
+
+适用于Anypoint平台的Microsoft Dynamics 365 for Operations连接器可与Microsoft Dynamics 365 for Operations Web API集成。
+
+*Release Notes*： link:/release-notes/microsoft-dynamics-365-operations-release-notes[Microsoft Dynamics 365操作连接器发行说明]
+
+*Sample*： link:_attachments/ms-dynamics-365-op-demo.zip[ms-dynamics-365-op-demo.zip]
+
+
+该连接器可让您执行这些操作：
+
+* 授权或未授权访问Microsoft Dynamics 365 for Operations服务器。
+* 在Microsoft Dynamics 365 for Operations服务器上创建定期作业。
+* 检索多个实体。
+* 使用DataSense查询语言检索多个实体。
+* 执行操作。
+
+== 先决条件
+
+本文档假定您熟悉Mule， link:/mule-user-guide/v/3.9/anypoint-connectors[Anypoint连接器]和 link:/anypoint-studio/v/6/[Anypoint Studio Essentials]。为提高您对Studio的熟悉度，请考虑完成一个或多个 link:/anypoint-studio/v/6/basic-studio-tutorial[Anypoint Studio教程]。此外，本页假定您对 link:/mule-user-guide/v/3.9/mule-concepts[骡流]和 link:/mule-user-guide/v/3.9/global-elements[骡全球元素]有基本的了解。
+
+在开始之前，您需要访问由Azure Active Directory管理的Microsoft Dynamics 365实例（联机或内部部署）。
+
+== 关于连接器术语
+
+* 操作 - 允许副作用（如数据修改）的操作，不能进一步组合以避免非确定性行为。
+* 复杂类型 - 由一组属性组成的无钥匙命名结构化类型。复杂类型通常用作模型实体中的属性值，或用作操作的参数或返回值。
+* 实体 - 实体类型的实例，例如帐户或机会。
+* 实体集 - 实体的命名集合，例如，帐户是包含帐户实体的实体集。实体的密钥唯一标识实体集内的实体。
+* 实体类型 - 用键命名结构化类型。实体类型定义实体的命名属性和关系，并且可以通过来自其他实体类型的单一继承来派生。
+* 枚举类型或枚举类型 - 命名的基本类型，其值被命名为具有基础整数值的常量。
+* 功能 - 没有副作用并可能支持进一步合成的操作，例如，使用附加的过滤器操作，功能或操作。
+
+== 安装和配置连接器
+
+. 下载并安装Java 8（最新版本）或Java 7（由Oracle弃用）。
++
+link:http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html[JDK 8下载]
++
+. 单击 image:365-exchange-icon.png[交换图标]，搜索365，然后按照提示安装连接器。
+
+此连接器不需要*Note:* JCE。
+
+== 使用Anypoint Studio Visual Editor创建一个新的Mule项目
+
+. 在Anypoint Studio中，单击文件>新建> Mule项目。
+. 指定一个项目名称并单击完成。
+. 搜索"http"并将HTTP连接器拖到画布上。点击绿色
+连接器配置旁边的加号，然后单击菜单中的确定以接受默认值。
+. 搜索"365"并将Microsoft Dynamics 365操作连接器拖到画布上。
+单击连接器配置旁边的绿色加号，然后指定您的访问凭据。
+. 单击用于身份验证的连接策略：
++
+**  Microsoft Dynamics 365 for Operations OAuth 2.0
+**  Microsoft Dynamics 365 for Operations OAuth 2.0用户名 - 密码
+
+=== 配置OAuth 2.0
+
+. 单击连接器配置右侧的绿色加号。
+. 提供客户端ID和秘密值。
+. 如果未提供令牌，请选择一项操作：
++
+..  EXCEPTION（默认） - 如果没有令牌，则会导致异常。
+..  STOP_FLOW  - 如果没有令牌，则停止运行Mule项目。
+
+要在Connection配置中实现OAuth 2.0，您需要Mule Runtime版本大于或等于3.8.5，如果您使用的是以前的版本，则需要从MuleSoft客户支持获取Mule Runtime的补丁。参考Mule DevKit支持模块问题。
+
+=== 配置OAuth 2.0用户名 - 密码
+
+. 单击连接器配置右侧的绿色加号。
+. 提供以下凭据以启用对Microsoft Dynamics 365服务器的访问：
++
+** 用户名 - 用于初始化会话的用户名。
+** 密码 - 用于验证用户的密码。
+** 资源 -  Web API的应用程序标识URI（受保护的资源）。这必须是根URI，而不指定CRM版本。例如：`+https://YOUR_ORG.operations.dynamics.com/+`
+** 客户端ID  - 在您向Azure Active Directory注册时分配给您的应用程序的应用程序ID。您可以在Azure门户（portal.azure.com）中找到它。单击Active Directory，单击该目录，选择该应用程序，然后单击配置。
+** 客户端秘密 - 您在应用程序注册门户中为您的应用程序创建的应用程序秘密。这不应该在本机应用程序中使用，因为客户机密不能可靠地存储在设备上。这对于Web应用程序和Web API来说是必需的，它们能够在服务器端安全地存储客户机密钥。您可以在Azure门户（portal.azure.com）中找到它。
+** 令牌请求端点 - 用于获取访问令牌的令牌端点。示例：`+https://login.windows.net/TENANT_ID/oauth2/token+`其中TENANT_ID是Azure Active Directory标识。
+** 读超时 - 消费者在超时之前等待响应的持续时间（以毫秒为单位）。零（0）意味着永远等待。
+** 连接超时 - 指定用户在超时之前尝试建立连接的持续时间（以毫秒为单位）。零（0）意味着永远等待。
++
+. 单击测试连接以确保您的凭证在服务器端点处被接受。
+. 如果存在，请单击启用DataSense以让应用程序从服务器获取元数据。
+
+
+有关设置“池化配置文件”选项卡的信息，请参阅 link:/mule-user-guide/v/3.9/tuning-performance#about-pooling-profiles[关于汇集配置文件]。
+
+有关设置重新连接选项卡的信息，请参阅 link:/mule-user-guide/v/3.9/configuring-reconnection-strategies[配置重新连接策略]。
+
+== 运行流程
+
+. 在包资源管理器中，右键单击您的项目名称，然后单击运行方式> Mule应用程序。
+. 检查控制台以查看应用程序何时启动。如果没有错误发生，您应该看到这些消息：
+
+[source,xml,linenums]
+----
+************************************************************
+INFO  2017-05-14 22:12:42,003 [main] org.mule.module.launcher.DeploymentDirectoryWatcher: 
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Mule is up and kicking (every 5000ms)                    +
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+INFO  2017-05-14 22:12:42,006 [main] org.mule.module.launcher.StartupSummaryDeploymentListener: 
+**********************************************************
+*  - - + DOMAIN + - -               * - - + STATUS + - - *
+**********************************************************
+* default                           * DEPLOYED           *
+**********************************************************
+
+************************************************************************
+* - - + APPLICATION + - -   * - - + DOMAIN + - -  * - - + STATUS + - - *
+************************************************************************
+* myapp                     * default             * DEPLOYED           *
+************************************************************************
+----
+
+== 配置连接器操作
+
+*  xref：authop [授权（仅OAuth 2.0连接）]
+*  xref：aunuthop [Unauthorize（仅适用于OAuth 2.0连接）]
+*  xref：exop [执行操作]
+*  xref：impdata [导入数据重复作业]
+*  xref：retmultop [检索多个]
+*  xref：retmultqop [通过查询检索多个]
+
+[[authop]]
+=== 授权访问CRM服务器
+
+. 将操作设置为授权。
+. 指定与认证服务器回调一起发送的字符串。
+. 提供服务提供商给您的访问令牌URL。
+. 提供服务提供商给您的授权URL。该URL指示资源所有者重定向授予连接器的权限。
+. 为验证授权呼叫提供访问令牌ID。
+. 指定范围。
+. 指定Response_mode，这是将令牌发送回您的应用程序的方法。可能的值是query或form_post。
+. 指定资源（必需）。
+
+[[unauthop]]
+=== 从CRM服务器取消对授权的授权
+
+. 将操作设置为取消授权。
+. 提供您用来授权访问CRM服务器的访问令牌URL。
+
+[[exop]]
+=== 执行操作
+
+该操作可让您使用AOTService组节点操作或自定义部署操作
+使用Microsoft Dynamics 365提供的300多种操作。
+
+. 将操作设置为执行操作。
+. 指定服务组（必需） - 分组多个服务的服务组。
+. 指定服务（必需） - 对多个操作进行分组的服务。
+. 指定一个操作（必需） - 要执行的操作。
+. 要提供参数（可选），请指定MEL表达式或创建
+将对象手动设置为一个或多个键和值对。
+
+请参阅： link:https://docs.microsoft.com/en-us/dynamics365/operations/dev-itpro/data-entities/services-home-page[微软服务运营]
+
+例：
+
+您可以使用Execute Operation将时区更改为HTTP POST请求，如下所示（将HOST_URI替换为
+Microsoft Dynamics 365服务器：
+
+[source,xml]
+----
+https://HOST_URI/api/services/UserSessionService/AifUserSessionService/ApplyTimeZone
+----
+
+使用以下参数：
+
+*  dateTime  -  YYYY-MM-DD格式的字符串类型。
+*  timeZoneOffset  - 整数类型。
+
+
+[[impdata]]
+=== 导入数据重复作业
+
+此操作可让您自动执行为实体导入数据的过程，例如，
+创建一个从特定文件夹读取数据文件的流程，或者导入包含实体信息的文件。
+源数据类型格式可以是CSV，XLS或XML。
+
+. 设置操作以导入数据重复作业。
+. 指定URI路径 - 资源的路径。
+. 指定活动ID（必填） - 用户创建的定期作业的ID。
+. 指定实体名称（必需） - 您为其推送或导入数据的实体。
+. 为文件输入指定MEL表达式 - 包含要为特定实体提交的数据的文件。
+
+[[retmultop]]
+=== 检索多个实体
+
+根据URL请求检索多个实体。
+
+. 设置操作以检索多个。
+. 为要检索的内容指定数据查询URL或MEL表达式 - 用于检索实体的URL
+用BASE_URI替换实体的URI。
++
+格式：`+https://BASE_URI/data/DataEntity+`
++
+. 指定要检索的页面中的页面抓取大小。默认值是100页。
+
+[[retmultqop]]
+=== 按查询检索多个实体
+
+使用 link:/anypoint-studio/v/6/datasense-query-language[DataSense查询语言]
+查询和检索存储在远程应用程序中的复杂数据。
+
+. 设置操作以检索多个查询。
+. 指定查询语言。
+. 配置您想要检索的查询。了解更多信息
+关于DataSense问题，请参阅 link:/anypoint-studio/v/6/datasense-query-language[DataSense查询语言]。
+. 指定要检索的页面中的页面抓取大小。默认值是100页。
+
+例：
+
+使用DSQL检索多个客户实体：
+
+[source,sql]
+----
+SELECT AddressCity,AddressCounty,SiteId,WarehouseId FROM Customers
+----
+
+
+== 示例：Microsoft Dynamics 365操作
+
+此示例演示如何使用Microsoft Dynamics 365 for Operations Connector。
+
+要构建和运行此演示项目，您需要：
+
+具有至少Mule 3.5运行时的*  Anypoint Studio。
+*  Microsoft Dynamics 365 for Operations Connector v1.0.0或更高版本。
+
+组件：
+
+*  IMPORT_DATA_RECURRING_JOB_DEMO：此流程导入重复作业的数据。必须提供实体名称，活动ID和包含数据的文件。
++
+POST  -  HTTP端点侦听以下URL：
++
+`+http://0.0.0.0:8081/import+`
++
+*  RETRIEVE_MULTIPLE_BY_URL：此流程根据URL请求检索多个实体。
++
+GET  -  HTTP端点侦听以下URL：
++
+`+http://0.0.0.0:8081/retrieveCustomers+`
++
+*  RETRIEVE_MULTIPLE_BY_DSQL：此流程根据DataSense查询语言检索多个实体。
++
+GET  -  HTTP端点侦听以下URL：
++
+`+http://0.0.0.0:8081/retrieveCustomersByQuery+`
++
+*  APPLY_TIMEZONE：此流程根据提供的dateTime和timezoneOffset应用时区。
++
+POST  -  HTTP端点侦听以下URL：
++
+`+http://0.0.0.0:8081/applyTimezone+`
+
+您可以使用`+http://0.0.0.0:8081+`中的选择菜单来测试流程，也可以使用卷曲工具或其他任何工具（Chrome / Mozilla Firefox扩展）来发布JSON，以便在调用URL时发布主体。
+
+=== 测试流程
+
+. 使用Anypoint Exchange或从文件导入菜单将演示项目导入工作区。
+. 在`/src/main/app/mule-app.properties`文件中为OAuth2用户名密码配置指定您的OAuth2凭据：
++
+**  `dynamics365.username`  - 用于初始化会话的用户名。
+**  `dynamics365.password`  - 用于验证用户的密码。
+**  `dynamics365.resource`  -  Web API的应用程序ID URI（受保护的资源）。这必须是根URI，而不指定操作版本。例如：`+https://YOUR_ORG.operations.dynamics.com/+`
+**  `dynamics365.clientId`  - 当您使用Azure AD注册应用程序ID时分配给您的应用程序。你可以在Azure Portal中找到它。单击Active Directory，单击该目录，选择该应用程序，然后单击配置。
+**  `dynamics365.clientSecret`  - 您在应用程序注册门户中为您的应用程序创建的应用程序密钥。这不应该在本机应用程序中使用，因为client_secrets不能可靠地存储在设备上。这是Web应用程序和Web API所必需的，它们能够安全地在服务器端存储client_secret。
+**  `dynamics365.tokenRequestEndpoint`  - 为获取访问令牌而调用的令牌端点。例如：`+ https：//login.windows.net/TENANT_ID/oauth2/token其中TENANT_ID是Azure AD ID。
++
+. 指定DataSense连接超时时间超过200秒，因为连接器发出多个请求来提供DataSense信息。
+. 在Studio中运行项目。
+. 在浏览器中输入`0.0.0.0:8081`以访问演示的选择菜单。
+. （可选）您可以配置连接超时和读取超时。
+连接超时是与服务器进行初始连接的超时时间。
+读取超时是等待从服务器读取数据的超时时间。
+
+=== 可视化编辑器流程
+
+image:365-operations-flow.png[365的操作流]
+
+===  XML流
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:dynamics365foroperations="http://www.mulesoft.org/schema/mule/dynamics365foroperations" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" 
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/dynamics365foroperations http://www.mulesoft.org/schema/mule/dynamics365foroperations/current/mule-dynamics365foroperations.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <dynamics365foroperations:config-oauth-user-pass name="Microsoft_Dynamics_365_for_Operations__OAuth_2_0_Username_Password" clientId="${dynamics365.clientId}" username="${dynamics365.username}" password="${dynamics365.password}" resource="${dynamics365.resource}" clientSecret="${dynamics365.clientSecret}" tokenRequestEndpoint="${dynamics365.tokenRequestEndpoint}" doc:name="Microsoft Dynamics 365 for Operations: OAuth 2.0 Username-Password"/>
+    <flow name="PARSE_DEMO_TEMPLATE">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <parse-template location="form.html" doc:name="Parse Template"/>
+        <set-property propertyName="content-type" value="text/html" encoding="US-ASCII" mimeType="text/html" doc:name="Property"/>
+    </flow>
+    <flow name="IMPORT_DATA_RECURRING_JOB_DEMO">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/import" doc:name="HTTP"/>
+        <logger message="Requested 'Import Data Recurring Job' Operation" level="INFO" doc:name="Logger"/>
+        <dynamics365foroperations:import-data-recurring-job config-ref="Microsoft_Dynamics_365_for_Operations__OAuth_2_0_Username_Password" doc:name="Microsoft Dynamics 365 for Operations" activityId="#[message.inboundAttachments.get('activityId')]" entityName="#[message.inboundAttachments.get('entity')]" in-ref="#[message.inboundAttachments.get('file')]"/>
+        <logger message="#[message.inboundAttachments.get('activityId')]+ #[message.inboundAttachments.get('entity')]+ #[message.inboundAttachments.get('file')]" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="RETRIEVE_MULTIPLE_BY_URL">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/retrieveCustomers" doc:name="HTTP"/>
+        <logger message="Calling ${dynamics365.resource}/data/Customers" level="INFO" doc:name="Logger"/>
+        <dynamics365foroperations:retrieve-multiple config-ref="Microsoft_Dynamics_365_for_Operations__OAuth_2_0_Username_Password" doc:name="Microsoft Dynamics 365 for Operations" dataQueryURL="${dynamics365.resource}/data/Customers"/>
+        <logger message="Received Response from 'Retrieve Multiple' Operation" level="INFO" doc:name="Logger"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+    <flow name="RETRIEVE_MULTIPLE_BY_DSQL">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/retrieveCustomersByQuery" doc:name="HTTP"/>
+        <logger message="Requested 'Retrieve Multiple By DataSense Query Language' Operation" level="INFO" doc:name="Logger"/>
+        <dynamics365foroperations:retrieve-multiple-by-query config-ref="Microsoft_Dynamics_365_for_Operations__OAuth_2_0_Username_Password" query="dsql:SELECT AddressCity,AddressCounty,SiteId,WarehouseId FROM Customers" doc:name="Microsoft Dynamics 365 for Operations"/>
+        <logger message="Received Response from 'Retrieve Multiple By DataSense Query Language' Operation" level="INFO" doc:name="Logger"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </flow>
+    <flow name="APPLY_TIMEZONE">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/applyTimezone" doc:name="HTTP"/>
+        <logger message="Requested 'Apply Timezone' Operation" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+    dateTime: payload.dateTime,
+    timeZoneOffset: payload.timeZoneOffset
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <dynamics365foroperations:execute-operation config-ref="Microsoft_Dynamics_365_for_Operations__OAuth_2_0_Username_Password" operation="UserSessionService||AifUserSessionService||ApplyTimeZone" doc:name="Microsoft Dynamics 365 for Operations">
+            <dynamics365foroperations:parameters ref="#[payload]"/>
+        </dynamics365foroperations:execute-operation>
+        <logger message="Received Response from 'Apply Timezone' Operation" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+== 另请参阅
+
+*  link:_attachments/ms-dynamics-365-op-demo.zip[样品]
+*  link:/mule-user-guide/v/3.9/microsoft-dynamics-365-connector[Microsoft Dynamics 365 CRM连接器]

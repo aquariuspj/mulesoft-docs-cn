@@ -1,0 +1,175 @@
+= 与Cloud Connect集成
+
+云连接器或传输？== 
+
+在学习如何使用Mule Cloud Connector之前，先考虑一下使用传输与云连接器的各种含义。
+
+===  Mule云连接器和传输有什么共同之处？
+
+* 处理消息
+* 两者都使用协议与远程系统进行通信
+* 两者都可以配置为Mule流程的一部分
+
+=== 云连接器与传输有什么不同？
+
+* 传输发送消息。云连接器*invoke SaaS API operations*。
+* 传输实施特定协议。云连接器使用协议下的协议（您不需要知道使用什么或使用它。）
+* 传输是通用的。云连接器是特定于服务的。 （特定于服务的传输配置在云连接器实施内部被重用。）
+
+总而言之，*Cloud Connectors*提供更高的抽象级别，以便*simplifies*与促进*reuse*的SAAS应用程序和云基础架构集成。
+
+您可以在您的Mule流程中自由搭配和连接云连接器和传输。
+
+[TIP]
+*Mule Flow* [Mule Flow]是构建强大且直观的集成解决方案的非常灵活的方式。
+
+== 云连接器集成方案
+
+以下示例显示了云连接器如何在Mule流中使用以执行与云服务的集成。这些示例使用https://www.anypoint.mulesoft.com/exchange/?type=connector&search=twitter[Twitter]云连接器。
+
+===  1）代理云操作
+
+在第一个例子中，我们简单地通过我们选择的Mule传输器重新展示云连接器操作。在下面的配置代码段中，我们配置了 link:/mule-user-guide/v/3.2/http-transport-reference[HTTP]入站端点，后面跟着我们的Twitter "public-timeline"操作。当我们[在MuleIDE中测试这个流量]时，Mule将在本地主机端口8080上监听任何请求。当收到一个人时，将调用Twitter公共时间线操作，并以结果进行响应。在Twitter的情况下，结果将根据Twitter连接器配置进行格式化。
+
+该示例还使用 link:/mule-user-guide/v/3.2/logger-element-for-flows[记录仪]输出结果集。该可选元素可用于调试。
+
+[source, xml, linenums]
+----
+<twitter:config name="twitter" format="XML"/><flow name="twitterPublicTimelineProxy">   <{{0}}" level="INFO"/></flow>
+----
+
+===  2）使用参数代理云操作
+
+这个例子与上面的例子非常相似，但是这次提供了一个参数并用于调用云服务操作。要调用下面显示的流程，可以使用以下URL _http：// localhost：8080 /？query = mule_。
+
+[source, xml, linenums]
+----
+<twitter:config name="twitter" format="JSON"/>
+<flow name="twitterSearchProxy">
+  <http:inbound-endpoint host="localhost" port="8080"/>
+  <twitter:search query="#[header:INBOUND:query]"/>
+  <logger message="#[payload]" level="INFO"/>
+</flow>
+----
+
+本示例使用查询参数传递Twitter搜索词，但如果使用POST将消息发送到入站http端点，则可以使用另一个表达式评估程序（如XPATH）轻松地从消息中提取此值，如下所示：
+
+[source, xml, linenums]
+----
+<flow name="twitterSearchProxy">
+  <http:inbound-endpoint host="localhost" port="8080"/>
+  <twitter:search query="#[xpath:/my/element/with/query]"/>
+</flow>
+----
+
+这是如何使用传入消息调用云服务操作以使用表达式从消息中提取值的示例。
+
+===  3）异步调用Cloud Service操作
+
+您现在已经看到了两个示例，其中将云服务操作作为实现代理方案的同步流的一部分进行调用，其中将云服务的结果返回给客户端。
+
+当操作结果不需要通过同一个通道返回时，云操作也可以用于异步Mule流。
+
+接下来，考虑两个显示异步流程的示例，即消息流是_one-way_。第一个示例代码段使用默认使用_request-response_交换模式的 link:/mule-user-guide/v/3.2/http-transport-reference[http端点]。但是，在这种情况下，_ <async> _元素用于异步调用云连接。
+
+[source, xml, linenums]
+----
+<flow name="asyncUpdateTwitterStatus">
+   <http:inbound-endpoint host="localhost" port="8080"/>
+      <async>
+        <twitter:update-stats status="#[json:/node/with/status]"/>
+     </async>
+</flow>
+----
+
+第二个示例显示了使用JMS端点JMS传输从JMS队列接收新状态。默认情况下，JMS端点是_one-way_，因此，您不需要使用_ <async> _元素`here.{code:xml}`
+
+[source, xml, linenums]
+----
+<flow name="asyncUpdateTwitterStatus">
+   <jms:inbound-endpoint queue="twitterStatusQueue/>
+    <twitter:update-stats status="#[xpath:/element/with/status]"/>
+</flow>
+----
+
+===  4）轮询Cloud Service
+
+与云服务交互的另一种方式是对它们进行轮询。轮询可以以定义的频率调用出站端点（或任何消息进程），并将结果用作调用流程的新消息。此示例显示使用_ <poll> _：
+
+[source, xml, linenums]
+----
+<flow name="cloudPolling">
+  <poll frequency="60000">
+  <twitter:search query="mule"/>
+  </poll>
+  ...
+</flow>
+----
+
+上面的轮询示例将每60秒产生"mule"的Twitter搜索结果。您可能会在每次调查中收到重复的结果。
+
+由于它是Mule的一部分，我们可以通过添加几行XML来快速轻松地将此轮询转换为独特的推文流。
+
+使用 link:/mule-user-guide/v/3.2/message-splitting-and-aggregation[分离器]和 link:/mule-user-guide/v/3.2/message-sources-and-message-processors[幂等过滤器]，这非常简单。分离器将搜索结果分成单独的推文，幂等过滤器使用推文ID作为唯一的ID来删除任何重复的推文。
+
+[source, xml, linenums]
+----
+<flow name="cloudPolling">
+  <poll frequency="60000">
+    <twitter:search query="mule"/>
+  </poll>
+  <splitter evaluator="json" expression="results" />
+  <idempotent-message-filter idExpression="#[json:id]"/>
+  <logger message="@#[json:from_user] - #[json:text]" level="INFO" />
+</flow>
+----
+
+===  6）使用云服务丰富邮件
+
+到目前为止，您看到的场景使用云服务作为流的消息源，或者使用流中的云服务来执行某些操作。如果您想使用云服务根据已存在的某些信息添加到现有消息中，该怎么办？这就是所谓的丰富，再次，XML的简洁应该让你印象深刻：
+
+[source, xml, linenums]
+----
+<twitter:config name="twitter"/>
+<flow name="cloudEnrichment">
+  <http:inbound-endpoint host="localhost" port="8080"/>
+  <enricher target="#[header:userLang] source="#[json:lang]>
+    <twitter:user screenName="#[xpath:/element/with/screenName]"/>
+  </enricher>
+  <http:outbound-endpoint host=".." port=""/>
+</flow>
+----
+
+在这个例子中，通过添加一个名为_userLang_的头文件，使用从Twitter中检索的用户语言代码将消息添加到消息中。
+
+===  7）使用云服务进行路由
+
+可以在Mule Flow中设置一个变量，以供表达式稍后使用，而不是直接丰富消息。在这种情况下，表达式位于`<when>`选择元素上，并用于路由消息。
+
+[source, xml, linenums]
+----
+<twitter:config name="twitter"/>
+<flow name="cloudRouting">
+  <http:inbound-endpoint host="localhost" port="8080"/>
+  <enricher target="#[variable:userLang] source="#[json:lang]>
+    <twitter:user screenName="#[xpath:/element/with/screenName]"/>
+  </enricher>
+  <choice>
+    <when evaluator="variable" expression="userLang=en">            ..
+    </when>
+    <when evaluator="variable" expression="userLang=es">            ..
+    </when>
+    <otherwise>            ..
+    </otherwise>
+  </choice>
+</flow>
+----
+
+此处使用查找用户信息的Twitter云连接操作来确定用户的语言，然后根据此信息路由源信息。
+
+*variable*表达式计算器/浓缩器用于存储和检索流程范围变量。
+
+===  8）云到云集成
+
+这些示例说明了在流中集成不同云服务所需的所有部分。请记住，您拥有Mule link:/mule-user-guide/v/3.2/message-sources-and-message-processors[过滤器，变压器和路由器]的全部内容，可以帮助您使用所有https://www.anypoint.mulesoft.com/exchange/?type=connector [可用云连接器]来实施流量。
+

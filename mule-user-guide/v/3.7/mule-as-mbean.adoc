@@ -1,0 +1,113 @@
+=  Mule作为MBean
+:keywords: deploy, java, mbean
+
+MBean是一个代表JMX环境中资源的命名托管对象。通过执行以下步骤，您可以轻松部署MBean与Mule：
+
+. 创建一个MBean
+. 创建服务描述符
+. 将MBean（作为`.sar`）部署到应用程序服务器
+. 将依赖关系复制到服务的类路径
+
+本页面描述了使用JBoss应用服务器的这些步骤。
+
+== 创建一个简单的MBean
+
+要创建一个MBean，你需要一个接口和一个实现：
+
+[source, java, linenums]
+----
+package foo.mbean;
+
+public interface FooServiceMBean {
+    public String getBar();
+    public void start();
+    public void stop();
+}
+----
+
+[source, java, linenums]
+----
+package foo.mbean;
+
+import org.jboss.system.ServiceMBeanSupport;
+import org.mule.config.spring.SpringXmlConfigurationBuilder;
+import org.mule.api.MuleContext;
+import org.mule.api.context.notification.ServerNotification;
+
+public class FooService extends ServiceMBeanSupport implements FooServiceMBean {
+
+    public String getBar() {
+        return "bar";
+    }
+
+    public void start() {
+        this.getLog().info("MBean being started");
+
+        try {
+            MuleContext context = new DefaultMuleContextFactory().createMuleContext
+(new SpringXmlConfigurationBuilder("foo-config.xml"));
+            context.registerListener(this);
+                    context.start();
+        }
+        catch(Exception e) {
+            e.printStackTrace();
+        }
+        this.getLog().info("MBean started");
+    }
+
+    public void stop() {
+        this.getLog().info("MBean being stopped");
+
+        try {
+            if (context != null) {
+                context.stop();
+                context.dispose();
+
+            }
+            this.getLog().info("Done stopping Mule MBean Service!");
+        }
+        catch (Exception ex) {
+            this.getLog().error("Stopping Mule caused and exception!", ex);
+        }
+    }
+}
+----
+
+`ServiceMBeanSupport`的扩展只是为了让您更好地控制JBoss提供的API。
+
+== 创建JBoss服务描述符
+
+您必须创建一个服务描述符并将其添加到`META-INF/`。以下是一个简单的例子：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<server>
+  <mbean code="foo.FooService" name="foo:service=Foo">
+  </mbean>
+</server>
+----
+
+== 将MBean部署到JBoss
+
+根据上面的例子，你的分布如下所示：
+
+[source]
+----
+../foo./foo/FooService./foo/FooServiceMBean./META-INF./META-INF/jboss-service.xml
+----
+
+将该分发包打包为JAR，然后将其重命名为您最终可以提取的`*.sar`，或者将其命名为`<dirName>.sar`。
+
+== 复制依赖关系
+
+按照以下步骤复制依赖关系并完成部署：
+
+. 将您的`<dirName>.sar/`目录复制到`JBOSS_HOME/server/default/deploy/`。
+. 将Mule的所有依赖项（例如`MULE_HOME/lib/*/*.jar`）复制到`<dirName>.sar/`目录
+. 启动JBoss。您将看到MBean出现在其MBean控制台中。
+
+== 参考
+
+*  link:http://en.wikipedia.org/wiki/Mbean[维基百科 -  MBean]
+*  link:http://java.sun.com/docs/books/tutorial/jmx/mbeans/standard.html[Java教程 - 标准MBeans]

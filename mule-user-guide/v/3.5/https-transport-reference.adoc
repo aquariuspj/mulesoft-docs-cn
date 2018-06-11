@@ -1,0 +1,204 @@
+=  HTTPS传输参考
+
+安全HTTP传输为通过HTTP公开应用程序提供支持，并将来自Mule流的HTTP客户端请求作为事件流的一部分流向外部服务。 Mule支持安全入站，安全出站和安全轮询HTTP端点。这些端点支持HTTP规范的所有常见功能，例如ETag处理，cookie和keepalive。 HTTP 1.0和1.1均受支持。
+
+==  HTTPS连接器
+
+该连接器在Mule [HTTP Transport]提供的内容的基础上提供安全HTTP连接。安全连接代表实体，可以是匿名的或由证书标识。 _key store_提供识别建立连接的实体所需的证书和相关私钥。此外，连接到可信系统。受信任系统的公用证书存储在_trust store_中，用于验证与远程系统建立的连接是否与期望的身份匹配。
+
+== 设置HTTPS服务器
+
+为了使用Mule安装HTTPS服务器，需要执行几个第一步。首先必须创建击键，这可以使用Java提供的keytool完成。您可以在Java安装的bin目录中找到它。一旦找到，您可以执行以下命令来创建密钥库：
+
+[source, code, linenums]
+----
+keytool -genkey -alias mule -keyalg RSA -keystore keystore.jks
+----
+
+这将在本地目录中创建一个名为`keystore.jks`的文件。理想情况下，应该在`MULE_HOME/conf`目录中创建此应用程序，以便在多个应用程序间使用，或者如果在单个应用程序中使用该应用程序，可以将其放入`<MY MULE APP>/src/main/resources`目录。
+
+一旦密钥库存在，需要将以下内容添加到您的Mule配置文件中：
+
+[source, xml, linenums]
+----
+<https:connector name="httpsConnector">
+     <https:tls-key-store path="keystore.jks" keyPassword="<Your Password>" storePassword="<Your Password>"/>
+ </https:connector>
+----
+
+如果密钥存储位于`<MY MULE APP>/src/main/resources`目录中，那么您可以在路径中指定该名称。否则，如果密钥库位于`MULE_HOME/conf`目录中，则必须将`"${mule.home}/conf/keystore.jks"`指定为路径。
+
+== 配置参考
+
+[%header%autowidth.spread]
+|===
+|属性 |说明
+| tls-client a |使用以下属性配置客户端密钥存储：
+
+* 路径：包含用于标识的公共证书和私钥的密钥库的位置（将相对于当前类路径和文件系统进行解析，如果可能的话）。
+*  storePassword：用于保护密钥库的密码。
+*  class：使用的密钥库类型（Java类名称）。
+| tls-key-store a |使用以下属性配置直接密钥存储：
+
+* path：包含公钥证书和私钥用于标识的密钥库的位置（将相对于当前类路径和文件系统进行解析，如果可能的话）。
+*  class：使用的密钥库类型（Java类名称）。
+*  keyPassword：用于保护私钥的密码。
+*  storePassword：用于保护密钥库的密码。
+* 算法：密钥空间使用的算法。
+*  keyAlias：要使用的密钥的别名。
+| tls-server a |配置信任存储。 attirbutes是：
+
+*  path：包含可信服务器公用证书的信任存储的位置（将相对于当前类路径和文件系统进行解析）。
+*  storePassword：用于保护信任存储的密码。
+*  class：使用的信任存储的类型（Java类名称）。
+* 算法：信任库使用的算法。
+*  factory-ref：引用信任管理工厂。
+*  explicitOnly：这是否是明确的信任存储。
+*  requireClientAuthentication：是否需要客户端身份验证。
+| tls-protocol-handler  |配置全局Java协议处理程序。它有一个属性，属性，它指定了`java.protocol.handler.pkgs`系统属性。
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:https="http://www.mulesoft.org/schema/mule/https"
+    xsi:schemaLocation="
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.0/mule.xsd
+        http://www.mulesoft.org/schema/mule/https http://www.mulesoft.org/schema/mule/https/3.0/mule-https.xsd">
+ 
+    <https:connector name="httpConnector">
+        <https:tls-client path="clientKeystore" storePassword="mulepassword"/>
+        <https:tls-key-store path="serverKeystore" keyPassword="mulepassword" storePassword="mulepassword"/>
+        <https:tls-server path="trustStore" storePassword="mulepassword"/>
+    </https:connector>
+ 
+    <https:endpoint name="clientEndpoint" host="localhost" port="60202"
+                    connector-ref="httpConnector" />
+</mule>
+----
+
+== 轮询连接器
+
+轮询连接器允许Mule轮询外部HTTP服务器并从结果中生成事件。这对于只提供Web服务很有用。此连接器提供了`PollingHttpConnector`的安全版本。它包含HTTPS连接器的所有属性以及以下可选属性：
+
+[%header%autowidth.spread]
+|===
+| {属性{1}}说明
+| pollingFrequency  |每个请求到远程http服务器之间等待的时间（以毫秒为单位）。
+| checkEtag  |如果标题存在，是否处理来自远程服务器的Etag标题。
+| discardEmptyContent  | Mule是否应放弃来自远程服务器的内容长度为零的任何消息。对于许多服务来说，零长度意味着没有数据可以返回。如果远程HTTP服务器确实返回了说明请求为空的内容，则用户可以在端点上配置内容过滤器以过滤这些消息。
+|===
+
+例如，在标题中定义HTTP命名空间后，可以像这样配置轮询连接器：
+
+[source, xml, linenums]
+----
+<http:polling-connector name="PollingHttpConnector" pollingFrequency="2000" />
+----
+
+==  HTTPS端点
+
+入站HTTPS端点通过HTTPS安全地公开流量，基本上使其成为HTTP服务器。如果需要轮询远程HTTP服务，则应该使用轮询HTTPS连接器配置此端点。
+
+出站HTTPS端点允许Mule通过SSL使用HTTP协议将请求安全地使用SSL发送到外部服务器或Mule入站HTTP端点。
+
+流可以引用全局HTTPS端点。
+
+有关配置HTTP端点的更多信息，请参阅 link:/mule-user-guide/v/3.5/http-transport-reference[HTTP传输参考]。
+
+== 微调SSL端点
+
+Mule conf文件夹包含两个文件，通过手动设置Mule可以使用哪些密码套件以及允许哪些SSL协议，可以微调SSL端点的配置：
+
+*  `tls-default.conf`（当Mule未配置为在FIPS安全模式下运行时，允许进行微调。
+*  `tls-fips140-2.conf`（允许在Mule运行FIPS安全模式时进行微调）。
+
+打开相关文件并评论或取消注释列表中的项目以手动配置允许的密码套件和SSL协议。如果您不对这些文件进行更改，Mule允许配置的安全管理器选择密码套件和协议。
+
+===  tls-default.conf的内容
+
+[source, code, linenums]
+----
+# This file allows to restrict SSL behavior in Mule. If the file doesn't exist or a property is not defined,
+# default values of the current security provider will be used.
+# Cipher suites that will be enabled in SSL. If this property is set, SSL sockets will
+# only use cipher suites that are provided in this list and supported by the current security provider.
+#enabledCipherSuites=TLS_KRB5_WITH_3DES_EDE_CBC_MD5,        \
+#                    TLS_KRB5_WITH_RC4_128_SHA,             \
+#                    SSL_DH_anon_WITH_DES_CBC_SHA,          \
+#                    TLS_DH_anon_WITH_AES_128_CBC_SHA,      \
+#                    TLS_DHE_RSA_WITH_AES_128_CBC_SHA,      \
+#                    SSL_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA, \
+#                    SSL_RSA_EXPORT_WITH_RC4_40_MD5,        \
+#                    SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA,     \
+#                    TLS_DHE_RSA_WITH_AES_256_CBC_SHA,      \
+#                    TLS_KRB5_WITH_3DES_EDE_CBC_SHA,        \
+#                    SSL_RSA_WITH_RC4_128_SHA,              \
+#                    TLS_KRB5_WITH_DES_CBC_MD5,             \
+#                    TLS_KRB5_EXPORT_WITH_RC4_40_MD5,       \
+#                    TLS_KRB5_EXPORT_WITH_DES_CBC_40_MD5,   \
+#                    SSL_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA, \
+#                    TLS_KRB5_EXPORT_WITH_RC4_40_SHA,       \
+#                    SSL_DH_anon_EXPORT_WITH_RC4_40_MD5,    \
+#                    SSL_DHE_DSS_WITH_DES_CBC_SHA,          \
+#                    TLS_KRB5_WITH_DES_CBC_SHA,             \
+#                    SSL_RSA_WITH_NULL_MD5,                 \
+#                    TLS_DHE_DSS_WITH_AES_256_CBC_SHA,      \
+#                    SSL_DH_anon_WITH_3DES_EDE_CBC_SHA,     \
+#                    TLS_RSA_WITH_AES_128_CBC_SHA,          \
+#                    SSL_DHE_RSA_WITH_DES_CBC_SHA,          \
+#                    TLS_DH_anon_WITH_AES_256_CBC_SHA,      \
+#                    TLS_KRB5_EXPORT_WITH_DES_CBC_40_SHA,   \
+#                    SSL_DH_anon_EXPORT_WITH_DES40_CBC_SHA, \
+#                    SSL_RSA_WITH_NULL_SHA,                 \
+#                    TLS_KRB5_WITH_RC4_128_MD5,             \
+#                    TLS_RSA_WITH_AES_256_CBC_SHA,          \
+#                    SSL_RSA_WITH_DES_CBC_SHA,              \
+#                    TLS_EMPTY_RENEGOTIATION_INFO_SCSV,     \
+#                    SSL_RSA_EXPORT_WITH_DES40_CBC_SHA,     \
+#                    SSL_DH_anon_WITH_RC4_128_MD5,          \
+#                    SSL_RSA_WITH_RC4_128_MD5,              \
+#                    TLS_DHE_DSS_WITH_AES_128_CBC_SHA,      \
+#                    SSL_DHE_DSS_WITH_3DES_EDE_CBC_SHA,     \
+#                    SSL_RSA_WITH_3DES_EDE_CBC_SHA
+# Protocols that will be enabled in SSL. If this property is set, SSL sockets will only use protocols
+# that are provided in this list and supported by the current security provider.
+#enabledProtocols=SSLv2Hello, \
+#                 TLSv1,      \
+#                 SSLv3
+----
+
+
+===  tls-fips140-2.conf的内容
+
+[source, code, linenums]
+----
+# TLS configuration file used when running Mule in FIPS mode. To use this configuration,
+# you must set the "mule.security.model" property to "fips140-2" in the wrapper.conf file.
+# Sockets will only use cipher suites from this list.
+enabledCipherSuites=SSL_RSA_WITH_3DES_EDE_CBC_SHA,         \
+                    SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA,     \
+                    TLS_RSA_WITH_AES_128_CBC_SHA,          \
+                    TLS_DHE_DSS_WITH_AES_128_CBC_SHA,      \
+                    TLS_DHE_RSA_WITH_AES_128_CBC_SHA,      \
+                    TLS_RSA_WITH_AES_256_CBC_SHA,          \
+                    TLS_DHE_DSS_WITH_AES_256_CBC_SHA,      \
+                    TLS_DHE_RSA_WITH_AES_256_CBC_SHA,      \
+                    TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA,  \
+                    TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA,   \
+                    TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA,   \
+                    TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA, \
+                    TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,  \
+                    TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,  \
+                    TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA,    \
+                    TLS_ECDH_RSA_WITH_AES_128_CBC_SHA,     \
+                    TLS_ECDH_RSA_WITH_AES_256_CBC_SHA,     \
+                    TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,   \
+                    TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,    \
+                    TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+----

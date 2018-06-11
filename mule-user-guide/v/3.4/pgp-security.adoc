@@ -1,0 +1,141 @@
+=  PGP安全性
+
+此扩展在端点通信中添加了PGP安全性。借助PGP，您可以通过双方之间的签名和加密消息实现端到端的安全通信。
+
+== 要求
+
+=== 策略文件
+
+如果您运行的是默认随附的 http://java.sun.com/javase/technologies/security[Sun JCE]的JDK 1.4+，则必须安装Unlimited Strength Jurisdiction策略文件，该文件可从以下URL下载（请注意，它们完全列在页面底部，在其他下载部分）：
+
+http://java.sun.com/j2se/1.4/download.html[JDK 1.4]
+
+http://java.sun.com/j2se/1.5.0/download.jsp[JDK 5]
+
+http://java.sun.com/javase/downloads/index.jsp[JDK 6]
+
+这些文件必须安装在`$JAVA_HOME$/jre/lib/security`
+
+根据Sun的说法，JCE的默认分配允许"strong, but limited strength cryptography."这意味着您不能使用大于2048位的RSA密钥，也不能使用超过128位的对称密码。 ElGamal根本不被允许，因此DH / DSS不能用于加密。
+
+
+== 加密和解密
+
+要加密和解密消息，您需要配置以下元素：
+
+* 安全管理员：负责持有包含密钥环的安全提供程序以及要使用的加密策略。这允许使用相同的密钥对所有消息进行加密，或者便于使用不同的密钥环。
+* 密钥管理器：负责读取密钥环。
+* 凭证访问者：确定用于加密/解密正在处理的消息的密钥环和密钥管理器。
+
+一个完整的例子如下所示：
+
+[source, xml, linenums]
+----
+<spring:beans>
+    <spring:bean id="pgpKeyManager" class="org.mule.module.pgp.PGPKeyRingImpl" init-method="initialise">                   
+        <spring:property name="publicKeyRingFileName" value="pubring.gpg"/>
+        <spring:property name="secretKeyRingFileName" value="secring.gpg"/>
+        <spring:property name="secretAliasId" value="${public.KeyId.LongValue}"/>
+            <spring:property name="secretPassphrase" value="${secret.Passphrase}"/>
+    </spring:bean>
+ 
+        <spring:bean id="credentialAccessor" class="com.somecompany.apps.AppCredentialAccessor">
+            <spring:property name="credentials" value="John Smith (TestingKey) &lt;john.smith@somecompany.com&gt;"/>
+        </spring:bean>   
+</spring:beans>
+ 
+<pgp:security-manager>
+    <pgp:security-provider name="pgpSecurityProvider" keyManager-ref="pgpKeyManager"/>
+        <pgp:keybased-encryption-strategy
+        name="keyBasedEncryptionStrategy"
+        keyManager-ref="pgpKeyManager"
+        credentialsAccessor-ref="credentialAccessor"/>
+</pgp:security-manager>
+----
+
+pgpKeyManager（在spring中：beans标签）是负责读取环的人。您必须设置所有参数：公开和秘密铃声，别名标识（戒指中的长整型值）和秘密密码短语。在同一节中，您可以看到需要实现CredentialsAccessor接口的凭证访问器，基本上根据消息（MuleEvent）返回密钥ID。最后，pgp：security-manager粘贴这两个bean。
+
+您已准备好对流中的消息进行加密和解密。以下两个流程显示了如何使用加密转换器和解密转换器来加密和解密文件。
+
+[source, xml, linenums]
+----
+<flow name="processEncryptFiles">
+    <file:inbound-endpoint connector-ref="inputEncrypt"
+        path="file:///temp/fileInput" moveToDirectory="file:///temp/fileInputBackup"
+        moveToPattern="#[header:originalFilename].backup" transformer-refs="file2Bytes" />
+ 
+    <encrypt-transformer name="pgpEncrypt"
+        strategy-ref="keyBasedEncryptionStrategy" />
+ 
+    <file:outbound-endpoint connector-ref="output"
+        path="file:///temp/fileOutput" outputPattern="#[function:datestamp]-#[header:originalFilename]" />
+</flow>
+ 
+<flow name="processDecryptFiles">
+    <file:inbound-endpoint connector-ref="inputDecrypt"
+        path="file:///temp/fileOutput" moveToDirectory="file:///temp/fileOutputEncrypted"
+        moveToPattern="#[header:originalFilename].backup" transformer-refs="file2Bytes" />
+ 
+    <decrypt-transformer name="pgpDecrypt"
+        strategy-ref="keyBasedEncryptionStrategy" />
+ 
+    <file:outbound-endpoint connector-ref="output"
+        path="file:///temp/fileOutputDecrypted" outputPattern="#[function:datestamp]-#[header:originalFilename]" />
+</flow>
+----
+
+以下各节介绍如何配置每个元素。
+
+=== 配置安全管理器
+
+要配置安全管理器，您需要引用密钥管理器和加密策略。密钥管理器对您的密钥管理器环很简单。
+
+=== 配置密钥管理器
+
+要配置密钥管理器，您必须先创建一个spring bean，如前所示。您需要设置公开和密钥环文件，别名标识和密码短语。由于Mule使用弹性城堡库来加密/解密邮件，我们建议使用此库来获取别名ID（作为长整型值）。如果Mule在环中没有找到你的ID，它会抛出一个异常，它会列出你戒指中所有可用的ID。
+
+=== 配置凭证访问器
+
+要配置您的凭证访问者，您需要定义一个确定您的密钥ID的类。例如，以下类（在本示例中使用）总是返回相同的固定字符串，因此所有消息都将使用相同的密钥ID加密/解密。如果您需要使用不同的键ID，则根据收到的MuleEvent作为参数返回不同的字符串。
+
+[source, java, linenums]
+----
+public class FakeCredentialAccessor implements CredentialsAccessor
+{
+    private String credentials = "John Smith (TestingKey) <john.smith@somecompany.com>";
+     
+    public FakeCredentialAccessor()
+    {
+    }
+     
+    public FakeCredentialAccessor(String string)
+    {
+        this.credentials = string;
+    }
+ 
+    public String getCredentials()
+    {
+        return credentials;
+    }
+ 
+    public void setCredentials(String credentials)
+    {
+        this.credentials = credentials;
+    }
+ 
+    public Object getCredentials(MuleEvent event)
+    {
+        return this.credentials;
+    }
+ 
+    public void setCredentials(MuleEvent event, Object credentials)
+    {
+        // dummy
+    }
+}
+----
+
+== 配置参考
+
+[IMPORTANT]
+xslt：由于以下原因，请阅读http://www.mulesoft.org/xslt/mule/schemadoc/3.0/individual-transport-or-module-wiki.xsl错误：java.io.IOException：服务器返回的HTTP响应代码：401 for URL：http://svn.codehaus.org/mule/branches/mule-3.1.x/tools/schemadocs/src/main/resources/xslt//individual-transport-or-module-wiki.xsl

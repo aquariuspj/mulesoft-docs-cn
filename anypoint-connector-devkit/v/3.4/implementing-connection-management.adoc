@@ -1,0 +1,314 @@
+= 实施连接管理
+
+DevKit连接管理框架为连接器提供了多租户功能（管理您的应用程序中给定连接器的多个同时连接和不同凭据），以及连接池和实例池。这些优势适用于支持除OAuth之外的大多数身份验证方案的连接器，以及支持不需要身份验证的目标的连接器。
+
+本文档描述了使用连接管理框架的好处，它公开的Java注释以及如何在自己的连接器中实现连接管理支持。本讨论中的示例显示了使用基本的用户名/密码认证进行连接管理的方式，但它们可以很容易地推广到其他非OAuth协议。
+
+
+== 假设
+
+本文假设您在Mule Studio中有 link:/anypoint-connector-devkit/v/3.4/creating-a-connector-project[创建一个连接器项目]， link:/anypoint-connector-devkit/v/3.4/installing-and-testing-your-connector[安装和测试]，并准备在您的连接器上实施身份验证。它假定您熟悉各种 link:/anypoint-connector-devkit/v/3.4/authentication-methods[认证方法]并将 link:/anypoint-connector-devkit/v/3.4/authentication-and-connection-management[比较DevKit中的认证支持选项]和选定的连接管理作为您的选择。
+
+本文档还假定您熟悉连接器中的@Connector类，该连接器提供连接器的客户端实现（用于调用远程服务）和Mule之间的接口。
+
+== 关于连接管理
+
+DevKit的连接管理框架提供了以下好处，连接器开发人员的工作量最小：
+
+* 透明多租户 -  Mule应用程序可以打开与单个目标的多个连接，使用不同的凭证代表多个用户同时连接
+* 连接池 - 自动管理连接器类的实例池，以有效管理连接资源
+* 自动使异常连接失效，并根据需要重新连接
+
+通过在@Connector类级别应用批注，DevKit可以轻松地将连接管理功能添加到连接器。
+
+[WARNING]
+====
+*Connection Management Framework and Authentication Protocols*
+
+连接管理框架可以与大多数身份验证协议一起使用，例如基本用户名/密码身份验证（最常见），SAML，Kerberos，LDAP和NTLM。
+
+但是，您不能将连接管理框架与使用OAuth身份验证的连接器一起使用;该框架不支持"OAuth dance"或管理OAuth令牌。
+
+如果您使用与OAuth相关的注释，则DevKit中的基于OAuth 2的身份验证可提供与连接管理框架相媲美的功能。有关详细信息，请参阅 link:/anypoint-connector-devkit/v/3.4/implementing-oauth-2.0-authentication[实施OAuth 2.0身份验证]。
+
+基于OAuth 1的连接器不支持通过DevKit进行多租户。在OAuth 1是唯一可用的身份验证方法的情况下，可以在没有DevKit的情况下实现多租户，但构建您自己的多租户机制超出了本文档的范围。如果您的目标支持OAuth 2，最好选择OAuth 2;如果您在此领域有严格的业务或技术要求，请联系MuleSoft以获取其他选项。
+====
+
+DevKit中的== 连接管理注释
+
+要在连接器中使用连接管理，请在@Connector类中定义和注释以下方法：
+
+* 创建连接的`@Connect`方法
+* 明确关闭连接的`@Disconnect`方法
+*  `@ValidateConnection`方法，如果连接仍然有效，返回`true`，否则`false`
+*  `@ConnectionIdentifier`方法，该方法返回用于为连接池中的连接器实例生成唯一标识的前缀
+
+还有一个`@InvalidateConnectionOn`方法，当API操作由于连接丢失而遇到异常时很有用。
+
+这些方法的具体实施取决于目标。
+
+由于连接管理是一个非常有用的基本功能，因此Maven原型生成的代码框架包含已应用连接管理注释的占位符方法。
+
+*Skeleton Connector with Connection Management Annotated Methods*
+
+[source, code, linenums]
+----
+/**
+* Connect
+*
+* @param username A username
+* @param password A password
+* @throws ConnectionException
+*/
+@Connect public void connect(@ConnectionKey String username, String password)
+    throws ConnectionException
+{
+ 
+    /**
+    * CODE FOR ESTABLISHING A CONNECTION GOES IN HERE
+    */
+}
+ 
+/**
+* Disconnect
+*/
+@Disconnect
+public void disconnect()
+{
+ 
+    /**
+    * CODE FOR CLOSING A CONNECTION GOES IN HERE
+    */
+}
+ 
+/**
+* Are we connected
+*/
+@ValidateConnection public boolean isConnected()
+{
+    return true;
+}
+ 
+/**
+* Connection identifier
+*/
+@ConnectionIdentifier public String connectionId()
+{
+    return "001";
+}
+----
+
+这些方法根据DevKit框架的需要自动调用;你永远不会直接从你的代码中调用它们。
+
+==  @ Connect方法
+
+此方法指示`@Connector`类中的哪个方法负责创建到目标的连接。当连接器启动时，或者与API的连接已经丢失并且必须重新建立，Mule会自动调用`@Connect`方法。当此方法结束时，如果认证成功，则连接器实例已准备好向API发出请求。
+
+用`@Connect`注释的方法必须：
+
+* 为`public`
+* 抛出`org.mule.api.ConnectionException`（并且没有其他例外）
+* 有一个`void`返回类型
+如果使用自动连接管理，则* 只有一个注释`@Connect`的方法（或编译将失败）
+
+实现实际连接的特定代码将取决于API。以下是可以如何为Salesforce连接器实现@Connect方法的示例：
+
+*Connect method for salesforce connector*
+
+[source, java, linenums]
+----
+@Connect
+public void connect(@ConnectionKey String username, String password)
+throws ConnectionException
+{
+   ConnectorConfig config = new ConnectorConfig();
+   config.setUsername(username);
+   config.setPassword(password);
+   try
+   {
+      connection = com.sforce.soap.partner.Connector.newConnection(config);
+   }
+   catch (com.sforce.ws.ConnectionException e)
+   {
+      throw new org.mule.api.ConnectionException(ConnectionExceptionCode.UNKNOWN, null, e.getMessage(), e);
+   }
+}
+----
+
+此方法所需的参数是认证所需的凭证，在这种情况下是用户名和密码。由于此方法使用`@Connect`进行了注释，DevKit使这些参数在此连接器的配置元素中可用（与`@Configurable`字段一样），以及在消息处理器中实例为拖入流。指定的凭据会覆盖配置元素中设置的凭据。
+
+==  @ ConnectionKey和连接池
+
+请注意，用户名参数用`@ConnectionKey`注释。如果启用了池（请参阅下面的池模块），Mule会保留一组同时连接，根据需要使用它们来进行调用。 `@ConnectionKey`注释标记此字段用作连接池中此特定连接的键，因此一旦创建了此用户名的连接并将其添加到池中，它将被重用，而不是为每个连接重新创建请求。
+
+[NOTE]
+====
+*Choosing a Connection Key* +
+
+对于用户名/密码认证，用户名是`@ConnectionKey`的明显选择;对于其他协议，请确定最明显与不同用户关联的值以及连接到您的服务的访问权限，并将其选为@ConnectionKey。
+====
+
+上面的`@Connect `方法首先创建一个`ConnectorConfig`（一个保存连接配置信息的Salesforce类型）对象，然后将用户名和密码值加载到对象中。该对象用作静态`newConnection()`调用的参数，如果成功则返回`PartnerConnection`。如果身份验证失败（由于登录信息无效或出于其他原因），代码将捕获Salesforce类型的异常并抛出一个包含相同信息但标记为正确的Mule异常类型的新异常。
+
+[NOTE]
+因为DevKit还导入了一个名为Connector的类，导致导入冲突，请使用Salesforce Connector类（在其上调用n `ewConnection(config)`）的完全限定名称而不是导入类。
+
+[WARNING]
+对于不使用身份验证的客户端，您仍然必须提供@ConnectionKey字段。一个发明的用户名是一种可能性;请参阅 link:/anypoint-connector-devkit/v/3.4/connector-to-soap-service-via-cxf-client-example[通过CXF客户端示例连接到SOAP服务]了解这种实现。
+
+==  @断开连接方法
+
+此注释指示负责处理连接的`@Connector`类中的方法。它在连接器关闭或连接明确终止时调用。
+
+用`@Disconnect`注释的方法必须：
+
+* 为`public`
+* 不输入任何参数
+* 有一个`void`返回类型
+
+如果使用连接管理，@Connector类必须只有一个带注释的`@Disconnect`方法（否则编译将失败）。
+
+[source, java, linenums]
+----
+@Disconnect
+public void disconnect()
+{
+   if (connection != null)
+   {
+       try
+         {
+         connection.logout();
+         }
+      catch (com.sforce.ws.ConnectionException e)
+         {
+         e.printStackTrace();
+         }
+      finally
+         {
+         connection = null;
+         }
+   }
+}
+----
+
+如果连接器当前打开了连接，则此代码将调用`connection.logout()`，这是一种Salesforce客户端方法，可显式取消身份验证并关闭连接。 "finally"块可以确保，如果注销由于某种原因而失败，则连接仍会设置为空，因此连接器不会再尝试引用该连接器实例。
+
+==  @ ValidateConnection方法
+
+这个方法被Mule调用来检查连接是否实际打开。
+
+用`@ValidateConnection`注释的方法必须：
+
+* 为`public`
+* 拒绝接收参数
+*  {返回{1}}或`java.lang.Boolean`
+
+@Connector类中只有一个方法可以使用`@ValidateConnection.`进行注释
+
+[source, java, linenums]
+----
+@ValidateConnection    
+public boolean isConnected() 
+{     
+return connection != null;    
+}
+----
+
+对于这个例子，这段代码只是检查连接参数是否为空来检查连接是否处于活动状态。对于其他连接器，根据协议，可能需要不同的实现。
+
+==  @ ConnectionIdentifier方法
+
+此批注标识`@Connector`中的方法，该方法返回连接的唯一标识符，用于记录和调试。
+
+用`@ConnectionIdentifier`注释的方法必须：
+
+* 为`public`
+* 不是`static`
+* 不接受参数
+*  {返回{1}}
+
+使用连接管理的@Connector类必须只有一个注释`@ConnectionIdentifier`的方法（否则编译将失败）。
+
+此代码返回连接SessionId作为标识符（如果可用）。 SessionHeader是Salesforce对象，其中包含有关当前与API的连接的标头信息，包括会话标识。
+
+[source, java, linenums]
+----
+@ConnectionIdentifier
+   public String connectionId() {
+    if (connection != null){
+     return connection.getSessionHeader().getSessionId();
+    } else {
+     return null;
+    }
+   } 
+----
+
+==  @ InvalidateConnectionOn注解
+
+此注释用于与连接相关的异常处理。将此注释附加到具有`@Processor`或`@Source`注释的任何方法。如果Processor / Source引发此类的异常，则`@InvalidateConnectionOn`会自动使连接失效。 `@InvalidateConnectionOn`接收一个参数：要捕获的异常的类。有关更多详情，请参阅 link:/mule-user-guide/v/3.4/configuring-reconnection-strategies[配置重新连接策略]。
+
+== 连接池
+
+您可以允许连接器的用户使用同时连接池，而不是共享单个实例来处理消息。
+
+实现池的连接器每个都分配一个池组件，其中包含连接器的多个实例以处理同时发生的请求。流的池化配置文件配置其组件池。
+
+如果将`poolable`批注参数设置为true，则生成的模式将包含其他配置元素。
+
+=== 示例
+
+*Connector*
+[source, java, linenums]
+----
+@Connector(name = "myconnector", poolable = true)
+public class MyConnector
+{
+----
+
+在相应的XML中，`pooling-config`元素嵌套在`config`元素内。请注意，不需要提供任何自定义Java代码来处理池，所需的只是提供几个参数：
+
+*XML*
+[source, xml, linenums]
+----
+<mymodule:config>
+    <mymodule:pooling-profile maxActive="10" maxIdle="5"
+        initialisationPolicy="INITIALISE_ALL"
+        exhaustedAction="WHEN_EXHAUSTED_FAIL" maxWait="60"/>
+</mymodule:config>
+----
+
+下面的表格提供了`pooling-profile`参数的细分。
+
+[%header,cols="2*"]
+|===
+一个|
+*Attribute Name*
+
+ 为|
+*Description*
+
+| maxActive  | **Required.**控制一次可以从会话中借用的Mule组件的最大数量。设置为负值时，可以同时激活的组件数量不受限制。当超过`maxActive`时，池被认为已耗尽。
+| maxIdle  | **Required.**控制一次可以在池中闲置的最大Mule组件数量。当设置为负值时，可以一次空闲的Mule组件的数量没有限制。
+| initialisationPolicy  | **Optional.**确定如何初始化池中的组件。它的可能值是：+
+`INITIALISE_NONE`（启动时不会将任何组件加载到池中），`INITIALISE_ONE`（将在启动时将一个初始组件加载到池中），或`INITIALISE_ALL`（将加载池中的所有组件在启动时）。 +
+默认值是`INITIALISE_ONE`
+| exhaustedAction a |
+**Optional.**指定池耗尽时Mule组件池的行为。其可能的价值是：
+
+`WHEN_EXHAUSTED_FAIL`（抛出一个NoSuchElementException）+
+`WHEN_EXHAUSTED_WAIT `（通过调用`Object.wait(long)`来阻塞，直到有新的或空闲的对象可用）
+
+`WHEN_EXHAUSTED_GROW`（创建一个新的Mule实例并返回它，实质上使maxActive无意义）。
+
+如果提供了正值`maxWait `，则最多会阻止很多毫秒，之后会抛出`NoSuchElementException`。如果`maxThreadWait `是负值，它将无限期地阻止。
+
+默认值是`WHEN_EXHAUSTED_GROW`。
+
+| maxWait  | **Required.**指定当池耗尽且`exhaustedAction`设置为`WHEN_EXHAUSTED_WAIT`时，等待池组件可用的毫秒数。
+|===
+
+== 另请参阅
+
+* 请参阅 link:/anypoint-connector-devkit/v/3.4/connector-to-soap-service-via-cxf-client-example[通过CXF客户端示例连接到SOAP服务]示例，在完整的示例中查看连接管理注释。
+* 查看https://github.com/mulesoft/salesforce-connector/blob/master/src/main/java/org/mule/modules/salesforce/SalesforceConnector.java[Salesforce.com连接器源代码代码]并查看连接管理是如何实现的。
+* 返回到 link:/anypoint-connector-devkit/v/3.4/devkit-shortcut-to-success[DevKit成功的捷径]。

@@ -1,0 +1,279 @@
+= 配置覆盖
+
+:keywords: mule, sdk, config, configuration, override, parameter
+
+配置中用作_global default_的参数指定其他操作和源使用的默认值或行为。对于应用中的组件来覆盖该参数的值，可以使用`@ConfigOverride`。
+
+== 什么是配置覆盖？
+
+此功能将来自源或操作的参数绑定到配置中的参数。当使用`@ConfigOverride`对参数进行注释，但未通过DSL为其指定值时，将为其注入名为_exactly_的参数的配置值。
+
+`@ConfigOverride`注释可以应用于操作方法的参数或源的字段。但是，它不能用于配置或连接。
+
+例如，假设一个参数在你的配置中声明如下：
+
+[source, java, linenums]
+----
+@Parameter
+@Optional(defaultValue = "10")
+int maxRetries;
+----
+
+还假定上述配置用于操作中：
+
+[source, java, linenums]
+----
+public void request(@Config ConfigType config, @ConfigOverride int maxRetries)
+  // ...
+}
+----
+
+上面`request`操作中的`maxRetries`参数可以通过几种方式接收其值：
+
+* 当`maxRetries`参数配置中指定的默认值在操作和配置（如下面的XML所示）_do没有为`maxRetries`提供值时使用。
++
+[source, XML, linenums]
+----
+<extension:config name="sampleConfig">
+
+<flow name="requestFlow">
+  <extension:request config-ref="sampleConfig">
+</flow>
+----
++
+在该操作中，`maxRetries`参数将采用默认值`10`。
++
+* 在配置中为`maxRetries`提供的值（如下所示）在参数的值未在操作中指定但在配置中显式时使用。
++
+[source, XML, linenums]
+----
+<extension:config name="sampleConfig" maxRetries=2>
+
+<flow name="requestFlow">
+   <extension:request config-ref="sampleConfig">
+</flow>
+----
++
+在操作中，`maxRetries`将采用值`2`。
++
+* 当此参数明确添加到DSL时，将使用操作中为`maxRetries`参数提供的值。
++
+[source, XML, linenums]
+----
+<extension:config name="sampleConfig" maxRetries=2>
+
+<flow name="requestFlow">
+   <extension:request config-ref="sampleConfig" maxRetries=5>
+</flow>
+----
++
+在操作中，`maxRetries`参数取值`5`。
+
+请注意，此功能不会更改配置中设置的值。它只将配置值注入参数或保留指定的值。
+
+== 配置覆盖要求
+
+重写配置参数有两个要求：
+
+* 配置中参数的名称和类型必须与使用`@ConfigOverride`进行注释的参数的名称和类型相同。
+
+* 如果某个操作具有使用`@ConfigOverride`注释的参数，则该参数也必须具有相应的配置参数。
+
+* 如果源具有使用`@ConfigOverride`注释的字段，则它也必须具有相应的配置作为字段。
+
+参数组中的== 配置覆盖参数
+
+此注释也可用于引用属于配置中的`ParameterGroup`的{​​{0}}，例如：
+
+[source, java, linenums]
+----
+public class ConfigType{
+
+  @ParameterGroup(name = "Strategy")
+  private RetryStrategy retryStrategy;
+
+  // ... Parameter getters
+}
+----
+
+[source, java, linenums]
+----
+public class RetryStrategy{
+
+  @Parameter
+  private int maxRetries;
+
+  @Parameter
+  private String retriesExhaustedMessage;
+
+  // ... Parameter getters
+}
+----
+
+此操作使用`RetryStrategy`类中引用`maxRetries`的{​​{0}}：
+
+[source, java, linenums]
+----
+public void request(@Config ConfigType config, @ConfigOverride int maxRetries)
+  // ...
+}
+----
+
+使用POJO覆盖== 配置
+
+您的配置可以覆盖任何POJO参数。内容
+POJO参数在操作或源代码中将完全由配置定义或完全由操作定义。这意味着您无法定义部分填充的POJO，并期望POJO的其余部分具有注入的配置值。
+
+决定使用哪些值的逻辑与简单的Java类型相同。
+
+没有默认值的== 配置参数
+
+可选的配置参数没有默认值，因此对于任何使用`@ConfigOverride`引用它的操作或源参数，其值将默认为空。
+
+本例中的参数在配置中声明：
+
+[source, java, linenums]
+----
+@Parameter
+@Optional
+private String retriesExhaustedMessage;
+----
+
+在下一个示例中，操作具有配置和配置覆盖参数：
+
+[source, java, linenums]
+----
+public void request(@Config ConfigType config, @ConfigOverride String retriesExhaustedMessage)
+  // ...
+}
+----
+
+如果未在配置和操作中指定`retriesExhaustedMessage`，则其值将为空。
+
+== 配置覆盖示例
+
+本节提供了一个使用`@ConfigOverride`的简化示例。
+
+这是配置的定义：
+
+[source, java, linenums]
+----
+@Configuration(name = "config")
+@Operations({AmqpConsume.class, AmqpPublish.class, AmqpPublishConsume.class, })
+public class AmqpConfig {
+
+  @Parameter
+  @Expression(NOT_SUPPORTED)
+  @Optional(defaultValue = "*/*")
+  private String contentType;
+
+
+  @Expression(NOT_SUPPORTED)
+  @ParameterGroup(name = "Consumer Config", showInDsl = true)
+  private AmqpConsumerConfig consumerConfig;
+
+
+  // ... All parameter getters
+
+}
+----
+
+在此示例中，`AmqpConsumerConfig`类具有将由`@ConfigOverride`注释引用的参数：
+
+[source, java, linenums]
+----
+public final class AmqpConsumerConfig {
+
+  @Parameter
+  @Optional(defaultValue = "IMMEDIATE")
+  @Expression(NOT_SUPPORTED)
+  private AckMode ackMode;
+
+  @Parameter
+  @Optional(defaultValue = "false")
+  @Expression(NOT_SUPPORTED)
+  private boolean noLocal;
+
+  @Parameter
+  @Optional(defaultValue = "false")
+  @Expression(NOT_SUPPORTED)
+  private boolean exclusiveConsumers;
+
+  @Parameter
+  @Optional(defaultValue = "4")
+  @Expression(NOT_SUPPORTED)
+  private int numberOfConsumers;
+
+  // ... All parameter getters
+}
+----
+
+此来源包含`AmqpConfig`和带有`ConfigOverride`注释的参数：
+
+[source, java, linenums]
+----
+@Alias("listener")
+@EmitsResponse
+@MetadataScope(outputResolver = AmqpOutputResolver.class)
+public class AmqpListener extends Source<Object, AmqpMessageAttributes> {
+
+
+  @Connection
+  private ConnectionProvider<AmqpTransactionalConnection> connectionProvider;
+
+  private AmqpTransactionalConnection connection;
+
+  @Config
+  private AmqpConfig config; // <1>
+
+  @Parameter
+  private String queueName;
+
+  @Parameter
+  @ConfigOverride
+  private AckMode ackMode; // <2>
+
+  @Parameter
+  @ConfigOverride
+  private int numberOfConsumers; // <2>
+
+  @Parameter
+  @Optional
+  private String consumerTag;
+
+
+  @Override
+  public void onStart(SourceCallback<Object, AmqpMessageAttributes> sourceCallback) throws MuleException {
+    // ...
+  }
+  // ...
+  @Override
+  public void onStop() {
+    // ...
+  }
+  // ...
+}
+----
+
+<1>指定覆盖`@ConfigOverride`注释参数的值的配置。
+
+<2>如果操作中未指定参数，将继承参数的配置值，并且_exactly_具有相同的名称。请注意，这些名称的参数属于`ParameterGroup`。
+
+这个例子展示了覆盖如何表现：
+
+[source, XML, linenums]
+----
+<amqp:config name="config">
+ <amqp:connection host="localhost" port="5671" virtualHost="/" username="guest" password="guest"/>
+ <amqp:consumer-config numberOfConsumers="16" /> // <1>
+</amqp:config>
+
+<flow name="amqpStatisticsListen">
+  <amqp:listener config-ref="config" queueName="statisticsQueue" numberOfConsumers="1"/> // <2>
+  <!-- process statistics -->
+  <logger level="INFO" message="#[payload]"/>
+</flow>
+----
+
+<1>在配置中，`numberOfConsumers`显式设置为`16`，但`ackMode`采用默认值。
+<2>在源中指定`numberOfConsumers`，因此它将采用值`1`。没有指定`ackMode`，所以它会从配置中获取值，即`IMMEDIATE`。

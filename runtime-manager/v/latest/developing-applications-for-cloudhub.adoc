@@ -1,0 +1,89 @@
+= 为CloudHub开发应用程序
+:keywords: cloudhub, cloud, Mule, api, runtime manager, arm
+
+image:logo-cloud-active.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-disabled.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-disabled.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+
+适用于部署到CloudHub的Mule应用程序有时可能会要求您的操作与要部署到内部部署服务器的应用程序有所不同。大多数情况下，同样的 link:/mule-user-guide/v/3.8/elements-in-a-mule-flow[流量元素]和 link:/mule-user-guide/v/3.8/global-elements[全球元素]也适用，但您必须考虑一些特殊情况。 link:/runtime-manager/deployment-strategies[部署策略]涵盖了两种部署环境之间的主要差异，本文列出了部署到CloudHub时要采用的一些最佳实践。
+
+link:/runtime-manager/cloudhub[CloudHub]指南包含基本概念和 link:/getting-started/deploy-to-cloudhub[部署到CloudHub]示例的演练，以帮助您熟悉在CloudHub中开发和部署应用程序的过程。
+
+
+
+== 指定HTTP / HTTPS主机
+
+如果您使用任何 link:/mule-user-guide/v/3.8/http-connector[HTTP连接器]，请将CloudHub配置中的主机地址定义为*0.0.0.0*。 CloudHub将来自应用程序域URL的请求路由到端点。如果您部署了多个 link:/runtime-manager/cloudhub-faq[工人]，则CloudHub会自动为这些工作人员自动负载平衡传入流量。随着应用程序的扩展，工作负载会自动分配给您的工作人员。
+
+== 提供外部HTTP / HTTPS端口
+
+如果您的应用程序需要可从外部访问的HTTP或HTTPS端口来接收消息，触发事件或公开Web服务或用户界面，请使用保留属性`${http.port}`或`${https.port}`声明HTTP侦听器端口。在CloudHub上，平台服务自动分配端口`${http.port}`或`${https.port}`。端口80上的流量到您的应用程序域的URL将被路由到`${http.port}`，并且端口443上的流量将路由到`${https.port}`。
+
+要支持通过此端口路由到多个CloudHub服务，您需要在每个暴露的URL上配置唯一路径。例如：
+
+[source,bash, linenums]
+----
+http://0.0.0.0:${http.port}/service/path/one
+http://0.0.0.0:${http.port}/service/path/two
+----
+
+== 部署策略的灵活性
+
+如果您想要通过各种不同的 link:/runtime-manager/deployment-strategies[部署策略]部署相同的Mule应用程序 - 例如在本地服务器和CloudHub上 - 应该将应用程序的某些参数抽象为 link:/mule-user-guide/v/3.8/mule-application-deployment-descriptor[应用程序属性]，您可以使用不同的设置在每种情况下的值。
+
+在项目的`src/main/app`文件夹中创建一个名为*mule-app.properties*的应用程序属性文件。无论您是在Anypoint Studio还是其他IDE中工作，并且想要部署到Anypoint Studio的内置服务器，都需要执行此操作。这允许您为变量`http.port`或`https.port`定义一个本地值。
+
+如果您有其他运行时设置需要在本地运行时进行不同的配置，则还可以将它们放在应用程序属性文件中，并使用Mule应用程序配置中的语法`${propertyname}`来引用它们。当部署在CloudHub上时，每个应用程序都可以声明一组环境变量，以便提供不同的值。您可以使用 link:/runtime-manager/deploying-to-cloudhub[运行时管理器控制台]或 link:/runtime-manager/anypoint-platform-cli[命令行界面]来定义这些环境变量。
+
+== 日志记录
+
+所有来自应用程序的日志消息都由CloudHub日志记录服务捕获，并可通过运行时管理器控制台中的日志搜索工具使用。如果您希望在日志中公开其他信息以用于诊断或审计目的，Mule提供了 link:/mule-user-guide/v/3.8/logger-component-reference[记录器元素]，用于细粒度记录消息内容。
+
+[IMPORTANT]
+在CloudHub上，删除应用程序后，您的日志数据将无法通过控制台访问。在清除之前，CloudHub会将旧日志数据归档一段有限的时间。这使您可以根据需要恢复数据。请访问 link:https://support.mulesoft.com[https://support.mulesoft.com]打开支持案例以获取更多信息。
+
+== 打包第三方库
+
+CloudHub在平台中提供服务，支持连接许多不同的协议并转换多种数据格式。所有标准的Mule库都包含在内并可供您的应用程序使用。如果您需要包含其他第三方库，则可以将该库打包到 link:/mule-user-guide/v/3.8/application-format[应用程序包]的`<mule application zip>/lib`文件夹中。运行时，您的应用程序`lib`文件夹中打包的任何库在类路径中均可用于您的应用程序。
+
+== 访问防火墙后面的资源
+
+在开发需要从防火墙内部访问资源的应用程序时，您可以配置 link:/runtime-manager/virtual-private-cloud[虚拟私有云（VPC）]来托管您的 link:/runtime-manager/cloudhub-architecture#cloudhub-workers[Cloudhub工人]并配置IPSec隧道来访问您的应用程序。
+
+
+== 访问第三方API和服务
+
+CloudHub包含许多第三方应用程序的连接器，如Salesforce，NetSuite，Twitter等。 Anypoint Studio包含几个最常用的用于使用CloudHub进行开发的框架， link:/anypoint-connector-devkit/v/3.7[Anypoint连接器DevKit]文档提供了有关如何在应用程序中查找和部署这些连接器的更多详细信息。
+
+== 安全属性
+
+请注意，您可以将应用程序属性标记为安全，以使其值在运行时不可见，或者在服务器和控制台之间传递。有关更多信息，请参阅 link:/runtime-manager/secure-application-properties[安全应用程序属性]。
+
+== 为您的应用程序添加UI
+
+部署到CloudHub的应用程序可以具有使用HTML和JavaScript的Web UI。 AJAX模块支持从浏览器与应用程序交互，并提供静态内容提供支持。
+
+
+
+
+
+== 另请参阅
+
+*  link:/runtime-manager/deployment-strategies[部署策略]
+*  link:/runtime-manager/deploying-to-cloudhub[部署到CloudHub]
+*  link:/runtime-manager/managing-applications-on-cloudhub[在CloudHub上管理应用程序]
+*  link:/anypoint-studio/v/6/[Anypoint Studio Essentials]
+*  link:/runtime-manager/managing-deployed-applications[管理已部署的应用程序]
+*  link:/runtime-manager/cloudhub[CloudHub]
+*  link:/runtime-manager/cloudhub-architecture[CloudHub体系结构]
+*  link:/runtime-manager/monitoring[监测应用]
+*  link:/runtime-manager/cloudhub-fabric[CloudHub Fabric]
+*  link:/runtime-manager/managing-queues[管理队列]
+*  link:/runtime-manager/managing-application-data-with-object-stores[使用对象库管理应用程序数据]
+*  link:/runtime-manager/anypoint-platform-cli[命令行工具]
+*  link:/runtime-manager/secure-application-properties[安全应用程序属性]
+*  link:/runtime-manager/viewing-log-data[查看日志数据]
+*  link:/runtime-manager/virtual-private-cloud[虚拟私有云]
+*  link:/runtime-manager/penetration-testing-policies[渗透测试政策]

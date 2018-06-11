@@ -1,0 +1,151 @@
+=  CloudHub网络指南
+:keywords: cloudhub, cluster, managing, monitoring, runtime manager, arm
+
+image:logo-cloud-active.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-disabled.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-disabled.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+[NOTE]
+====
+本文档中的主题仅通过基于云的Runtime Manager版本处理云部署。请参阅 link:/runtime-manager/deployment-strategies[部署策略]以更好地了解各种可能的部署方案。
+====
+
+== 概述
+
+CloudHub提供了各种工具来构建您的集成和API，以便它们具有可维护性，安全性和可扩展性。本指南介绍了基本的网络体系结构，DNS和防火墙规则。
+
+image:CloudHub+Networking+Guide-1.jpeg[CloudHub +网络+指南-1]
+
+== 负载平衡
+
+CloudHub为所有集成提供负载平衡服务，您可以使用默认的服务或获取 link:/runtime-manager/cloudhub-dedicated-load-balancer[专用负载平衡器]。
+
+该服务在工作人员之间进行循环负载分配，允许工作人员在接收更多请求时进行线性扩展，并在升级应用程序时提供透明切换（有关更多信息，请参阅零停机时间升级）。
+
+部署在CloudHub上的每个应用程序都具有一个引用负载平衡器的CNAME记录 - 例如：`myapp.cloudhub.io`。部署在CloudHub上的Mule应用程序必须监听CloudHub为HTTP和HTTPS分配的`0.0.0.0`和端口。然后负载均衡器将来自端口80和443（SSL）的请求转发到Mule worker上的这些端口。转发流量仍然是HTTP＆HTTPS，这意味着您无法在`${http.port}`上收听HTTPS，也无法在`${https.port}`上收听纯HTTP。 +
+必须分别使用保留属性`${http.port}`和`${https.port}`来引用这些端口，以便CloudHub服务可以在部署时动态分配端口。 +
+
+这是一个Mule配置的例子，它利用它来公开一个HTTPS端点：
+
+[source,xml]
+----
+<http:listener-config name="HTTP_Listener_Configuration" protocol="HTTPS" host="0.0.0.0" port="${https.port}" doc:name="HTTP Listener Configuration" >
+		<tls:context name="TLS_Context_Custom_Keystore" doc:name="TLS Context">
+			<tls:key-store type="jks" path="server.jks" keyPassword="keypassword" password="storepassword" alias="cloudhubworker" />
+		</tls:context>
+</http:listener-config>
+----
+
+您也可以参考此知识库文章： link:https://support.mulesoft.com/s/article/Sample-App-Configuring-HTTPS-endpoint-for-deployment-in-Cloudhub[示例应用程序：配置HTTPS端点以在CloudHub中进行部署]
+
+*Important*：在Mule worker上，CloudHub负载平衡器代理端口：HTTP：80到8081，HTTPS代理端口：443到8082。 +
+对于HTTP，`http.port`属性自动设置为端口8081，对于HTTPS，`https.port`设置为端口8082。如果在mule-app.properties文件中指定了http.port和https.port的其他值，则会在部署时覆盖这些值。
+
+[NOTE]
+--
+对于客户端通过CloudHub的负载均衡器（_myapp.cloudhub.io_）创建的每个请求，负载均衡器会维护两个连接。一个从客户端连接到你的工作者的连接。对于每个连接，负载平衡器管理在任何连接上未发送数据时触发的300秒的空闲超时。如果在此期间没有数据发送或接收，负载均衡器将关闭这两个连接。
+
+对于从任何一方处理超过300秒的连接，请考虑异步处理处理。
+--
+
+
+==  DNS记录
+
+部署到CloudHub时，以下DNS记录将公开给您的应用程序：
+
+[cols="2*a"]
+|===
+| *myapp.cloudhub.io*  |负载均衡器。端口80和443分别转发到`${http.port}`和`${https.port}`。
+| *mule-worker-myapp.cloudhub.io*  | Mule工作人员的外部IP地址。 HTTP服务暴露于：`${http.port}`和`${https.port}`
+| *mule-worker-internal-myapp.cloudhub.io*  | Mule工作人员的内部IP地址。此DNS记录的IP只能在客户的私人 link:/runtime-manager/virtual-private-cloud[VPC]内访问。 *These IPs are not accessible for workers running in the MuleSoft shared VPC.*公开HTTP服务公开在`${http.port}`和`${https.port}.`上。内部HTTP服务在端口*8091/8092*上公开。
+|===
+
+在某些情况下，您可能想知道应用程序的内部IP：
+
+* 直接在客户的 link:/runtime-manager/virtual-private-cloud[VPC]内与工作人员进行沟通，而无需通过公共互联网发送数据
+* 如果您希望设置自己的负载平衡器（请参见下文）
+
+这些IP地址可以通过客户VPC内的`mule-worker-internal-myapp.cloudhub.io`记录进行访问。如果直接访问工作人员，则CloudHub负载平衡层的任何负载分配受益都将丢失。
+
+==  IP范围和静态IP
+
+由于CloudHub在Amazon EC2上部署，IP地址是从Amazon EC2 IP池中选择的。有关这些范围的列表，请参阅 http://docs.aws.amazon.com/general/latest/gr/aws-ip-ranges.html[Amazon AWS IP地址范围API]。该页面中的下载链接将检索包含该区域的所有范围的动态生成JSON表示。请注意，亚马逊可能会在不通知的情况下更改范围，因此您可能需要定期更新此信息。
+
+
+
+CloudHub支持为应用程序分配静态IP，以便将其列入白名单以供其他服务使用。要为您的应用程序启用静态IP，请转至Runtime Manager用户界面上应用程序设置页面的*Static IPs*选项卡，然后启用*Use Static IP*复选框。默认情况下，会为您分配一定数量的静态IP，其数量等于订阅中Production vCore数量的两倍。要增加此限制，请联系https://support.mulesoft.com [MuleSoft支持]。为应用程序分配静态IP后，它将显示在应用程序设置的*Static IPs*选项卡中。有关更多详细信息，请参阅 link:/runtime-manager/deploying-to-cloudhub#static-ips-tab[部署到CloudHub]。
+
+[NOTE]
+CloudHub VPC中的私有IP地址不支持静态IP。
+
+有时，防火墙或基础架构设置不会让Mule运行时间到达运行时管理器的公共服务。注册Mule运行时或启动它并注册它与Runtime Manager一起工作时，这可能是一个问题。
+
+如果您需要将 link:/runtime-manager/runtime-manager-agent[运行时管理器代理]和Runtime Manager控制台之间的通信IP列入白名单，请参阅 link:/runtime-manager/installing-and-configuring-runtime-manager-agent#ports-ips-and-hostnames-to-whitelist[IP到白名单]。
+
+[NOTE]
+您可以将静态IP分配给多个工作人员的应用程序。但是，不可能为多个工作人员预先分配静态IP。如果有多名工作人员，则会自动分配IP地址。
+
+== 区域服务
+
+根据您在其中部署应用程序的区域，您的集成的DNS记录和负载平衡器可能会更改。下表总结了每个区域的可用于您的应用程序的DNS记录：
+
+[%header,cols="2*a"]
+|===
+| DNS记录 |个地区
+| myapp.cloudhub.io  | 美国西部（俄勒冈），美国西部（加利福尼亚北部），美国东部（弗吉尼亚北部）
+
+所有其他地区
+
+| myapp.ca.cloudhub.io  | 加拿大（中环）
+| {myapp.eu.cloudhub.io {1}}欧洲
+| myapp.br.cloudhub.io  | 南美洲（圣保罗）
+| myapp.au.cloudhub.io  | 亚太地区（新加坡），亚太地区（悉尼），亚太地区（东京）
+| myapp.eu.cloudhub.io  | 欧盟（爱尔兰），欧盟（法兰克福）
+| myapp.uk.cloudhub.io  | 欧盟（伦敦）
+| {myapp.au.cloudhub.io {1}}
+新加坡
+
+澳大利亚
+
+|===
+
+部署到区域也会影响您的内部和外部工作者DNS地址。例如，如果您在欧洲部署，则内部和外部IP的DNS记录为`mule-worker-myapp.eu.cloudhub.io`和`mule-worker-internal-myapp.eu.cloudhub.io`。
+
+== 防火墙规则和端口访问
+
+外部暴露的唯一两个端口分别为`${http.port}`和`${https.port}`（默认情况下分别为`8081`和`8082`）。如果您希望访问其他端口，则可以通过*Anypoint Virtual Private Cloud (VPC)*产品进行访问。
+
+如果您希望仅在VPC内部公开HTTP服务，则这些服务可以分别在端口`${http.private.port}` `${https.private.port}`（`8091`和`8092`）上公开，这些端口在默认情况下处于打开状态内部网络。在这种情况下，这些服务无法在公共IP或负载平衡器上访问，从而确保可以安全地访问这些服务。
+
+虽然VPC for 8091＆8092中的端口已经打开，但您的Mule应用程序需要进行配置，以便HTTP（s）Listener配置使用端口8091或8092。
+
+其他端口可以在VPC内部打开，例如，基于JMX的监视。为此，请参阅 link:/runtime-manager/virtual-private-cloud#firewall-rules[VPC文档]中的防火墙规则部分。
+
+== 专用负载平衡配置
+
+在某些情况下，您可能需要为您的Mule工作人员设置自定义负载平衡图层。例如，如果您想提供自定义域名或SSL证书。
+
+流量可以通过内部或外部DNS记录从您的负载均衡器路由到CloudHub员工。该记录包含应用程序中每个工作人员的IP地址。建议您将DNS超时设置为20-60秒，以便任何DNS更改快速传播并将影响降至最低。
+
+通过配置您自己的 link:/runtime-manager/virtual-private-cloud[VPC]，您可以通过 link:/runtime-manager/anypoint-platform-cli[Anypoint平台命令行界面]设置您自己的 link:/runtime-manager/cloudhub-dedicated-load-balancer[专用负载平衡器]。
+
+== 避免CloudHub上的应用程序公开发现
+
+如果您有 link:/runtime-manager/virtual-private-cloud[虚拟私有云]和 link:/runtime-manager/cloudhub-dedicated-load-balancer[Cloudhub专用负载均衡器]，则可以阻止您在CloudHub中托管的应用程序公开访问：
+
+. 使用以下命令删除端口8081和8082的 link:/runtime-manager/virtual-private-cloud#firewall-rules[VPC防火墙规则]：
+.. 您VPC管理中心的*Firewall Rules*选项卡：
+... 删除两个规则*source* `Anywhere (0.0.0.0/0)`和端口8081和8082。
+..  Anypoint CLI
+... 使用索引`1`和`3`运行 link:/runtime-manager/anypoint-platform-cli#cloudhub-vpc-firewall-rules-remove[cloudhub vpc防火墙规则删除]命令
+. 使用您要授权的IP创建一个 link:/runtime-manager/cloudhub-dedicated-load-balancer#whitelists[白名单中的专用负载平衡器]。
+.. 您只能使用CLI中的 link:/runtime-manager/anypoint-platform-cli#cloudhub-load-balancer-whitelist-add[cloudhub负载平衡器白名单添加]命令执行此操作。
+
+*Important:*如果您没有任何 link:/runtime-manager/cloudhub-dedicated-load-balancer[Cloudhub专用负载均衡器]，执行第一步足以确保部署在您VPC中的应用程序不会公开访问。
+
+== 另请参阅
+
+*  link:/runtime-manager/developing-applications-for-cloudhub#providing-an-external-http-https-port[部署到CloudHub时提供外部HTTP / HTTPS端口]
+*  link:/runtime-manager/cloudhub-architecture[CloudHub体系结构]
+*  link:/runtime-manager/virtual-private-cloud[虚拟私有云]

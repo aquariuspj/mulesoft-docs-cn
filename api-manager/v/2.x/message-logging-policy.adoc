@@ -1,0 +1,106 @@
+= 邮件记录策略
+：imagesdir：./_images
+
+此策略在执行的任何时间点将自定义消息记录为可在策略，代理或后端之间使用的信息。该策略适用于log4j和log4j2。
+
+== 先决条件
+
+您需要具有Anypoint Platform组织管理员角色或具有创建或管理API的权限。
+
+== 关于日志记录策略参数
+
+消息记录策略由以下配置参数组成：
+
+image:apim-message-logging-policy-ui.png[消息记录策略UI]
+
+[%header%autowidth.spread]
+|===
+| {参数{1}}说明
+|消息 |转换为要记录的消息的DataWeave表达式。
+
+注意：如果有效负载用作消息日志的一部分，请勿将Listener配置为不可重复（默认情况下，此设置处于关闭状态）。
+|有条件的 |表达为DataWeave表达式的条件，返回true或false，需要满足记录消息。该字段是可选的。
+|类别 |日志所属的类别。该参数是可选的。如果未设置类别，则默认值为`org.mule.runtime.logging.policy-<policy id>`值。
+|级别 |根据log4j2文件中的配置定义是否记录消息。
+在调用API之前调用|  |设置为在调用API之前应用日志策略。
+调用API之后的|  |设置为在调用API后应用日志策略。
+|===
+
+关于日志记录格式== 
+
+日志格式如下：`<date> <thread name> <level> <category>: <message>`
+
+类别org.mule和消息＃[有效负载]（有效负载值为"the payload"）为：
+
+`2018-01-25 18:57:29,907 [WrapperListener_start_runner] INFO org.mule: the payload`
+
+
+== 关于政策实施
+
+记录策略由以下顺序组成：
+	
+. 将请求发送到API。
+. 如果满足以下条件，则会记录该消息：
++
+** 策略中定义的日志级别和类别包含在log4j2.xml配置文件中定义的日志记录器中。
+** 该政策的条件字段未设置或已设置，且条件已满足。
+. 返回API响应。消息记录策略不会影响任何策略或流程的执行。
+. 消息出现在应用程序日志中。
+
+关于日志记录状态== 
+
+在记录API流之前：
+
+image:apim-message-logging-policy-states-1.png[记录API流之前的状态]
+
+记录API流后：
+
+image:apim-message-logging-policy-states-2.png[记录一个API流后的状态]
+
+API流后的错误处理程序：
+
+image:apim-message-logging-policy-states-3.png[错误处理程序执行后的状态]
+
+==  XML中的日志记录策略
+
+以下流程显示了一个示例日志记录策略：
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http-policy="http://www.mulesoft.org/schema/mule/http-policy"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core 
+      http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/http-policy 
+      http://www.mulesoft.org/schema/mule/http-policy/current/mule-http-policy.xsd">
+
+<http-policy:proxy name="102280-message-logging">
+  <http-policy:source>
+   <try>
+	<try>
+	  <logger level="INFO" message="#[payload]"
+	  category="org.mule.runtime.logging.policy-102280"/>
+	    <error-handler>
+	     <on-error-continue>
+		<logger level="DEBUG" message="Before calling API turned into an error" 
+			category="org.mule.runtime.logging.policy-102280"/>
+	     </on-error-continue>
+	    </error-handler>
+	</try>
+        <http-policy:execute-next/>
+          <error-handler>
+	    <on-error-propagate logException="false">
+	    </on-error-propagate>
+          </error-handler>
+  </try>
+  </http-policy:source>
+</http-policy:proxy>
+</mule>
+----
+
+== 另请参阅
+
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。

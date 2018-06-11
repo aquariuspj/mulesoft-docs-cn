@@ -1,0 +1,88 @@
+= 定义消息来源
+:keywords: devkit, message sources, polling, source strategy, module, verifiers
+
+使用DevKit，您可以创建消息源，它接收或生成Mule处理的新消息。
+
+Message Sources的一个用例是实现Streaming API。 `@Source`注释将`@Module`或`@Connector`注释类中的方法标记为可从Mule流中调用，并且能够生成Mule事件。每个标记的方法生成一个消息源。该方法必须接收`SourceCallback`作为其参数中的一个参数，以表示链中的下一个消息处理器。只要该参数出现在方法签名中，该参数的显示顺序就无关紧要。
+
+== 轮询实施
+
+`@Source`注释包括`SourceStrategy`和`pollingPeriod`属性。 `PollingPeriod`定义了一个默认的轮询周期值，可以从应用程序进行配置。
+
+[source,java, linenums]
+----
+@Source(sourceStrategy = SourceStrategy.POLLING, pollingPeriod = 1000)
+@ReconnectOn(exceptions = MessageSourceException.class)
+public void messageSource(SourceCallback callback) throws Exception {
+  callback.process(client.getDateToString());
+}
+----
+
+生成的代码创建一个`while`循环来控制线程，该线程运行源并调用`sleep(pollPeriod)`：
+
+[source,java, linenums]
+----
+public void run() throws Exception {
+  while(!Thread.currentThread().isInterrupted()) {
+    callback.process(client.getDateToString());
+    thread.sleep(pollingPeriod);
+  }
+}
+----
+
+==  PollingPeriod参数
+
+对于`SourceStrategy.POLLING,` `@Source`在XSD和Studio编辑器中生成`pollingPeriod`参数。
+
+== 检验器
+
+带有`SourceStrategy.POLLING:`的{​​{0}}注释方法
+
+* 无法定义`pollingPeriod`参数。
+* 必须定义默认的` pollingPeriod `值。
+
+`@Source`带注释的方法_without `SourceStrategy.POLLING`不能定义默认的`pollingPeriod`值。
+
+== 重新连接策略
+
+`@Source`方法使用`@ReconnectOn`为重新连接策略提供支持。
+
+`@InvalidateConnectionOn`已弃用。
+
+== 示例
+
+SalesForce连接器支持SalesForce Streaming API，用户可以在其中订阅主题并在发生与该主题相关的新事件时接收通知。
+
+[source,java, linenums]
+----
+@Source
+public void subscribeTopic(String topic, final SourceCallback callback) {
+  getBayeuxClient().subscribe(topic, new ClientSessionChannel.MessageListener() {
+    @Override
+    public void onMessage(ClientSessionChannel channel, Message message) {
+      try {
+          callback.process(message.getData());
+      } catch (Exception e) {
+          LOGGER.error(e);
+      }
+    }
+  });
+}
+----
+
+您可以使用以下方法在Anypoint Studio中调用此方法：
+
+[source,xml, linenums]
+----
+<flow name="myFlow">
+   <sfdc:subscribe-topic topic="/someTopic"/>
+   <logger level="INFO" message="#[payload]"/>
+   ...
+</flow>
+----
+
+该方法使用给定的参数名称订阅主题，并在收到更新时调用记录器。
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.6/salesforce-connector[Salesforce连接器]

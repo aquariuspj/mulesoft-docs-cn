@@ -1,0 +1,52 @@
+= 使用DataMapper处理数据流（弃用 -  DataMapper）
+:keywords: datamapper
+
+在处理大型数据集时特别有用，Anypoint DataMapper支持流式数据输入和输出。例如，当从一个非常大的输入文件读取信息时，可以使用数据流，避免DataMapper将整个文件加载到内存中。相反，DataMapper作为一个流水线工作：它依次读取文件并将数据存储在缓存中，执行数据映射，将输出发送到下一个转换器，清空缓存，然后重新开始。使用此过程，DataMapper可以仅使用大约75 MB的RAM来解析500 MB CSV文件，从而显着提高性能和资源利用率。
+
+*  Anypoint DataMapper流支持CSV和固定宽度的输入和输出格式。
+* 您可以配置流缓存的大小以优化性能。
+
+[NOTE]
+====
+DataMapper将继续在Mule ESB 3.x的所有当前版本和未来版本中得到完全支持，但是它将在Mule 4.0中被移除，转而使用*Transform Message*组件（基于 link:/mule-user-guide/v/3.8/dataweave[DataWeave]代码）。我们建议如果您希望利用DataWeave的新功能，或者如果您启动新项目，请立即升级。
+
+Studio中现在包含 link:/mule-user-guide/v/3.8/dataweave-migrator[迁移工具]，可帮助将DataMapper地图转换为DataWeave。右键单击DataMapper，选择*Migrate to DataWeave*，然后按照说明进行操作。
+
+image:dw_migrator_script.png[dw migrator]
+
+如果在调色板中没有看到DataMapper，可以转到*Preferences*  - > *Anypoint Studio*  - > *Palette Profiles*并勾选复选框*Show deprecated Mule Components and Attributes*来启用它。
+====
+
+
+== 假设
+
+本文档假定读者熟悉Anypoint DataMapper Transformer。如果您不是，请从头开始： link:/anypoint-studio/v/5/datamapper-user-guide-and-reference[DataMapper用户指南和参考]。有关DataMapper中所有可用工具的列表，请参阅 link:/anypoint-studio/v/5/datamapper-visual-reference[DataMapper可视化参考]。
+
+== 在DataMapper中设置流
+
+要在数据映射流中设置Streaming参数，请按照下列步骤操作：
+
+. 在DataMapper视图中，单击*Properties*图标。 DataMapper显示通用配置对话框。
+
+. 点击*Streaming*。
+
+.  在*Pipe Size*输入字段中，输入所需的缓存大小。默认值是2048.请记住：
+* 处理文件时，*Pipe Size*的值以字节表示
+* 处理集合时，值以集合元素的数量表示
+
+=== 处理异常
+
+如果映射中发生异常，DataMapper会尽快停止流引擎。为避免发生故障时出现意外后果（例如只将部分行插入数据库），请使用 link:/mule-user-guide/v/3.7/transactions-configuration-reference[交易]。
+
+== 示例
+
+本示例说明了Anypoint DataMapper中Streaming功能的使用。
+
+link:/mule-user-guide/v/3.7/http-connector[HTTP连接器]接收一个CSV文件，然后将其传递给DataMapper。 DataMapper将输入数据从CSV映射到POJO。 link:/mule-user-guide/v/3.7/database-connector[数据库连接器]将数据插入到外部数据库中。在这种情况下，DataMapper和数据库连接器作为管道并行工作，进一步提高了应用程序的性能。
+
+最后，输出连接器接收映射列表，然后将每个项目作为值存储在外部数据库的SQL查询中。
+
+[source, sql, linenums]
+----
+INSERT INTO Persons (name, city, email, phone) VALUES (#[payload.name], #[payload.city], #[payload.email], #[payload.phone])
+----

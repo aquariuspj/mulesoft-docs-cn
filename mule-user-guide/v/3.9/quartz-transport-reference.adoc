@@ -1,0 +1,571 @@
+=  Quartz传输参考
+:keywords: quartz
+
+[TIP]
+在计划任务时，请使用 link:/mule-user-guide/v/3.9/poll-reference[投票范围]而不是Quartz
+
+Quartz传输为调度事件和触发新事件提供支持。入站石英端点可用于触发可重复的入站事件，例如每秒钟。出站石英端点可用于安排现有事件在日后启动。用户可以使用cron表达式创建日程表，事件可以保存在数据库中。
+
+此传输使用 http://www.quartz-scheduler.org/documentation/[石英项目]。 Quartz站点有更多关于如何使用Quartz的通用信息。
+
+*Notes:*
+
+* 在具有多个工作者或节点的环境中运行时，默认情况下，Quartz调度程序在每个节点上运行，而Poll Scope仅在单个节点上运行。可以将Quartz调度程序配置为以这种方式工作，但需要配置JDBC JobStore。
+* 使用Quartz入站端点时，您无法通过“调度程序”选项卡进行管理。
+
+== 名称空间和架构
+
+[%header,cols="25a,75a"]
+|===
+|项 | URL
+| XML命名空间 | `+http://www.mulesoft.org/schema/mule/quartz+`
+| XML架构位置 | `+http://www.mulesoft.org/schema/mule/quartz/3.9/mule-quartz.xsd+`
+|===
+
+
+== 关于Cron表达式
+
+cron表达式是由空格分隔的六个或七个字段组成的字符串。字段可以包含任何允许的值，以及该字段允许的特殊字符的各种组合。这些字段如下所示：
+
+[%header%autowidth.spread]
+|===
+|字段名称 |强制性 |允许的值 |允许的特殊字符
+|秒 |是 | 0-59  |， -  * /
+|分钟 |是 | 0-59  |， -  * /
+|小时数 |是 | 0-23  |， -  * /
+|个月中的某天 |是 | 1-31  |， -  *？ / L W C
+|月 |是 | 1-12或JAN-DEC  |， -  * /
+|星期几 |是 | 1-7或SUN-SAT  |， -  *？ / L C＃
+|年份 |否 |为空，1970-2099  |， -  * /
+|===
+
+Cron表达式可以像这样简单：+
+  `* * * * ? *`
+
+或更复杂的，如下所示：+
+  `0 0/5 14,18,3-39,52 ? JAN,MAR,SEP MON-FRI 2002-2010`。
+
+以下是一些例子：
+
+[%header%autowidth.spread]
+|===
+| {式{1}}行为
+| 0 0 12 * *？ |每天12点（中午）开火
+| 0 15 10？ * *  |每天上午10点15分开火
+| 0 15 10 * *？ |每天上午10点15分开火
+| 0 15 10 * *？ *  |每天上午10点15分开火
+| 0 15 10 * *？ 2005年 | 2005年每天上午10点15分开火
+| 0 * 14 * *？ |每天下午2点开始，每天下午2点59分结束，每天开火
+| 0 0/5 14 * *？ |每天下午2点开始，每天下午2点55分结束，每天开火
+| 1 1 1 1,6 *？ |每年一月的第一天和六月的第一天（第一小时的第一分钟的第一秒）开火+
+|===
+
+如果你不熟悉cron语法，不要被吓倒！这很容易学习，这里是 http://www.quartz-scheduler.org/documentation/quartz-2.1.x/tutorials/crontrigger[好教程]，或者您甚至可以利用可以为您构建cron表达式的在线工具。
+
+== 关于乔布斯
+
+当Quartz传输发生时间触发时，Jobs用于执行操作。 Mule提供了一些用于生成和安排事件的作业。这些在下面详述。用户还可以编写自己的作业，并使用Mule附带的自定义作业类型将其挂接。
+
+== 连接器
+
+Quartz连接器用于配置引用连接器的Quartz端点的默认行为。注意，如果只配置了一个Quartz连接器，则所有Quartz端点将使用该连接器。
+
+<connector...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| scheduler-ref  |提供Quartz Scheduler接口的实现。如果未提供值，则从StdSchedulerFactory检索调度程序。如果没有提供属性，则调用getDefaultScheduler方法。否则，使用给定的属性创建新的工厂实例，并使用getScheduler方法检索调度程序。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|===
+
+<connector...>的{​​{0}}子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|工厂属性 | 0 .. *  |在工厂上设置属性（请参阅scheduler-ref）。
+|===
+
+[NOTE]
+====
+设置`org.quartz.scheduler.instanceName`工厂属性时，请确保*avoid duplicate names*。
+
+对于在相同Mule实例中运行的每个Quartz连接器，`instanceName`的值必须不同，即使在不同的应用程序中也是如此。
+
+[source, xml]
+----
+<quartz:factory-property key="org.quartz.scheduler.instanceName" value="MuleScheduler1"/>
+----
+
+如果Quartz连接器为`instanceName`属性共享相同的值，则这些连接器可能会错误地触发它们所在的应用程序中的预定作业。
+====
+
+例
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:quartz="http://www.mulesoft.org/schema/mule/quartz"
+      xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+       http://www.mulesoft.org/schema/mule/quartz http://www.mulesoft.org/schema/mule/quartz/current/mule-quartz.xsd">
+ 
+    <quartz:connector name="quartzConnector1" scheduler-ref="myScheduler">
+        <quartz:factory-property key="org.quartz.scheduler.instanceName" value="MuleScheduler1"/>
+        <quartz:factory-property key="org.quartz.threadPool.class" value="org.quartz.simpl.SimpleThreadPool"/>
+        <quartz:factory-property key="org.quartz.threadPool.threadCount" value="3"/>
+        <quartz:factory-property key="org.quartz.scheduler.rmi.proxy" value="false"/>
+        <quartz:factory-property key="org.quartz.scheduler.rmi.export" value="false"/>
+        <quartz:factory-property key="org.quartz.jobStore.class" value="org.quartz.simpl.RAMJobStore"/>
+    </quartz:connector>
+...
+----
+
+== 出站端点
+
+出站Quartz端点允许存储事件并在稍后的时间/日期触发。如果您正在使用持久性事件存储库，则事件的有效内容必须实现java.io.Serializable。您可以在端点上配置org.quartz.Job实现，以告知它要采取的操作。骡有一些默认的工作，但你也可以自己写。
+
+<outbound-endpoint...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| jobName  |与端点上的作业相关联的名称。这只在内部存储事件时才真正使用。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| cronExpression  |用于在指定的日期/时间安排事件的cron表达式。此属性或repeatInterval是必需的。 cron表达式是由空格分隔的6或7个字段组成的字符串。字段可以包含任何允许的值，以及该字段允许的特殊字符的各种组合。有关字段名称，允许的值和示例，请参阅<<About Cron Expressions>>。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| repeatInterval  |两个事件之间的毫秒数。该属性或cronExpression是必需的。
+
+*Type*：长+
+*Required*：否+
+*Default*：无
+| repeatCount  |要安排的事件数量。此值默认为-1，这意味着事件将无限期排定。
+
+*Type*：整数+
+*Required*：否+
+*Default*：无
+| startDelay  |第一个事件发生之前经过的毫秒数。
+
+*Type*：长+
+*Required*：否+
+*Default*：无
+| cronTimeZone  |用作参考的时区。
+
+*Type*： link:https://docs.oracle.com/javase/7/docs/api/java/util/TimeZone.html[时区] +
+*Required*：否+
+*Default*：作为系统属性或机器操作系统传递的时区。
+|===
+
+<outbound-endpoint...>的{​​{0}}子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|抽象作业 | 1..1  |可以在端点上设置的Quartz作业的占位符。
+|===
+
+== 入站端点
+
+Quartz入站端点可用于生成事件。当你想以给定的时间间隔（或cron表达式）触发一个流而不是让一个外部事件触发这个流时，这是非常有用的。
+
+<inbound-endpoint...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| jobName  |与端点上的作业相关联的名称。这只在内部存储事件时才真正使用。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| cronExpression  |用于在指定的日期/时间安排事件的cron表达式。此属性或repeatInterval是必需的。 cron表达式是由空格分隔的6或7个字段组成的字符串。字段可以包含任何允许的值，以及该字段允许的特殊字符的各种组合。有关字段名称，允许的值和示例，请参阅<<About Cron Expressions>>。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| repeatInterval  |两个事件之间的毫秒数。该属性或cronExpression是必需的。
+
+*Type*：长+
+*Required*：否+
+*Default*：无
+| repeatCount  |要安排的事件数量。此值默认为-1，这意味着事件将无限期排定。
+
+*Type*：整数+
+*Required*：否+
+*Default*：无
+| startDelay  |第一个事件发生之前经过的毫秒数。
+
+*Type*：长+
+*Required*：否+
+*Default*：无
+| cronTimeZone  |用作参考的时区。
+
+*Type*： link:https://docs.oracle.com/javase/7/docs/api/java/util/TimeZone.html[时区] +
+*Required*：否+
+*Default*：作为系统属性或机器操作系统传递的时区。
+|===
+
+<inbound-endpoint...>的{​​{0}}子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|抽象作业 | 1..1  |可以在端点上设置的Quartz作业的占位符。
+|===
+
+== 端点
+
+可用作模板的全局端点，用于创建入站和出站Quartz端点。通用配置可以在全局端点上设置，然后使用本地端点上的@ref属性进行引用。请注意，因为作业有时仅适用于入站或出站端点，所以必须在本地端点上进行设置。
+
+<endpoint...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| jobName  |与端点上的作业相关联的名称。这只在内部存储事件时才真正使用。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| cronExpression  |用于在指定的日期/时间安排事件的cron表达式。此属性或repeatInterval是必需的。 cron表达式是由空格分隔的6或7个字段组成的字符串。字段可以包含任何允许的值，以及该字段允许的特殊字符的各种组合。有关字段名称，允许的值和示例，请参阅<<About Cron Expressions>>。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| repeatInterval  |两个事件之间的毫秒数。该属性或cronExpression是必需的。
+
+*Type*：长+
+*Required*：否+
+*Default*：无
+| repeatCount  |要安排的事件数量。此值默认为-1，这意味着事件将无限期排定。
+
+*Type*：整数+
+*Required*：否+
+*Default*：无
+| startDelay  |第一个事件发生之前经过的毫秒数。
+
+*Type*：长+
+*Required*：否+
+*Default*：无
+| cronTimeZone  |用作参考的时区。
+
+*Type*： link:https://docs.oracle.com/javase/7/docs/api/java/util/TimeZone.html[时区] +
+*Required*：否+
+*Default*：作为系统属性或机器操作系统传递的时区。
+|===
+
+<endpoint...>的{​​{0}}子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|抽象作业 | 0..1  |可以在端点上设置的Quartz作业的占位符。
+|===
+
+== 抽象作业
+
+可以在端点上设置的Quartz作业的占位符。
+
+<abstract-job...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| groupName  |计划作业的组名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| jobGroupName  |计划作业的作业组名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|===
+
+== 抽象入站作业
+
+Quartz作业的占位符，只能在入站端点上设置。
+
+<abstract-inbound-job...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| groupName  |计划作业的组名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| jobGroupName  |计划作业的作业组名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|===
+
+== 事件生成器作业
+
+入站端点作业，根据端点上的时间表为流触发新事件。这对于定期触发流而不需要发生外部事件很有用。
+
+<event-generator-job...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| stateful  |确定作业是否持久。如果是这样，则每个请求都会保留工作细节状态。更重要的是，触发器的每个作业都按顺序执行。如果作业比下一个触发器花费的时间更长，则下一个作业将等待当前作业执行。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+|===
+
+<event-generator-job...>的{​​{0}}子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|有效载荷 | 0..1  |新创建事件的有效载荷。有效负载可以是对文件，固定字符串或配置为Spring bean的对象的引用。如果未设置此值，则会生成带有`org.mule.transport.NullPayload`实例的事件。
+|===
+
+例
+
+[source, xml, linenums]
+----
+<quartz:connector name="Quartz" validateConnections="true" doc:name="Quartz"/>
+<flow name="test2Flow1" doc:name="test2Flow1">
+  <description>
+  This configuration creates an inbound event for testService1 at 12 noon every day.
+  The event payload always has the same value 'foo'.
+  </description>
+    <quartz:inbound-endpoint jobName="job1" cronExpression="0 0 12 * * ?" repeatInterval="0" responseTimeout="10000" connector-ref="Quartz" doc:name="Quartz">
+        <quartz:event-generator-job>
+          <quartz:payload>foo</quartz:payload>
+        </quartz:event-generator-job>
+    </quartz:inbound-endpoint>
+</flow>
+<flow name="test2Flow2" doc:name="test2Flow2">
+  <description>This configuration creates an inbound event for testService2
+  every 1 second indefinitely. The event payload always has the same value,
+  which the contents of the file 'payload-data.txt'. The file can be on the
+  classpath of the local file system.
+  </description>
+    <quartz:inbound-endpoint jobName="job2" repeatInterval="0" repeatCount="10" responseTimeout="10000" doc:name="Quartz" connector-ref="Quartz">
+        <quartz:event-generator-job>
+          <quartz:payload file="payload-data.txt"/>
+        </quartz:event-generator-job>
+    </quartz:inbound-endpoint>
+</flow>
+----
+
+== 端点轮询作业
+
+入站端点作业，可用于定期从外部源（通过另一个端点）读取。这对于从不支持轮询的源触发基于时间的事件或仅用于控制从源接收事件的速率非常有用。
+
+<endpoint-polling-job...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| stateful  |确定作业是否持久。如果是这样，则每个请求都会保留工作细节状态。更重要的是，触发器的每个作业都按顺序执行。如果作业比下一个触发器花费的时间更长，则下一个作业将等待当前作业执行。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+|===
+
+<endpoint-polling-job...>的{​​{0}}子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|作业端点 | 0..1  |对另一个已配置端点的引用
+从哪些事件收到。
+|===
+
+=== 示例
+
+[source, xml, linenums]
+----
+<flow name="testFlow3" doc:name="testFlow3">
+  <description>The endpoint polling Job tries and performs a 'request' on any Mule
+  endpoint. If a result is received, it hands off to this 'testFlow3' flow
+  for processing. The trigger fires every 5 minutes starting at 2pm and ending at
+  2:55pm, every day. During this period, the job checks the file directory
+  /N/drop-data/in every 5 minutes to see if any event data is available.
+  </description>
+  <quartz:inbound-endpoint jobName="job3" cronExpression="0 0/5 14 * * ?"
+   repeatInterval="0" repeatCount="10" responseTimeout="10000"
+   doc:name="Quartz" connector-ref="Quartz">
+      <quartz:endpoint-polling-job>
+        <quartz:job-endpoint address="file:///N/drop-data/in"/>
+      </quartz:endpoint-polling-job>
+  </quartz:inbound-endpoint>
+</flow>
+----
+
+== 计划调度作业
+
+出站作业，安排作业在稍后时间/日期发送。使用配置的端点引用分派事件。
+
+<scheduled-dispatch-job...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| stateful  |确定作业是否持久。如果是这样，则每个请求都会保留工作细节状态。更重要的是，触发器的每个作业都按顺序执行。如果作业比下一个触发器花费的时间更长，则下一个作业将等待当前作业执行。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+|===
+
+<scheduled-dispatch-job...>的{​​{0}}子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|作业端点 | 0..1  |用于分派调度事件的端点。首选方法是创建一个全局端点并使用ref属性引用它。但是，您也可以使用address属性来定义一个URI端点（它支持表达式）。您可以使用timeout属性来指定与端点关联的任意超时值，该端点可以被阻止等待接收事件的作业使用。
+|===
+
+例
+
+[source, xml, linenums]
+----
+<description>
+  This outbound Quartz endpoint receives an event after the component
+  has processed it and stores it in the event store. When the trigger
+  kicks in at 10:15am everyday, it dispatches the event on the endpoint
+  referenced as 'scheduledDispatchEndpoint'. Since the 'repeatCount'
+  is set to 0, the event is only sent out once.
+  </description>
+  <quartz:connector name="Quartz" validateConnections="true" doc:name="Quartz"/>
+  <flow name="test2Flow1" doc:name="test2Flow1">
+    <vm:inbound-endpoint exchange-pattern="one-way" path="INBOUND.QUEUE" doc:name="VM"/>
+    <quartz:outbound-endpoint jobName="job4" cronExpression="0 15 10 * * ? *"
+    repeatInterval="0" responseTimeout="10000" connector-ref="Quartz"
+    doc:name="Quartz">
+        <quartz:scheduled-dispatch-job>
+            <quartz:job-endpoint ref="scheduledDispatchEndpoint"/>
+        </quartz:scheduled-dispatch-job>
+    </quartz:outbound-endpoint>
+</flow>
+----
+
+== 自定义作业
+
+可以在入站或出站端点上配置自定义作业。您可以创建和配置自己的作业实现，并在Quartz端点上使用它。可以将自定义作业配置为XML配置中的bean，并使用此作业进行引用。
+
+<custom-job...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| groupName  |计划作业的组名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| jobGroupName  |计划作业的作业组名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| job-ref  |执行此作业时使用的自定义作业的bean名称或标识。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|===
+
+=== 示例
+
+[source, xml, linenums]
+----
+<flow name="testFlow3" doc:name="testFlow3">
+  <description>The endpoint polling Job tries and performs a 'request' on any Mule
+  endpoint. If a result is received it is handed off to this 'testFlow3' flow
+  for processing. The trigger fires every 5 minutes starting at 2pm and ending at
+  2:55pm, every day. During this period the job checks the file directory
+  /N/drop-data/in every 5 minutes to see if any event data is available.
+  </description>
+  <quartz:inbound-endpoint jobName="job3" cronExpression="0 0/5 14 * * ?"
+    repeatInterval="0" repeatCount="10" responseTimeout="10000"
+    doc:name="Quartz" connector-ref="Quartz">
+      <quartz:endpoint-polling-job>
+      	<quartz:job-endpoint address="file:///N/drop-data/in"/>
+      </quartz:endpoint-polling-job>
+  </quartz:inbound-endpoint>
+</flow>
+----
+
+== 来自消息的自定义作业
+
+允许将作业存储在当前消息中。这只能用于出站
+端点。当收到消息时，作业被读取并且作业被添加到作业中
+调度程序与当前消息。这允许确定自定义调度行为
+由消息本身。通常情况下，流量或变压器会在该处创建工作
+基于应用程序特定逻辑的消息。任何Mule支持的表达式都可以使用
+从消息中读取作业。通常，您将作业添加为标题，但是添加了作业
+附件也可以使用。
+
+<custom-job-from-message...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| groupName  |计划作业的组名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+| jobGroupName  |计划作业的作业组名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|===
+
+=== 示例
+
+[source, xml, linenums]
+----
+<flow name="testFlow3" doc:name="testFlow3">
+  <description>This configuration processes a message and find a
+  Job configured as a header called 'jobConfig' on the current message.
+  We're using the test component here, but a real implementation needs
+  to set a custom {{org.quartz.Job}} implementation as a header on the
+  current message. Note that other expressions could be used to extract
+  the job from an attachment or even a property within the payload itself.
+  </description>
+  <quartz:connector name="Quartz" validateConnections="true" doc:name="Quartz"/>
+
+  <flow name="test2Flow1" doc:name="test2Flow1">
+    <vm:inbound-endpoint exchange-pattern="one-way" path="INBOUND.QUEUE" doc:name="VM"/>
+    <quartz:outbound-endpoint jobName="job4" cronExpression="0 15 10 * * ? *"
+    repeatInterval="0" responseTimeout="10000" connector-ref="Quartz"
+    doc:name="Quartz">
+    <quartz:custom-job-from-message evaluator="header" expression="jobConfig"/>
+    </quartz:outbound-endpoint>
+</flow>
+----
+
+== 另请参阅
+
+* 有关在Studio的可视化编辑器中设置Quartz终结点属性的详细信息，请参阅 link:/mule-user-guide/v/3.9/quartz-connector[石英连接器]。
+* 阅读关于在Mule中使用Quartz的 link:https://blogs.mulesoft.com/dev/mule-dev/mule-and-quartz-scheduled-jobs-and-long-running-tasks/[在MuleSoft的博客中发布]
+* 阅读 link:http://quartz-scheduler.org/documentation[Quartz的文档]

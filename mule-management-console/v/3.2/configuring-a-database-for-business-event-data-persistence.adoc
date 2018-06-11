@@ -1,0 +1,183 @@
+= 为业务事件数据持久性配置数据库
+
+Mule将 link:/mule-management-console/v/3.2/analyzing-business-events[事件相关数据]存储在保留数据的默认数据库中。但是，您也可以选择将数据保存在Oracle数据库中。这可以让您控制要存储多少数据。它还可以提供比默认数据存储更好的可伸缩性和性能。
+
+本页介绍如何配置Oracle数据库 - 特别是Oracle Express Edition 10.2.0  - 用于业务事件数据存储和持久性。
+
+== 第1步：安装数据库
+
+如果您尚未这样做，请从http://www.oracle.com/technetwork/database/express-edition/overview/index.html下载并安装Oracle Express Edition v10.2.0。
+
+== 步骤2：更新监听器参数
+
+将Oracle系统标识（SID）添加到`listener.ora`文件。这是网络监听器的配置文件。您可以在`<oracle_install_dir>\app\oracle\product\10.2.0\server\NETWORK\ADMIN`目录中找到该文件，其中`<oracle_install_dir>`是安装Oracle数据库的目录。默认情况下，该文件位于`C:\oraclexe\app\oracle\product\10.2.0\server\NETWORK\ADMIN`目录中。
+
+应输入SID条目如下：
+
+[source, code, linenums]
+----
+    (SID_DESC =      (SID_NAME = XE)      (ORACLE_HOME = C:\oraclexe\app\oracle\product\10.2.0\server)    )
+----
+
+== 步骤3：重新启动TNS侦听器服务
+
+如果更新了`listener.ora`文件，则需要停止并重新启动数据库实例的TNS侦听器服务。您可以使用带有适当参数的`lsnrctl`命令来停止并重新启动侦听器。您也可以使用`lsnrctl`命令来获取侦听器的当前状态。
+
+在命令行上输入：
+
+*  `lsnrctl status`  - 获取有关侦听器服务的状态信息。
+*  `lsnrctl stop`  - 停止侦听器。
+*  `lsnrctl start`  - 启动监听器。
+
+在Windows系统上，您还可以停止并从Oracle控制面板启动侦听器。您还可以简单地通过查找OracleXETNSListener（系统的默认侦听器）来重新启动Windows系统上的TNS侦听器服务。
+
+== 第4步：创建数据库用户
+
+在+ http：//127.0.0.1：8080 / apex / +打开数据库主页登录窗口。登录如下：
+
+* 用户名：system
+* 密码：输入安装Oracle XE时指定的密码。
+
+这将打开Oracle数据库XE主页。
+
+单击管理图标，然后单击数据库用户图标下拉列表中的创建用户。这将打开一个创建数据库用户表单。
+
+通过在表单中​​输入以下信息创建新用户：
+
+* 用户名：TRACKER
+* 密码：跟踪器
+* 角色：CONNECT和RESOURCE
+* 特权：CREATE TABLE和CREATE SEQUENCE
+
+以下是您的条目应该是这样的：
+
+image:create-user.png[创建用户]
+
+== 第5步：计算数据库配额
+
+通过检查一段时间内帐户的实际使用情况来计算数据库配额（即数据库空间）。首先，确定数据库的实际大小。打开Oracle SQL命令行（SQL * Plus）并输入以下内容：
+
+[source, code]
+----
+select sum(bytes) from user_segments
+----
+
+接下来，计算架构实际使用的空间（Oracle中的架构是登录用户）。在SQL * Plus中输入以下内容：
+
+[source, code]
+----
+connect TRACKER/tracker@orcl;select sum(bytes) from user_segments
+----
+
+连接语句中的`@orcl`是Oracle Net连接标识符。
+
+您的结果将取决于您的环境和数据库配置。
+
+计算数据库配额后，可以通过ALTER USER命令进行设置。例如，以下命令将用户的数据库配额设置为1 MB：
+
+[source, code]
+----
+alter user TRACKER quota 1M on users;
+----
+
+== 第6步：更新Oracle的管理控制台
+
+您需要做两件事才能更新Mule的管理控制台以便与Oracle数据库一起使用：
+
+* 添加一个Oracle驱动程序。
+* 将Oracle特定的信息添加到各种XML文件。
+
+=== 添加一个Oracle驱动程序
+
+从 http://www.oracle.com/technetwork/database/enterprise-edition/jdbc-112010-090769.html[Oracle JDBC驱动程序]页面下载以下任一Oracle JDBC驱动程序：ojdbc6.jar或ojdbc5.jar。
+
+如果您将管理控制台作为Apache Tomcat上的Web应用运行，请将Oracle驱动程序复制到`<apache_install_dir>\apps\mmc\webapps\mmc\WEB-INF\lib`目录，其中`<apache_install_dir>`是安装Apache Tomcat的目录。
+
+如果您将管理控制台作为Mule ESB发行版的一部分运行，请将Oracle驱动程序复制到`<mule_install_dir>\apps\mmc\webapps\mmc\WEB-INF\lib`目录，其中`<mule_install_dir>`是安装Mule ESB的目录。
+
+=== 将Oracle特定信息添加到XML文件
+
+您需要更新的两个XML文件是persistence.xml和tracking-ApplicationContext。
+
+如果您将管理控制台作为Apache Tomcat上的Web应用运行，则可以在`<apache_install_dir>\apps\mmc\webapps\mmc\WEB-INF\classes\META-INF`目录中找到这些文件，其中`<apache_install_dir>`是安装Apache Tomcat的目录。
+
+如果您将管理控制台作为Mule ESB发行版的一部分运行，则可以在`<mule_install_dir>\apps\mmc\webapps\mmc\WEB-INF\classes\META-INF`目录中找到这些文件，其中`<mule_install_dir>`是安装Mule ESB的目录。
+
+在persistence.xml文件中，替换：
+
+[source, xml]
+----
+<property name="openjpa.jdbc.DBDictionary" value="batchLimit=-1" />
+----
+
+有：
+
+[source, xml]
+----
+<property name="openjpa.jdbc.DBDictionary" value="oracle (DriverVendor=oracle)" />
+----
+
+删除与H2数据库相关的所有条目。
+
+在tracking-ApplicationContext.xml文件中，按如下方式更改dataSource，jpavendorAdapter和entityManagerFactory bean的定义：
+
+[source, xml, linenums]
+----
+<bean id="dataSource" class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+  <property name="driverClassName" value="oracle.jdbc.driver.OracleDriver" />
+  <property name="url" value="jdbc:oracle:thin:@127.0.0.1:1521:orcl" />
+  <property name="username" value="TRACKER" />
+  <property name="password" value="tracker" />
+</bean><tx:annotation-driven transaction-manager="transactionManager" />
+<bean id="transactionManager" class="org.springframework.orm.jpa.JpaTransactionManager">
+  <property name="entityManagerFactory" ref="entityManagerFactory" />
+</bean>
+  <bean id="entityManagerFactory" class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
+  <property name="dataSource" ref="dataSource" />
+  <property name="persistenceUnitName" value="persistence-unit" />
+  <property name="jpaVendorAdapter" bean id="jpaAdapter" class="org.springframework.orm.jpa.vendor.OpenJpaVendorAdapter" />
+  <property name="database" value="ORACLE" />
+  <property name="showSql" value="true" />
+</bean>
+<property>
+  <property name="loadTimeWeaver">
+    <bean class="com.mulesoft.mmc.tracking.jpa.OpenJPALoadTimeWeaver" />
+</property>
+</bean>
+----
+
+请注意，localhost用作默认端口，SID指定为"orcl"。用户"TRACKER"与步骤4中创建的相同。
+
+== 已知限制
+
+persistence.xml文件包含以下属性规范：
+
+[source, xml]
+----
+<property name="openjpa.jdbc.SynchronizeMappings" value="buildSchema(SchemaAction=add)" />\
+----
+
+这指定将根据需要添加新表，但如果进行了基本更改，则旧表不会被删除。这可能会导致一些冲突。
+
+使用SchemaAction = refresh可以解决这个问题。但是，这会生成"ORA-01031 Not enough privileges"个例外。发生这种情况是因为在处理请求时，系统会尝试放弃它并不真正感兴趣的所有内容。这包括在XDB和SYS模式（这是Oracle中的保留模式）上删除序列。
+
+== 疑难解答提示
+
+ORA-12519，TNS：找不到合适的服务处理程序。如果出现此错误，您将需要运行SQL命令并重新启动TNS侦听器，如下所示：
+
+* 以系统身份登录Oracle，然后打开SQL * Plus并输入以下内容::
+
+[source, code]
+----
+ALTER SYSTEM SET PROCESSES=150 SCOPE=SPFILE;
+----
+
+* 按照步骤3中的说明重新启动TNS侦听器服务以重新启动您的TNS侦听器。
+
+link:/mule-management-console/v/3.2/business-events-use-cases[<<上一页：*商业活动使用花瓶*]
+
+link:/mule-management-console/v/3.2/working-with-alerts[下一步：*使用警报* >>]
+
+== 另请参阅
+
+*  https://support.mulesoft.com [联系MuleSoft支持]

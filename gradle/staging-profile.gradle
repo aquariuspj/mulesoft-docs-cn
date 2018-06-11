@@ -1,0 +1,49 @@
+// Command to execute in CI:
+// ./gradlew -g .gradle --no-search-upward -Pprofile=staging -PstagingIdentity=$CREDS -PmaxHeapSize=4g clean publish
+ext {
+  if (project.hasProperty('stagingAssetsRepoUri')) {
+    assetsRepoUri = project.property('stagingAssetsRepoUri')
+    if (project.hasProperty('stagingAssetsBranchName')) {
+      assetsRepoBranchName = project.property('stagingAssetsBranchName')
+      assetsRepoCommit = "origin/$assetsRepoBranchName"
+    }
+  }
+  if (project.hasProperty('stagingDocsRepoUri')) docsRepoUri = project.property('stagingDocsRepoUri')
+  siteUri = project.hasProperty('stagingSiteUri') ? project.property('stagingSiteUri') : 'http://docs-stg.mulesoft.com'
+  stagingHost = project.hasProperty('stagingHost') ? project.property('stagingHost') : 'docs-stg.mulesoft.com'
+  if (!stagingHost.empty && stagingHost != 'local') {
+    stagingUser = project.hasProperty('stagingUser') ? project.property('stagingUser') : 'ec2-user'
+    stagingIdentity = project.hasProperty('stagingIdentity') ? project.property('stagingIdentity') : new File(System.getProperty('user.home'), '.ssh/id_rsa').toString()
+  }
+  stagingDir = project.hasProperty('stagingDir') ? project.property('stagingDir') : '/usr/share/nginx/html'
+}
+
+task disallowRobots(group: 'Build', description: 'Disallows robots from crawling the site') {
+  doLast {
+    File robotsConfig = file("$siteDir/robots.txt")
+    if (robotsConfig.file) robotsConfig.text = "User-agent: Swiftbot\nDisallow:\n\nUser-agent: *\nDisallow: /"
+  }
+}
+
+// transfer status legend: http://stackoverflow.com/questions/4493525/rsync-what-means-the-f-on-rsync-logs/12037164#12037164
+task publishToStaging(type: Exec, group: 'Publishing', description: 'Synchronizes site output to staging server using rsync') {
+  executable 'rsync'
+  if (stagingHost.empty || stagingHost == 'local') {
+    args '-rtOi', '--delete-delay', "$siteDir/", "$stagingDir/"
+  }
+  else {
+    // QUESTION is the link fast enough to disable compression?
+    // QUESTION should we use --size-only to ignore timestamp changes?
+    args '-rtOzi', "-e ssh -i $stagingIdentity", '--delete-delay', "$siteDir/", "$stagingUser@$stagingHost:$stagingDir/"
+  }
+  if (dryRun) args = ['-n'] + args
+}
+
+task publish(group: 'Build', description: 'Builds site and copies changes to staging server')
+
+afterEvaluate {
+  build.dependsOn disallowRobots
+  disallowRobots.mustRunAfter copyAssets
+  publish.dependsOn build, publishToStaging
+  publishToStaging.mustRunAfter build
+}

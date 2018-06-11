@@ -1,0 +1,93 @@
+=  MQL合并数据集
+
+如果你曾经有两个数据集需要合并成一个通用的数据格式，那么你知道这可能是一个痛苦。 （曾经使用过的XSLT？）在这个例子中，我们看看如何将两个活动流 http://twitter.com[推特]和 http://yammer.com[抱怨]转换为一个通用格式。
+
+以下是每种格式的缩写片段：
+
+[%header,cols="2*a"]
+|===
+| {微{1}}的Yammer
+|
+
+[source, code, linenums]
+----
+{    "coordinates": null,    "favorited": false,    "created_at": "Thu Jul 15 23:26:04 +0000 2010",    "truncated": false,    "text": "My Twitter message.",    "contributors": null,    "id": 18639444000,    "geo": null,    "in_reply_to_user_id": null,    "place": null,    "in_reply_to_screen_name": null,    "user": { ... }   }
+----
+
+|
+
+[source, code, linenums]
+----
+ {      "client_url": "https://www.yammer.com/",      "created_at": "2011/03/28 20:39:12 +0000",      "system_message": false,      "body": {        "parsed": "Myyammer message.",        "plain": "My Yammer message."      },      "sender_type": "user",      "network_id": 104604,      "thread_id": 84402777,      "web_url": "https://www.yammer.com/yammerdeveloperstestcommunity/messages/84402777",      "direct_message": false,      "id": 84402777,      "url": "https://www.yammer.com/api/v1/messages/84402777",      "client_type": "Web",      "message_type": "update",      "sender_id": 4022984,      "replied_to_id": null,      "attachments": ...,      "liked_by": ...,      "privacy": "public"    }
+----
+|===
+
+这是我们想看到的：
+
+[source, code, linenums]
+----
+[  { "text" : "My Twitter Message.", "source" : "twitter" },  { "text" : "My Yammer Message.", "source" : "yammer" }]
+----
+
+考虑到这两者都有云连接器，我们可以编写两个简单的查询来从每个服务获取时间轴，并将它们置于所需的数据格式中：
+
+[source, code, linenums]
+----
+from yammer.messages select new { text = body.plain, source = 'yammer' }from twitter.publicTimeline as tweet select new { text = tweet.text, source = 'twitter' }
+----
+
+通过在我们的Mule应用程序XML中声明，"yammer"和"twitter"可以成为我们可以引用的变量：
+
+[source, xml, linenums]
+----
+<twitter:config name="twitter"                 format="JSON"                 consumerKey="${twitter.consumer.key}"                 consumerSecret="${twitter.consumer.secret}"/>                          <yammer:config name="yammer"                consumerKey="${yammer.consumer.key}"                consumerSecret="${yammer.consumer.secret}"  />
+----
+
+现在，我们可以把它放在一个聚合两个数据集的Mule中：
+
+[source, xml, linenums]
+----
+<flow name="get-activity">    <inbound-endpoint address="http://localhost:9002/activity" exchange-pattern="request-response"/>    <all>        <mql:transform query="from yammer.messages select new { text = body.plain }" />        <mql:transform query="from twitter.publicTimeline as tweet select new { text = tweet.text }" />    </all>    <combine-collections-transformer/>    <response>        <json:object-to-json-transformer/>    </response></flow>
+----
+
+一步一步，这是这个流程的作用：
+. 在http：// localhost：9002 / activity上侦听请求
+. 当请求进入时，请执行两个查询 - 一个用于拉取yammer消息，另一个用于从Twitter公共时间线中拉取消息。每个查询将结果转换为所需的格式。
+. 将来自Yammer和Twitter的消息列表合并到一个列表中
+. 以JSON对象的形式返回响应
+
+== 运行示例
+
+要运行此示例，您需要先使用Twitter和Yammer注册该应用程序，以便您可以使用OAuth。
+
+*  link:http://twitter.com[创建一个Twitter帐户]
+* 使用Twitter注册您的应用程序。
+* 记录您的OAuth使用者密钥和使用者密钥。
+*  link:http://yammer.com[创建一个Yammer帐户]
+* 向Yammer https://www.yammer.com/client_applications/new注册您的应用程序
+* 记录您的OAuth使用者密钥和使用者密钥。
+
+接下来，我们将配置并启动示例应用程序：
+
+*  link:http://www.mulesoft.org/download-mule-esb-community-edition[下载骡子]并提取分配
+*  link:/mule-user-guide/v/3.2/mql-download[下载MQL]并提取分配
+* 将examples / mql-examples-0.9.zip文件从MQL分发版复制到MULE_HOME / apps
+* 用您的OAuth令牌启动Mule：
+
+[source, code, linenums]
+----
+ $ cd mule-standalone-3.1.2/bin$ ./mule -M-Dyammer.consumer.key=YAMMER_CONSUMER_KEY -M-Dyammer.consumer.secret=YAMMER_CONSUMER_SECRET \   -M-Dtwitter.consumer.key=TWITTER_CONSUMER_KEY -M-Dtwitter.consumer.secret=TWITTER_CONSUMER_SECRET
+----
+
+现在，我们需要为Yammer执行OAuth身份验证：
+
+* 在浏览器中转到http：// localhost：9002 / yammer / request-authorization
+* 当您的浏览器将您重定向到Yammer后，请点击"Authorize"授权此应用程序与Yammer交谈
+* 获取结果页面中的代码，并在浏览器中输入以下URL：http：// localhost：9002 / yammer / set-oauth-verifier？verifier = CODE
+
+最后，检索合并的Yammer和Twitter活动流：
+
+[source, code, linenums]
+----
+ $ curl -v http://localhost:9002/activity
+----

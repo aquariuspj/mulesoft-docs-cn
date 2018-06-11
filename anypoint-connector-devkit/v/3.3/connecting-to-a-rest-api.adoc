@@ -1,0 +1,58 @@
+= 连接到REST API
+
+*Mule DevKit*简化了使用遵循REST原则的API为外部实体生成连接器的任务。对于实现单个REST调用的处理器，@RestCall注释的工作方式如下例所示。
+
+[source, java, linenums]
+----
+@Processor
+@RestCall(uri = "http://\{bucket\}.s3.amazonaws.com/?max-keys=0", method = HttpMethod.HEAD)
+public abstract Object bucketExists(@RestUriParam("bucket") String bucketName);
+----
+
+DevKit在实现抽象方法的子类中生成整个REST调用。生成的代码基于`@RestCall`注释的参数创建URI并执行指定的HTTP方法。该URI包含用`@RestUriParam`注释的每个项目。这意味着URI的_bucket_部分被替换为bucketName的内容，因为它被映射为`@RestUriParam`。您可以在连接器的`@Processor`方法参数或`@Configurable`字段上使用`@RestUriParam`批注。
+
+DevKit发送一个unannotated参数和一个以`@Payload`为注释的参数作为请求调用的主体。
+
+生成的代码使用带有`@RestHttpClient`注释的连接器HTTP客户端。连接器代码必须实例化客户端。如果你不注释一个HTTP客户端，Mule DevKit会生成代码来实例化它自己的一个用于进行调用的代码。
+
+== 插入查询参数
+
+`@RestQueryParam`注释标识查询参数。与`@RestUriParam`一样，您可以将此注释应用于连接器的`@Processor`方法参数或`@Configurable`字段。 DevKit对每个带注释的查询参数进行编码并将其添加到调用中的查询字符串中。 +
+ +
+
+== 插入后期参数
+
+`@RestPostParam`注释使您能够在Post方法调用的主体中设置参数。与`@RestQueryParam`和`@RestUriParam`一样，此注释适用于`@Processor`方法参数或`@Configurable`字段。 DevKit确保您仅将此注释应用于Post方法。
+
+使用`@RestPostParam`注释的处理器方法不能使用未注释的参数或带有`@Payload`注释的参数。 +
+ +
+
+== 插入标题
+
+`@RestHeaderParam`可让您在通话中发送自定义标题。与`@RestUriParam`一样，将此注释应用于注释中指定的HTTP标头的`@Processor`方法参数或`@Configurable`字段，如下例所示。
+
+[source, java, linenums]
+----
+@RestHeaderParam("AuthorizationCode")
+@Configurable
+private String authorizationCode;
+ 
+@Processor
+@RestCall(uri = "http://\{bucket\}.s3.amazonaws.com/?max-keys=0", method = HttpMethod.HEAD)
+public abstract Object bucketExists(@UriParam("bucket") String bucketName);
+----
+
+在本例中，DevKit会生成包含每个`@RestCall`中`authorizationCode`值的授权标头的代码。
+
+== 识别故障
+
+要确定呼叫是否成功，请使用 link:/mule-user-guide/v/3.3/mule-expression-language-mel[* Mule表达式*]检查输出MuleMessage。该表达式可以像验证http.status代码一样简单，也可以像验证JSON响应的特定部分一样简单，如下例所示。
+
+[source, java, linenums]
+----
+@Processor
+@RestCall(uri = "{{0}}")}")
+public abstract Object bucketExists(@UriParam("bucket") String bucketName);
+----
+
+Mule DevKit支持多个`@RestFailOn`注释，以根据其余调用的输出启用不同的行为。如果指定表达式的计算结果为真，DevKit会生成引发异常的代码。您可以选择指定要作为注释参数引发的异常。否则，它会抛出`RuntimeException`。

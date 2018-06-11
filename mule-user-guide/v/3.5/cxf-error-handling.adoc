@@ -1,0 +1,171 @@
+=  CXF错误处理
+:keywords: cxf, soap connector, error handling
+
+[NOTE]
+向外部Web服务发送请求时，建议的方法是使用 link:/mule-user-guide/v/3.5/web-service-consumer[Web服务使用者]而不是CXF模块。
+
+== 概述
+
+发布，使用或代理信息时，Mule中配置的 http://en.wikipedia.org/wiki/Apache_CXF[CXF Web服务]可能会遇到错误。 Mule为有效 link:/mule-user-guide/v/3.7/error-handling[处理错误]提供了一组*Exception Strategies*，当需要为涉及CXF Web服务的流自定义错误处理行为时，其中两个特别有用。
+
+Mule以两种方式之一处理错误，具体取决于CXF Web服务是否正在发布，消费或代理信息：
+
+.  Mule向调用者返回SOAP Fault消息
+.  Mule在流中传播错误的原因
+
+下表描述了Mule强制执行哪些错误处理行为，具体取决于CXF Web服务在引发错误或异常时的行为。
+
+[%header,cols="5*"]
+|===
+| CXF Web服务活动 |错误条件 |抛出的错误/异常 |将SOAP错误返回给调用者 |在Mule流中传播错误的原因
+|发布 |流中的Web服务组件正在发布CXF Web服务时出错。 |组件抛出异常 | x {{} 4}}
+|发布 |流（不是Web服务组件）正在处理消息时出错。 |流中遇到错误的元素抛出异常{ {3}} X  | 
+|消费 |在消息处理期间发生错误，并且正在使用的Web服务返回SOAP错误。 | CXF客户端消息处理器抛出错误。 |   { {4}} X
+|代理 |在消息处理过程中出现问题，并且使用的Web服务返回SOAP错误。 | CXF消息处理器不会抛出任何错误。 | x {{{ 4}}
+|代理 |当流处理正在代理的传入消息时，出现错误。 |在流中引发异常。 | x  | 
+|===
+
+[NOTE]
+====
+当Mule向调用者返回SOAP错误时，它将HTTP状态代码设置为500“内部服务器错误”。
+====
+
+以下部分介绍如何使用Mule的 link:/mule-user-guide/v/3.7/error-handling[*默认异常策略*]， link:/mule-user-guide/v/3.7/rollback-exception-strategy[*回退异常策略*]或 link:/mule-user-guide/v/3.6/catch-exception-strategy[*捕捉异常策略*]处理CXF Web服务流中的错误。
+
+== 默认的例外策略
+
+您可以使用Mule的默认异常策略来处理任何发布，使用或代理Web服务的流中抛出的异常。如果您的Web服务不需要任何自定义的错误处理行为，那么默认的异常策略可以有效地处理发生的任何异常。
+
+由于默认的异常策略隐式应用于所有Mule流程中，因此您无需明确定义它。使用明确定义的回滚或捕获异常策略来定制任何异常策略行为。
+
+== 回滚异常策略
+
+您可以自定义回滚异常策略来处理异常，并确保Mule向调用者返回SOAP错误，或者在流中传播异常。
+
+[%header,cols="34,33,33"]
+|===
+| Web服务活动 |抛出的错误/异常 |错误处理行为
+|发布 |组件抛出异常。 |回滚异常策略处理异常。它返回一个SOAP错误消息给错误原因的调用者。
+|发布 |当Mule流（不是组件）正在处理消息时抛出异常。 |回滚异常策略处理异常。它返回一个SOAP错误消息给错误原因的调用者。
+|消费 | CXF客户端消息处理器从使用Web服务接收SOAP错误时抛出错误。 |回滚异常策略处理错误。它在消息的exceptionPayload中设置错误原因并在消息流中传播消息。
+|代理 |处理正在代理的传入消息时抛出异常。 |回滚异常策略处理异常。它返回一个SOAP错误消息给错误原因的调用者。
+|===
+
+=== 应用回滚异常策略
+
+请参阅 link:/mule-user-guide/v/3.7/rollback-exception-strategy[回滚异常策略]获取有关如何将一个流应用到流的详细说明。
+
+=== 示例
+
+当Mule发布HelloWorld Web服务时，Web服务组件会抛出一个异常，因为它作为参数接收的名称是空的。
+
+在这种情况下，回滚异常策略处理异常并发送引发异常的电子邮件;它将SOAP错误消息返回给调用者，并将HTTP状态代码设置为500“内部服务器错误”。这个例子的流程如下所示。
+
+image:rollback.png[回滚]
+
+==== 查看XML
+
+[source,xml, linenums]
+----
+<flow name="CXFWebService1">
+    <http:inbound-endpoint host="localhost" port="8080" path="hello"/>
+    <cxf:jaxws-service serviceClass="org.mule.module.cxf.HelloWorld"/>
+    <component class="org.mule.module.cxf.HelloWorldImpl"/>
+    <rollback-exception-strategy>
+        <transformer ref="ErrorMessageTransformer"/>
+        <smtp:outbound-endpoint user="${smtp.username}" password="${smtp.password}"
+host="${smtp.host}" port="${smtp.port}"
+to="${email.toAddress}"
+from="${email.fromAddress}"
+subject="${email.subject}" doc:name="SMTP"/>
+    </rollback-exception-strategy>
+</flow>
+----
+
+接下来是返回给调用者的SOAP错误消息。
+
+[source,xml, linenums]
+----
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+        <soap:Fault>
+            <faultcode>soap:Server</faultcode>
+            <faultstring>Invalid name is empty</faultstring>
+        </soap:Fault>
+    </soap:Body>
+</soap:Envelope>
+----
+
+== 捕获异常策略
+
+您可以自定义一个捕获异常策略_neither_向调用方_nor_返回SOAP错误，以便在抛出异常时在流中传播异常。处理异常事件后，catch异常策略将消息处理结果返回给调用者。
+
+捕获异常策略返回通过配置的消息处理器处理的事件。
+
+例如，在下列情况下使用catch异常策略：
+
+* 您希望Mule流能够将所有消息（包括包含错误的消息）识别为“已处理”
+
+* 你需要一个Mule流来处理错误，而不会向调用者返回SOAP错误消息
+
+[%header%autowidth.spread]
+|===
+| Web服务活动 |抛出的错误/异常 |错误处理行为
+|发布 |组件抛出异常。 | catch异常策略处理异常。它不会向呼叫者返回一个SOAP Fault消息。
+|发布 |消息处理器在遇到错误时抛出异常。 | catch异常策略处理异常。它不会向呼叫者返回SOAP错误消息。
+|消费 | CXF客户端消息处理器在从使用Web服务接收SOAP错误的流中抛出错误。 | catch错误处理错误;它不_传播错误。
+|代理 | Mule处理传入消息时抛出异常。 | catch异常策略处理异常。它不会向呼叫者返回一个SOAP Fault消息。
+|===
+
+=== 应用捕获异常策略
+
+请参阅 link:/mule-user-guide/v/3.6/catch-exception-strategy[捕捉异常策略]获取有关如何将一个流应用到流的详细说明。
+
+=== 示例1
+
+当Mule发布HelloWorld Web服务时，Web服务组件会抛出一个异常，因为它作为参数接收的名称是空的。
+
+在这种情况下，catch异常策略将消息内容转换为字符串格式，并将名称显示为“匿名”。 （换句话说，当Web服务使用者不提供名称时，Web服务仍将发布其结果并显示“Anonymous”来代替名称）。catch异常策略不会向调用者返回SOAP Fault消息。这个例子的流程如下所示。
+
+image:catch.png[抓住]
+
+==== 查看XML
+
+[source,xml, linenums]
+----
+<flow name="CXFWebService1">
+    <http:inbound-endpoint host="localhost" port="8080" path="hello"/>
+    <cxf:jaxws-service serviceClass="org.mule.module.cxf.HelloWorld"/>
+    <component class="org.mule.module.cxf.HelloWorldImpl" />
+    <catch-exception-strategy>
+        <object-to-string-transformer/>
+        <append-string-transformer message=" Anonymous"/>
+    </catch-exception-strategy>
+</flow>
+----
+
+=== 示例2
+
+当Mule使用HelloWorld Web服务时，发生错误并且Web服务失败。
+
+在这种情况下，捕获异常策略指示处理器再次尝试通过位于不同位置的主机使用相同的服务。 Mule将第二次尝试的结果返回给调用者。这个例子的流程如下所示。
+
+image:catch2_1.png[catch2_1]
+
+==== 查看XML
+
+[source,xml, linenums]
+----
+<flow name="CXFWebService1" processingStrategy="synchronous">
+    <inbound-endpoint address="vm://helloWorld" exchange-pattern="request-response"/>
+    <cxf:jaxws-client serviceClass="org.mule.module.cxf.HelloWorld" operation="sayHi"/>
+    <http:outbound-endpoint host="localhost" port="${port1}" path="hello"
+method="GET" exchange-pattern="one-way" />     
+    <catch-exception-strategy>
+        <set-payload value="#[groovy:message.getOriginalPayload()]"/>
+        <cxf:jaxws-client serviceClass="org.mule.module.cxf.example.HelloWorld" operation="sayHi"/>
+        <http:outbound-endpoint host="localhost" port="${port2}" path="hello"
+    method="GET" exchange-pattern="one-way" />      
+    </catch-exception-strategy>
+</flow>
+----

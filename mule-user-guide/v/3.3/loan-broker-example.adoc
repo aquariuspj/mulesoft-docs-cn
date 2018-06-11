@@ -1,0 +1,233 @@
+= 贷款代理示例
+
+*_Version 3.3.1 only_*
+
+这个Mule ESB示例应用程序演示了Web服务集成中基于内容的路由的强大功能。
+
+根据“企业集成模式：设计，构建和部署消息传递解决方案”（Hohpe，Woolf，2004）第9章中介绍的贷款代理示例，该应用程序可最大限度地减少借款人获得贷款最佳利率的工作。
+
+Loan Broker公开了一个Web服务，用于处理最终用户对银行利率报价的请求。最终用户从Web浏览器提交包含以下内容的请求：
+
+* 借款人的名字
+贷款额* 
+还款期限为贷款的* 
+* 借款人的社会安全号码（SSN）
+
+Mule ESB的Loan Broker应用程序访问其他Web服务来处理请求，然后响应最终用户。答复确定了最低报价的银行名称和利率。
+
+Loan Broker Web服务使用四个元素来最大化其处理效率：
+
+*  *Choice Flow Controls*根据内容路由邮件
+*  *Transformers*来转换消息有效载荷的数据格式
+*  *Message Enrichers*添加到消息负载而不是更改
+*  *Foreach*迭代地同步处理消息有效载荷
+*  *Dynamic Endpoints*根据消息的有效载荷向不同的银行发送请求
+
+这个例子可以帮助你做出明智的决定，在Mule应用程序中使用上面列出的四个元素。要更多地了解Mule ESB整合服务和系统的能力，请访问Mule link:/mule-user-guide/v/3.3/mule-examples[例子]并查看其他正在运行的应用程序。
+
+== 假设
+
+本文档假定您熟悉Mule ESB和 link:/mule-user-guide/v/3.3/mule-studio-essentials[Mule Studio界面]。要提高您对Studio的熟悉度，请考虑完成一个或多个 link:/mule-user-guide/v/3.3/mule-studio[Mule Studio教程]。
+
+本文档在Mule ESB的图形用户界面（GUI）*Mule Studio*的上下文中描述了示例的细节。在适当的情况下，XML配置在可扩展部分的Studio界面屏幕截图之后。
+
+== 设置
+
+就像这个贷款代理示例一样，您可以直接在*Mule Studio*或*Mule Standalone*（没有Studio的Mule ESB）中创建模板应用程序。您可以调整这些基于用例的模板的配置，以在Mule中创建您自己的自定义应用程序。
+
+按照以下过程创建，然后在Mule ESB中运行贷款代理应用程序。
+
+. 完成 link:/mule-user-guide/v/3.3/mule-examples[示例和练习]中的过程以创建，然后在Mule Studio中运行贷款代理模板，或者在Mule Standalone（无Studio的Mule ESB）中运行贷款代理示例。
+. 打开您的Web浏览器。
+. 在您的浏览器的地址栏中输入`http://localhost:11081/?name=Muley&amount=20000&term=48&ssn=1234`，然后按*enter*以引发Loan Broker应用程序的响应（如下所示）。
++
+image:submitted_m.png[submitted_m]
+
+
+. 在浏览器的地址栏中，用`5000`替换`amount`，然后按*enter*以从应用程序中引发新的响应（如下所示）。
++
+image:submitted2_m.png[submitted2_m]
+
+== 它是如何工作的
+
+贷款经纪人应用程序由多个 link:/mule-user-guide/v/3.3/mule-application-architecture[流量和子流量]组成。这些流程集成了Web服务来处理最终用户对银行利率报价的请求。
+
+以下部分提供贷款经纪人在处理最终用户请求时所采取行动的逐流描述。
+
+[TIP]
+====
+*For Mule Studio Users*
+
+在Mule Studio中，双击 link:/mule-user-guide/v/3.3/studio-building-blocks[积木]打开其*Properties Panel*，然后检查其配置细节。或者，单击*Configuration XML*选项卡检查应用程序的XML配置文件。
+
+image:config_tab.png[config_tab]
+====
+
+=== 贷款代理同步流程
+
+作为Loan Broker应用程序的主要流程，此流程可协调数据收集以产生最终用户响应。
+
+image:loan_sync_all.png[loan_sync_all]
+
+//查看XML
+
+此流程中的请求 - 响应**{{0}} **会收到最终用户请求。由于它具有双向消息交换模式，因此此HTTP端点负责接收和返回消息。
+
+[NOTE]
+====
+*Two-Way vs. One-Way*
+
+请注意，HTTP端点具有*two-way message exchange pattern*（如左下方的小双箭头图标所示）。由于它必须响应请求者，因此本示例中的HTTP端点具有请求 - 响应消息交换模式。
+
+如果HTTP端点只需要将信息输入到应用程序中，则需要*one-way message exchange pattern*（下方，右边）。
+
+image:http_endpoints.png[http_endpoints]
+====
+
+接下来，*Body to Parameter Map Transformer*将消息有效载荷的数据格式从 http://en.wikipedia.org/wiki/HTTP_body_data[HTTP正文数据]转换为Java http://en.wikipedia.org/wiki/Associative_array[地图]。 Loan Broker应用程序仅处理Java消息有效内容。
+
+然后，Mule使用基于内容的路由器来引导消息进行进一步处理。根据其有效内容，**{{0}} **将每条消息路由到两条处理路径之一。
+
+* 如果消息有效载荷包含完整请求（即借款人的姓名和SSN以及贷款金额和期限），则选择流程控制将消息传递给`create customer request` {{2} }。
+* 如果消息有效负载是不完整的请求，则选择流控制将消息传递给`set error message`表达式组件。该组件将消息的有效负载设置为`Error: incomplete request`。穆勒不再进一步处理信息。相反，它会通过错误消息响应最终用户。
++
+image:choice_first_route2.png[choice_first_route2]
+
+`create customer request`组件使用表达式从消息负载中提取数据。它使用这些数据创建一个具有三个值的新Java对象：
+
+.  `Customer`，它标识借款人的名称和SSN
+. 一个`Integer`，标识贷款金额
+. 第二个`Integer`，标识贷款还款期限
+
+//查看XML
+
+如果在其有效负载中有一个新的`CustomerQuoteRequest`对象，则消息会遇到其第一个**{{0}}**。在整个流程中，Mule _enriches_带有数据的消息而不是改变有效载荷内容。通过丰富消息，Mule保留有效内容，以便应用程序中的其他元素可以访问原始数据。
+
+`Enrich with creditProfile`浓缩器仅包含一个**{{0}}**。这种类型的组件调用应用程序中的其他流或子流来获取数据，然后将数据添加到消息中。在这种情况下，`lookupCustomerCreditProfile`组件要求LookupCustomerCreditProfile子流访问外部Web服务以获取借款人的信用评分。穆勒用信用评分丰富了信息，然后将信息传递给流中的下一个丰富者。
+
+与其前身一样，`Enrich with Banks`浓缩器使用流参考组件来调用子流并获取数据。在这种情况下，Mule使用LookupBanks子流的结果将一个 http://en.wikipedia.org/wiki/List_(abstract_data_type)[名单]个银行添加到邮件有效负载中，而不是添加信用评分。
+
+然后，Mule使用**{{0}}**创建一个空的列表变量。 Mule将用它从银行提取的引号填充这个空的`quotes`列表变量。如果要填充空列表，则接下来的消息会遇到*{{1}}*范围。这个迭代处理器逐个获取数据来填充列表中的每个项目。
+
+为了获取这些数据，流参考组件首先调用LookupLoanQuote子流从银行获取报价。然后，消息富集器将该引用添加到列表变量中。 Foreach继续援引，然后进行充实，直到它从银行名单上的每家银行获得了一份报价。然后，Foreach将该消息传递给流中的下一个**{{0}}**。
+
+通过一个例子来说明foreach的行为，想象一下包含以下内容的消息负载：
+
+* 一个空的`quotes`列表变量
+* 一个`banks`变量列出了Mule必须要求报价的两家银行：MuliNational Bank和IndustrialGrowth Bank
+
+Foreach处理消息负载如下：
+
+.  Foreach会咨询`banks`列表变量，以了解它应该向MuliNational发送其第一个请求。
+.  Foreach调用LookupLoanQuote子流。
+.  LookupLoanQuote子流程会调用`getLoanQuote` Web服务以获取MultiNational的利率报价。
+.  LookupLoanQuote子流提供对贷款代理同步流程的Web服务响应。
+. 消息richher将来自MultiNational的利率报价插入到`quotes`列表变量中。
+.  Foreach咨询`banks`列表变量，以了解它应该向IndustrialGrowth发送第二个请求。
+.  Foreach调用LookupLoanQuote子流。
+.  LookupLoanQuote子流程将调用`getLoanQuote` Web服务以获取IndustrialGrowth的利率报价。
+.  LookupLoanQuote子流提供对贷款代理同步流程的Web服务响应。
+. 消息richher将IndustrialGrown的利率报价插入到`quotes`列表变量中。
+.  Foreach会咨询`banks`列表变量，以便在列表中找不到更多项目。它将消息传递给下一个消息处理器，该消息现在与包含两个利率报价的列表一起传递。请参阅下表以获取消息内容的前后比较。
++
+[%header,cols="2*"]
+|===
+{+}}消息内容在+之前
+迭代处理 | +后的消息内容
+迭代处理
+| `banks`列表变量：+
+•www.multinational.com/loans/quotes +
+•www.industrialgrowth.com/loans/quotes |`banks`列表变量：+
+•www.multinational.com/loans/quotes +
+•www.industrialgrowth.com/loans/quotes
+| `quote`列表变量： | `quote`列表变量：+
+•6.99 +
+•6.84
+|===
+
+此流程中倒数第二个消息处理器在应用程序中引用另一个子流程。 `findLowestLoanQuote`子流程确定列表中哪个报价最低，然后将结果记录在消息有效负载中。
+
+最后，*Object to String Transformer*将消息有效载荷的数据格式从Java转换为字符串。 HTTP端点将响应发送给最终用户。
+
+请注意，贷款代理同步流程还包含一个**{{0}}**。此流程不是使用Mule的 link:/mule-user-guide/v/3.3/error-handling[默认的例外策略]，而是使用定制的异常策略来处理错误。如果流中发生错误，则异常策略*Set Payload Transformer*会在有效负载上设置错误消息。应用程序将此错误消息作为对最终用户的响应发送给`Error processing loan request`。
+
+===  LookupCustomerCreditProfile子流
+
+根据贷款经纪人同步流程的需求进行调用，此子流程获取并记录借款人在信息有效负载中的信用评分。
+
+image:credit_profile.png[credit_profile]
+
+//查看XML
+
+为了获得信用评分，`customer`转换器将有效载荷设置为`Customer`，如`create customer request`表达式转换器所定义。 （回想一下`Customer`变量包含借用者的名称和SSN。）Mule向`getCreditProfile` SOAP Web服务发送一个请求。 HTTP端点将Web服务的响应插入到子流中。
+
+Mule利用 http://cxf.apache.org[Apache的CXF框架]来构建Web服务。包装**{{1}}**和HTTP出站端点的处理器链是CXF要求。它确保Mule在记录处理结果之前完成所有处理活动。
+
+最后，在此流程中，**{{0}}**将消息有效载荷上的Web服务响应的有效内容记录为`Credit Profile`。
+
+===  LookupBanks子流
+
+贷款经纪人应用程序可以防止所有银行泄露所有贷款报价请求。例如，一家迎合首映客户的银行会因为信用不良的借款人收到一笔小额贷款的报价而被拒绝。为了防止对银行Web服务的这种令人不快的调用，贷款代理应用程序使用*LookupBanks*子流。
+
+image:look_up_banks.png[look_up_banks]
+
+Mule首先使用选择流量控制来检查有效负载中的`amount`，然后根据贷款的大小路由消息。
+
+* 如果贷款超过20,000美元，流量控制会将消息路由到第一个表达式组件，标记为`Bank 1, Bank 2`。
+* 如果贷款超过$ 10,000，流量控制会将消息路由到第二个表达式组件，标记为`Bank 3, Bank 4`。
+* 如果不是这样（即贷款为$ 10,000或更少），流量控制会将消息路由到标记为`Bank 5`的第三个表达式组件。
+
+image:choice_banks2.png[choice_banks2]
+
+//查看XML
+
+请注意，选择流控件将消息引导至评估为true的第一个表达式。例如，它仅向`Bank 1, Bank 2`组件提供一笔$ 30,000的贷款报价请求。
+
+此子流中的每个表达式组件都包含愿意提供利率报价的银行的URI。例如，传递到`Bank 3, Bank 4`组件的消息作为有效负载添加了银行3和4的URI。`banks`记录器组件记录要向其发送请求的适当银行列表。
+
+===  LookupLoanQuote子流
+
+这会向银行的Web服务发送报价请求。
+
+image:lookupLoanRequest.png[lookupLoanRequest]
+
+//查看XML
+
+首先，变量转换器将Mule消息负载（银行的URI）存储为名为`bankUri`的变量。 （回想一下，这个子流从Loan-broker-sync流中的foreach中一次接收一个请求，每个请求的有效载荷是一个银行的URI。）
+
+`create LoanBrokerLoanRequest`组件使用表达式从消息负载中提取借用者的信用配置文件（由`creditProfile`记录器在LookupCustomerCreditProfile流中记录）。它使用数据创建发送到`getLoanQuote` Web服务的请求。 +
+  Mule使用SOAP组件（配置为JAXWS客户端）将请求发送到银行的Web服务。 HTTP出站端点根据消息有效载荷中的银行URI动态确定发送请求的位置。它从银行的Web服务接收响应并将响应负载推送到`quote`记录器进行记录。
+
+===  FindLowestLoanRequest子流
+
+这个简单的子流程使用表达式组件来确定引号列表中的哪个项目提供最低的利率。记录器记录结果。
+
+image:find_lowestLoanQuote.png[find_lowestLoanQuote]
+
+//查看XML
+
+组件中的表达式将列表中项目的`getInterestRate`相互比较，以确定哪个项目最低（请参阅下图）。
+
+image:expression_bestRate.png[expression_bestRate]
+
+//查看Java
+
+=== 模拟流程
+
+贷款经纪人申请中剩余的六笔资金是“模拟资金流”。它们充当外部Web服务，五个合法流和子流调用其请求数据。
+
+每个流程包含：
+
+* 请求 - 响应HTTP端点和SOAP组件来接收请求
+产生随机数据以模仿Web服务处理的*  a **{{0}}**。
+
+您不需要将这些流程包含在您的定制应用程序中;它们仅存在于贷款经纪人示例中以支持功能性示例。
+
+== 相关主题
+
+* 有关路由消息的更多信息，请参阅 link:/mule-user-guide/v/3.3/choice-flow-control-reference[选择流量控制]。
+* 有关丰富邮件的更多信息，请参阅 link:/mule-user-guide/v/3.3/studio-scopes[工作室范围]。
+* 有关在消息上设置变量的更多信息，请参阅 link:/mule-user-guide/v/3.3/variable-transformer-reference[可变变压器参考]。
+* 有关迭代处理的更多信息，请参阅 link:/mule-user-guide/v/3.3/foreach[的foreach]。
+* 有关将异常策略应用于流程的更多信息，请参阅 link:/mule-user-guide/v/3.3/error-handling[错误处理]。
+* 有关配置SOAP组件的更多信息，请参阅 link:/mule-user-guide/v/3.3/soap-component-reference[SOAP组件参考]。

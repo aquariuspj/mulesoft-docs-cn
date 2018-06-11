@@ -1,0 +1,141 @@
+= 通知
+:keywords: notification, sdk, operations, sources
+
+*Available since version 1.1*
+
+Mule中的通知是向其他组件传达操作的一种方式。它们主要用于监视。
+
+// TODO添加链接到mule通知文档
+//有关通知如何在Mule中运行的更多信息，请参阅
+//到_
+
+== 定义通知
+
+第一步是定义一个模块可以触发的所有通知。您可以通过定义一个实现`NotificationActionDefinition`接口的`Enum`来完成此操作。
+在`Enum`中定义的每个值均被视为通知操作。
+
+由于您可以在通知中包含数据，因此您必须提供每个关联的`DataType`。
+
+在下面的示例中，声明了`NEW_EVENT`和`FINISHED_EVENT`个操作。
+他们有一个`Integer`和一个自定义对象（`SimpleObject`）作为数据。
+
+[source, java, linenums]
+----
+public enum SimpleNotificationAction implements NotificationActionDefinition<SimpleNotificationAction> {
+
+  NEW_EVENT(DataType.fromType(Integer.class)),
+
+  FINISHED_EVENT(DataType.fromType(SimpleObject.class));
+
+  private final DataType dataType;
+
+  SimpleNotificationAction(DataType dataType) {
+    this.dataType = dataType;
+  }
+
+  @Override
+  public DataType getDataType() {
+    return dataType;
+  }
+
+}
+----
+
+=== 在模块中注册通知
+
+要识别模块触发的通知，`@Extension`
+带注释的类应使用`@NotificationActions`注释，该`@NotificationActions`引用包含已定义通知的`NotificationActionDefinition`枚举。您定义的任何自定义数据类型也需要导出。
+
+[source, java, linenums]
+----
+@Extension(name = "Foo")
+@NotificationActions(SimpleNotificationAction.class)
+@Export(classes = {SimpleObject.class})
+@Xml(prefix = "test-connector")
+public class FooExtension {
+  // Content
+}
+----
+
+== 通知哪些通知已被触发
+
+在模块中声明所有可能的通知之后，您需要提供将通知与启动通知的操作和来源绑定的信息。
+
+要做到这一点，您需要实现一个`NotificationActionProvider`类来标识操作或源触发的通知。
+
+[source, java, linenums]
+----
+public class ExecuteNotificationActionProvider implements NotificationActionProvider {
+    @Override
+    public Set<NotificationActionDefinition> getNotificationActions() {
+        HashSet<NotificationActionDefinition> errors = new HashSet<>();
+        errors.add(SimpleNotificationAction.NEW_EVENT);
+        errors.add(SimpleNotificationAction.FINISHED_EVENT);
+        return errors;
+    }
+}
+----
+
+定义`NotificationActionProvider`之后，您可以将其绑定到适当的位置
+操作或使用`@Fires`注释的来源：
+
+[source, java, linenums]
+----
+@Fires(ExecuteNotificationActionProvider.class)
+public void execute(){
+  // operation body
+}
+----
+
+== 发布通知
+
+警告：触发未在`NotificationActionProvider`中声明的通知操作
+操作或来源将导致失败。使用数据发出通知
+与声明的类型不匹配也会导致失败。
+
+=== 操作
+
+要从操作中触发通知，您必须添加一个`NotificationEmitter`
+参数。然后，您可以使用它来触发具有给定`NotificationActionDefinition`的通知
+和相关数据，作为`TypedValue`。
+
+[source, java, linenums]
+----
+@Fires(ExecuteNotificationActionProvider.class)
+public void execute(NotificationEmitter notificationEmitter){
+  notificationEmitter.fire(NEW_EVENT, TypedValue.of(4));
+  // operation body
+  notificationEmitter.fire(FINISHED_EVENT, TypedValue.of(new SimpleObject()));
+}
+----
+
+=== 来源
+
+与操作不同，来源不仅在接收或生成要处​​理的新消息时执行，而且在成功完成时执行，无论是成功还是失败。
+
+您可以通过添加`NotificationEmitter`参数来触发来自`@OnSuccess`，`@OnError`和`@OnTerminate`方法的通知，就像在Operations中一样。
+
+// TODO：一旦记录，添加`@OnBackPressure`
+
+[source, java, linenums]
+----
+@OnSuccess
+  public void onSuccess(@ParameterGroup(name = "Success Info", showInDsl = true) PersonalInfo successInfo,
+                        NotificationEmitter notificationEmitter) {
+
+    // on sucess body
+    notificationEmitter.fire(FINISHED_EVENT, TypedValue.of(successInfo.getSimpleObject()));
+  }
+----
+
+但是，在接收或生成消息时，只能通过使用`SourceCallbackContext`处理消息后才能指示您希望触发某些通知。
+
+[source, java, linenums]
+----
+@Override
+  public void onStart(SourceCallback<String, Object> sourceCallback) throws MuleException {
+    // source body
+    context.fireOnHandle(NEW_EVENT, TypedValue.of(7));
+    sourceCallback.handle(result, context);
+  }
+----

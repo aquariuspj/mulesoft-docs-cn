@@ -1,0 +1,256 @@
+=  Foreach示例
+
+这个例子说明了迭代处理可以添加到Mule ESB应用程序的效率。
+
+向*Foreach Example*应用程序提交数据库检索请求的用户寻求两个问题的答案：
+
+. 我的库存中有多少辆汽车？
+. 每辆车的制造世纪是什么：20日还是21日？
+
+Mule使用**{{0}}**消息处理器从数据库中提取并反复处理记录。数据库中的每条记录都包含有关清单中的汽车的信息。但是，创纪录并不表明汽车的制造世纪;它只包含汽车的制造，型号和制造年份。 Mule必须迭代检查每条记录的消息有效载荷，向有效载荷添加信息以指示每辆汽车的制造世纪，然后向最终用户返回响应。
+
+*Foreach Example*应用程序使用的不仅仅是一个foreach消息处理器，以最大限度地提高其效率：
+
+. 它根据消息有效内容路由消息
+. 它解析并转换消息有效载荷数据
+. 它将数据设置到消息有效载荷上
+. 它使用定制的异常策略处理错误
+
+这个例子将帮助你做出明智的决定，将迭代（也称为循环类型）处理合并到你的Mule应用程序中。要更多地了解Mule ESB整合服务和系统的能力，请访问Mule link:/mule-user-guide/v/3.3/mule-examples[例子]并查看其他正在运行的应用程序。
+
+== 假设
+
+MuleSoft团队在Mule ESB的图形用户界面（GUI）*Mule Studio*中构建了Foreach示例。本文档描述了Mule Studio环境中的示例细节。在适当的情况下，XML配置在可扩展部分的Studio界面屏幕截图之后。
+
+本文档假定您熟悉Mule ESB和 link:/mule-user-guide/v/3.3/mule-studio-essentials[Mule Studio界面]。为提高您对Mule Studio的熟悉度，请考虑完成一个或多个 link:/mule-user-guide/v/3.3/mule-studio[Mule Studio教程]。
+
+== 设置
+
+就像这个Foreach例子一样，您可以直接在*Mule Studio*或*Mule Standalone*（没有Studio的Mule ESB）中创建模板应用程序。您可以调整这些基于用例的模板的配置，以在Mule中创建您自己的自定义应用程序。
+
+按照下面的过程创建，然后在Mule ESB中运行Foreach示例应用程序。
+
+. 完成 link:/mule-user-guide/v/3.3/mule-examples[示例和练习]中的过程，以创建，然后运行Mule Studio中的Foreach模板，或Mule独立模式下的Foreach示例（无Studio的Mule ESB）。
+. 打开您的网络浏览器，然后在地址栏中输入`http://localhost:9091/populate`。
+. 按*enter*激活Foreach应用程序，并在您的浏览器中引发读取`Successfully populated the database`的响应。 （此操作填充Foreach用于处理请求的数据库。下面的<<Populate Flow>>详细描述了此活动。）
++
+image:successful_populate.png[successful_populate]
+
+. 在您的浏览器的地址栏中输入`http://localhost:9091/process`，然后按**enter **以从应用程序中获得指示以下内容的响应：+
+*  Mule从数据库（库存）中提取多少条记录（汽车）并进行迭代处理
+* 清单中每辆车的`TYPE`：`20th century car`或`21st century car`
+* 每辆车的`MODEL`和`MODEL_YEAR`
++
+image:processed.png[处理]
+
+== 它是如何工作的
+
+*Foreach*示例应用程序包含两个 link:/mule-user-guide/v/3.3/mule-application-architecture[流动]。
+
+. 第一个流程处理最终用户请求并返回响应。
+. 第二个流程在数据库中创建一个表格，然后用样本数据填充表格。 （您不需要在应用程序中创建此流程来查询数据库;它存在于此示例中，以便您可以检查功能应用程序。）
+
+以下部分提供Foreach在处理最终用户请求时的操作流程图。
+
+[TIP]
+====
+*For Mule Studio Users*
+
+在Mule Studio中，双击 link:/mule-user-guide/v/3.3/studio-building-blocks[积木]以打开其*Properties Panel*并检查其配置详细信息。或者，单击*Configuration XML*选项卡检查应用程序的XML配置文件。
+
+image:config_tab.png[config_tab]
+====
+
+=== 流程
+
+该流程使用多个 link:/mule-user-guide/v/3.3/studio-building-blocks[建筑模块]来接收，处理和响应最终用户请求。
+
+image:process_flow.png[process_flow]
+
+// *View the XML*
+
+==== 端点
+
+请求 - 响应**{{0}} **接收最终用户请求。由于它具有双向消息交换模式，因此此HTTP端点既接收来自最终用户的请求，也向最终用户发送响应。
+
+该消息然后移至**{{0}}**，从数据库中提取记录集合;在这种情况下，每条记录都包含最终用户清单中关于汽车的信息：
+
+* 品牌和型号
+* 制造年份
+
+[NOTE]
+====
+*Two-Way vs. One-Way*
+
+请注意，JDBC端点具有*two-way message exchange pattern*（如小双箭头图标所示 - 请参阅下图左侧）。由于它必须从数据库中检索信息，因此本示例中的JDBC端点必须具有请求 - 响应消息交换模式。
+
+如果一个JDBC端点只需要一个包含信息的数据库，它需要一个**one-way message exchange pattern** ---见右下图。
+
+image:JDBC_endpoitns.png[JDBC_endpoitns]
+====
+
+====  Foreach和Choice
+
+然后，Mule将消息交给一个**{{0}}**迭代处理器。在**{{1}}**的帮助下，foreach可以确定哪些车辆是20世纪的汽车，哪些是21世纪的汽车。
+
+foreach范围首先将数据库记录集合拆分为一系列元素（即汽车列表）;每个元素都包含有关汽车的品牌，型号和年份的信息。然后，Foreach通过其范围内的消息处理器逐个提供每个元素。
+
+选择流程控制检查`MODEL_YEAR`并决定将消息路由到何处：
+
+* 如果年份小于2001年，则选择流量控制将元素路由到第一个`Set payload type` *Expression Component*
+* 否则（即年份为2001或更大），选择流控制将元素路由到第二个`Set payload type`表达式组件
+
+image:choice_properties_2.png[choice_properties_2]
+
+//查看XML
+
+foreach范围中的每个`Set payload type`表达式组件都添加到消息有效载荷中，以指定汽车的`TYPE`：
+
+* 第一个组件将`TYPE`设置为`20th century car`
+* 第二个组件将`TYPE`设置为`21st century car`
+
+接下来，foreach将每个元素传递给*{{0}}.*
+
+带`20th century car TYPE`的{​​{0}}元素通过*JMS Endpoint*（Java消息传递服务API）移至应用程序外部队列。
+带`21st century car TYPE`的* 元素移动通过**{{0}} **将信息记录在外部文件系统中。
+
+[NOTE]
+外部JMS队列和外部文件系统都不存在。该流程简单地表明，您可以使用foreach范围内的出站端点将收集信息推送到其他目标。
+
+为了用一个例子来说明迭代处理，想象一下JDBC端点访问数据库并为包含三个元素的集合提供foreach：
+
+*  2002年本田思域
+*  1978年的雪佛兰新星
+*  2000辆奥迪TT
+
+.  Foreach将集合分成三个元素，然后将第一个元素提供给选择流控制。
+. 选择流程控制检查第一个元素的有效载荷，以确定制造年份是否小于2001年。在这种情况下，年份大于2001年，因此流量控制将元素路由到第二个{{ 1}}表达式组件。
+. 组件将元素`TYPE`设置为`21st century car`。
+. 元素移动到文件出站端点，该端点将元素的信息（包括其新`TYPE`）发送到外部文件系统。
+.  Foreach将第二个元素提供给选择流控制。
+. 选择流量控制检查第二个元素的有效负载信息，以确定制造年份是否小于2001年。在这种情况下，年份小于2001年，因此流量控制将元素路由到第一个{ {1}}表达式组件。
+. 组件将元素`TYPE`设置为`20th century car`。
+. 元素移动到JMS出站端点，该端点将元素的信息（包括其新的`TYPE`）转发到外部JMS队列。
+. 最后，foreach将第三个元素馈送到选择流控制中，该流控制对负载执行相同的检查并将元素路由到第一个`Set payload type`表达式组件。
+. 组件将元素`TYPE`设置为`20th century car`。
+.  Foreach通过迭代的结果 - 将`TYPE`添加到每辆车 - 到`Set Response`转换器。
+
+在迭代处理之后，原始消息有效载荷（集合）的结构和内容仍然存在。 Foreach仅为集合中的每个元素添加了`TYPE`的新指标。
+
+[%header,cols="2*"]
+|===
+在{+}之前的|消息有效内容
+在+后迭代处理 |消息有效内容
+迭代处理
+| `MODEL_YEAR=2002, MODEL=Honda Civic` +
+  `MODEL_YEAR=1978, MODEL=Chevy Nova` +
+  `MODEL_YEAR=2000, MODEL=Audi TT`  | `TYPE=21st century car, MODEL_YEAR=2002, MODEL=Honda Civic` +
+  `TYPE=20th century car,MODEL_YEAR=1978, MODEL=Chevy Nova` +
+  `TYPE=20th century car,MODEL_YEAR=2000, MODEL=Audi TT`
+|===
+
+==== 变压器
+
+接下来，foreach将消息传递给*Set Payload Transformer*，该*Set Payload Transformer*检查集合中刚刚处理的元素的数量。它在消息有效载荷上设置新数据，以指示集合中的元素数量 - 在这种情况下，表示汽车数量。 （新数据回答最终用户的第一个问题"how many cars are in my inventory?"。）
+
+然后，*Parse Template Transformer*将模板文件加载到应用程序中，解析内容以解析表达式，并将解析的内容设置为消息负载。在此示例中，变换器从Mule的`src/main/resources`文件夹加载`foreach_info.html`文件，并解析内容以将最终用户响应的字体设置为粗体。结果，最终用户的浏览器以粗体显示响应。
+
+====  HTTP响应生成器
+
+最后，*HTTP Response Builder*准备回复最终用户的回复。您可以使用HTTP响应生成器来配置详细信息，
+
+* 回复的*content type*;例如`text/html`或`application/json`
+* 回复的*HTTP status code*;例如，{“2}”为“OK”，`500`为“内部错误”
+*  *Cache Control*指令，用于指示请求 - 响应路径中的所有缓存机制如何处理响应
+
+响应构建器将消息推送回请求响应HTTP端点，该端点将响应返回给最终用户（请参阅下图）。答复表明：
+
+库存中的汽车数量。* 
+* 每辆车的类型，型号年份和型号
+
+image:processed.png[处理]
+
+==== 例外策略
+
+请注意，流程流程还包含一个**{{0}}**。此流程不是使用Mule的 link:/mule-user-guide/v/3.3/error-handling[默认的例外策略]，而是使用定制的异常策略来处理错误。如果发生错误，异常策略将捕获异常，并且其消息处理器执行三个操作：
+
+. 集合有效载荷转换器将消息有效载荷设置为`You need to populate the Database first`。
+. 解析模板转换器将来自Mule的`src/main/resources`文件夹的`foreach_error.html`文件加载到消息中。 Mule使用该模板构建最终用户响应;在这种情况下，`html`模板会应用一个标题为`An error has occurred`的标题。
+.  HTTP响应生成器准备发送给包含`500`的HTTP状态码的最终用户的响应。
+
+image:error_occurred.png[发生了错误]
+
+=== 填充流程
+
+该流程在数据库中创建一个表格，并使用示例数据填充表格。此示例中的Populate流程仅用于提供一个数据库，Process Flow中的JDBC端点可以从该数据库获取记录。您无需在您的应用程序中创建此流程来查询数据库;它存在于这个例子中，以便您可以检查一个功能应用程序。尽管如此，这是一个值得研究的功能流程。
+
+image:populate_flow.png[populate_flow]
+
+//查看XML
+
+==== 端点和脚本
+
+与处理流程中一样，填充流程中的请求 - 响应**{{0}} **将接收最终用户请求。该消息随后移至**{{1}}**，该数据库在数据库中创建一个表格，并在表格中填入有关汽车的信息（请参阅下面的脚本）。
+
+[source, code, linenums]
+----
+jdbcConnector = muleContext.getRegistry().lookupConnector("JDBCConnector");
+qr = jdbcConnector.getQueryRunner();
+conn = jdbcConnector.getConnection();
+qr.update(conn, "CREATE TABLE cars (model varchar(256), model_year integer)");
+qr.update(conn, "INSERT INTO cars values('Ford Sierra', 1982)");
+qr.update(conn, "INSERT INTO cars values('Opel Astra', 2001)");
+----
+
+==== 变形金刚和HTTP响应生成器
+
+填充流使用集合有效载荷转换器在有效载荷上设置`Successfully populated the database`消息。然后，解析模板转换器将`foreach_info.html`加载到消息中，并解析内容以将最终用户响应的字体设置为粗体。 （最终用户的浏览器以粗体显示响应。）
+
+最后，HTTP响应构建器准备一个响应并将其传递给HTTP端点以返回给用户。 Mule向用户显示一条消息，其中显示`Successfully populated the database`。 +
+ +
+  image:successful_populate.png[successful_populate]
+
+==== 例外策略
+
+如果在处理过程中发生错误，则此捕获异常策略模仿流程流异常策略的操作。异常策略之间的唯一区别是集合负载变换器在有效负载上设置的内容; Populate流的错误消息为`DB already populated`。 +
+ +
+  image:db_populated.png[db_populated]
+
+== 深入钻取
+
+Foreach应用程序使用三个*Global Elements*来处理请求：
+
+*  *Derby Data Source*
+*  *Database (JDBC) connector*
+*  *Active MQ connector*
+
+image:global_elements_tab.png[global_elements_tab]
+
+//查看XML
+
+[NOTE]
+====
+*What is a Global Element?*
+
+Mule ESB使用*Global Elements*与Foreach示例中的*Database (JDBC) Connector*一样指定传输细节并设置可重用配置。
+
+您可以创建一个全局元素来详细说明您的配置或传输细节，而不是重复编写相同的代码以将相同的配置应用于多个消息处理器。然后，您可以指示Mule应用程序中的任意数量的消息处理器引用该全局元素。
+
+在此示例中，*JDBC Endpoint*使用的传输配置不存在于“流程”流程中;相反，配置位于全局*JDBC Connector*元素中。 JDBC端点仅引用全局JDBC连接器以获取传输配置详细信息。
+====
+
+Mule使用全局*Derby_Data_Source*元素作为JDBC端点可以从中获取数据的数据库。 global元素使用Derby开源关系数据库（及其嵌入式JDBC驱动程序），以便您可以运行应用程序并查看Foreach示例。
+
+有关传输配置的详细信息，JDBC端点和JMS端点分别引用全局*JDBCConnector*和*JMSConnector*（请参见下面的左侧和右侧）。
+
+image:connectors_reference.png[connectors_reference]
+
+//查看XML
+
+== 相关主题
+
+* 有关使用JDBC端点的更多信息，请参阅 link:/mule-user-guide/v/3.3/database-jdbc-endpoint-reference[JDBC端点参考]。
+* 有关迭代处理的更多信息，请参阅 link:/mule-user-guide/v/3.3/foreach[的foreach]。
+* 有关路由消息的更多信息，请参阅 link:/mule-user-guide/v/3.3/choice-flow-control-reference[选择流量控制]。
+* 有关将异常策略应用于流程的更多信息，请参阅 link:/mule-user-guide/v/3.3/error-handling[错误处理]。
+* 有关Derby开源数据库的更多信息，请参阅 http://db.apache.org/derby/[Apache的Derby文档]

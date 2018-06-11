@@ -1,0 +1,293 @@
+=  TLS配置
+:keywords: tls, trust, store, https, ssl, secure messages, encryption, trust store, key store, keystore, truststore
+
+
+[IMPORTANT]
+--
+由于其严重的漏洞，TLS 1.0不再是有效的协议。
+
+*We encourage all users to use TLS 1.1/1.2.* +
+为了摆脱TLS 1.0，打开相关的配置文件（'tls-default.conf'或'tls-fips140-2.conf'）并从`enabledProtocols`字段中删除`TLSv1`。
+
+Studio 5.4.3还允许您通过在Studio文件夹中公开TLS默认设置来为Studio和API Gateway运行时自定义TLS配置。 +
+请参阅我们的 link:/mule-user-guide/v/3.8/tls1-0-migration[配置说明]文档。
+--
+
+==  TLS配置元素
+
+TLS配置元素独立于任何模块或传输。在Mule 3.7以后，HTTP连接器和Web服务使用者都支持它。
+
+您可以通过HTTP连接器的全局配置元素的UI，*TLS/SSL*选项卡上的或通过Web服务使用者的UI在*Security*选项卡上创建此元素。
+
+在XML中，元素的基本语法如下：
+
+[source, xml, linenums]
+----
+<tls:context name="customContext">
+    <tls:trust-store path="trustStore" password="mulepassword"/>
+    <tls:key-store path="clientKeystore" keyPassword="mulepassword"
+password="mulepassword"/>
+ </tls:context>
+----
+
+[TIP]
+您可以在 link:/mule-user-guide/v/3.8/shared-resources[域项目]中包含TLS上下文元素，以便可以在部署到同一台服务器的多个项目之间共享。
+
+`tls:context`元素定义了TLS的配置，可以在客户端和服务器端使用。它可以被其他模块的其他配置对象引用（或者被定义为其中一个嵌套元素）。
+
+在它内部，您可以包含两个嵌套元素：`key-store`和`trust-store`。您不需要同时包含两者，但至少必须存在其中一个：
+
+* 从服务器端：信任存储包含可信客户端的证书，密钥存储区包含服务器的私钥和公钥。
+* 从客户端：信任存储包含受信任服务器的证书，密钥存储包含客户端的私钥和公钥。
+
+将信任库或密钥库添加到TLS配置中会隐式实现相应类型的身份验证。将密钥库和信任库添加到同一个配置（如上面的代码示例中），隐式实现*two way TLS authentication*，也称为*mutual authentication*。
+
+[NOTE]
+密钥库可能包含两个密码，因为其中一个密码可用于访问整个密钥库文件，而另一个密钥库（keyPassword）可能需要另外访问该文件内的服务器私钥。
+
+== 生成密钥库和信任库
+
+TLS服务需要有私钥和公共证书。私钥永远不会离开服务器。公共证书通过TLS公开，因此客户端可以验证他们是否信任服务器。
+
+证书可以由知名证书颁发机构（CA）生成，也可以在没有外部批准（自签名证书）的情况下在本地生成。从证书颁发机构生成的证书包括数字签名，并且通常被任何包含CA证书的客户端信任为可信任证书库（信任库）。
+
+对于Mule产品，必须将证书和私钥导入到Java密钥库文件中。信任存储文件也是按照惯例只包含可信服务器的公用证书的密钥存储。
+
+'tls：trust-store'和'tls：key-store'元素必须引用现有的证书。如果您没有为信任存储提供任何值，则使用默认的Java信任存储。默认的信任存储库使用Java版本进行更新，因此建议您使用更新的Java版本以确保它包含对已知CA证书的更新。
+
+要生成自己的证书，可以使用 link:http://docs.oracle.com/javase/8/docs/technotes/tools/#security[Java Keytool]按照以下步骤操作。
+
+=== 生成密钥库
+
+. 要生成公开您的服务器凭据的密钥库，请运行以下命令：
+
++
+[source, code, linenums]
+----
+keytool -genkey -alias serverkey -keyalg RSA -keystore server.jks
+----
+
+生成的密钥库将包含一个私钥和一个公共证书。这个证书是自签名的，所以它不会被客户信任，除非你与他们共享公共证书。
+
+[NOTE]
+Keytool默认使用DSA算法生成证书。您可以通过'-keyalg RSA'参数指定它使用RSA算法，如上例所示。
+
+. 系统会提示您提供更多详细信息以及商店密码和密钥密码。
+​
+. 完成后，您必须从密钥库导出服务器的证书，以便可以与客户端共享。为此，请使用以下命令：
++
+[source, code, linenums]
+----
+keytool -export -alias serverkey -keystore server.jks -file server_cert.cer
+----
+
+[NOTE]
+标准JDK发行版中没有默认的Java密钥库，因此您必须生成自己的证书才能使用此元素。
+
+如果您还希望获得认证机构（CA）的签名，则必须以标准CSR格式导出证书。为此，您可以运行以下命令：
+
+[source, code, linenums]
+----
+keytool -certreq -keystore server.jks -alias example.com -file certificate_file
+----
+
+在这里，'-file'是指你想给你的证书文件的名字。生成后，将CSR文件发送给CA并按照说明获取签名。
+
+获得CA的签名后，您可以通过以下命令导入签名的证书文件：
+
+[source, code, linenums]
+----
+keytool -import -keystore keystore -alias example.com -file signed_certificate_file
+----
+
+[NOTE]
+您在导入时分配的别名不能链接到任何现有密钥，否则该过程将失败。
+
+
+=== 生成信任商店
+
+[TIP]
+标准的JRE发行版包含一个带*default trust store*的证书，用于'tls：trust-store'元素中默认使用的几个主要证书颁发机构（CA）的证书，但是如果您希望拥有更高的安全性或者使用自签名证书时。
+
+. 要创建一个trustStore，请运行以下命令：
++
+[source, code, linenums]
+----
+keytool -import -alias serverkey -keystore client_truststore.ts -file server_cert.cer
+----
+
+如果可以建立信任链（直接向服务器（如果其证书在信任存储中）或通过信任存储中存在证书的签名CA），则客户端将信任服务器，否则将失败。这意味着在使用自签名证书时必须定义信任库。
+
+
+
+== 全局TLS配置
+
+除了在'tls：context'级别设置信任存储和密钥存储的能力之外，您还可以为您部署到Mule的每个应用在全局级别定义一些其他参数。
+
+位于`$MULE_HOME`目录中的Mule'conf'文件夹包含两个文件，可让您通过手动设置Mule将使用的密码套件和协议来微调SSL连接器的配置：
+
+*  `tls-default.conf`（当Mule未配置为在FIPS安全模式下运行时，允许进行微调）
+
+*  `tls-fips140-2.conf`（允许在Mule在FIPS安全模式下运行时进行微调）
+
+[TIP]
+$ {MULE_HOME {0}} /选择/骡子3.4.1`。
+
+打开相关文件并评论或取消注释列表中的项目以手动配置允许的密码套件和SSL协议。如果您不更改这些文件，Mule允许配置的安全管理器选择密码套件和协议。
+
+在这些配置文件中设置的协议和密码套件的列表可以通过在单个`tls:context`元素中设置的内容进行本地约束，如果这些参数已定义的话。
+
+== 示例（对于HTTPS）
+
+=== 对于HTTP请求连接器
+
+来自新HTTP连接器的`request-config`元素可能会引用`tls:context`元素以实现HTTPS。如果`tls:context`为空（没有定义密钥存储区或信任存储区），那么将使用JVM的默认值，这可能已经为所有主要证书颁发机构包含一个包含证书的信任存储区。
+
+如果客户端要求服务器尝试连接的证书，则必须添加`<tls:trust-store>`元素，并将路径字段设置为包含受信任服务器证书的信任存储区文件的位置。
+
+如果服务器验证来自客户端的证书，则还应该添加`<tls:key-store>`元素，并将路径字段设置为包含客户端的私钥/公钥的密钥库文件的位置。
+
+==== 全局定义的TLS元素
+
+[source, xml, linenums]
+----
+<tls:context name="clientTlsContext" >
+        <tls:trust-store path="trustStoreFile" password="1234"/>
+        <tls:key-store path="keyStoreFile" keyPassword="123" password="456"/>
+    </tls:context>
+ 
+    <http:request-config name="globalConfig" protocol="HTTPS" host="localhost" port="8443" tlsContext-ref="clientTlsContext" />
+----
+
+[TIP]
+您还可以通过HTTP连接器的全局配置元素的UI在*TLS/SSL*选项卡上创建此元素。选择*Use Global TLS Config*，然后点击*TLS Context*旁边的绿色加号来创建新的TLS元素。
+
+==== 嵌套的TLS元素
+
+[source, xml, linenums]
+----
+<http:request-config name="globalConfig" protocol="HTTPS" host="localhost" port="8443">
+        <tls:context>
+            <tls:trust-store path="trustStoreFile" password="1234"/>
+            <tls:key-store path="keyStoreFile" keyPassword="123" password="456"/>
+        </tls:context>
+    </http:request-config>
+----
+
+[TIP]
+您还可以通过HTTP连接器的全局配置元素的UI在*TLS/SSL*选项卡上创建此元素。选择*Use TLS Config*，然后为在此处显示的字段提供值，以设置信任库和/或密钥库。
+
+=== 用于HTTP侦听器连接器
+
+来自新HTTP连接器的侦听器配置元素可能会引用`tls:context`元素以配置HTTPS。在这种情况下，要求`tls:context`至少包含一个`tls:key-store`元素，并将路径字段设置为包含服务器的私钥/公钥的密钥库文件的位置。
+
+如果服务器需要验证来自客户端的证书，则还应该添加一个`tls:trust-store`元素，路径字段将设置为包含可信客户端证书的信任存储库文件的位置。
+
+==== 全局定义的TLS元素
+
+[source, xml, linenums]
+----
+<tls:context name="serverTlsContext" >
+        <tls:trust-store path="trustStoreFile" password="1234"/>
+        <tls:key-store path="keyStoreFile" keyPassword="123" password="456"/>
+    </tls:context>
+ 
+    <http:listener-config name="globalConfig" protocol="HTTPS" host="localhost" port="8443" tlsContext-ref="serverTlsContext" />
+----
+
+[TIP]
+您还可以通过HTTP连接器的全局配置元素的UI在*TLS/SSL*选项卡上创建此元素。选择*Use Global TLS Config*，然后点击*TLS Context*旁边的绿色加号来创建新的TLS元素。
+
+==== 嵌套的TLS元素
+
+[source, xml, linenums]
+----
+<http:listener-config name="globalConfig" protocol="HTTPS" host="localhost" port="8443">
+        <tls:context>
+            <tls:trust-store path="trustStoreFile" password="1234"/>
+            <tls:key-store path="keyStoreFile" keyPassword="123" password="456"/>
+        </tls:context>
+    </http:listener>
+----
+
+[TIP]
+====
+您还可以通过HTTP连接器的全局配置元素的UI在*TLS/SSL*选项卡上创建此元素。选择*Use TLS Config*，然后为在此处显示的字段提供值，以设置信任库和/或密钥库。
+====
+
+[TIP]
+====
+如果您使用HTTP连接器进行双向TLS身份验证连接，则客户端证书将使用入站属性`http.client.cert`进行公开。
+
+您可以通过以下方式访问客户主体：`inboundProperties['http.client.cert'].getSubjectDN()`
+====
+
+==  tls-context元素的属性
+
+[cols="10a,80a,10a"]
+|===
+| *Attribute*  | *Description*  | *Required*
+| enabledProtocols | 指定在<<Global TLS configuration>>  |可选中设置的协议列表中启用哪些协议
+| enabledCipherSuites  | 指定要在<<Global TLS configuration>>  |列表中选择要启用的密码套件
+|===
+
+[TIP]
+====
+密码套件名称可能非常冗长，这可能会影响XML代码的可读性。为了保持整洁，您可以将您的密码套件名称保存在您的Mule项目的 link:/mule-user-guide/v/3.8/configuring-properties[外部属性文件]中并引用它。
+
+image:tls-cipher-property.png[密码套件]
+
+然后您可以通过以下语法引用您的属性：
+
+[source, xml, linenums]
+----
+<tls:context name="serverTlsContext" enabledCipherSuites="${myCipherSuites}" >
+----
+====
+
+信任存储元素的== 属性
+
+[cols="10a,80a,10a"]
+|===
+| *Attribute*  | *Description*  | *Required*
+|路径 |包含信任库的文件的路径。 |必需
+|类型 |信任存储的类型（默认JKS）+  |可选
+|密码 |信任商店密码。 +  |可选
+|算法 |信任库中使用的算法（默认SunX509） |可选
+|不安全的 | 布尔值，用于确定是否根据信任存储进行验证。如果设置为`true`，则所有证书都会被接受而不进行任何验证。如果未设置，则默认为“false” |可选
+|===
+
+[WARNING]
+将'不安全'属性设置为'true'会使连接容易受到攻击。仅建议将其用于原型设计和测试目的。
+
+== 密钥存储元素的属性
+
+[cols="10a,80a,10a"]
+|===
+| *Attribute*  | *Description*  | *Required*
+|路径 |包含密钥库的文件的路径。 |必需
+|类型 |密钥存储的类型（默认JKS） |可选
+|密码 |密钥存储区密码 |必需
+| keyPassword  |密钥管理器密码（密钥存储区内私钥的密码） |必需
+|算法 |密钥库中使用的算法（默认SunX509） |可选
+|===
+
+协议和密码套件行为。== 
+
+每当两个系统之间发生TLS通信时，协商将确定哪个协议和密码套件将用于两端启用的协议和密码套件列表之外。以下逻辑确定如何定义启用的协议和密码套件的列表：
+
+* 如果没有配置任何内容，您将使用Java环境默认提供的协议和密码套件列表。
+* 如果您有<<Global TLS configuration>>文件，则将使用您在其'enabledProtocols'和'enabledCipherSuites'属性中定义的列表。
+
+* 在您的'tls：context'元素中，可以包含'enabledProtocol'和'enabledCipherSuites'属性，并选择包含在全局TLS配置文件中的协议和密码套件的子集。您不能在此处引用未包含在全局TLS配置文件中的协议或密码套件（如果存在的话）。
++
+[TIP]
+请注意，此属性支持添加值"default"，该值取决于您在<<Global TLS configuration>>中配置的默认协议和密码套件或您的Java环境的默认协议和密码套件，具体取决于前者是当下。
+
+
+== 另请参阅
+
+* 详细了解维基百科中的 link:http://en.wikipedia.org/wiki/Transport_Layer_Security[TLS]
+* 了解如何配置 link:/mule-user-guide/v/3.8/http-connector[HTTP连接器]
+* 了解 link:/mule-user-guide/v/3.8/authentication-in-http-requests[认证]在HTTP连接器中的工作方式
+* 请参阅 link:/mule-user-guide/v/3.8/https-transport-reference[不推荐使用HTTPS传输]

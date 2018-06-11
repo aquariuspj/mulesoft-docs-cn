@@ -1,0 +1,334 @@
+= 迁移到新的HTTP连接器
+:keywords: anypoint studio, esb, connector, endpoint, http
+
+如果您将项目从旧版本升级到Mule 3.7 Runtime，则应考虑进行的主要调整之一是替换旧版 link:/mule-user-guide/v/3.7/deprecated-http-transport-reference[基于HTTP端点的连接器]的任何实例，以获得新的高性能 link:/mule-user-guide/v/3.7/http-connector[基于HTTP操作的连接器]。旧的基于HTTP端点的Connector仍然可以与Mule 3.7运行时一起使用，但它已被弃用，并且最终将在未来的版本中被删除。
+
+新连接器提供的接口与Mule中的其他连接器更加一致。它还提供了一些改进：
+
+* 包含表单参数或附件的传入请求会被连接器自动分析为易于访问的格式
+* 对转换成Mule消息负载的内容有更一致的定义
+* 响应代码和解释现在由监听器连接器本身处理。无需使用单独的弃用HTTP响应生成器来构建响应
+* 可以通过非常简单的界面将标题，查询参数和uri参数添加到请求中
+* 在HTTP请求连接器中引用 link:http://raml.org[肾错构瘤]文件时，Studio会根据RAML文件中的信息提供智能自动完成功能，加快您的工作速度并避免引用参考资料
+
+==  XML连接器语法
+
+新的HTTP连接器与旧的语法不同。除了不同的名称和不同的属性外，新连接器必须始终引用 link:/mule-user-guide/v/3.7/global-elements[全球元素]，这与Mule中大多数其他连接器的工作方式一致。多个连接器可引用封装了许多常用配置设置的单个全局元素。
+
+在旧的HTTP连接器上，对于入站和出站端点，都可以设置*exchange-pattern*，以便消息只向一个方向传输，因此入站端点不会向请求方发送请求，并且出站端点会不要听取他们的要求回应。 *The new HTTP Connector always has a two way communication*。
+
+以下是两个基本示例，将其分解为最小值，显示最小实现中旧和新连接器之间的语法差异。
+
+=== 监听HTTP请求
+
+[tabs]
+------
+[tab,title="New HTTP Connector"]
+....
+
+This is how to set up the new connector as a listener for incoming HTTP requests
+
+[source, xml, linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081"/>
+<flow name="test_flow">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="NEW HTTP Connector"/>
+    <...>
+</flow>
+----
+
+....
+[tab,title="Old HTTP Endpoint"]
+....
+
+This is how to set up the old connector as a listener for incoming HTTP Requests
+
+[source, xml, linenums]
+----
+<flow name="test_flow">
+    <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="/" doc:name="OLD HTTP Connector"/>
+    <...>
+</flow>
+----
+
+....
+------
+
+[NOTE]
+====
+旧HTTP连接器和新连接器之间的主要区别在于 - 旧连接器默认侦听*all subpaths below the one you define*，而新连接器只侦听*specific path you define*。
+
+如果希望新连接器接受子路径，则可以使用通配符（*）结束路径
+====
+
+=== 发送HTTP请求
+
+[tabs]
+------
+[tab,title="New HTTP Connector"]
+....
+
+This is how to set up the new HTTP Connector to send out an HTTP request to an external address
+
+[source, xml, linenums]
+----
+<http:request-config name="HTTP_request_Configuration" host="localhost"
+port="8081"/>
+<flow name="test_flow">
+    <...>
+    <http:request config-ref="HTTP_request_Configuration" path="/" method="GET" doc:name="NEW HTTP Connector"/>
+</flow>
+----
+
+....
+[tab,title="Old HTTP Endpoint"]
+....
+
+This is how to set up the old HTTP Connector to send out an HTTP request to an external address
+
+[source, xml, linenums]
+----
+<flow name="test_flow">
+    <...>
+    <http:outbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" method="GET" doc:name="OLD HTTP Connector"/>
+</flow>
+----
+
+....
+------
+
+== 属性
+
+下表显示了XML编辑器中旧和新连接器元素中可用的属性。其中一些在两者中都有效，而另一些则不再使用或是新的。
+
+=== 入站端点vs侦听器
+
+[%header,cols="5*"]
+|===
+一个|
+*Name*
+
+ 为|
+*Type*
+
+  | http：入站端点 | http：侦听器a |
+*Description*
+
+全局元素 |中的|用户 |字符串 | X  |认证的用户名
+全局元素 |中的|密码 |字符串 | X  |身份验证的密码
+全局元素 |中的|主机 |字符串 | X  |主机连接到。应该是本地网络接口的地址。
+全局元素 |中的|端口 |端口号 | X  |在建立连接时使用的端口号。
+|路径 |字符串 | X  | X  | HTTP URL的路径。
+| contentType  |字符串 | X  |   |要使用的HTTP ContentType。
+|方法 | httpMethodTypes  | X  |   |要使用的HTTP方法。
+| allowedMethods  | httpMethodTypes  |   | X  |接受的HTTP方法。
+| config-ref  |   |   | X  |引用http：listener-config元素。
+|保持活力 |布尔值 | X  |   |否决：使用keepAlive属性。
+| keepAlive  |布尔值 | X  |   |控制连接是否保持活动状态。
+|文档：姓名 |字符串 | X  | X  |显示在Studio画布中的名称。
+|===
+
+[WARNING]
+在旧的`http:inbound-endpoint`中，`path`的值不能以斜杠开始。在新的`http:listener`中，`path`的值可以。
+
+=== 出站端点vs请求
+
+[%header,cols="5*"]
+|===
+一个|
+*Name*
+
+ 为|
+*Type*
+
+ 为|
+*http:outbound-endpoint*
+
+ 为|
+*http:request*
+
+ 为|
+*Description*
+
+|关注重定向 |布尔值 | X  | X  |如果请求使用GET进行响应并返回一个redirectLocation头，则将其设置为true会使请求重定向网址。这仅适用于使用GET的情况，因为在执行POST时（根据RFC 2616的限制），您无法自动遵循重定向。
+| exceptionOnMessageError  |布尔值 | X  |   |如果请求返回大于或等于400的状态码，则会抛出异常。
+全局元素 |中的|用户 |字符串 | X  |认证的用户名
+全局元素 |中的|密码 |字符串 | X  |身份验证的密码
+|主机 |字符串 | X  |  X  |主机连接到。应该是本地网络接口的地址。
+|端口 |端口号 | X  | X  |建立连接时使用的端口号。
+|路径 |字符串 | X  |  X  | HTTP URL的路径。
+| contentType  |字符串 | X  |   |要使用的HTTP ContentType。
+|方法 | httpMethodTypes  | X  | X  |要使用的HTTP方法。
+| config-ref  |   |   | X  |引用http：request-config元素。
+| requestStreamingMode  |'总是'/'从不' |   | X  |定义是否启用流式传输
+| sendBodyMode  |'总是'/'永远' |   | X  |无论使用何种HTTP方法，始终/ 。
+|源 |   |   | X  |从哪里获取请求的正文。默认值：`#[payload]`
+|目标 |   |   | X  |放置响应主体的位置。默认值：`#[payload]`
+| parseResponse  |   |   | X  |如果为true，则会在收到多部分响应时解析响应。如果设置为false，则不会执行分析
+|关注重定向 |   |   | X  |定义是否遵循重定向。
+|保活 |布尔 | X  |  为|
+DEPRECATED：改为使用keepAlive属性。
+
+| keepAlive  |布尔值 | X  |   |控制连接是否保持活动状态。
+|文档：姓名 |字符串 | X  | X  |显示在Studio画布中的名称。
+|===
+
+[WARNING]
+在旧的`http:outbound-endpoint`中，`path`的值不能以斜杠开始。在新的`http:request`中，`path`的值可以。
+
+== 将HTTP消息映射到Mule消息
+
+新的HTTP连接器与旧连接器的不同之处在于它如何将HTTP请求的元素映射到Mule消息中的元素，总体而言，它的行为更加一致和可预测。标记这些差异很重要，因为引用来自流中其他块的这些传入元素现在需要在使用新的HTTP连接器时使用不同的MEL表达式。
+
+因此，请记住，在替换新的HTTP连接器的旧HTTP端点时，还必须验证发送到或将要发送到HTTP连接器的mule消息的任何元素是否仍在其他适当的引用中构建您的流程块。
+
+下面是HTTP请求的表示，以及适当的MEL表达式，用于在HTTP请求通过HTTP连接器输入Mule流之后引用每个元素。
+image:http+request+parts+white+2.png[HTTP请求+ + +份白+ 2]
+
+[NOTE]
+====
+如果连接器的路径定义为`{domain}/login`，则`mydomain`被视为*URI Parameter*。它可以通过以下表达式进行引用：
+
+----
+#[message.inboundProperties.'http.uri.params'.domain]
+----
+
+====
+
+=== 请求正文
+
+传入的HTTP请求和响应由连接器转换为Mule消息的有效载荷。使用旧的HTTP连接器时，有效内容类型始终为`InputStream`。对于新连接器，通常情况下也是如此，除非：
+
+*  请求的*Content-Type*标题是`application/x-www-form-urlencoded`或
+* 请求的*Content-Type*标头为`multipart/form-data`。
+
+在这两种情况下，Mule解析请求以生成一个更容易使用的Mule消息。 link:/mule-user-guide/v/3.7/http-listener-connector#the-request-body[阅读更多]。
+
+同样，对于传出的请求和响应，Mule消息有效负载被转换为字节数组并作为HTTP请求的主体发送。使用旧连接器时，始终执行此行为。使用新连接器时，通常情况下是这样，除了以下情况：
+
+*  Mule Message的Payload是一个键和值的映射
+* 邮件具有出站附件
+
+在这两种情况下，Mule都会将相应的头文件添加到HTTP请求中并相应地构建消息体。 link:/mule-user-guide/v/3.7/http-listener-connector#the-request-body[阅读更多]。
+
+映射到HTTP消息的===  Mule消息属性
+
+下表列出了Mule Message的HTTP特定属性，它们映射到HTTP请求的元素或特性。
+
+这些相同的属性可以作为inboundProperties进入流，或者可以将流的输出作为outboundProperties进行影响。
+
+如果HTTP请求到达HTTP侦听器连接器，或者HTTP响应返回到HTTP请求连接器，并且请求包含必需的内容或格式，则由连接器创建的Mule消息将包含下表中匹配的入站属性。如果到达HTTP请求连接器的Mule消息或者以HTTP侦听器连接器开头的流的结尾中的任何一个出站属性，则使用此属性上的信息构造传出HTTP请求。
+
+[%header%autowidth.spread]
+|===
+|属性 |描述新HTTP中的旧HTTP  |中的 |
+| `http.context.path`  | HTTP端点正在侦听的路径 | X  | 
+| `http.context.uri`  | HTTP端点正在侦听的URI  | X  | 
+| `http.headers`  |包含所有HTTP标头的地图 | X  | 
+| `http.method`  |请求的HTTP方法的名称 | X  | X
+| `http.query.params`  |包含所有查询参数的地图 | X  | X
+| `http.query.string`  | URL  | X  | X的查询字符串
+| `http.uri.params`  |包含所有URI参数的地图 |   | X
+| `http.request.uri`  |访问网址的路径和查询部分 | X  | 
+| `http.listener.path`  |被访问网址的路径部分 |   | X
+| `http.request.path`  |被访问网址的路径部分 | X  | X
+| `http.relative.path`  | URI的相对路径，相对于上下文路径 | X  | 
+| `http.status`  |与最新响应 |关联的状态码X  | X
+| `http.reason`  |状态 |   | X的解释
+| `http.version`  | HTTP版本 | X  | X
+| `http.scheme`  | HTTP或HTTPS，取决于使用的协议 |   | X
+|===
+
+下面的表格显示了如何在HTTP请求的每个不同元素输入一个mule流程并且被映射到Mule消息的一个元素时引用它们。它比较了如何通过新的基于HTTP对象的连接器与旧的基于HTTP端点的连接器进行比较：
+
+[%header,cols="34,33,33"]
+|===
+| HTTP元素 |不推荐使用的HTTP端点连接器 |新的HTTP连接器
+| *Request Body* a |
+POST，PUT，DELETE请求：消息有效负载，始终未解析。
+
+GET请求：没有身体。消息有效载荷是URI子路径（作为字符串）
+
+ 为|
+*The message payload is the request body*作为一个字节数组，不管HTTP方法如何。
+
+如果body类型是*url encoded form*，那么有效载荷是一个解析*map*（见下文）
+
+如果主体类型为*multipart*，则有效载荷为*attachment*（见下文）
+
+如果没有物体，则有效载荷为空。
+
+| *Headers* a |
+作为不同的入站媒体资源，或作为*http.headers*地图的一部分
+
+*`#[message.inboundProperties.`*
+
+*`accept-language]`*
+
+*`#[message.inboundProperties.`*
+
+* `'http.headers'.accept-language]` +
+*
+
+ 为|
+每个作为不同的入站属性（仅）
+
+*`#[message.inboundProperties.`*
+
+*`accept-language]`*
+
+| *Form Parameters* a |
+*payload*中的*Bitmap*。
+
+然后必须用（已弃用的）*Body to Parameter Map transformer*进行分析。
+
+ 为|
+*payload*中的键值*map*已解析。
+
+*`#[payload.'language']`*
+
+（除非`parseRequest=false`）。
+
+| *Query Parameters* a |
+每个作为不同的入站属性
+
+*`#[message.inboundProperties.age]`*
+
+ 为|
+作为**http.query.params**地图中的元素
+
+*`#[message.inboundProperties.`*
+
+*`'http.query.params'.age]`*
+
+| *URI Parameters* a |
+从*` http.request.path`*或*`http.relative.path`*中提取
+
+ 为|
+作为**http.query.params**地图中的元素
+
+*`#[message.inboundProperties.`*
+
+*`'http.uri.params'.domain]`*
+
+| *Attachments* a |
+*`#[message.inboundAttachments.`*
+
+*`'name'.dataSource.part]`*
+
+ 为|
+*`#[message.inboundAttachments.`*
+
+*`'name'.dataSource.content]`*
+
+|===
+
+* 与旧端点的潜在并发症是，标题和查询参数都映射到mule消息中的入站属性，作为`inboundProperties`的直接子项，以每个标头/查询参数名称命名。在请求同时包含共享同一名称的头和查询参数的情况下，这些属性将在mule消息中以相同方式表示，因此一个会覆盖另一个。新的连接器通过将查询参数放置在映射*http.query.params*中避免了这个问题，从而保持它们不同。
+
+[TIP]
+====
+有关新HTTP连接器的配置和工作的更多详细信息，请参阅：
+
+*  link:/mule-user-guide/v/3.7/http-listener-connector[HTTP侦听器连接器]
+*  link:/mule-user-guide/v/3.7/http-request-connector[HTTP请求连接器]
+====

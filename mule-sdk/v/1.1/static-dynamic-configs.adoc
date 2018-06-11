@@ -1,0 +1,108 @@
+= 动态配置
+:keywords: mule, sdk, config, dynamic, multitenant, multitenancy
+
+在配置参数中使用表达式的需求是常见的。典型的用例是：
+
+* 多租户：凭据或任何其他设置可能会因活动用户而异。
+* 动态端点：​​根据路由消息使用不同的目标。
+* 动态设置：例如，根据消息的目的地，超时可能会发生变化。
+
+== 静态配置
+
+如果没有为它的任何参数分配表达式（即使这些参数支持表达式），配置也是静态的，例如：
+
+。示例：静态配置
+[source, xml, linenums]
+----
+<ftp:config name="ftp" defaultWriteEncoding="UTF-8">
+  <ftp:connection username="foo" password="mySecret" />
+</ftp:connection>
+----
+
+示例中的所有参数都具有固定值，因此此配置是静态的。
+
+请注意，参数的值不是表达式，参数不接受表达式。前者可能接受一个表达作为一种价值。
+
+== 动态配置
+
+在动态配置中，至少有一个参数有一个表达式，例如：
+
+。示例：动态配置
+[source, xml, linenums]
+----
+<ftp:config name="ftp" defaultWriteEncoding="#[attributes.queryParams.encoding]">
+  <ftp:connection username="foo" password="mySecret" />
+</ftp:connection>
+----
+
+此配置是动态的，因为`defaultWriteEncoding`可以为每次执行解析为不同的值。
+
+这是另一个动态配置：
+
+[[multi_tenancy]]
+。示例：多租户
+[source, xml, linenums]
+----
+<ftp:config name="ftp" defaultWriteEncoding="UTF-8">
+  <ftp:connection username="#[ftpUser]" password="#[ftpPassword]" />
+</ftp:connection>
+----
+
+此示例显示如何配置多租户。连接参数中的表达式也可以解析为动态配置。
+
+== 动态配置生命周期
+
+静态和动态配置具有非常不同的生命周期。对于静态配置，每次需要时创建并使用单个实例。
+
+动态配置有不同的行为。每次执行指向动态配置的操作时，都会评估配置中的所有参数。为每个唯一的解析参数集创建一个配置实例。这样，每次解析相同的值时，都会返回相同的实例，但对于每个不同的值集，都会创建不同的实例。
+
+== 动态配置过期
+
+虽然创建动态配置很容易，但仍需要一种可配置的机制来处置不再需要的配置实例（或在一段时间内闲置的配置实例）。这对防止内存不足（OOM）问题至关重要。
+
+回到<<multi_tenancy, FTP multi-tenant>>的例子，最坏的情况要求在每个消息的基础上生成一个新的配置实例。根据应用程序的不同，一旦传输完成后就不需要这些实例。
+
+默认情况下，任何配置元素的动态实例在5分钟不活动后自动处理。
+
+[TIP]
+如果没有操作在该时间内开始_或完成，则实例处于非活动状态。如果FTP传输在6分钟前开始，但文件太大，并且传输仍在进行中，则该配置不会过期。
+
+基于SDK的模块还支持为特定配置定义指定自定义超时。这是模块用户可能会用来微调应用程序以处理默认超时时间太短或太长的情况。以下示例将超时降低到30秒：
+
+。示例：修改超时
+[source, xml, linenums]
+----
+<ftp:config name="ftp" defaultWriteEncoding="UTF-8">
+  <expiration-policy maxIdleTime="30" timeUnit="SECONDS" />
+  <ftp:connection username="#[ftpUser]" password="#[ftpPassword]" />
+</ftp:connection>
+----
+
+[TIP]
+您无需执行特定操作即可使`<expiration-policy />`元素可用。 SDK自动执行此操作。
+
+还可以在应用程序级别配置全局默认值，以便任何动态配置具有不同的默认值。您可以通过Mule DSL中的`<configuration>`元素进行设置：
+
+[source, xml, linenums]
+----
+<mule>
+  <configuration>
+    <dynamic-config-expiration>
+      <expiration-policy maxIdleTime="30" timeUnit="SECONDS" />
+    </dynamic-config-expiration>
+  </configuration>
+</mule>
+----
+
+最后，还可以设置运行时检查和处理已过期配置的频率（默认值为5分钟）。这不能在配置的配置基础上发生，只能在应用程序级别进行。以下示例不仅将默认过期时间设置为30秒，还会使运行时间每隔1分钟进行一次检查。
+
+[source, xml, linenums]
+----
+<mule>
+  <configuration>
+    <dynamic-config-expiration frequency="1" timeUnit="MINUTES">
+      <expiration-policy maxIdleTime="100" timeUnit="MILLISECONDS" />
+    </dynamic-config-expiration>
+  </configuration>
+</mule>
+----

@@ -1,0 +1,263 @@
+= 关于TLS配置
+:keywords: tls, trust, store, https, ssl, secure messages, encryption, trust store, key store, keystore, truststore
+
+Mule Runtime 4.x支持传输层安全性（TLS）1.1 / 1.2。
+TLS是为您的Mule应用程序提供通信安全的加密协议。 TLS提供许多不同的方式来交换密钥进行身份验证，加密数据并保证消息的完整性。本主题描述了Mule支持的TLS以及如何在Mule应用中配置TLS。
+
+您可以在Mule XML配置文件中配置tls：context元素来设置TLS。此元素用于支持TLS的所有连接器。例如，您可以在HTTP（服务器和客户端），FTPS（客户端），电子邮件（客户端）或套接字（客户端）连接器等配置TLS。
+
+== 密钥库和Truststore
+
+启用TLS的服务器需要具有私钥和公共证书。私钥永远不会离开服务器。公共证书通过TLS公开。启用TLS的客户端可以验证他们是否信任服务器，方法是验证该证书是否符合他们自己的要求。
+
+您将证书和私钥导入Mule使用的密钥库文件。信任存储文件也是根据惯例只包含可信服务器的公用证书的密钥存储。
+
+虽然有一个默认的Java信任库，但标准JRE发行版中没有默认的Java密钥库，因此您必须将自己添加到TLS上下文中。您可能已经拥有客户端应用程序的公司证书，并且不需要创建它们。通常，这些证书与JRE信任库一起工作，因此在TLS上下文中不需要设置。
+
+众所周知的证书颁发机构（CA）可以生成证书，也可以在没有外部批准（自签名证书）的情况下在本地生成证书。信任存储包含来自可信CA的证书，客户用该证书来验证服务器提供的证书。
+
+在Mule配置中，tls：trust-store和tls：key-store元素可以引用特定的证书和密钥，但是如果您没有为信任存储提供值，Mule会使用默认的Java信任存储。更新Java时，Java会更新默认信任库，因此建议定期更新，以使知名CA证书保持最新。
+
+Mule支持多种类型的主要商店，包括以下几种：
+
+*  JCEKS
+*  PKCS12
+*  JKS
+
+密钥存储类型可以在JRE级别配置。
+
+要生成密钥存储区或信任存储区或两者，可以使用Oracle的Java Keytool。有关更多信息，请参阅Oracle文档：
+
+`+https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html+`
+
+=== 生成密钥库
+
+本过程介绍了如何生成密钥库并执行此过程中提到的其他任务。
+
+. 生成一个暴露服务器证书的密钥库。例如：
++
+`keytool -genkey -alias serverkey -keyalg RSA -keystore mykeystore.jks`
++
+回应keytool提示。
++
+生成的密钥库包含一个私钥和一个公共证书。此证书是自签名的，因此除非您与他们共享公共证书，否则客户不会信任该证书。
++
+Keytool默认使用DSA算法生成证书。您可以改为指定它使用RSA算法。
+. 从密钥库中导出服务器的证书以与客户端共享。例如，输入命令以导出验证公钥的自签名证书。
++
+`keytool -export -alias serverkey -keystore mykeystore.jks -file server_cert.cer`
++
+. 响应提示输入您为密钥存储设置的密码。
++
+标准JDK发行版默认不包含密钥库，因此您可以生成自己的密钥库。
++
+如果您还想获得由认证中心（CA）签发的证书，则可以使用标准CSR格式导出证书。您指定您想要提供给您的证书文件的名称。您将CSR文件发送给CA并按照说明获取其签名。获得CA的签名后，您可以导入签名的证书文件。
++
+您在导入时分配的别名不能链接到任何现有密钥或进程失败。
+
+=== 生成信任商店
+
+标准的JRE发行版包括一个默认的信任存储，其中包含用于'tls：trust-store'元素默认使用的几个主要证书颁发机构（CA）的证书，但是如果您想要更高的安全性或者如果您使用自签名证书。
+
+要创建信任库，可以使用Oracle Java keytool。
+
+如果可以建立信任链（直接向服务器（如果其证书在信任库中）或通过其信任库中存在证书的签名CA），则客户端信任服务器;否则，连接失败。使用自签名证书时必须定义信任库。
+
+== 配置TLS
+
+将信任库或密钥库添加到TLS配置将会产生不同的影响，具体取决于使用类型：
+
+* 对于服务器：信任库包含可信客户端的证书，密钥库包含服务器的私钥和公钥。
+
+* 对于客户端：信任存储库包含可信服务器的证书，密钥存储区包含客户端的私钥和公钥。
+
+因此，将密钥存储区和信任存储区添加到配置中会隐式实现双向TLS身份验证，也称为相互身份验证。
+
+密钥库可能包含两个密码。其中一个可以访问整个密钥库文件。另一个（keyPassword）可以访问该文件中的服务器私钥。
+
+客户端的=== 配置
+
+如果`tls:context`为空（未定义密钥存储区或信任存储区），那么将使用JVM的默认值，这可能已经为所有主要证书颁发机构包含一个带有证书的信任存储区。
+
+如果客户端要求服务器尝试连接的证书，则必须添加`<tls:trust-store>`元素。将路径字段设置为包含受信任服务器证书的信任库文件的位置。
+
+如果服务器验证来自客户端的证书，则还应该添加`<tls:key-store>`元素，并将路径字段设置为包含客户端的私钥/公钥的密钥库文件的位置。
+
+
+服务器的=== 配置
+
+`tls:context`需要包含`tls:key-store`元素以使用安全连接（例如HTTPS）来侦听请求。您将路径字段设置为包含服务器的私钥/公钥的密钥存储文件的位置。
+
+如果服务器需要验证来自客户端的证书，则需要添加一个`tls:trust-store`元素。您将路径字段设置为包含可信客户端证书的信任存储库文件的位置。
+
+== 协议和密码套件
+
+当两个系统之间发生TLS通信时，协商会确定使用哪种协议和密码套件。
+
+您可以在`$MULE_HOME. $MULE_HOME`的Mule `/conf`目录中配置协议和密码套件，这是您的Mule安装所在的目录，例如`/opt/mule-4.0`。通过手动设置Mule将使用哪些密码套件和协议来选择两个文件中的一个来精确调整配置：
+
+*  TLS-default.conf
++
+当Mule未配置为以联邦信息处理标准（FIPS）安全模式运行时，允许进行微调。
++
+*  TLS-fips140-2.conf
++
+当Mule在FIPS安全模式下运行时，可以进行微调。
+
+打开相关文件并评论或取消注释列表中的项目以手动配置允许的密码套件和TLS协议。如果您不更改这些文件，Mule允许配置的安全管理器选择密码套件和协议。
+
+在这些配置文件中设置的协议和密码套件的列表可以通过在单个`tls:context`元素中设置的内容进行本地约束，如果这些参数已定义的话。
+
+只能使用两端启用的协议和密码套件。
+
+如果您未配置协议和密码套件，则使用默认的Java环境协议和密码套件。
+
+然后，您可以在tls：context元素中指定配置值或默认值的一个子集，供TLS使用。您可以在tls：context元素中配置enabledProtocols和enabledCipherSuites中的协议和密码套件。
+
+在tls：context元素中，您不能在此处引用未包含在全局TLS配置文件或默认值中的协议或密码套件。在tls：context元素中，您可以将enabledProtocols和enabledCipherSuites设置为值`default`。在这种情况下，TLS使用以下协议和密码套件：
+
+* 在全局TLS配置中配置的配置（如果存在）
+* 如果全局TLS配置不存在，则Java环境提供的默认值。
+
+密码套件名称可能很长，并影响XML代码的可读性。为了提高可读性，请将这些名称保存在Mule项目的外部属性文件中并引用它。
+
+然后您可以使用以下语法引用您的属性：
+
+[source, xml, linenums]
+----
+<tls:context name="serverTlsContext" enabledCipherSuites="${myCipherSuites}" >
+----
+
+TLS的==  XML参考
+
+下面的tls：context元素和属性定义了Mule应用中的TLS通信。您通常全局定义TLS配置并重新使用它。您引用全局定义以将其应用于特定用途，例如侦听或发送HTTPS请求。
+
+=== 全局定义的TLS元素
+
+tls：context元素定义了TLS的配置，可以从客户端和服务器端使用。该元素可以被其他模块的其他配置对象引用（或者定义为其中一个元素的嵌套元素）。
+
+您可以包含两个嵌套元素：密钥库和信任库。包括一个是必需的。
+
+[source, xml, linenums]
+----
+<tls:context name="customContext">
+    <tls:trust-store path="trustStore" password="mulepassword"/>
+    <tls:key-store path="clientKeystore" keyPassword="mulepassword"
+password="mulepassword"/>
+ </tls:context>
+----
+
+===  tls-context元素的属性
+
+这些属性是可选的。
+
+*  enabledProtocols：在全局TLS配置中启用的协议
+*  enabledCipherSuites：启用的全局TLS配置中指定的密码套件
+
+信任存储元素的=== 属性
+
+路径属性以外的属性是可选的。
+
+* 路径：包含信任库的文件的路径（必需）
+* 类型：信任存储的类型。默认= JKS
+* 密码：信任商店密码
+* 算法：信任存储使用的算法。默认= SunX509
+* 不安全：确定是否验证信任存储的布尔值。如果设置为true，则不会进行验证。默认= false
+
+将'不安全'设置为'true'会使连接容易受到攻击，建议仅用于原型设计和测试目的。
+
+=== 密钥存储元素的属性
+
+路径属性以外的属性是可选的。
+
+* 路径：包含密钥库的文件的路径（必需）
+* 类型：密钥库的类型（默认JKS）
+* 密码：密钥库密码
+*  keyPassword：密钥管理器密码，它是密钥库中的私钥密码
+* 算法：密钥库中使用的算法。默认= SunX509
+
+==  TLS配置示例
+
+以下示例显示如何在Mule XML配置文件中设置TLS。
+
+=== 示例：为客户端配置TLS
+
+以下示例通过设置信任库来保护FTPS客户端：
+
+[source, xml, linenums]
+----
+<ftps:config name="ftps">
+    <ftps:connection username="anonymous" password="password" host="localhost" port="21" workingDir="/dev">
+        <tls:context >
+            <tls:trust-store path="trustStore" password="mulepassword" />
+        </tls:context>
+    </ftps:connection>
+</ftps:config>
+----
+
+=== 示例：为服务器配置TLS
+
+以下示例通过设置密钥存储区来保护HTTP侦听器：
+
+[source, xml, linenums]
+----
+<http:listener-config name="nestedConfig">
+    <http:listener-connection protocol="HTTPS" host="localhost" port="8081">
+        <tls:context>
+            <tls:key-store path="tls/ssltest-keystore.jks" keyPassword="changeit" password="changeit"/>
+        </tls:context>
+    </http:listener-connection>
+</http:listener-config>
+----
+
+=== 示例：配置TLS以进行双向身份验证
+
+以下示例为HTTP侦听器设置稍后在本文档中描述的双向或相互身份验证。
+
+[source, xml, linenums]
+----
+<http:listener-config name="nestedConfig">
+    <http:listener-connection protocol="HTTPS" host="localhost" port="8081">
+        <tls:context>
+            <tls:trust-store path="tls/ssltest-cacerts.jks" password="changeit"/>
+            <tls:key-store path="tls/ssltest-keystore.jks" keyPassword="changeit" password="changeit"/>
+        </tls:context>
+    </http:listener-connection>
+</http:listener-config>
+----
+
+=== 示例：禁用TLS验证
+
+使用本文稍后介绍的不安全属性，可以禁用原型验证和开发验证。不建议使用其他方式。
+
+[source, xml, linenums]
+----
+<tls:context>
+    <tls:trust-store path="tls/ssltest-cacerts.jks" password="changeit" insecure="true"/>
+</tls:context>
+----
+
+=== 示例：添加其他密码套件和协议限制
+
+以下示例显示如何启用特定的协议和密码套件。
+
+[source, xml, linenums]
+----
+<tls:context name="tlsClientContext" enabledProtocols="TLSv1.2" enabledCipherSuites="TLS_DHE_DSS_WITH_AES_128_CBC_SHA256">
+    <tls:trust-store path="tls/trustStore" password="mulepassword"/>
+</tls:context>
+----
+
+== 使用Studio或Design Center UI配置TLS
+
+您可以在Studio和Design Center中配置TLS。例如，在Design Center中，您可以在流程设计中的HTTP侦听器配置中设置TLS：
+
+image::design-center-tls-setup.png[]
+
+例如，在Studio中，您可以通过连接器配置（如HTTP）设置全局TLS配置：
+
+image::studio-tls-setup.png[]
+
+== 另请参阅
+
+*  http://docs.oracle.com/javase/8/docs/technotes/tools/#security[Oracle Java keytool文档]

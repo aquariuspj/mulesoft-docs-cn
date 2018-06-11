@@ -1,0 +1,698 @@
+=  SSL和TLS传输参考
+
+== 介绍
+
+SSL和TLS是同一传输的替代名称。 （为简单起见，此页面将仅将其称为SSL，但此处的所有内容也适用于TLS。）此传输允许通过SSL连接发送或接收消息。 SSL是一个基于IP的层，用于实现许多其他可靠的协议，如HTTPS和SMTPS。但是，如果您需要特定的协议来读取这些更高级别协议之一不支持的消息负载，则可能需要直接使用SSL传输。在与不支持Web服务的传统或本机系统应用程序进行通信时，通常会出现这种情况。
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source, xml, linenums]
+----
+xmlns:ssl="http://www.mulesoft.org/schema/mule/ssl"
+xmlns:tls="http://www.mulesoft.org/schema/mule/tls"
+----
+
+XML架构位置：
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/ssl http://www.mulesoft.org/schema/mule/ssl/3.2/mule-ssl.xsd
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/3.2/mule-tls.xsd
+----
+
+连接器语法：
+
+[source, xml, linenums]
+----
+<ssl:connector name="tcpConnector" receiveBufferSize="1024" receiveBacklog="50" sendTcpNoDelay="false"
+                reuseAddress="true" clientSoTimeout="0" serverSoTimeout="0" socketSoLinger="0"
+                keepSendSocketOpen="false" keepAlive="true" dispatcherFactory-ref="dispatcherBean">
+    <tcp:PROTOCOL-TYPE/>
+    <ssl:client path="clientKeystore" storePassword="swordfish" class="JKS"/>
+    <ssl:key-store path="keystore" class="JKS" keyPassword="swordfish" storePassword="sturgeon" algorithm="SHA"/>
+    <ssl:server class="JKS" algorithm="SHA" explicitOnly="false" requireClientAuthentication = "false" />
+    <ssl:protocol-handler type="com.mycompany.protocols"/>
+</ssl:connector>
+----
+
+PROTOCOL-TYPE定义了如何从数据包中重构Mule中的消息。协议类型是：
+
+[source, xml, linenums]
+----
+<tcp:direct-protocol payloadOnly="true" rethrowExceptionOnRead="true"/>
+
+<tcp:eof-protocol payloadOnly="true" rethrowExceptionOnRead="true"/>
+
+<tcp:length-protocol payloadOnly="true" maxMessageLength="1024" rethrowExceptionOnRead="true"/>
+
+<tcp:xml-protocol rethrowExceptionOnRead="true"/>
+
+<tcp:xml-eof-protocol rethrowExceptionOnRead="true"/>
+
+<tcp:streaming-protocol rethrowExceptionOnRead="true"/>
+
+<tcp:safe-protocol payloadOnly="true" maxMessageLength="1024" rethrowExceptionOnRead="true"/>
+
+<tcp:custom-class-loading-protocol classLoader-ref="classLoaderBean" payloadOnly="true" maxMessageLength="1024" rethrowExceptionOnRead="true"/>
+
+<tcp:custom-protocol class="com.mycompany.MyProtocol" rethrowExceptionOnRead="true"/>
+----
+
+如果没有指定协议，则使用`safe-protocol`。
+
+端点语法：+
+你可以用两种不同的方式定义你的端点：
+
+. 前缀端点：
++
+
+[source, xml, linenums]
+----
+<ssl:inbound-endpoint host="localhost" port="65433"/>
+----
+
+. 没有前缀的URI：
++
+
+[source, xml, linenums]
+----
+<inbound-endpoint address="ssl://localhost:65433"/>
+----
+
+有关更多信息，请参阅下面的部分。
+
+== 注意事项
+
+SSL是互联网上使用的标准通信协议之一，支持互联网和局域网内的安全通信。 Mule SSL传输使用本机Java套接字支持，不会增加java.net中的类的通信开销，同时允许在Mule配置中指定许多SSL编程的高级功能，而不是使用Java编码。
+
+使用低级别SSL连接进行通信时使用此传输。要确定这是否合适，可以使用以下决策树：
+
+* 与使用低级别不安全TCP连接的外部服务通信？如果是这样，请使用TCP协议。
+
+* 您是否与始终位于相同Mule应用程序实例中的流或服务进行通信？如果是这样，请考虑使用 link:/mule-user-guide/v/3.2/vm-transport-reference[VM传输]。
+
+* 消息在被处理之前是否被保留是重要的？如果是这样，请考虑使用持久性传输，如 link:/mule-user-guide/v/3.2/jms-transport-reference[JMS]或文件。
+
+* 建立在TCP之上的更高级协议是否有优势，例如 link:/mule-user-guide/v/3.2/http-transport-reference[HTTP]的请求响应功能或 link:/mule-user-guide/v/3.2/email-transport-reference[电子邮件]的存储转发功能？如果是这样，请使用该协议的传输。
+
+* 性能是主要关注的问题，消息是否以正确的顺序传递并不重要，或者如果丢失了消息，通知发件人？如果是这样，请改用轻量级的 link:/mule-user-guide/v/3.2/udp-transport-reference[UDP传输]。
+
+* 是否应该保护消息？如果是这样，请使用 link:/mule-user-guide/v/3.2/ssl-and-tls-transports-reference[SSL传输]。
+
+如以下示例所示，可以使用SSL传输
+
+* 创建一个SSL服务器
+* 将消息发送到SSL服务器
+
+在 http://download.oracle.com/javase/1.5.0/docs/guide/security/jsse/JSSERefGuide.html[JSSE参考指南]中详细描述了SSL与Java的使用。特别是，它描述了SSL使用的密钥库，它们包含的证书如何使用以及如何创建和维护它们。
+
+== 特点
+
+SSL模块允许Mule应用程序通过SSL连接发送和接收消息，并声明性地自定义SSL的以下功能（在适用的情况下使用每个功能的标准名称）：
+
+* 阻止套接字操作的超时。这可以针对客户端和服务器操作单独声明。 （SO_TIMEOUT）
+* 打开套接字以等待发送完成多久。 （SO_LINGER）
+* 是否立即发送可用数据而不是缓冲它。 （TCP_NODELAY）
+* 是否立即重用套接字地址（SO_REUSEADDR）
+* 是否使用保持活动来检测何时不再可以访问远程系统（SO_KEEPALIVE）。
+* 网络缓冲区的大小（以字节为单位）（SO_SNDBUF）。
+* 允许的挂起连接请求的数量。
+* 是否在发送消息后关闭客户端套接字。
+
+另外，由于TCP和SSL是面向流的，而Mule是面向消息的，因此需要一些应用协议来定义每条消息在流中的开始和结束位置。下表列出了内置协议，描述如下：
+
+* 用于指定它们的XML标记
+* 任何XML属性
+* 阅读时如何定义消息
+* 写入消息时执行的任何处理
+
+[%header%autowidth.spread]
+|===
+| XML标记 |选项 |阅读 |撰写 |备注
+| <tcp:custom-class-loading-protocol>  | rethrowExceptionOnRead，payloadOnly，maxMessageLength，classLoader-ref  |期望消息以4字节长度开始（以DataOutput.writeInt（）格式）{ {4}}以4字节长度（以DataOutput.writeInt（）格式）之前的消息 |与长度协议类似，但指定用于反序列化对象的类加载器
+| <tcp:custom-protocol>  | rethrowExceptionOnRead，class，ref  |各不相同 |变化 |允许用户编写的协议与现有的TCP服务。
+| <tcp:direct-protocol>  | rethrowExceptionOnRead，payloadOnly  |所有当前可用字节 |无 |没有明确的消息边界。
+| <tcp:eof-protocol>  | rethrowExceptionOnRead，payloadOnly  |在套接字关闭前发送的所有字节 |无 | 
+| <tcp:length-protocol>  | rethrowExceptionOnRead，payloadOnly，maxMessageLength  |期望消息以4字节长度开头（以DataOutput.writeInt（）格式） |以4字节长度（DataOutput.writeInt（）格式）之前的消息 | 
+rethrowExceptionOnRead，payloadOnly，maxMessageLength期望消息以字符串"You are using SafeProtocol"开头，后跟4字节长度（DataOutput.writeInt（）格式）  |期望消息前面是字符串"You are using SafeProtocol"，后面跟着4字节的长度（DataOutput.writeInt（）格式） |在字符串{{2} }后面跟着一个4字节的长度（DataOutput.writeInt（）格式） |由于额外的检查，比长度协议安全一些。如果没有指定协议，这是默认值。
+| <tcp：streaming-protocol  | rethrowExceptionOnRead  |在套接字关闭前发送的所有字节 |无 | 
+| <tcp:xml-protocol>  | rethrowExceptionOnRead  |消息是以XML声明开头的XML文档 |无 | XML声明必须出现在所有消息
+| <tcp:xml-eof-protocol>  | rethrowExceptionOnRead  |消息是一个XML文档，以XML声明开头，或以EOF保留的任何内容 |无 | XML声明必须出现在所有消息中
+|===
+
+协议属性：
+
+[%header%autowidth.spread]
+|===
+|姓名 |值 |默认值 |笔记
+| class  |实现自定义协议的类的名称 |   |有关编写自定义协议的示例，请参阅{{0}
+| classLoader-ref  |对包含自定义类加载器 |   | 
+的Spring bean的引用
+| maxMessageLength  |允许的最大消息长度 | 0（无最大值） |长于最大值的消息会引发异常。
+| payloadOnly  | true  |如果为true，则只发送或接收Mule消息有效载荷。如果为false，则发送或接收整个Mule消息。 |不支持此属性的协议始终处理有效载荷
+| ref  |对实现自定义协议的Spring bean的引用 |   | 
+| rethrowExceptionOnRead  |是否重新尝试从套接字 |中读取发生的异常 |将此设置为"false"可避免在远程套接字意外关闭
+|===
+
+可以通过以下两种方式之一使用SSL端点：
+
+* 要创建接受传入连接的SSL服务器，请使用ssl：连接器声明入站ssl端点。这将创建一个SSL服务器套接字，它将读取来自客户套接字的请求并可选地将其写入响应
+* 要写入SSL服务器，请使用ssl：连接器创建出站端点。这将创建一个SSL客户端套接字，该套接字将写入请求并可以从服务器套接字读取响应。
+
+== 用法
+
+要使用SSL端点，请按照以下步骤操作：
+
+. 将MULE SSL命名空间添加到您的配置中：
+* 使用xmlns定义ssl前缀：ssl = "http://www.mulesoft.org/schema/mule/ssl"
+* 使用http://www.mulesoft.org/schema/mule/ssl定义架构位置http://www.mulesoft.org/schema/mule/ssl/3.2/mule-ssl.xsd
+. 为SSL端点定义一个或多个连接器。
+
+=== 创建一个SSL服务器
+
+要充当侦听并接受来自客户端的SSL连接的服务器，请创建入站端点将使用的SSL连接器：
+
+[source, xml, linenums]
+----
+<ssl:connector name="sslConnector"/>
+----
+
+=== 将消息发送到SSL服务器
+
+要通过SSL连接发送消息，请创建出站端点将使用的简单TCP连接器：
+
+[source, xml, linenums]
+----
+<tcp:connector name="sslConnector"/>
+----
+
+. 配置每个创建的连接器的功能。
+* 首先选择要发送或接收的每封邮件的协议。
+* 对于每个轮询连接器，请选择轮询的频率以及等待连接完成的时间。
+* 考虑其他连接器选项。例如，如果检测远程系统何时无法访问很重要，请将`keepAlive`设置为`true`。
+. 创建SSL端点。
+* 邮件将在入站端点上收到。
+* 邮件将被发送到出站端点。
+* 这两种端点均由主机名和端口标识。
+
+默认情况下，SSL端点使用请求 - 响应交换模式，但它们可以显式配置为单向。这个决定应该是直截了当的：
+
+[%header%autowidth.spread]
+|===
+|消息流 |连接器类型 |端点类型 | Exchange模式
+| Mule接收来自客户端的消息，但未发送任何响应 | ssl：连接器 |入站 |单向
+| Mule接收来自客户端的消息并发送响应 | ssl：connector  |入站 |请求响应
+| Mule将消息发送到服务器，但没有收到响应 | ssl：connector  |出站 |单向
+| Mule将消息发送到服务器并接收响应 | ssl：connector  |出站 |请求响应
+|===
+
+== 示例配置
+
+*SSL connector in flow*
+
+[source, xml, linenums]
+----
+<ssl:connector name="serverConnector" payloadOnly="false">
+    <tcp:eof-protocol /> ❹
+    <ssl:client path="clientKeystore"/>
+    <ssl:key-store path="serverKeystore"/>
+</tcp:connector> ❶
+
+
+<flow name="echo">
+    <ssl:inbound-endpoint host="localhost" port="4444" > ❷
+    <ssl:outbound-endpoint host="remote" port="5555" /> ❸
+</flow>
+----
+
+*SSL connector in service*
+
+[source, xml, linenums]
+----
+<ssl:connector name="connector" payloadOnly="false">
+    <tcp:safe-protocol />  ❺
+    <ssl:client path="clientKeystore"/>
+    <ssl:key-store path="serverKeystore"/>
+</ssl:connector>  ❶
+
+<model name="echoModel">
+    <service name="echo">
+        <inbound>
+            <ssl:inbound-endpoint host="localhost" port="4444" /> ❷
+        </inbound>
+        <outbound>
+            <pass-through-router>
+                <ssl:outbound-endpoint host="remote" port="5555" /> ❸
+             </pass-through-router>
+        </outbound>
+    </service>
+</model>
+----
+
+这显示了如何在Mule中创建SSL服务器。 ❶处的连接器定义将创建一个服务器套接字来接受来自客户端的连接。从连接中读取完整的mule消息（直接协议）将成为Mule消息的有效载荷（因为有效载荷仅为false）。 endpoint处的端点应用这些定义在本地主机的端口4444上创建服务器。然后从那里读取的消息被发送到❸的远程ssl端点。 +
+流版本使用eof协议（❹），以便在连接上发送的每个字节都是同一个Mule消息的一部分。服务版本使用安全协议（❺），以便可以在SSL连接上发送多条消息，每条消息前面都有一个指定其长度的标头。请注意，这两个连接器都指定要由客户端（出站）和服务器（入站）端点使用的单独密钥库。
+
+== 配置选项
+
+SSL连接器属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明 |缺省
+| clientSoTimeout  |从TCP服务器套接字读取时等待数据可用的时间量（以毫秒为单位） |系统默认值
+| keepAlive  |是否发送保持活动消息以检测远程套接字何时无法访问 | false
+| keepSendSocketOpen  |是否在发送邮件后保持套接字打开 | false
+| receiveBacklog  |可以未完成的连接尝试次数 |系统默认
+| receiveBufferSize  |这是用于接收消息的网络缓冲区的大小。在大多数情况下，不需要设置它，因为系统默认设置是足够的 |系统默认设置
+| reuseAddress  |是否重用当前处于TIMED_WAIT状态的套接字地址。这可以避免触发套接字不可用的错误 | true
+| sendBufferSize  |网络发送缓冲区的大小 |系统默认值
+| sendTcpNoDelay  |是否尽快发送数据，而不是等待更多时间来节省发送的数据包数 | false
+| socketSoLinger  |等待套接字关闭以等待所有待处理数据流逝的时间（以毫秒为单位） |系统默认值
+| serverSoTimeout  |从客户端套接字 |系统默认值读取时等待数据可用的时间量（以毫秒为单位）
+|===
+
+SSL连接器子元素及其属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+|客户端 |配置客户端密钥库
+|===
+
+`Client`的属性：
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+客户端密钥库的|路径 |位置
+| storePassword  |客户端密钥库的密码
+| class  |使用的密钥库类型
+|===
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+|密钥库 |配置服务器密钥库
+|===
+
+`key-store`的属性：
+
+[%header%autowidth.spread]
+|====
+| {名称{1}}说明
+服务器密钥库的|路径 |位置
+| storePassword  |服务器密钥库的密码
+| class  |使用的服务器密钥库类型
+| keyPassword  |私钥的密码
+服务器密钥库使用的|算法 |算法
+|====
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+|服务器 |配置服务器信任库
+|===
+
+`server`的属性：
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+| class  |用于信任存储的密钥库类型
+信任存储使用的|算法 |算法
+| factory-ref  |配置为Spring bean的TrustManagerFactory
+| explicitOnly  |如果为true，则在信任库不可用时不要使用服务器密钥库。默认为false。
+| requireClientAuthentication  |如果为true，则所有客户端必须在与Mule SSL服务器端点进行通信时进行身份验证。默认为false。
+|===
+
+[%header%autowidth.spread]
+|====
+| {名称{1}}说明
+|协议处理程序 |定义在其中找到协议处理程序的Java程序包列表
+|====
+
+`protocol-handler`的属性：
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}说明
+|属性 |包列表。
+|===
+
+有关在Java中创建协议处理程序的更多详细信息，请参阅http://java.sun.com/developer/onlineTraining/protocolhandlers。
+
+== 配置参考
+
+=== 元素列表
+
+=  SSL传输
+
+SSL传输可用于使用SSL或TLS的安全套接字通信。可以找到此传输的Javadoc http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/ssl/package-summary.html[这里]。
+
+== 连接器
+
+将Mule连接到SSL套接字以通过网络发送或接收数据。
+
+== 入站端点
+
+<inbound-endpoint...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|主机
+|串
+|无
+|
+|
+|端口
+|端口号
+|无
+|
+|
+|===
+
+<inbound-endpoint...>的{​​{0}}子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|===
+
+== 出站端点
+
+<outbound-endpoint...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|主机
+|串
+|无
+|
+|
+|端口
+|端口号
+|无
+|
+|
+|===
+
+<outbound-endpoint...>的{​​{0}}子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|===
+
+== 端点
+
+<endpoint...>的{​​{0}}属性
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|主机
+|串
+|无
+|
+|
+|端口
+|端口号
+|无
+|
+|
+|===
+<endpoint...>的{​​{0}}子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|===
+
+== 架构
+
+SSL模块的模式显示为 http://svn.codehaus.org/mule/branches/mule-3.1.x/modules/ssl/src/main/resources/META-INF/mule-ssl.xsd[这里]。其结构如下所示。
+
+命名空间"http://www.mulesoft.org/schema/mule/ssl"
+
+定位模式（1）：
+
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd]
+
+定位组件：
+
+4个全局元素，4个本地元素，3个complexTypes，1个属性组
+
+[%header%autowidth.spread]
+|===
+2 + |架构摘要
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd]
+| SSL传输可用于使用SSL或TLS的安全套接字通信。 +
+目标命名空间：+
+ +
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/namespace-overview.html[http://www.mulesoft.org/schema/mule/ssl] +
+ +
+定义组件：+
+ +
+4 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html#a1[全局元素]，4 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html#a1[本地元素]，3 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html#a2[复合类型]，1 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html#a3[属性组] +
+ +
+默认命名空间 - 限定格式：+
+ +
+当地元素：合格;本地属性：不合格+
+ +
+架构地点：+
+ +
+http://www.mulesoft.org/schema/mule/ssl/3.3/mule-ssl.xsd; see http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html#xml_source[XML来源] +
+ +
+导入模式（4）：+
+ +
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-schemadoc_xsd/schema-overview.html[骡子schemadoc.xsd]， http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-tcp_xsd/schema-overview.html[骡子tcp.xsd]， http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/schema-overview.html[mule.xsd]， http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/xml_xsd/schema-overview.html[xml.xsd] +
+ +
+由Schema导入：+
+ +
+_mule-ALL-included.xsd
+2 + |所有元素摘要
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/client.html[客户]
+|客户端密钥库。 +
+类型：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/complexTypes/tlsClientKeyStoreType.html[骡：tlsClientKeyStoreType] +
+内容：空，4个属性+
+定义：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd]中的 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html[连接器]元素 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html#a5[本地];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/client.html#xml_source[XML来源]
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html[连接器]
+|将Mule连接到SSL套接字以通过网络发送或接收数据。 +
+类型：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html#type_detail[匿名] complexType（ http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-tcp_xsd/complexTypes/tcpConnectorType.html[TCP：tcpConnectorType]的扩展名）+
+内容：
+复杂的16个属性，attr。 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/complexTypes/annotatedType.html#a5[通配符]，11 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html#a9[分子] +
+Subst.Gr：
+可以替代元素 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/elements/abstract-connector.html[骡：抽象连接器] +
+定义：
+全局在 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html#xml_source[XML来源] +
+包括：
+4 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html#a5[分子] +的定义
+用过的：
+决不
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/endpoint.html[端点]
+|输入：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/globalEndpointType.html[globalEndpointType] +
+内容：
+复杂的13个属性，attr。 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/complexTypes/annotatedType.html#a5[通配符]，16个元素+
+Subst.Gr：
+可以替代元素 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/elements/abstract-global-endpoint.html[骡：抽象的全球端点] +
+定义：
+全局在 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/endpoint.html#xml_source[XML来源] +
+使用：从未
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/inbound-endpoint.html[入站端点]
+|输入：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/inboundEndpointType.html[inboundEndpointType] +
+内容：
+复杂的13个属性，attr。 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/complexTypes/annotatedType.html#a5[通配符]，16个元素+
+Subst.Gr：
+可以替代元素 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/elements/abstract-inbound-endpoint.html[骡：抽象入站端点] +
+定义：
+全局在 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/inbound-endpoint.html#xml_source[XML来源] +
+使用：从未
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/key-store.html[密钥存储]
+|密钥库信息，包括位置，密钥库类型和算法。 +
+类型：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/complexTypes/tlsKeyStoreType.html[骡：tlsKeyStoreType] +
+内容：空，7个属性+
+定义：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd]中的 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html[连接器]元素 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html#a6[本地];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/key-store.html#xml_source[XML来源]
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/outbound-endpoint.html[出站端点]
+|输入：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/outboundEndpointType.html[outboundEndpointType] +
+内容：
+复杂的13个属性，attr。 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/complexTypes/annotatedType.html#a5[通配符]，16个元素+
+Subst.Gr：
+可以替代元素 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/elements/abstract-outbound-endpoint.html[骡：抽象出站端点] +
+定义：
+全局在 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/outbound-endpoint.html#xml_source[XML来源] +
+使用：从未
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/protocol-handler.html[协议处理程序]
+|通过设置java.protocol.handler.pkgs系统属性来配置全局Java协议处理程序。 +
+类型：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/complexTypes/tlsProtocolHandler.html[骡：tlsProtocolHandler] +
+内容：
+空，1个属性+
+定义：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd]中的 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html[连接器]元素 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html#a7[本地];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/protocol-handler.html#xml_source[XML来源]
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/server.html[服务器]
+|服务器信任库。 +
+类型：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/complexTypes/tlsServerTrustStoreType.html[骡：tlsServerTrustStoreType] +
+内容：空，8个属性+
+定义：
+http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd]中的 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html[连接器]元素 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/connector.html#a8[本地];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/elements/server.html#xml_source[XML来源]
+2 + |复杂类型摘要
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/globalEndpointType.html[globalEndpointType]
+|内容：
+复杂的13个属性，attr。 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/complexTypes/annotatedType.html#a5[通配符]，16个元素+
+定义：
+全局在 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/globalEndpointType.html#xml_source[XML来源] +
+用过的：
+在1 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/globalEndpointType.html#a3[位置]
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/inboundEndpointType.html[inboundEndpointType]
+|内容：
+复杂的13个属性，attr。 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/complexTypes/annotatedType.html#a5[通配符]，16个元素+
+定义：
+全局在 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/inboundEndpointType.html#xml_source[XML来源] +
+用过的：
+在1 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/inboundEndpointType.html#a3[位置]
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/outboundEndpointType.html[outboundEndpointType]
+|内容：
+复杂的13个属性，attr。 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule_xsd/complexTypes/annotatedType.html#a5[通配符]，16个元素+
+定义：
+全局在 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/outboundEndpointType.html#xml_source[XML来源] +
+用过的：
+在1 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/complexTypes/outboundEndpointType.html#a3[位置]
+2 + |属性组摘要
+| http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/attributeGroups/addressAttributes.html[addressAttributes]
+|内容：
+2 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/attributeGroups/addressAttributes.html#a6[属性] +
+定义：
+全局在 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/schema-overview.html[骡子ssl.xsd];请参阅 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/attributeGroups/addressAttributes.html#xml_source[XML来源] +
+包括：
+2 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/attributeGroups/addressAttributes.html#a4[属性] +的定义
+用过的：
+在3 http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ssl/../../schemas/mule-ssl_xsd/attributeGroups/addressAttributes.html#a2[地点]
+|===
+
+http://www.filigris.com/products/docflex_xml/#docflex-xml-re[DocFlex / XML RE] 1.8.5使用 http://www.filigris.com/products/docflex_xml/xsddoc/[DocFlex / XML XSDDoc] 2.5.0模板集生成的XML模式文档。 http://www.altova.com/xmlspy[Altova XMLSpy]通过 http://www.filigris.com/products/docflex_xml/integrations/xmlspy/[DocFlex / XML XMLSpy集成]生成的所有内容模型图。
+
+==  Javadoc API参考
+
+这个模块的Javadoc可以在这里找到： http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/ssl/package-summary.html[SSL]
+
+== 的Maven
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-ssl</artifactId>
+  <version>3.2.0</version>
+</dependency>
+----
+
+== 扩展此传输
+
+当使用TCP与外部程序进行通信时，可能需要编写一个自定义的Mule协议。第一步是获得外部程序如何在TCP流内分隔消息的完整描述。接下来是将协议实现为Java类。
+
+* 所有协议都必须实现接口`org.mule.transport.tcp.TcpProtocol`，其中包含三种方法：
+**  `Object read(InputStream is)`从TCP套接字读取消息
+**  `write(OutputStream os, Object data)`将消息写入TCP套接字
+**  `ResponseOutputStream createResponse(Socket socket)`创建一个可以写入响应的流。
+
+* 处理字节流而不是序列化Mule消息的协议可以通过继承`org.mule.transport.tcp.protocols.AbstractByteProtocol`继承许多有用的基础结构此类
+** 实现`createResponse`
+** 处理将消息转换为字节数组，允许子类仅实现更简单的方法`writeByteArray(OutputStream os, byte[] data)`
+** 提供了方法`safeRead(InputStream is, byte[] buffer)`和`safeRead(InputStream is, byte[] buffer, int size)`，用于处理当从TCP套接字进行非阻塞读取时数据当前不可用的情况
+
+假设我们要与具有简单协议的服务器进行通信：所有消息都由**>>>**终止。协议类看起来像这样：
+
+[source, java, linenums]
+----
+package org.mule.transport.tcp.integration;
+
+import org.mule.transport.tcp.protocols.AbstractByteProtocol;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+
+public class CustomByteProtocol extends AbstractByteProtocol
+{
+
+    /**
+     * Create a CustomByteProtocol object.
+     */
+    public CustomByteProtocol()
+    {
+        super(false); // This protocol does not support streaming.
+    }
+
+    /**
+     * Write the message's bytes to the socket,
+     * then terminate each message with '>>>'.
+     */
+    @Override
+    protected void writeByteArray(OutputStream os, byte[] data) throws IOException
+    {
+        super.writeByteArray(os, data);
+        os.write('>');
+        os.write('>');
+        os.write('>');
+    }
+
+    /**
+     * Read bytes until we see '>>>', which ends the message
+     */
+    public Object read(InputStream is) throws IOException
+    {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        int count = 0;
+        byte read[] = new byte[1];
+
+        while (true)
+        {
+            // if no bytes are currently avalable, safeRead()
+            // will wait until some arrive
+            if (safeRead(is, read) < 0)
+            {
+                // We've reached EOF.  Return null, so that our
+                // caller will know there are no
+                // remaining messages
+                return null;
+            }
+            byte b = read[0];
+            if (b == '>')
+            {
+                count++;
+                if (count == 3)
+                {
+                    return baos.toByteArray();
+                }
+            }
+            else
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    baos.write('>');
+                }
+                count = 0;
+                baos.write(b);
+            }
+        }
+    }
+}
+----
+
+*Notes*
+
+TCP和SSL是非常低级的传输，因此通常用于调试它们的工具（例如，在它们到达时记录消息）可能是不够的。一旦消息成功发送和接收，事情就会在很大程度上起作用。可能需要使用软件（或硬件），而不是在数据包级别跟踪消息，特别是在使用自定义协议时。或者，您可以通过在所有入站端点上临时使用直接协议进行调试，因为它会在接收到字节时接受（然后您可以记录）字节。

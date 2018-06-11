@@ -1,0 +1,228 @@
+=  SAML模块
+:keywords: anypoint studio, esb, saml, security, federated
+
+*_Enterprise_*
+
+Mule Enterprise为 http://saml.xml.org/about-saml[安全声明标记语言（SAML）]提供支持，这是联盟系统之间交换安全信息的标准。有关SAML的更多信息，请参阅http://saml.xml.org/wiki/saml-wiki-knowledgebase。
+
+[WARNING]
+====
+该模块实现SAML 1.1。
+
+Mule的 link:/mule-user-guide/v/3.6/cxf-module-reference[CXF模块]包括带有支持SAML 2.0的SAML选项的WS-Security。
+====
+
+== 使用SAML模块
+
+本节介绍如何在Mule配置中配置SAML模块。
+
+=== 添加SAML模块JAR
+
+使用SAML模块，`mule-module-saml` JAR文件必须位于应用程序的类路径中的某个位置。
+
+=== 配置安全管理器
+
+要使用SAML模块的功能，请按如下方式将SAML模块名称空间添加到您的Mule配置文件中：
+
+[source, xml, linenums]
+----
+<mule xmlns:saml="http://www.mulesoft.org/schema/mule/ee/saml"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/saml http://www.mulesoft.org/schema/mule/ee/saml/current/mule-saml-ee.xsd">
+    <!-- Rest of your mule configuration -->
+ 
+</mule>
+----
+
+接下来，您将如下所示配置SAML安全管理器。以下示例从SAML安全管理器及其附带安全提供程序的定义开始。如果没有指定安全性过滤器，则安全提供程序指定安全过滤器要使用的默认安全范围。如果你只有一个安全领域，这是特别有用的。
+
+[source, xml, linenums]
+----
+<saml:security-manager>
+  <saml:saml-security-provider name="samlSecurityProvider" default-realm="senderVouches">
+    <saml:keystore-provider name="default-key-provider"
+      key-store-file="classpath:saml.ks"
+      key-store-type="JKS"
+      key-store-password="changeit"/>
+    <saml:sender-vouches-realm name="senderVouches" sign-key-alias="mulesaml"
+      sign-key-password="changeit" key-provider-ref="default-key-provider" resign-assertions="true"/>
+    <saml:holder-of-key-realm name="holderOfKey" key-provider-ref="default-key-provider" />
+  </saml:saml-security-provider>
+</saml:security-manager>
+----
+
+在安全提供程序中，您定义了一个密钥提供程序，它从标准Ja​​va密钥库文件中读取密钥和证书。你可以使用普通的Spring选项来配置这个文件来定义资源。在这种情况下，密钥库将从类路径中读取。
+
+在这个例子中，定义了两个安全领域。一个使用发件人担保SAML方案，也是默认领域。另一个是关键领域的持有者。两者都使用与上面定义的相同的密钥提供者。有关这些领域的更多信息，请参阅下面的<<Choosing a SAML Profile>>。
+
+=== 在连接器上配置安全性
+
+一旦定义了安全管理器，就可以在CXF连接器上配置安全过滤器，如下面的示例所示。第一个示例没有指定安全领域，因此使用默认领域。两个过滤器都指定了用于验证由断言提供者发出的SAML断言的相同证书。
+
+[source, xml, linenums]
+----
+<saml:cxf-security-filter certificate-alias="mulesaml"/>
+ 
+<saml:cxf-security-filter certificate-alias="mulesaml" security-realm="non-default"/>
+----
+
+另外，您必须为各种传输创建特定的配置，以指示它们支持SAML。例如，必须指示CXF将WSS4j配置为使用SAML作为WS-Security配置文件。
+
+== 选择SAML配置文件
+
+SAML定义了两种不同的配置文件：发件人（SV）和密钥持有者（HOK）。
+
+* 发件人付款配置文件意味着邮件的发件人被授权为其中一个用户使用另一个系统。在这种情况下，消息的发送者证明其正确性。如果两个系统互相信任，则此配置文件是适当的。
+
+* 持有者的密钥意味着用户本人有权执行这些操作。在这种情况下，密钥的所有者（持有者）正在采取行动。如果您的目标系统信任令牌发行者（并因此信任用户），您将使用持有者密钥。
+
+有关这些配置文件以及适用的用例的更详细描述，请参阅SAP文档 http://wiki.sdn.sap.com/wiki/display/Security/Single+Sign+on+for+Web+Services[这里]中的文章。
+
+== 示例
+
+由于SAML用于单点登录，因此假定用户的身份验证已经发生，并且SAML令牌只包含一个或多个*subjects*，其中提供了一些其他系统可以理解的信息。在这种情况下，我们将配置我们的流程以要求`AllowGreetingServices`的SAML主题。对于我们的入站连接器，我们添加一个带有回调的`SAMLVerifyInterceptor`，它将检查正确的SAML主题：
+
+[source, xml, linenums]
+----
+<spring:bean class="org.mule.module.saml.cxf.SAMLVerifyInterceptor">
+     <spring:property name="callback">
+          <spring:bean class="org.mule.example.security.VerifyAuthorization">
+               <spring:property name="subject" value="AllowGreetingServices" />
+          </spring:bean>
+     </spring:property>
+</spring:bean>
+----
+
+[source, java, linenums]
+----
+public class VerifyAuthorization implements SAMLVerifyCallback
+{
+    private String subject;
+     
+    public SAMLAuthenticationAdapter verify(SAMLAuthenticationAdapter
+samlAuthentication) throws SecurityException
+    {
+        SAMLSubject samlSubject = samlAuthentication.getSubject();
+        if (!samlSubject.getNameIdentifier().getName().equals(subject))
+        {
+            throw new UnauthorisedException(...cut...
+----
+
+当预期的SAML令牌添加到消息的WS-Security头时，它看起来像这样：
+
+[source, xml, linenums]
+----
+<Assertion xmlns="urn:oasis:names:tc:SAML:1.0:assertion"
+xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion"
+xmlns:samlp="urn:oasis:names:tc:SAML:1.0:protocol"
+xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+AssertionID="_40082eadbf045476e26a107e4f37861d"
+IssueInstant="2009-11-13T02:26:06.569Z" Issuer="self"
+MajorVersion="1" MinorVersion="1">
+  <AuthenticationStatement AuthenticationInstant="2009-11-13T02:26:06.569Z"
+AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:password">
+    <Subject>
+      <NameIdentifier>AllowGreetingServices</NameIdentifier>
+      <SubjectConfirmation>
+        <ConfirmationMethod>urn:oasis:names:tc:SAML:1.0:cm:sender-vouches
+</ConfirmationMethod>
+      </SubjectConfirmation>
+    </Subject>
+  </AuthenticationStatement>
+</Assertion>
+----
+
+要验证收到的SAML令牌是否可信，SAML提供了两种不同的信任模式：*Sender Vouches*和*Holder of Key*。在这种情况下，我们使用Sender Vouches，这意味着消息的发送者必须是可信的（例如，通过数字签名）。在密钥模式的持有者中，消息的发送者并不重要，但SAML令牌主题必须包含来自可信来源的密钥（例如，来自Verisign的X.509证书）。
+
+== 配置参考
+
+===  SAML模块
+Mule企业为安全声明标记语言（SAML）提供支持，SAML是联邦系统之间交换安全信息的标准。
+
+=== 安全经理
+
+。<security-manager...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|===
+
+。<security-manager...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| saml-security-provider  | 0..1  |将授权委托给其他提供者的安全提供者。
+|===
+
+===  Saml安全提供商
+
+将授权委托给其他提供者的安全提供者。
+
+。<saml-security-provider...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| SAML的版本 | samlVersion  | {无{3}} 1.1 |
+|缺省境界 |串 | {无{3}} |
+|===
+
+。<saml-security-provider...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|抽象密钥提供商 | 1 .. *  | 
+|抽象安全领域 | 1 .. *  | 
+|===
+
+=== 密钥库提供商
+
+。<keystore-provider...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| {名称{1}} {串{2}}是 |  |
+|密钥存储文件 | {串{2}}是 |  |
+|密钥存储型 | {串{2}}是 |  |
+|密钥存储密码 | {串{2}}是 |  |
+|===
+
+。<keystore-provider...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|===
+
+=== 发件人证明领域
+
+。<sender-vouches-realm...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| {名称{1}} {串{2}}是 |  |
+| key-provider-ref  |名称（无空格） |是 |  |
+|注册密钥别名 |串 | {无{3}} |
+|注册密钥密码 |串 | {无{3}} |
+|辞职-断言 |布尔 | {无{3}} |
+|===
+
+。<sender-vouches-realm...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|===
+
+=== 关键领域的持有者
+
+。<holder-of-key-realm...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| {名称{1}} {串{2}}是 |  |
+| key-provider-ref  |名称（无空格） |是 |  |
+|===
+
+。<holder-of-key-realm...>的子元素
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+|===

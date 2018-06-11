@@ -1,0 +1,237 @@
+=  OAuth V1
+
+本页面详细讨论了DevKit对OAuth V1身份验证的支持，以及如何实现使用OAuth V1对您的API进行身份验证的连接器。
+
+image:5-package.png[5包]
+
+== 假设
+
+本文假设您熟悉 link:/anypoint-connector-devkit/v/3.5[Anypoint连接器DevKit]，并且准备好在您的连接器上实施身份验证。它假定您熟悉各种 link:/anypoint-connector-devkit/v/3.5/authentication-methods[认证方法]，并且您正在使用OAuth V1对您的API进行身份验证。
+
+如果您不熟悉OAuth V1身份验证，它是什么或如何工作，我们建议访问 http://oauth.net/core/1.0/[OAuth Core 1.0文档]。
+
+=== 所需的API信息
+
+从服务提供商的API文档中，获取下表中列出的变量的值。这些变量引用授权过程中使用的URL;有关此过程的这些步骤的详细信息，请参阅 http://oauth.net/core/1.0a/[OAuth 1.0a规范]的{​​{0}}部分。
+
+[%header%autowidth.spread]
+|===
+| {变量{1}}说明
+| `requestTokenUrl`  |从中获取请求令牌的URL
+| `accessTokenUrl`  |从中获取访问令牌的URL
+| `authorizationUrl`  |来自URL以获取资源访问权限
+|===
+
+您还必须安排访问API。该过程针对每个API提供程序，该过程的典型步骤在 link:/anypoint-connector-devkit/v/3.5/setting-up-your-api-access[设置您的API访问权限]中进行了描述。
+
+==  @OAuth注释
+
+要在连接器上实现OAuth V1身份验证，您需要在@Connector类中使用`@OAuth`注释。
+
+[WARNING]
+在构建过程中，使用@OAuth注释的连接器会获得另外两个自动生成的@Processor方法，称为`authorize`和`unauthorize`。这些消息处理器负责发起和结束OAuth会话。
+
+下表介绍了`@OAuth`批注的所有参数。
+
+[%header,cols="4*"]
+|===
+一个|
+*Parameter*
+一个|
+*Description*
+一个|
+*Required?*
+一个|
+*Default Value*
+
+| `messageSigner`  |在+中使用的签名方法
+  OAuth 1.0a流程;此方法包含在`auth_signature_method`参数中。 |   | `HMAC_SHA1`
+| `signingStrategy`  |定义应包含OAuth 1.0a参数的位置。 |   | `AUTHORIZATION_HEADER`
+| `requestTokenUrl`  |服务提供商定义的URL用于获取未经授权的请求令牌。 |✓ | 
+| `accessTokenUrl`  |服务提供商为获取访问令牌而定义的网址。 |✓ | 
+| `authorizationUrl`  |由服务提供商定义的网址，其中资源所有者被重定向以授予用户授权。 |✓ | 
+| `verifierRegex`  |用于在资源所有者授权使用者之后从服务提供者响应中提取验证者的Java正则表达式。 |   | {{ 1}}
+| `callbackPath`  |如果服务提供商只接受已知的重定向网址。将此参数分配给您的域中的路径（由`fullDomain`环境变量表示），该路径已在服务提供商处注册为重定向URL。如果留空（表示服务提供商接受任何URL作为重定向URL），Mule将使用随机路径。 |   | `<random path>`
+|===
+
+===  Maven项目依赖项
+
+要使用DevKit实现对OAuth 1.0的授权，您必须将以下依赖项添加到您的Maven `pom.xml`文件中：
+
+[source, xml, linenums]
+----
+<dependency>
+       <groupId>oauth.signpost</groupId>
+       <artifactId>signpost-core</artifactId>
+       <version>1.2.1.1</version>
+</dependency>
+----
+
+=== 在@Connector类中添加@OAuth注释
+
+[source, java, linenums]
+----
+@Connector(name = "myconnector", friendlyName = "MyConnector")
+@OAuth(requestTokenUrl = "https://api.mycommector.com/uas/oauth/requestToken",
+accessTokenUrl = "https://api.mycommector.com/uas/oauth/accessToken",
+authorizationUrl = "https://api.mycommector.com/uas/oauth/authorize")
+public class MyConnector {
+    /**
+    * YOUR CODE GOES HERE
+    */
+}
+----
+
+==  @连接器类属性
+
+您的@Connector类需要与OAuth相关的@Configurable实例属性，以允许用户在使用连接器时指定使用者密钥和密码：
+
+*  @ OAuthConsumerKey保存OAuth使用者密钥
+*  @ OAuthConsumerSecret保存OAuth使用者密码
+
+[source, java, linenums]
+----
+@Configurable @OAuthConsumerKey private String consumerKey;
+@Configurable @OAuthConsumerSecret private String consumerSecret;
+----
+
+它还需要String属性来保存访问令牌和访问令牌的秘密，公共getter和setter（未显示），注释如下所示：
+
+[source, java, linenums]
+----
+@OAuthAccessToken private String accessToken;
+@OAuthAccessTokenSecret private String accessTokenSecret;
+----
+
+===  @处理器方法注释
+
+对于任何要保护的@Processor方法，请添加@OAuthProtected注释，如下所示：
+
+[source, java, linenums]
+----
+@OAuthProtected 
+@Processor
+    public void logInfo() {
+        logger.info(String.format("OAuthAccessToken=%s", getAccessToken()));
+        logger.info(String.format("OAuthAccessTokenSecret=%s", getAccessTokenSecret()));
+    }
+ 
+@OAuthProtected
+@Processor
+public void myOperation(String source, Object destination)
+{
+    /**
+    * CODE FOR MYOPERATION
+    */
+}
+----
+
+调用时，@OAuthProtected @Processor方法启动以下活动：
+
+. 首次访​​问受保护资源时，用户将被重定向到服务提供商的授权URL，以授予或拒绝消费者访问受保护资源。
+. 在随后的访问请求中，Mule在请求服务提供者的请求中包含*access token*和*access token secret*（包含在用`@OAuthAccessToken`和`@OAuthAccessTokenSecret`标注的参数中） 。有关更多详细信息，请参阅 http://oauth.net/core/1.0/[OAuth 1.0a规范]。
+
+== 在客户端类中包含OAuth标题
+
+大多数OAuth 1.0实现使用Jersey Client来访问RESTful API;有些使用特定于应用程序的Java客户端库。但是，无论您使用的是哪种客户端，都需要在客户端级别添加代码，以便随请求一起发送使用者密钥，使用者密码，访问令牌和访问令牌密钥。
+
+在我们的Jersey客户端示例中，这是通过客户端类上的助手方法`addSignHeader()`执行的，如下所示：
+
+[source, code, linenums]
+----
+private WebResource addSignHeader(WebResource webResource) {
+        OAuthParameters params = new OAuthParameters();
+        params.signatureMethod("PLAINTEXT");
+        params.consumerKey(getConnector().getConsumerKey());
+        params.setToken(getConnector().getAccessToken());
+ 
+        OAuthSecrets secrets = new OAuthSecrets();
+        secrets.consumerSecret(getConnector().getConsumerSecret());
+        secrets.setTokenSecret(getConnector().getAccessTokenSecret());
+        OAuthClientFilter filter = new OAuthClientFilter(client.getProviders(), params, secrets);
+ 
+        webResource.addFilter(filter);
+        return webResource;
+    }
+----
+
+连接器通过此方法将所有调用传递给Dropbox API，以添加由OAuth V1标准指定的身份验证标头。由于这是特定于使用Jersey客户端的，因此此处不介绍此方法的详细演练以及它如何适用于客户端类。有关完整的详细信息，请参阅 link:/anypoint-connector-devkit/v/3.5/creating-a-connector-for-a-restful-api-using-jersey[使用Jersey创建RESTful API的连接器]。
+
+== 使用OAuth V1连接器
+
+在建立并安装连接器之后，可以在流中使用它，如以下各节所述。
+
+=== 授权连接器
+
+在使用者可以执行任何需要授权的操作之前，资源所有者必须授予对连接器的受保护资源的访问权限。当它收到授权请求时，Mule将资源所有者的浏览器重定向到服务提供商授权页面。任何后续访问受保护资源的尝试都会填充使用`@OAuthAccessToken`和`@OAuthAccessTokenSecret`注释的参数。 Mule在对服务提供商的请求中包含访问令牌和令牌机密。在下面的例子中，我们使用https://github.com/mulesoft/linkedin-connector[LinkedIn连接器]。
+
+[source, xml, linenums]
+----
+<linkedin:config apiKey="${api.key}" apiSecret="${api.secret}"/>
+ 
+...
+ 
+    <flow name="authorize">
+        <http:inbound-endpoint host="localhost" port="8080" path="/authorize"/>
+        <linkedin:authorize/>
+    </flow>
+----
+
+=== 在流中配置连接器
+
+. 通过为服务提供商提供的应用程序传递*consumer key*和*consumer secret*来配置扩展。下面的代码示例说明了这种配置的一个例子。
++
+[source, xml, linenums]
+----
+<linkedin:config apiKey="${api.key}" apiSecret="${api.secret}"/>
+ 
+...
+ 
+    <flow name="sampleFlow">
+        <linkedin:get-profile-for-current-user />
+    </flow>
+----
+
+. 配置尝试访问受保护资源的简单流。如果连接器未被OAuth授权，则使用者操作会抛出`NotAuthorizedException`。
+
+=== 自定义回拨
+
+当用户授予对受保护资源的访问权限时，服务提供者将发起HTTP回调。该回调传递一个授权代码，Mule稍后使用它来获取访问令牌。为了处理回调，Mule动态地创建一个HTTP入站端点，然后将该端点的URL传递给服务提供者。因此，你不需要完成任何特定的配置来进行HTTP回调。
+
+默认情况下，Mule使用主机和端口（由`fullDomain`环境变量和`http.port`确定）来构建一个URL以发送给服务提供商。在需要使用主机和端口的非默认值的情况下，请根据下面的代码示例添加配置。
+
+[source, xml, linenums]
+----
+<linkedin:config apiKey="${api.key}" apiSecret="${api.secret}">
+<linkedin:oauth-callback-config domain="SOME_DOMAIN" remotePort="SOME_PORT" />
+</linkedin:config>
+----
+
+有关Mule如何处理回调的细节，请参阅HTTP回调。
+
+=== 添加安全套接字层（SSL）
+
+当Mule自动启动HTTP入站端点来处理OAuth回调时，它默认使用HTTP连接器。如果服务提供商要求*HTTPS*，则可以配置Mule以传递您自己的HTTPS连接器：
+
+[source, code, linenums]
+----
+...
+ 
+<https:connector name="httpsConnector">
+<https:tls-key-store path="keystore.jks" keyPassword="mule2014" storePassword="mule2014"/>
+</https:connector>
+ 
+...
+ 
+    <linkedin:config apiKey="${api.key}" apiSecret="${api.secret}">
+    <linkedin:oauth-callback-config domain="localhost" localPort="${http.port}" remotePort="${http.port}" async="true" connector-ref="httpsConnector"/>
+    </linkedin:config>
+...
+----
+
+[TIP]
+有关配置*HTTPS connector,*的更多信息，请参阅 link:/mule-user-guide/v/3.5/https-transport-reference[HTTPS传输参考]。
+
+== 另请参阅
+
+*  *NEXT:*继续使用您的连接器 link:/anypoint-connector-devkit/v/3.5/defining-attributes-operations-and-data-model[定义属性，操作和数据模型]。

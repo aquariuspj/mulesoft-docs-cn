@@ -1,0 +1,208 @@
+= 调用组件引用
+:keywords: mule, esb, studio, invoke, methods, objects, spring beans
+
+*Invoke component*调用Spring bean中定义的对象的方法。您可以提供一组参数表达式来将消息映射到方法参数。 Mule通过方法名称确定使用哪种方法，以及提供的参数表达式的数量。在可能的情况下，Mule自动转换参数表达式的结果以匹配方法参数类型。
+
+*Note*：Mule不支持具有相同名称和相同数量参数的多个方法。
+
+== 配置Java类
+
+当您想要在处理消息时使用自定义Java代码中定义的现有方法时，请使用Invoke组件：
+
+. 创建一个新的Mule项目。点击*File*> *New*> *Mule Project*，然后命名项目`demo`。
+. 创建一个新的Java类。在包资源管理器中，右键点击`src/main/java`，然后点击*New*> *Class*。
++
+image:invoke-create-class.png[调用创建一流]
++
+. 将类命名为`GreetingService`。
++
+image:create-java-class.png[创建一个Java类]
++
+GreetingService.java文件在Studio中打开。
++
+. 在这个例子中，确保你完成的类有这样的代码：
++
+[source,java, linenums]
+----
+package demo;
+public class GreetingService {
+    public String sayHello(String name) {
+        return String.format("Hello %s!", name);
+    }
+    public String sayGoodbye(String name) {
+        return String.format("Goodbye %s!", name);
+    }
+}
+----
++
+该软件包是您的应用程序的名称。 GreetingService类包含两种方法：
++
+*  sayHello  - 显示"Hello <name>"
+*  sayGoodbye  - 显示"Goodbye <name>"
+
+=== 配置您的应用程序
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. In Studio, search for "http" and place an *HTTP Connector* on the canvas.
++
+image:invoke-http-icon.png[invoke-http-icon]
++
+. Click the HTTP Connector to display its properties menu. Click the green plus sign to the right
+of *Connector Configuration*.
++
+image:invoke-http-pe.png[invoke-http-pe]
++
+In the Global Element Properties window, set the host to `localhost`
+and the port to 8081. Leave all other settings the same and click *OK*.
++
+image:http-geprops.png[HTTP Global Element Properties]
++
+. In the HTTP Connector's property editor, set *Path* to `/greeting`:
++
+image:invoke-http-path.png[invoke-http-path]
++
+. Search for "invoke" and drag the Invoke Component to the canvas:
++
+image:invoke-flow.png[invoke-flow]
++
+. Click the Invoke icon to open the property editor:
++
+image:invoke-pe-blank.png[invoke-pe-blank]
++
+The possible values in the property editor are:
++
+[%header,cols="20a,80a"]
+|===
+|Attribute |Description
+|*Display Name* |Customize to display a unique name for the component in your application. Not required for Mule Standalone. The default is `Invoke`.
+|*Name* |The name of the message processor for logging purposes, for example, `someName`.
+|*Object Ref* |(Required) Reference to the object containing the method to be invoked. In the example, use `GreetingService`.
+|*Method* |(Required) The name of the method to be invoked. In the example, use `sayHello`.
+|*Method Arguments* |Comma-separated list of Mule expressions that, when evaluated, provide the arguments for the method invocation. For example, `#[1], #[2]`. In the example, we use `#[message.inboundProperties.'http.query.params'.name]`
+|*Method Argument Types* |Comma-separated list of argument types for the method invocation. Use when you have more than one method with the same name in your class. For example, `java.lang.Float, java.lang.String`
+|===
++
+. Set *Object Ref* to the object containing the method to be invoked, in this case, `GreetingService`.
+. Set *Method* to the method to invoke, in this case, `sayHello`.
+. Set *Method Arguments* to `#[message.inboundProperties.'http.query.params'.name]`.
++
+image:invoke-pe.png[Invoke Property Editor with Values]
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Include the invoke method in your flow, and define a Spring bean as a global element with the reference to the object containing the method.
+
+[source,xml, linenums]
+----
+<spring:beans>
+  <spring:bean name="beanName" class="invoke.GreetingService"/>
+</spring:beans>
+
+<flow
+  ...
+      <invoke object-ref="GreetingService" method="sayHello" methodArguments="#[1], #[2]" methodArgumentTypes="java.lang.Float, java.lang.Float" name="someName" doc:name="Invoke"/>
+  ...
+</flow>
+----
+
+[%header,cols="30a,70a"]
+|===
+|Element |Description
+|`invoke` |Invokes a method in a specified object using method arguments determined by Mule expressions.
+|===
+
+Attributes:
+
+[%header,cols="20a,40a,40a"]
+|===
+|Field |Description |Example XML
+|`doc:name` |Customize to display a unique name for the component in your application. |`doc:name="Invoke"`
+|`name` |The name of the message processor for logging purposes. |`name="someName"`
+|`object-ref` |(Required) Reference to the class or object containing the method to be invoked. |object-ref="GreetingService"`
+|`method` |(Required) The name of the method to be invoked. |`method="sayHello"`
+|`methodArguments` |Comma-separated list of Mule expressions that, when evaluated, are the arguments for the method invocation. |`methodArguments="#[1], #[2]"`
+|`methodArgumentTypes` |Comma-separated list of argument types for the method invocation. Use when you have more than one method with the same name in your class. |`methodArgumentTypes="java.lang.Float, java.lang.Float" `
+|===
+
+....
+------
+
+== 创建你的Spring Bean
+
+为了引用你的Java，Mule需要一个Spring bean来声明类路径。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. In Anypoint Studio, click *Global Element* at the bottom of the Canvas.
+. In the Global Mule Configuration Elements screen, click *Create*.
++
+image:invoke-create-bean.png[invoke-create-bean]
++
+. In the Choose Global Type screen, expand Beans, select *Bean*, and click *OK*.
++
+image:invoke-select-bean.png[invoke-select-bean]
++
+. In the Global Element Properties menu, enter the class name.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+Add this Spring bean to your code after the <mule element:
+
+[source,xml,linenums]
+----
+<spring:beans>
+    <spring:bean name="greetingService" class="invoke.GreetingService"/>
+</spring:beans>
+----
+
+The complete source is:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<spring:beans>
+	    <spring:bean name="greetingService" class="org.mule.invoke.GreetingService"/>
+	</spring:beans>
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="demoFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/greeting" doc:name="HTTP"/>
+        <invoke object-ref="GreetingService" method="sayHello" doc:name="Invoke"/>
+    </flow>
+</mule>
+----
+....
+------
+
+== 运行并测试您的项目
+
+从Anypoint Studio内运行和测试您的项目：
+
+. 点击*Run*> *Run As*> *Mule Application*。
+. 浏览返回"Hello, Mule!"的`http://localhost:8081/greeting?name=Mule`  - 您可以在浏览器的URL末尾更改名称，以迎接其他人。您也可以将设置中的方法更改为*sayGoodbye*，然后程序向您指定的名称说声再见。
+. 浏览器如下所示：
+
+== 另请参阅
+
+* 详细了解Mule中的 link:/mule-user-guide/v/3.8/components[其他组件]。
+
+
+
+

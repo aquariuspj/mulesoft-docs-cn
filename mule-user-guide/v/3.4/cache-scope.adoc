@@ -1,0 +1,329 @@
+= 缓存范围
+
+*_Enterprise, CloudHub_*
+
+通过存储和重复使用经常调用的数据，*Cache Scope*节省时间和处理负载。您可以将任意数量的消息处理器放入缓存范围，并配置缓存策略以存储范围内发生的处理产生的响应（其中包含响应消息的有效内容）。 Mule的默认缓存策略定义了数据如何存储和重用，但是如果您想调整缓存行为，则可以在Mule中自定义全局缓存策略，并使其可供应用程序中的所有缓存范围使用。
+
+Mule将消息发送到缓存作用域，父流预期并输出。缓存作用域处理消息，将输出传递给父流并保存输出（即缓存响应）。 Mule下一次将相同类型的消息发送到缓存作用域时，缓存作用域可能会提供缓存响应，而不是再次调用可能耗时的过程。
+
+[NOTE]
+您可以将缓存范围中的端点交换模式配置为*request-response*或*one-way*。无论交换模式设置或其中可能发生的任何数据检索活动如何，缓存作用域都会简单地缓存其中的流的输出;当消息接下来进入作用域时，缓存作用域会提供缓存输出，或*cached response*。
+
+您可以使用缓存作用域来减少Mule实例的处理负载，并加速流中的消息处理。它特别有效：
+
+* 处理对相同信息的重复请求
+* 处理涉及大量非消耗性消息有效载荷的信息请求
+
+例如，您可以使用缓存范围来管理客户的航班信息请求。许多客户可能会要求有关从旧金山到布宜诺斯艾利斯的航班的相同价格信息。您可以使用缓存范围来减少发送请求到数据库的时间 - 比如说每十分钟一次 - 并向用户显示数据，而不是使用大量处理能力向各个航空公司数据库发送单独请求高速缓存的航班定价信息。在数据的及时性不重要的情况下，缓存范围可以节省时间和处理能力。
+
+== 缓存策略
+
+*caching strategy*定义缓存作用域在消息进入其子流时所采取的操作。
+
+* 如果存在_is no_ cached响应事件（缓存"miss"），则缓存作用域会处理该消息。
+* 如果存在缓存的响应事件（缓存"hit"），则缓存范围将提供缓存的响应事件，而不是处理该消息。
+
+您可以在Mule中为您的应用程序中的缓存范围自定义全局缓存策略，也可以使用Mule的默认缓存策略。
+
+=== 默认缓存策略
+
+默认情况下，Mule应用程序中的所有缓存作用域都遵循下面描述的缓存策略过程。如果您想创建自己的自定义全局缓存策略，请参阅下面的 link:/mule-user-guide/v/3.4/cache-scope[创建全局缓存策略]部分。
+
+. 消息进入缓存范围。
+. 高速缓存范围确定消息的有效负载是否可用。一个*consumable payload*在丢失之前只能被读取一次 - 比如流式载荷 - 并且不能被缓存。
+** 如果消息有效负载是可用的，缓存范围总是处理消息;没有任何东西被缓存，并且缓存策略被放弃。
+** 如果消息payload_is不是可用的，则缓存范围将继续执行缓存策略的下一步。
+. 缓存范围生成一个密钥来标识消息的有效负载。 Mule使用MD5KeyGenerator和MD5摘要为消息有效载荷生成唯一密钥。
+. 高速缓存范围将新生成的密钥与先前处理并缓存的响应进行比较，并将其保存在InMemoryObjectStore中 - 缓存数据的容器。换句话说，缓存范围搜索它可以提供的"cache hit"而不是处理该消息。
+** 存在_cache miss_的地方，缓存作用域会处理新消息并产生响应。高速缓存作用域还将结果响应保存在对象存储中。 （如果响应具有消耗性有效载荷，则不缓存响应）。
+** 在存在_cache hit_的情况下，缓存策略使用DefaultResponseGenerator生成一个响应，该响应组合来自新请求和缓存响应的数据。 （如果生成的响应具有可消耗的有效负载，则不缓存响应。）
+. 缓存范围将响应推送到父流中以供继续处理。
+
+== 添加和配置缓存范围
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+. Drag and drop the cache scope icon from the palette into a flow on your canvas.
++
+image:Studio_Cache_Flow.png[Studio_Cache_Flow]
+
+. Drag one or more building blocks from the palette into the cache scope to build a chain of processors to which Mule will apply the caching strategy. A cache scope can contain any number of message processors.
+
+. Open the building block's *Scope Properties* panel, then configure the fields per the table below.
++
+image:Studio_CachePP.png[Studio_CachePP]
+
+[%header%autowidth.spread]
+|===
+|Field |Value |Description |XML
+|*Display Name* |Cache |Customize to display a unique name for the scope in your application. |`doc:name="Cache"`
+.2+|*Caching strategy reference* |Use Default caching strategy |(Default) Select if you want the cache scope to follow Mule's link:/mule-user-guide/v/3.4/cache-scope[default caching strategy]. |N/A
+|Reference to a strategy |Select to configure the cache scope to follow a link:/mule-user-guide/v/3.4/cache-scope[global caching strategy] that you have created; select the global caching strategy from the drop-down menu or create on by clicking the image:add.png[add]. |`cachingStrategy-ref="Caching_Strategy"`
+.3+|Filter |Process all messages |(Default) Select if you want the cache scope to execute the caching strategy for all messages that enter the scope. |N/A
+|Filter messages using an expression a|Selecet if you want the cache scope to execute the caching strategy ONLY for messages the match the expression(s) defined in this field.
+
+If the message matches the expression(s), Mule executes the caching strategy.
+
+If the message does not match expression(s), Mule processes the message through all message processors within the cache scope; Mule never saves nor offers cached responses. |`filterExpression="#[user.isPremium()]"`
+|Filter messages using a global filter a|Select if you want the cache scope to execute the caching strategy only for messages that successfully pass through the designated global filter.
+
+If the message passes through filter, Mule executes the caching strategy.
+
+If the message fails to pass through filter, Mule processes the message through all message processors within the cache scope; Mule never saves nor offers cached responses. |`filter-ref="MyGlobalFilter"`
+|===
+....
+[tab,title="XML Editor or Standalone"]
+....
+. Add a `ee:cache` element to your flow at the point where you want to initiate a cache processing block. Refer to the code sample below.
+
+. Optionally configure the scope according to the tables below.
++
+[%header%autowidth.spread]
+|===
+|Element |Description
+|*ee:cache* |Use to create a block of message processor that will process a message, deliver the output to the parent flow, and cache the response for reuse (according to the rules of the caching strategy.)
+|===
++
+[%header%autowidth.spread]
+|===
+|Element Attribute |Default Value |Description
+|*doc:name* |Cache a|Customize to display a unique name for the cache scope in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+|*filterExpression* | |(Optional) Specify one or more expressions against which the cache scope should evaluate the message to determine whether the caching strategy should be executed.
+|*filter-ref* | |(Optional) Specify the name of filtering strategy that you have defined as a global element. This attribute is mutually exclusive with filterExpression.
+|*cachingStrategy-ref* | |(Optional) Specify the name of the global caching strategy that you have defined as a global element. If no `cachingStrategy-ref` is defined, Mule will use link:/mule-user-guide/v/3.4/cache-scope[default caching strategy].
+|===
+
+. Add nested elements beneath your `ee:cache` element to define what processing should occur within the scope. The cache scope can contain any number of message processors as well as references to child flows.
++
+[source, xml, linenums]
+----
+<ee:cache doc:name="Cache" filter-ref="Expression" cachingStrategy-ref="Caching_Strategy">
+    <some-nested-element/>
+    <some-other-nested-element/>
+</ee:cache>
+----
+....
+------
+
+== 创建全局缓存策略
+
+创建全局缓存策略来自定义缓存作用域执行的一些活动。
+
+例如，处理具有大量有效负载的消息的缓存作用域（这反过来会导致InMemoryObjectStore中的大量缓存响应）可能会迅速耗尽内存存储并降低流的处理性能。在这种情况下，您可能希望创建一个全局缓存策略，将缓存的响应存储在不同类型的对象存储中，并防止内存耗尽。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+. In the Scope Properties panel, click the image:add.png[add] next to the *Reference to a strategy field*.
+
+. Configure the fields in the *Global Element Properties* panel that appears according to the tables below. The only required field is *Name*.
++
+image:Studio_GlobalCachingStrategy.png[Studio_GlobalCachingStrategy]
++
+[%header%autowidth.spread]
+|===
+|Field |Value |Description |XML
+|*Name* |Caching_Strategy |Customize to create a unique name for your global caching strategy. |`name="Caching_Strategy"`
+|*Object Store* | |(Optional) Configure an object store in which Mule will store all of the scope’s cached responses. Refer to the link:/mule-user-guide/v/3.4/cache-scope[Configuring an Object Store for Cache] section below for configuration specifics. Unless otherwise configured, Mule stores all cached responses in an InMemoryObjectStore by default. a|`<custom-object-store>`
+
+`<in-memory-store>`
+
+`<managed-store>`
+
+`<simple-text-file-store>`
+.3+|*Event Key* |Default |(Default) Mule utilizes an MD5KeyGenerator and an MD5 digest to generate a key. Use when you have objects that return the same MD5 hashcode for instances that represent the same value, such as String class. |N/A
+|Key Expression |(Optional) Enter an expression that Mule should use to generate a key. Use when request classes do not return the same MD5 hashcode for objects that represent the same value. |`keyGenerationExpression="#[some.expression]"`
+|Key Generator |(Optional) Identify a custom-built Spring bean that generates a key. Use when request classes do not return the same MD5 hashcode for objects that represent the same value. If you have not created any custom key generators, the *Key Generator* drop-down box will be empty. Click image:add.png[add] next to the field to create one. |`keyGenerator-ref="Bean"`
+|===
+
+. Optionally, click the *Advanced* tab in the Global Element Properties panel and configure further, if needed, according to the tables below.
++
+image:Studio_Cache_Global2.png[Studio_Cache_Global2]
++
+[%header%autowidth.spread]
+|===
+|Field |Value |Description |XML
+|*Response Generator* | |Specify the name of a Response Generator that will direct the cache strategy to use a custom-built Spring bean to generate a response that combines data from both the new request and the cached response. Click image:add.png[add] next to the field to create a new Spring bean for your caching strategy to reference. |`responseGenerator-ref="Bean1"`
+|*Consumable Message Filter* | |Specify the name of a Consumable Message Filter to direct the cache strategy to use a custom-built Spring bean to detect whether a message contains a consumable payload. Click image:add.png[add] next to the field to create a new Spring bean for your caching strategy to reference. |`consumableFilter-ref="Bean2"`
+.2+|*Event Copy Strategy* |Simple event copy strategy (data is immutable) |Data is either immutable, like a String, or the Mule flow has not mutated the data. The payload that Mule caches is the same as that returned by the flow. Every generated response will contain the same payload. |
+|Serializable event copy strategy (data is mutable) |Data is mutable or the Mule flow has mutated the data. The payload that Mule caches is not the same as that returned by the flow, which has been serialized/deserialized in order to create a new copy of the object. Every generated response will contain a new payload. |`<ee:serializable-event-copy-strategy/>`
+|===
+....
+------
+
+== 为高速缓存配置对象存储
+
+默认情况下，Mule将所有缓存的响应存储在InMemoryObjectStore中。 link:/mule-user-guide/v/3.4/cache-scope[创建一个全局缓存策略]并定义一个新的 http://www.psdn.progress.com/realtime/techsupport/documentation/objectstore/r60/ostore/doc/user1/1_cncpts.htm[对象存储]，如果您想自定义Mule存储缓存响应的方式。
+
+[%header%autowidth.spread]
+|===
+|对象商店 |描述
+| *custom-object-store*  |创建自定义类来指导Mule在何处以及如何存储缓存的响应。
+| *in-memory-store* a |为将缓存的响应保存在系统内存中的对象库配置以下设置：
+
+* 商店名称
+* 最大条目数（即缓存的响应）
+对象存储中的* 缓存响应的"life span"（即生存时间）
+* 过期缓存响应的轮询之间的截止时间间隔
+
+| *managed-store* a |为将缓存响应保存在由ListableObjectStore定义的位置的对象库配置以下设置：
+
+* 商店名称
+* 缓存响应的持久性（true / false）
+* 最大条目数（即缓存的响应）
+对象存储中的* 缓存响应"life span"（即生存时间）
+* 过期缓存响应的轮询之间的截止时间间隔
+
+| *simple-text-file-store* a |为将缓存的响应保存在文件中的对象库配置以下设置：
+
+* 商店名称
+* 最大条目数（即缓存的响应）
+对象存储中的* 缓存响应的"life span"（即生存时间）
+* 过期缓存响应的轮询之间的截止时间间隔
+* 对象存储保存缓存响应的文件的名称和位置
+|===
+
+配置新对象库的设置。如果您选择了自定义对象库，请选择或编写一个类和Spring属性来定义对象库。按照下表所述配置所有其他对象库的设置。
+
+[%header%autowidth.spread]
+|===
+|字段或复选框 | XML属性 |说明
+|商店名称| *name*（适用于内存中的简单文本）
+
+*storeName*（用于托管） |为对象库输入唯一的名称。
+|持久性 | *persistent* = "true"  |检查以确保对象存储将缓存的响应保存在 http://en.wikipedia.org/wiki/Persistent_storage[持久存储]中。默认为false。
+|最大条目 | *maxEntries*  |输入一个整数以限制对象存储将保存的缓存响应数。当达到最大条目数时，对象存储将清除缓存的响应，修剪第一个条目（先进先出）和超出其生存时间的条目。
+|条目TTL  | *entryTTL*  |（生存时间）输入一个整数，以指示缓存响应在对象存储中存活之前必须存活的毫秒数抹去。
+|到期间隔 | *expirationInteval*  |输入一个整数，以毫秒为单位指示对象存储检查应该清除的缓存响应事件的频率。例如，如果输入“1000”，对象存储会每隔一千毫秒检查一次所有缓存的响应事件，以查看哪些超过了其生存时间并应该清除。
+|目录 | *directory*  |输入对象存储保存缓存响应的文件的文件路径。
+|===
+
+== 示例
+
+下面的示例演示了具有Fibonacci函数的缓存范围的强大功能。斐波那契数列是一系列数字，其中系列中的下一个数字总是它前面两个数字的总和。
+
+在这个例子中，Mule流接收并为每个请求执行两个任务：
+
+. 使用调用者`F(n) = F(n-1) + F(n-2) with F(0) = 0 and F(1) = 1`提供的数字_（n）_执行并返回斐波那契方程的答案（见下文）
+
+. 记录并返回计算成本，其中计算任务的每个单独调用（即在序列中添加两个数字）将成本加1
++
+image:cache_flow.png[cache_flow]
++
+image:cache_flow.png[cache_flow]
++
+
+请注意，此示例需要 link:_attachments/FibonacciResponseGenerator.java[FibonacciResponseGenerator.java]
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      version="EE-3.3.0"
+      xsi:schemaLocation="
+ 
+          http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+ 
+          http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+ 
+          http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+          http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+ 
+    <configuration>
+        <expression-language>
+            <global-functions>
+                def fibonacciRequest(n, cached)
+                {
+                    import org.mule.DefaultMuleMessage;
+                    import org.mule.RequestContext;
+ 
+                    request = new DefaultMuleMessage("Fibonacci: " + n, app.registry['_muleContext']);
+ 
+                    request.setOutboundProperty("n", Integer.toString(n));
+ 
+                    if (!cached)
+                    {
+                        request.setOutboundProperty("nocache", true);
+                    }
+ 
+                    RequestContext.getEventContext().sendEvent(request, "vm://fibonacci");
+                }
+            </global-functions>
+        </expression-language>
+    </configuration>
+ 
+    <spring:bean id="responseGenerator" class="com.mulesoft.mule.cache.FibonacciResponseGenerator"/>
+ 
+    <ee:object-store-caching-strategy name="Caching_Strategy" doc:name="Caching Strategy" keyGenerationExpression="#[message.inboundProperties['n']]" responseGenerator-ref="responseGenerator"/>
+ 
+    <vm:connector name="vmConnector">
+        <dispatcher-threading-profile maxThreadsActive="200"/>
+    </vm:connector>
+ 
+ 
+    <flow name="cache-exampleFlow1" doc:name="cache-exampleFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="fibonacci" doc:name="HTTP"/>
+ <message-filter doc:name="Filter favicon">
+            <not-filter>
+                <wildcard-filter pattern="/favicon.ico" caseSensitive="true"/>
+            </not-filter>
+        </message-filter>
+ <choice doc:name="Choice">
+            <when expression="message.inboundProperties['n'] &lt; 20">
+                <flow-ref name="calculateFibonacci"/>
+ <expression-component>payload= "Fibonacci(" + message.inboundProperties['n'] + ") = " + payload +"\nCOST: " + message.outboundProperties['cost']</expression-component>
+            </when>
+            <otherwise>
+                <expression-component>payload= "ERROR: n must be less than 20"</expression-component>
+            </otherwise>
+        </choice>
+    </flow>
+ 
+    <flow name="calculateFibonacci">
+        <vm:inbound-endpoint path="fibonacci" exchange-pattern="request-response"/>
+ <ee:cache cachingStrategy-ref="Caching_Strategy"
+                  filterExpression="#[groovy:message.getInboundProperty('nocache') == null]" doc:name="Cache">
+            <logger level="INFO" message="#[payload]"/>
+            <expression-component><![CDATA[
+                n = message.inboundProperties['n'];
+                if (n < 2)
+                {
+                    payload = n;
+                    message.outboundProperties["cost"] = 1;
+                } else {
+                    boolean cached = message.inboundProperties['nocache'] == null;
+                    import org.mule.api.MuleMessage;
+                    MuleMessage fib1 = fibonacciRequest(n-1, cached);
+                    MuleMessage fib2 = fibonacciRequest(n-2, cached);
+ message.outboundProperties["cost"] = fib1.getInboundProperty("cost") + fib2.getInboundProperty("cost") + 1;
+                    payload = Long.parseLong(fib1.getPayload()) + Long.parseLong(fib2.getPayload());
+                }
+            ]]>
+            </expression-component>
+        </ee:cache>
+    </flow>
+</mule> 
+----
+
+
+如果已经计算并缓存对Fibonacci函数的调用，则该流将返回缓存响应和检索缓存响应的成本，该缓存响应为0.要演示调用cache缓存该函数的次数，此示例包含能力通过向请求URL添加nocache参数来强制流执行完整计算。
+
+以下序列说明了对斐波那契函数的一系列调用。请注意，当流能够返回缓存值时（因为它已经执行了相同的计算），返回的成本为0.当流能够响应一个使用另一个缓存响应计算的值时（如请求中所示）响应C，如下），成本代表缓存响应和新请求之间的差异。 （例如，如果斐波那契函数已经计算并缓存了n = 10的请求，然后接收到n = 13的请求，则返回第二个响应的成本为3）
+
+image:reqC.png[REQC]
+
+如本例所示，缓存通过重用已检索或计算的数据来节省时间和处理负载。

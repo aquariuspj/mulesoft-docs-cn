@@ -1,0 +1,98 @@
+= 验证Anypoint私有云设备要求
+
+对于平台配置，您必须分配四个专用设备供使用。一个作为系统状态目录，一个保存应用程序数据，另一个保存集群信息，最终设备用作Docker devicemapper配置的目标。
+
+== 任意点系统数据设备
+
+系统状态目录的主要目的是存储系统配置和元数据 - 例如数据库和软件包等等。由于封装尺寸可以任意大，因此提前估算最小尺寸要求并作为专用设备分配足够的空间非常重要。
+
+此设备将被格式化为`xfs`或`ext4`，并被挂载为`/var/lib/gravity`。您可以使用以下外壳程序片段来指导此过程（请务必在2处指定正确的设备名称）。
+
+以下内容仅作为示例提供，不应按原样用于生产。格式化和挂载磁盘应该由系统管理员完成。最终的结果是将Anypoint系统数据设备安装到路径`/var/lib/gravity`。这可以使用systemd挂载文件来实现，如下例所示，或者`/etc/fstab`或其他方法。请咨询您的系统管理员以确定满足此要求的最佳方式
+
+----
+sudo mkfs.ext4 /dev/<device name>
+sudo mkdir -p /var/lib/gravity
+echo -e "[Mount]\nWhat=/dev/<device name>\nWhere=/var/lib/gravity\nType=ext4\n[Install]\nWantedBy=local-fs.target" | sudo tee /etc/systemd/system/var-lib-gravity.mount
+sudo systemctl daemon-reload
+sudo systemctl enable var-lib-gravity.mount
+sudo systemctl start var-lib-gravity.mount
+----
+
+==  etcd设备
+
+etcd设备的主要目的是为用于集群协调的分布式数据库提供专用存储。它不需要太多空间，20GB应该足够了。
+
+此设备将被格式化为`xfs`或`ext4`，并被挂载为`/var/lib/gravity/planet/etcd`。您可以使用以下外壳程序片段来指导此过程（请务必在2处指定正确的设备名称）。
+
+以下内容仅作为示例提供，不应按原样用于生产。格式化和挂载磁盘应该由系统管理员完成。最终的结果是将Etcd设备安装到路径`/var/lib/gravityi/planet/etcd`。这可以使用systemd挂载文件来实现，如下例所示，或者`/etc/fstab`或其他方法。请咨询您的系统管理员以确定满足此要求的最佳方式。
+
+----
+sudo mkfs.ext4 /dev/<device name>
+sudo mkdir -p /var/lib/gravity/planet/etcd
+echo -e "[Mount]\nWhat=/dev/<device name>\nWhere=/var/lib/gravity/planet/etcd\nType=ext4\n[Install]\nWantedBy=local-fs.target" | sudo tee /etc/systemd/system/var-lib-gravity-planet-etcd.mount
+sudo systemctl daemon-reload
+sudo systemctl enable var-lib-gravity-planet-etcd.mount
+sudo systemctl start var-lib-gravity-planet-etcd.mount
+----
+
+
+== 任意点应用程序数据设备
+
+应用程序数据目录的主要目的是存储应用程序配置和数据。所需的空间量应至少为250GB，但可能因您的具体使用情况而异。估计最小尺寸要求并提前为专用设备分配足够的空间非常重要。
+
+此设备将被格式化为`xfs`或`ext4`，并被挂载为`/var/lib/data`。您可以使用以下外壳程序片段来指导此过程（请务必在2处指定正确的设备名称）。
+
+以下内容仅作为示例提供，不应按原样用于生产。格式化和挂载磁盘应该由系统管理员完成。最终的结果是将Anypoint应用程序数据设备安装到路径`/var/lib/data`。这可以使用systemd挂载文件来实现，如下例所示，或者`/etc/fstab`或其他方法。请咨询您的系统管理员以确定满足此要求的最佳方式。
+
+
+----
+sudo mkfs.ext4 /dev/<device name>
+sudo mkdir -p /var/lib/data
+echo -e "[Mount]\nWhat=/dev/<device name>\nWhere=/var/lib/data\nType=ext4\n[Install]\nWantedBy=local-fs.target" | sudo tee /etc/systemd/system/var-lib-data.mount
+sudo systemctl daemon-reload
+sudo systemctl enable var-lib-data.mount
+sudo systemctl start var-lib-data.mount
+----
+
+==  Docker设备
+
+该设备由Docker的Device Mapper存储驱动程序使用。
+
+[NOTE]
+强烈建议Device Mapper目录至少有100Gb大小的设备 - 如果设备的容量小于或等于50Gb，则系统性能会显着下降或根本无法工作。
+
+
+除非指定，否则Docker配置默认使用环回模式下的Device Mapper（使用/ dev / loopX设备），不建议用于生产。要将Docker配置为使用Device Mapper存储驱动程序的专用设备，可以在安装过程中提供未格式化的设备（或分区）（即/ dev / sdd）。该目录将自动配置并设置使用。
+
+可能用于系统目录/设备映射程序的未格式化设备由每个节点上运行的代理程序自动发现。在开始安装之前，在下拉菜单中提供已发现的设备进行配置。
+
+您可以使用以下命令列出未安装的设备：
+---
+lsblk --output = NAME，TYPE，SIZE，FSTYPE -P -I 8,9,202 | grep'FSTYPE = ""'
+---
+
+未安装的设备在FSTYPE列中具有空值。 TYPE = "part"的设备是另一台设备上的分区。该命令仅列出特定的设备类型：
+
+|===
+|设备类型|说明
+| 8    | SCSI磁盘设备
+| 9    |元数据（RAID）设备
+|  | Xen虚拟块设备（Amazon EC2）
+|===
+
+== 手动重置设备和分区
+
+逻辑卷管理器允许将多个物理卷分组到一个存储卷（卷组）中，然后将其分成逻辑卷
+卷。物理卷是整个设备或分区。
+
+在某些情况下，当某个设备正在被另一个逻辑卷使用时，或者您想手动重置之前为Device Mapper配置的设备时，以下命令可能会有用。
+
+逻辑卷管理器工具集由以下命令组成：
+  *  dmsetup  - 是一种低级逻辑卷管理
+  *  pv / vg / lv-prefixed命令（如pvdisplay和pvcreate / pvremove）用于处理特定的LVM对象类型（即lv  - 用于逻辑卷和vg  - 用于卷组）
+
+要重置设备，请使用以下命令：
+* 使用`lvremove -f docker/thinpool`删除逻辑卷（使用`lvdisplay`查找要删除的卷）
+* 使用`vgremove docker`删除卷组（使用`vgdisplay`找到要删除的卷组）
+* 删除物理音量并使用`pvremove /dev/<device name>`重置设备（使用`pvdisplay`查找要删除的物理音量以及设备名称）

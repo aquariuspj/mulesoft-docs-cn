@@ -1,0 +1,256 @@
+=  Web服务使用者
+
+当使用Mule开发应用程序时，用户通常需要能够使用SOAP Web服务来从外部源获取数据。在最佳情况下，您可以使用Mule应用程序中的现有*Anypoint Connector*连接到特定的服务提供商，例如Zuora或Avalara。但是，如果不存在特定于服务的连接器以便于连接，则从Mule应用程序中使用Web服务的最快，最简单的方法是使用*Web Service Consumer*。
+
+通过使用服务WSDL中包含的信息，该连接器使您能够配置一些细节，以便建立从Mule应用程序中使用服务所需的连接。简单地标识Web服务的WSDL文件的位置，然后要求Web服务使用者从WSDL  - 主机，端口，地址配置自身。
+
+在Studio中存在此组件之前，您可能已经在Mule流中配置了HTTP连接器和SOAP组件，以便能够使用Web服务;现在您只需将Web服务使用者连接器插入流程即可。需要更少的配置努力。 Web服务使用者还提供了额外的功能来帮助您构建应用程序：
+
+*  Web服务使用者与DataMapper转换器一起使用，利用DataSense功能来获取有关输入或输出的预期格式和结构的信息，以消除猜测发送到SOAP Web服务以及您将从中获得什么
+* 与DataMapper转换器一起使用时，您可以将接收到的输入（SOAP标题或正文）可视化地映射到另一种数据格式或结构中，以供进一步处理
+* 使用Web服务使用者中嵌入的功能来保护您的Web服务请求，以将用户名令牌添加到请求，和/或WS-Security时间戳
+
+例如，假设您希望构建一个应用程序，您需要收集关于股票交易最后价格的信息。在接受最终用户请求后，您需要使用外部SOAP Web服务来检查特定股票的最近交易和卖出的价格，然后返回响应。这样的应用程序可以使用Web服务使用者来使用股票报价信息，然后使用DataMapper将结果映射到可以返回给最终用户的格式。见下面的第一张图;下面是第二个例子。
+
+image:con+globitos+new.png[CON + globitos +新]
+
+image:con+globitos+new+2.png[CON + globitos +新+ 2]
+
+[%header%autowidth.spread]
+|===
+| image:warning.png[警告]  |以前称为*SOAP Connector*的组件现在称为*{{1}}*。它不应该与Web服务使用者混淆。
+
+|===
+
+<<Complete Code Example>>
+
+== 先决条件
+
+
+本文档假定您熟悉Anypoint Studio;请阅读 link:/anypoint-studio/v/5/[Anypoint Studio Essentials]中的章节以了解有关使用Mule ESB的图形用户界面进行开发的更多信息。本文档还假定您熟悉 link:/anypoint-studio/v/5/datamapper-user-guide-and-reference[Anypoint DataMapper]转换器 link:/mule-user-guide/v/3.5/global-elements[全球元素]和 link:/mule-user-guide/v/3.5/datasense[DataSense]。
+
+
+== 安装
+
+您可以使用 link:/mule-user-guide/v/3.5/installing-connectors[从Anypoint Exchange安装连接器]中的说明在Anypoint Studio中安装连接器。
+
+== 限制
+
+*  Web服务使用者仅与SOAP Web服务接口，而不是REST API。
+* 在Mule中，Web服务使用者仅可与以下连接器一起使用：+
+*  FTP
+* 文件
+*  HTTP
+*  JMS
+*  SFTP
+*  HTTPS
+
+== 基本解剖学
+
+要在您的Mule应用程序中使用Web Service使用者，您必须执行三项任务：
+
+. 将您想要使用的服务的*WSDL file*添加到您的Mule项目中
+. 在您的Mule流中嵌入一个*Web Service Consumer element*，并将其配置为定义它将执行的操作，并标识它将引用的Global Web Service使用者元素
+. 配置您引用服务的WSDL的*Global Web Service Consumer element*，启用DataSense并应用服务提供商要求的任何安全设置
+
+要真正利用Web服务使用者的设计时功能，请考虑将其与以下Mule功能结合使用：
+
+*  *DataSense*：启用时，DataSense使用WSDL中的信息自动提取有关数据结构的元数据，并设置SOAP Web服务提供或预期的格式。当启用此功能时（在Global Web Service使用者元素中），Mule会发现发现服务发送或预期的数据类型的繁重工作。
+*  *DataMapper transformer*：当与支持DataSense的Web Service使用者结合使用时，DataMapper可以自动从服务中提取有效载荷或标题元数据，您可以通过可视界面进行映射和变换。例如，如果您在应用程序中配置Web服务使用者，然后将DataMapper拖放到DataMapper之后，则DataMapper使用DataSense提取的信息预先填充输入值以进行映射，以便您只需确认（或调整）选择，然后继续映射到您想要的输出。换句话说，DataSense确保DataMapper确定它必须工作的数据格式和结构，因此您不必手动将其解决。
+
+有关DataSense和DataMapper的最佳设计时实践的更多信息，请参阅 link:/mule-user-guide/v/3.5/datasense[DataSense文档]。
+
+== 配置Web服务使用者
+
+要准备应用程序以使用上述示例中的Web服务，必须先将Web服务的WSDL添加到您的Mule项目中，然后至少配置Web服务使用者元素和全局Web服务所需的参数消费者元素。下面的图表和部分描述了如何解决这些要求。
+
+image:wsc_workflow2.png[wsc_workflow2]
+
+. 首先获取您打算使用的SOAP Web服务的*WSDL file*或标识*URL of the WSDL*。
+. 如果您使用的是WSDL文件，请将该文件复制到Studio项目的` src/main/resources`文件夹中。 （您可以拖放文件以将其复制到文件夹中。）如果使用URL，则不需要将任何内容复制到Studio项目。
+. 将*Web Service Consumer*连接器拖放到应用程序中的流程中。单击Web Service使用者图标以打开其*Properties Editor*，然后更改连接器*Display Name*的默认值（如果您愿意）。
+. 定义连接器的全局配置：单击*Global Configuration*字段旁边的加号。
+. 在打开的窗口中，首先在*WSDL Location*字段中输入值。首先填写此字段，其中包含WSDL的URL，或者将WSDL文件的文件路径和文件名复制到项目的`src/main/resources`文件夹中。填充此字段后，您可以使用Studio 5中的信息读取WSDL的内容并自动填充剩余的空字段 -  `Service`，`Port`和`Address`  - WSDL文件。或者，您可以使用有关Web服务的相应信息手动填充这些字段。 +
+ +
+image:wsc_global.png[wsc_global]
+
+. 确认已选中*Enable DataSense*框，然后点击*OK*进行保存。
+. 请注意，Studio会自动填充流中Web Service使用者元素的属性编辑器中的以下字段：+
+*  *Global Configuration*与刚刚创建的全局Web服务使用者的名称
+*  *Operation*，其中包含Web服务为其使用者支持的操作的名称。
++
+ +
+. 如果您愿意（如果SOAP Web服务确实提供了多个操作）调整Web服务使用者的操作，然后在画布内单击以自动保存您的配置。 +
+ +
+  image:wsc_local.png[wsc_local]
+
+. 首先获取您打算使用的SOAP Web服务的*WSDL file*或标识*URL of the WSDL*。
+. 如果您使用的是WSDL文件，请将该文件复制到Studio项目的` src/main/resources`文件夹中。 （您可以拖放文件以将其复制到文件夹中。）如果使用URL，则不需要将任何内容复制到Studio项目。
+. 在应用程序的所有流程之上，向您的应用程序添加一个全局` ws:consumer-config `元素。根据下面的代码示例配置其属性，以定义如何连接到您打算使用的Web服务。有关元素，属性和默认值的完整列表，请参阅Web Service使用者参考。
+  
+
+. 将` ws:consumer `元素添加到应用程序中的流程中。根据下面的代码示例配置其属性，以定义要引用的全局Web服务使用者以及执行请求到Web服务的操作。有关元素，属性和默认值的完整列表，请参阅Web Service使用者参考。 +
+  
++
+
+==  Web服务使用者和DataMapper
+
+如上所述，当与支持DataSense的Web服务使用者结合使用时，DataMapper可以自动提取有效载荷或标题元数据，您可以通过可视界面来映射和/或转换为不同的数据格式或结构。当您在流程中配置了支持DataSense的Web服务使用者时，您可以在其之前或之后放置DataMapper  - 并且DataMapper会自动提取DataSense从WSDL收集的关于预期的格式和结构的信息信息。
+
+* 如果DataMapper *follows*完全配置了Web服务使用者，DataMapper会预先填充其*Input values*。
+* 如果DataMapper *precedes*完全配置了Web服务使用者，则DataMapper会预填充其*Output values*（请参见下文）。 +
+  image:wsc_dm_output.png[wsc_dm_output]为了充分利用Web Service Consumer-DataSense-DataMapper的魔力，请务必按以下顺序配置这些元素：
+
+. 启用了DataSense的*Global Web Service Consumer element*
+. 您应用程序中的流程中的*Web Service Consumer connector*，它引用Global Web Service使用者连接器
+.  *DataMapper transformer*在您的流程中的Web服务使用者连接器之前或之后丢弃
+
+然后，只需将DataMapper的缺失输入或输出值提供给"glue the pieces together"即可。
+
+=== 更改元素类型
+
+在Web服务使用者返回抽象类型的sObjects的情况下，可以将映射中元素的类型调整为从sObject扩展的其他元素。
+
+例如，假设您希望将特定的输出名称和电话号码映射到Web服务对CSV文件的响应中。但是，Web服务响应可能会返回抽象类型，例如"records"，其中隐藏了您希望映射到输出值的名称和电话号码信息。要访问这些隐藏字段，可以更改输入数据的元素类型以选择一个嵌套对象，例如"Contact"，使您可以访问诸如"FirstName"，"LastName"和{ {4}}，您可以将其映射到CSV文件中的相应输出字段。
+
+. 首先，确保您在流程中配置了支持DataSense的Web服务使用者，设置DataMapper以遵循它，并创建您的映射。以下示例将Web服务响应映射为包含三个字段的CSV文件。 +
+ +
+  image:mapping_records.png[mapping_records]
+
+. 因为无法将"records"（左侧）正确映射到CSV文件中的三个字段（右侧），所以您必须更改记录sObject的元素类型。为此，请右键单击sObject，然后选择*Change Element Type…* +
+
+*  * image:change_element.png[change_element] +
+
+
+
+. 在出现的对话框中，选择一种新的元素类型，然后点击*OK*;该示例将选择"Contacts"。
+.  DataMapper调整“输入”面板中的信息以显示所选元素类型中的可用字段;在该示例的情况下，它呈现与联系人信息相关的字段。
+. 继续将输入值映射到DataMapper中的输出值。 +
+ +
+  image:able_to_map.png[able_to_map]
+
+=== 添加自定义标题
+
+SOAP头应该创建为出站属性。你可以通过*Property*变压器来完成
+
+[%header%autowidth.spread]
+|===
+| image:warning.png[警告]  |以*`soap.`*前缀开头的出站属性将被视为SOAP标头并被传输忽略。所有未用`soap.`前缀命名的属性将被视为传输标头（默认情况下，WSC使用HTTP传输）。
+
+|===
+
+image:properties+soap.jpeg[性能+肥皂]
+
+[%header%autowidth.spread]
+|===
+| image:warning.png[警告] a |
+
+在手动配置标题时，您传递的值应该具有XML元素的结构，它不应该是一对简单的键和值。例如，使用set属性元素，属性的值必须包含封闭的XML标签，如下所示：
+
+上面的例子工作，下面的例子没有：
+
+|===
+
+=== 准备和映射SOAP头
+
+当与Web Service使用者结合使用时，DataMapper为您提供了通过*Type*属性映射和转换消息的有效内容，属性或变量的选项。重要的是，您可以使用*Type*的值来指示DataMapper应该从消息映射到SOAP头或SOAP主体的信息。
+
+. 首先，确保您已在您的流程中配置了支持DataSense的Web服务使用者，并设置DataMapper以遵循它。单击画布上的DataMapper图标以打开其*Properties Editor*。
+. 根据需要调整“输入”和“输出”面板中的*Type*字段的值以进行映射。请注意，任何值为`soap.`的属性都表示Type是SOAP标头。
+. 点击*Create Mapping*，然后根据需要将输入值映射到输出值。
+
+
+[Note]
+无论何时您想要将数据映射到SOAP标头_和_ SOAP体，都必须使用两个单独的DataMapper转换器。使用一个DataMapper映射标题，另一个DataMapper映射正文。
+
+
+==== 示例映射：消息有效负载到SOAP正文
+
+image:payload2body.png[payload2body]
+
+==== 示例映射：消息有效负载到SOAP头
+
+image:payload2Header.png[payload2Header]
+
+==  Web服务使用者和DataSense资源管理器
+
+使用Studio中的*{{0}}*功能，可以在设计时洞察消息有效负载，属性和变量在您的流程中移动的状态。 DataSense Explorer在遇到Web服务使用者之前以及在从连接器出现之后，对理解消息的内容非常有用，以便更好地理解应用程序正在处理的数据的状态。
+
+以下示例中的DataSense Explorer提供有关消息遇到Web Service使用者时组成消息对象的Payload，Variables，Inbound Properties和Outbound Properties的信息。使用DataSense资源管理器顶部的*In-Out*开关可以查看消息到达或离开消息处理器时的元数据。
+
+Web服务使用者之前的==== 消息状态
+
+image:metadata_in.png[metadata_in]
+
+Web服务使用者之后的==== 消息状态
+
+image:metadata_out.png[metadata_out]
+
+== 安全地连接到SOAP Web服务
+
+根据SOAP Web服务使用的安全级别，您可能需要相应地保护Web Service使用者发送的请求。换句话说，您发送给Web服务的任何调用都必须遵守Web服务提供者的安全要求。要符合此要求，您可以在Global Web Service使用者连接器上配置安全设置。
+
+. 在*Global Web Service Consumer*元素的*Global Element Properties*面板中，点击*Security*标签+
+ +
+  image:wsc_security.png[wsc_security]
+
+. 根据Web服务提供商的安全要求，选择应用*Username Token*安全性或*WS-Security Timestamp*或两者。
+. 在必填字段中输入值。有关元素，属性和默认值的完整列表，请参阅 link:/mule-user-guide/v/3.7/web-service-consumer-reference[Web服务消费者参考]。
+. 点击*OK*保存您的安全设置。
+
+将子元素添加到您在应用程序中配置的全局*` ws:consumer-config `*元素。根据下面的代码示例配置子元素的属性。有关元素，属性和默认值的完整列表，请参阅 link:/mule-user-guide/v/3.7/web-service-consumer-reference[Web服务消费者参考]。
+
+== 使用基本身份验证和SSL
+
+如果您要连接的Web服务需要基本身份验证，您可以在接触到URL时轻松提供用户名和密码作为URL的一部分。
+
+该网址应该遵循以下结构：
+
+在Web服务使用者的全局元素中，添加对`http-request-config`元素的引用：
+
+. 输入Web服务使用者的全局配置元素
+. 打开*References*标签
+. 点击绿色加号创建新的参考
+
+默认情况下，WSC使用者通过 link:/mule-user-guide/v/3.6/http-request-connector[HTTP出站端点]的默认配置运行。如果您需要它来运行使用HTTPS的连接器的配置（或者与默认配置不同的HTTP配置），请按照以下步骤操作：
+
+. 点击画布下方的全局元素标签，然后创建一个新的全局元素+
+  image:global+elements1.jpeg[全球+ elements1]
+
+. 对于全局元素类型，请选择*HTTP Request Configuration* +
+ +
+  image:http+global+element.png[HTTP +全球+元素]
+
+. 完成*General*选项卡（主机和端口）中的必填字段
+. 然后选择*TLS/SSL*选项卡并配置与HTTPS身份验证+相关的字段
+ +
+  image:ssl+tls.png[SSL + TLS]
+
+. 在您的流中的Web服务使用者实例中，单击连接器配置+旁边的绿色加号
+  image:adding+https+ref.jpeg[添加+ HTTPS + REF]
+
+. 在*References*选项卡中，为*Connector Ref*字段选择新创建的HTTPS全局元素+
+  image:adding+https+ref2.jpeg[添加+ HTTPS + REF2]
+
+. 在您的项目中添加一个 link:/mule-user-guide/v/3.6/http-connector[HTTP连接器]全局元素，并使用必要的安全属性对其进行配置
++
+. 在您的`ws:consumer-config`元素中，包含`connectorConfig`属性以引用此HTTP连接器配置元素：
++
+
+=== 引用已弃用的HTTP传输
+
+为了设置备用HTTP设置，而不是引用实例新的HTTP连接器，可以引用已弃用的HTTP传输实例并完成相同的操作。要添加此引用，请向WSC配置元素添加一个`connector-ref`属性。 `connectorConfig`和`connector-ref`属性是互斥的，并且都是可选的。
+
+如果没有指定两个引用属性，则使用新的HTTP连接器的默认实例。为了向后兼容，您可以更改此行为并使不推荐使用的HTTP传输实例成为默认配置。在Mule运行时3.6中添加了全局配置属性，允许您更改此默认行为：
+
+这个属性的失败价值是错误的。将此标志设置为true时，Mule会退回到不推荐使用的HTTP传输，以在未指定传输/连接器时解析URI。
+
+== 完整的代码示例
+
+image:final+flow.png[最后+流]
+
+== 另请参阅
+
+* 详细了解如何使用 link:/anypoint-studio/v/5/datamapper-user-guide-and-reference[DataMapper转换器]。
+* 了解如何使用 link:/apikit[APIkit]在Mule中发布REST API。
+* 访问 link:/mule-user-guide/v/3.5/mule-fundamentals[骡子基础]以了解基本知识。

@@ -1,0 +1,581 @@
+= 投票参考
+
+虽然某些连接器（如[HTTP]和[FTP]）利用轮询过程主动从外部资源中检索消息，但Mule中的大多数消息处理器在由流中的前一个元素调用时会被触发。如果您想要安排消息处理器定期主动调用资源，请使用调查范围。
+
+== 假设
+
+本文档假设您熟悉[Anypoint Studio中的可视化编辑器]，并且您可以使用它在Studio中创建应用程序。此外，本文档引用了[全局元素]和称为[范围]的消息处理器类别。查看[Anypoint Studio Essentials]以了解有关使用Mule ESB的图形用户界面进行开发的更多信息。
+
+== 配置投票包装
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag a *Poll* scope onto the canvas.
++
+image:poll_scope.png[poll_scope]
+
+. Drag an element inside the poll scope, for example a *Twitter* connector. Mule uses this message processor to regularly poll the Twitter API for new data to process.
++
+image:poll_connector.png[poll_connector]
+
+. Configure the Twitter Connector
++
+image:twitter.png[twitter]
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value |Description
+|Operation |`Get user timeline by screen name` |Captures recent tweets by a particular Twitter user
+|Screen Name |`MuleSoft` |Return tweets by the official MuleSoft account. You can use any Twitter account you want.
+|config reference |`Twitter` |You must create a Twitter connector as a [global element] to reference here. For your Twitter connector, you need a Twitter developer account.
+|===
+
+. Add more message processors to your flow to perform specific business logic after polling for data. The example below uses a logger component. This [logger] uses the [MEL] expression `#[payload]` to log the message payload collected by the Twitter connector every 1000 milliseconds.
++
+image:poll_flow.png[poll_flow]
+....
+[tab,title="XML Editor or Standlone"]
+....
+. Add a Poll element to your flow.
++
+[%header%autowidth.spread]
+|===
+|Element |Description |Sample XML
+|*poll* |Polls an element at regular intervals |`<poll frequency="1000"doc:name="Poll">`
+|===
++
+[%header%autowidth.spread]
+|===
+|Attribute Name |Value |Description |Sample XML
+|*frequency* |integer |The interval, in milliseconds, between calls |`frequency="1000"`
+|*doc:name* |string |*(Studio Only)* Display a unique name for the poll scope in your application. |`doc:name="Poll"`
+|===
+
+. Add Twith connector as child element of the poll element.
++
+[%header%autowidth.spread]
+|===
+|Child Element |Description |Sample XML
+|*twitter:<operation>* |Connects to Twitter. The "operation" is the activity Twitter performs. In the example at right, show recent tweets by a particular Twitter user. |`<twitter:get-user-timeline-by-screen-name config-ref= "Twitter" screenName= "mulesoft" doc:name= "Twitter" />`
+|===
++
+[%header%autowidth.spread]
+|===
+|Attribute Name |Value |Description |XML
+|*screenName* |string |Twitter account to return tweets from. In this example, the official MuleSoft account; you can use any valid Twitter account. |`screenName="MuleSoft"`
+|*config-ref* |string |You must create a Twitter connector as a [global element] to reference here. For your Twitter connector, you need a Twitter developer account. |`config-ref="Twitter"`
+|*doc:name* |string |*(Studio only)* Name of the poll scope as it will be displayed in your application. |`doc:name"Twitter"`
+|===
+
+. Add more message processor to your flow to perform specific business logic after polling for data. The example below uses a [logger] component. This logger uses the MEL expression `#[payload]` to log the message payload collect by the Twitter connector every 1000 milliseconds.
++
+[%header%autowidth.spread]
+|===
+|Element |Description |Sample XML
+|*logger* |Logs the message payload |`<logger message="#[payload]"level="INFO"doc:name="Logger"/>`
+|===
++
+[%header%autowidth.spread]
+|===
+|Attribute Name |Value |Description
+|*message* |string or [Mule expression] |The content that will be logged to console. In this case, the Mule Expression `#[payload]` will output the message payload.
+|*level* |string, on of ERROR, WARN, INFO, DEBUG, or TRACE |The priority level of the notification, in this case `INFO`.
+|*doc:name* |string |*(Studio only)* Name of the logger component as it will appear in your application.
+|===
+....
+------
+
+=== 完整的代码示例
+
+[NOTE]
+====
+请记住，要使此示例正常工作，您必须手动配置全局Twitter连接器（`twitter:config`元素）的以下值：
+
+*  ACCESSKEY
+*  accessSecret
+*  consumerKey
+*  consumerSecret
+====
+
+[source, xml, linenums]
+----
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:twitter="http://www.mulesoft.org/schema/mule/twitter" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/twitter http://www.mulesoft.org/schema/mule/twitter/2.4/mule-twitter.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+   
+  <twitter:config name="Twitter" accessKey="" accessSecret="" consumerKey="" consumerSecret="" doc:name="Twitter">
+        <twitter:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </twitter:config>
+   
+    <flow name="test1" doc:name="test1" processingStrategy="synchronous">
+        <poll frequency="1000" doc:name="Poll">
+            <twitter:get-user-timeline-by-screen-name config-ref="Twitter"      doc:name="Twitter" screenName="MuleSoft" sinceId="#[flowVars['lastID']]"/>
+        </poll>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        
+    </flow>
+</mule>
+----
+
+== 在调试过程中暂停轮询
+
+在尝试调试应用程序时，利用轮询功能，不断触发流程处理以监控Mule活动非常具有挑战性。要在测试期间触发轮询，请使用Studio的Visual Debugger提供的*Poll Resume*和*Poll Pause*机制。
+
+. 在调试模式下运行您的项目。 （有关更多详细信息，请参阅[Visual Debugger]文档。）
+
+. 在调试模式下，注意Poll作用域标题栏中的按钮组（见下图）。使用绿色*Poll Start-Pause*按钮触发轮询并启动流程;再次点击以停止轮询。
++
+image:poll_debug.png[poll_debug]
+
+. 在调试模式下运行项目时，Studio会在屏幕的下半部分打开一个新的*Mule Debugger View*标签。在此选项卡的右上角，Studio显示两个图标，可让您同时停止或启动项目中的所有投票。
++
+image:poll_startStop.png[poll_startStop]
+
+== 使用水印轮询更新
+
+在每次调用时不是轮询资源的所有数据，您可能只需要获取自上次调用以来新创建或更新的数据。要仅获取新的或更新的数据，您需要保留上次处理的项目的持续记录，或者流量最后一次轮询资源的时间。在Mule流的情况下，这个持久记录称为*watermark*。
+
+通常，Mule在第一次流程运行时将水印设置为默认值，然后在运行查询或发出出站请求（即调用资源）时根据需要使用它。根据流程处理调用结果的方式，Mule可以更新水印的原始值或保持原始值。由于该值必须持续存在于流中，Mule使用对象存储来进行持久存储。内置于投票范围内的对象库不需要定制逻辑。您可以通过设置几个属性来配置水印。
+
+
+考虑下面的通用Mule流程。
+
+image:watermark-expbasic.png[水印expbasic]
+
+该流程定期轮询资源，然后对生成的有效负载执行一系列操作。对于每次轮询，应用程序仅获取自上次调用资源以来新创建或更新的数据。在这个例子中，Mule将水印存储在两个变量中：
+
+* 持久对象存储变量
+* 暴露的流量变量
+
+[NOTE]
+如果你已经很熟悉Mule组件，你可能会发现[这篇博客文章]是一个明确的解释，因为它通过复制它的一系列其他Mule组件来解释水印。
+
+下图说明了包含编号步骤的相同流程。下面的逐步解释描述了Mule在这两个变量背景下执行的活动。
+
+image:watermark-w-selectors.png[水印W-选择]
+
+.  Mule在对象存储中查找名称与Poll属性`"Variable Name"`的值相匹配的变量。在这种情况下，所选名称是`lastModifiedID`。
+
+. 如果Mule通过这个名称找到一个变量，Mule通过创建一个具有相同名称的流变量（`flowVar`）来公开它。
++
+[NOTE]
+第一次轮询运行时，该名称不存在对象存储变量。在这种情况下，Mule会创建一个流变量，并使用您在`Default Expression`属性中提供的值加载它。在这种情况下，初始值为0。
+
+.  Mule调查资源。根据下面的代码，轮询中的连接器应该包含接受flowVars作为属性的过滤器。
++
+[source, code, linenums]
+----
+sinceId="#[flowVars['lastModifiedID']]"
+----
+
+.  Mule执行其余的流程。
+
+. 当流程完成执行时，Mule根据*Update Expression*或者*Selector Expression*和选择的*Selector*的组合更新`flowVars`的值。在这种情况下，选择器表达式是`#[payload.id]`，选择器是`LAST`，所以Mule将检查每个返回对象的id属性，并选择其中的最后一个作为{ {7}}流变量。
+
+.  Mule将流变量保存回对象库中。如果在步骤1中没有变量存在于对象库中，Mule会在对象库中创建一个新变量。
++
+[TIP]
+如果您在可选的`"Object Store"`轮询属性中定义值，则Mule会按值而不是默认用户对象存储搜索对象存储。
+
+== 水印属性列表
+
+[%header%autowidth.spread]
+|===
+|属性 | XML元素 |必需 |默认 |说明
+| *Variable Name*  | `variable` | X  |  -   |标识骡使用的{{2}存储水印，以及Mule将水印值暴露给用户的*flowVars*的名称。
+如果Mule无法找到对象存储键，如果使用默认值，则{} | *Defualt Expression*  | `default-expression` | X  |  -  {{表达式来生成一个值。这对流程的第一次运行很有用。
+| *Update Expression*  | `update-expression`  |  |变量属性 |的值Mule使用此表达式的结果来更新一旦流程执行完成，水印会被加密如果您需要遵循更复杂的逻辑，请使用此表达式作为选择器的替代方案。
+| *Selector*  | `selector`  |  |  -   | Mule将使用标准选择下一个{ 2}}。有四个可用的选择器：MIN，MAX，FIRST和LAST。如果您使用此属性，则还必须为选择器表达式提供一个值。
+¶Mule在Poll返回的每个对象上执行此表达式。选择器然后收集返回的值并根据选择的标准选择一个值。如果您使用此属性，则还必须为Selector提供一个值。
+| *Object Store*  | `object-store-ref`  |  |默认用户对象存储 |对您所在对象存储的引用希望存储水印。
+|===
+
+== 配置使用水印的轮询
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Follow the steps above to create a flow that polls Twitter for data every 1000 milliseconds, then logs the message payload.
++
+image:poll_flow.png[poll_flow]
+
+. Click to flow name bar to select the *flow*, then, in the properties editor, set the *Processing Strategy* to *synchronous*.
++
+[WARNING]
+All flows use an asynchronous processing strategy by default. If you do not set the processing strategy to *synchronous*, polling with watermarks will not work!
++
+image:synchronous.png[synchronous]
+
+. Configure the *Since Id* attribute of the Twitter connector according to the table below.
++
+image:watermark.png[watermark]
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value |Description
+|*Since Id* |`#[flowVars["lastID"]]` |Instructs the connector to return only those tweets with an ID greater than the value of the `lastID` variable. `lastID` is a flow variable that Mule creates, then updates every time the poll runs.
+|===
+
+. Select the *poll* scope, then edit its properties according to the table below.
++
+image:watermark_enable.png[watermark_enable]
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value |Description |XML
+|*Fixed Frequency Scheduler* |1000 |Run the Poll every 1000 milliseconds |
+|*Start Delay* |0 |Delays polling by 0 milliseconds |
+|*Time Unit* |MILLISECONDS |Use milliseconds as unit for the frequency and delay settings |
+|*Enable Watermark* |`true` |Enable using the Watermark |
+|*Variable Name* |`lastID` a|Mule creates two variables
+
+* a persistent object store variable with the provided name
+* a flow variable that the Twitter Connector references in its `sinceID` filter |`variable="lastID"`
+|*Default Expression* |-1 |the value that `lastID` uses the first time Mule executes the poll, or whenever the watermark can't be found. |`default-expression="-1"`
+|*Selector* |FIRST |Pick the FIRST value returned by the Selector Expression to update the `lastID` variable each time the flow execution completes. In this case, it takes the id of the first tweet in the generated output (i.e. the most recent one). |`selector="FIRST"`
+|*Selector expression* |`#[payload.id]` |Return the id of each object in the generated output, this value is passed on the Selector |`selector-expression="#[payload.id]"`
+|*Update Expression* |- |Not needed. Selector and Selector Expression are being used |
+|===
+....
+[tab,title="XML Editor or Standalone"]
+....
+. Follow the steps above to create a flow that polls Twitter for data every 1000 milliseconds, then logs the message payload.
+
+. In the flow, set the value of the `processingStrategy` attribute to `synchronous`.
++
+[WARNING]
+All flows use an asynchronous processing strategy by default. If you do not set the processing strategy to *synchronous*, polling with watermarks will not work!
++
+[source, xml, linenums]
+----
+<flow name="test1" doc:name="test1" processingStrategy="synchronous">
+----
+
+. Within the `poll scope`, add a `watermark` child element according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Element |Description |Sample XML
+|*watermark* |Keeps a persistent record of the last element that was processed, or the last time a sync was performed |`<watermark variable="lastID" default-expression="-1" selector="FIRST" selector-expression="#[payload.id]"/>`
+|===
+
+. Add attributes to the `watermark` child element according to the table below.
++
+[source, xml, linenums]
+----
+<watermark variable="lastID" default-expression="-1" selector="FIRST" selector-expression="#[payload.id]"/>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute Name |Value |Description |Sample XML
+|*variable* |string a|Mule creates two variables:
+
+* a persistent object store variable with the provided name
+* a flow variable that the Twitter Connector references in its `sinceID` filter. |`variable= "lastID"`
+|*default-expression* |integer |The value that `lastID` uses the first time Mule executes the poll, or whenever the watermark can't be found. |`default -expression= "-1"`
+|*Selector* |FIRST |Pick the FIRST value returned by the Selector Expression to update the `lastID` variable each time the flow execution completes. In this case, it's the id of the first tweet in the generated output (i.e. the most recent one). |`selector="FIRST"`
+|*Selector expression* |`#[payload.id]` |Return the id of each object in the generated output, this value is passed on to the Selector. |`selector-expression="#[payload.id]"`
+|===
+
+. Configure the *Since Id* attribute of the Twitter connector according to the table below:
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value |Description |Sample XML
+|*sinceId* |string or Mule expression |Instructs the connector to return only those tweets with an ID greater than the value of the `lastID` variable. `lastID` is a flow variable that Mule creates, then updates every time the poll runs. |`sinceId="#[flowVars['lastID']]"`
+|===
++
+[source, xml, linenums]
+----
+<flow name="test1" doc:name="test1" processingStrategy="synchronous">
+    <poll frequency="1000" doc:name="Poll">
+        <watermark variable="lastID" default-expression="-1" selector="FIRST" selector-expression="#[payload.id]"/>
+            <twitter:get-user-timeline-by-screen-name config-ref="Twitter"      doc:name="Twitter" screenName="MuleSoft" sinceId="#[flowVars['lastID']]"/>
+    </poll>
+    <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+</flow>
+----
+....
+------
+
+=== 示例代码
+
+[NOTE]
+====
+请记住，要使此示例正常工作，您必须手动配置全局Twitter连接器（`twitter:config`元素）的以下值：
+
+*  ACCESSKEY
+*  accessSecret
+*  consumerKey
+*  consumerSecret
+====
+
+[source, xml, linenums]
+----
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:twitter="http://www.mulesoft.org/schema/mule/twitter" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/twitter http://www.mulesoft.org/schema/mule/twitter/2.4/mule-twitter.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+  
+  <twitter:config name="Twitter" accessKey="xyz" accessSecret="xys" consumerKey="xyz" consumerSecret="xyz" doc:name="Twitter">
+        <twitter:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </twitter:config>
+  
+    <flow name="test1" doc:name="test1" processingStrategy="synchronous">
+        <poll frequency="1000" doc:name="Poll">
+            <watermark variable="lastID" default-expression="-1" selector="FIRST" selector-expression="#[payload.id]"/>          
+            <twitter:get-user-timeline-by-screen-name config-ref="Twitter"      doc:name="Twitter" screenName="MuleSoft" sinceId="#[flowVars['lastID']]"/>
+        </poll>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+       
+    </flow>
+</mule>
+----
+
+用于更新流变量的=== 变体
+
+如上所述，每当流程执行完成时，水印单元包括两种更新流变量（流变量）的方式：
+
+* 在属性update-expression中设置表达式
+* 在属性selector-expression中设置表达式，并在选择器中设置条件
+
+但是，这些选项都不支持异常处理策略;您可能希望将更复杂的逻辑规则添加到更新流变量的过程中。为此，您可以使用流中的其他消息处理器来使用自定义逻辑来设置流变量。
+
+将代码（如下面的示例）添加到Java类中，并围绕它包装额外的自定义逻辑。
+
+[source, code, linenums]
+----
+#[flowVars['lastModifiedID']] = #[payload.id]
+----
+
+[WARNING]
+如果您使用自定义逻辑来更新`flowVars`，则*ensure that the radio button for update-expression is selected, but that the field is left empty*。如果`update-expression`属性具有值，则Mule会根据该属性在`flowVars`中存储新的水印信息，从而覆盖您为更新变量而定义的任何自定义逻辑。
+
+下图显示了使用定制逻辑更新flowVars的示例流程;注意空的update-expression属性。
+
+image:watermark-expcomplex.png[水印expcomplex]
+
+== 通过自动寻呼使用水印
+
+任何启用了[自动分页]的连接器都允许您分批处理大型数据集。此功能可缓解内存过载，但也会在与水印结合使用时施加某些条件。以下部分说明了轮询连接器时使用水印的两种推荐方法，该连接器自动寻呼其响应。
+
+=== 示例1  - 在Foreach范围内设置变量
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Place an *auto-paging-enabled-connector* inside a *poll* scope as in previous examples.
++
+image:ex11.png[ex11]
+
+. Configure the connector according to the following screenshot. Note that the query orders the output in ascending order of *LastModifiedDate* so that the last item in the list is the newest. The details is crucial.
++
+image:salesforce.png[salesforce]
++
+[WARNING]
+Be sure to configure the order of the output so that the LAST element in the collection is the most recent one!
+
+. Configure the poll scope according to the table below. The watermark will be a variable named lastUpdated. When the flow has finished processing, Mule updates the value of the variable to the value of the *flow variable* by the same name, `lastUpdated`. Its default value is the result of evaluating the following expression: `#['YESTERDAY']`.
++
+image:yesterday.png[yesterday]
++
+[%header%autowidth.spread]
+|===
+|Attribute Name |Description |Sample XML
+|*Variable Name* |The watermark will be a variable named `lastUpdated` |`variable= "lastUpdated"`
+|*default-expression* |The default value of `lastUpdated` will be the result of evaluating `#['YESTERDAY']`|`#['YESTERDAY']`
+|*update-expression |Mule updates `lastUpdated` to the value of the flow variable by the same name `lastUpdated` |`#[flowVars['lastUpdated']]`
+|===
+
+. Next, you need to process the output of the connector with an element that can handle collections, such as a [Foreach] scope. The message processors set within the Foreach scope process each item in a collection individually, one at a time.
++
+image:ex12.png[ex12]
+
+. Inside the Foreach scope, place a Variable transformer. This message processor sets the value of a variable on each iteration of the Foreach scope, overwriting the variable's value each time. Since you ordered your collection so that the last element is the newest, the value that "sticks" at the end of the Foreach's iteration is what Mule needs for the watermark.
++
+image:ex13.png[ex13]
+
+. Configure the Variable to change `lastUpdated` to the following expression: `#[payload['lastUpdated]]`
++
+image:setvariable.png[setvariable]
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value |Explanation
+|*Name* |`lastUpdated` |The name of the variable to update.
+|*Value* |`#[payload['lastUpdated']]` |The source from which to obtain the value.
+|===
+
+. Add a Logger at the end of your flow, outside the foreach scope, to log the value of `lastUpdated`. The logger also allows you to verify that the watermark works.
++
+image:fullex1.png[fullex1]
+....
+[tab,title="XML Editor or Standalone"]
+....
+. Add a poll element to your flow, then add a *watermark variable* as a child element. The watermark will be a variable named lastUpdated. When the flow has finished processing, Mule updates the value of the variable to the value of the *flow variable* by the same name, lastUpdated. Its default value is the result of evaluating the following expression: `#['YESTERDAY']`.
++
+[source, xml, linenums]
+----
+<poll frequency="100000" doc:name="Poll">
+            <watermark variable="nextSync" default-expression="#['YESTERDAY']" update-expression="#[flowVars['lastUpdated']]"/>
+</poll>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Description |Sample XML
+|*variable* |The watermark will be a variable named `lastUpdated` |`variable= "lastUpdated"`
+|*default-expression* |The default value of `lastUpdated` will be the result of evaluating `#['YESTERDAY'].` |`#['YESTERDAY']`
+|*update-expression* |`lastUpdated` will be updated to the value of the flow variable by the same name, `lastUpdated` |`#[flowVars['lastUpdated']]`
+|===
+
+. Add an auto-paging-enabled connector as a child element of the poll element. Note that the query orders the output in ascending order of *LastModifiedDate* so that the last item in the list is the newest. This detail is critical.
++
+[source, xml, linenums]
+----
+<poll frequency="100000" doc:name="Poll">
+            <watermark variable="nextSync" default-expression="#['YESTERDAY']" update-expression="#[flowVars['lastUpdated']]"/>
+            <sfdc:query config-ref="" query="dsql:SELECT Email,FirstName,LastModifiedDate,LastName FROM Contact WHERE LastModifiedDate &gt; #[flowVars['nextSync']] ORDER BY LastModifiedDate ASC LIMIT 100" doc:name="Salesforce"/>
+</poll>
+----
++
+[WARNING]
+Be sure to configure the order of the output so that the LAST element in the collection is the most recent one!
+
+. Next, you need to process the output of the connector with an element that can handle collections, such as a Foreach scope. The message processors set within the [Foreach] scope process each item in a collection individually, one at a time.
+
+. Inside the Foreach scope, place a Variable transformer. This message processor sets the value of a variable on each iteration of the Foreach scope, overwriting the variable's value each time. Since you ordered your collection so that the last element is the newest, the value that "sticks" at the end of the Foreach's iteration is what Mule needs for the watermark. Configure the variable to change the value of lastUpdated to the value resulting from evaluating the following expression: `#[payload['lastUpdated]]`
++
+[source, xml, linenums]
+----
+<foreach doc:name="For Each">
+    <set-variable variableName="lastUpdated" value="#[payload['lastUpdated']]" doc:name="Variable"/>
+</foreach>
+----
++
+[%header%autowidth.spread]
+|===
+|Attribute |Value |Explanation
+|*variableName* |`lastUpdated` |The name of the variable to update.
+|*value* |`#[payload['lastUpdated']]` |The source from which to obtain a value.
+|===
+
+. Add a Logger at the end of your flow, outside the foreach scope, to log the value of lastUpdated. The logger also allows you to verify that the watermark works.
++
+[source, xml, linenums]
+----
+<logger message="#[flowVars['lastUpdated']]" level="INFO" doc:name="Logger"/>
+----
+....
+------
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:netsuite="http://www.mulesoft.org/schema/mule/netsuite" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/netsuite http://www.mulesoft.org/schema/mule/netsuite/3.0/mule-netsuite.xsd">
+    <sfdc:config name="Salesforce" username="example@mulesoft.com.sap" password="password" securityToken="fKESXfSAj4398t3uhh8xotw9Uc" doc:name="Salesforce">
+        <sfdc:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sfdc:config>
+    <data-mapper:config name="sfdc_csv_grf" transformationGraphPath="sfdc-csv.grf" doc:name="DataMapper"/>
+    <data-mapper:config name="new_mapping_grf" transformationGraphPath="new_mapping.grf" doc:name="DataMapper"/>
+    <flow name="example1" doc:name="example1">
+        <poll frequency="100000" doc:name="Poll">
+            <watermark variable="nextSync" default-expression="#['YESTERDAY']" update-expression="#[flowVars['lastUpdated']]"/>
+            <sfdc:query config-ref="Salesforce" query="dsql:SELECT Email,FirstName,LastModifiedDate,LastName FROM Contact WHERE LastModifiedDate &gt; #[flowVars['nextSync']] ORDER BY LastModifiedDate ASC LIMIT 100" doc:name="Salesforce"/>
+        </poll>
+        <foreach doc:name="For Each">
+            <set-variable variableName="lastUpdated" value="#[payload['lastUpdated']]" doc:name="Variable"/>
+        </foreach>
+        <logger message="#[flowVars['lastUpdated']]" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+=== 示例2  - 设置变量DataMapper
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Place an *auto-paging-enabled connector* inside a *poll* scope as in the previous examples.
++
+image:ex11.png[ex11]
+
+. Configure the connector according to the following screenshot. Note that the query orders the output in ascending order of *LastModifiedDate* so that the last item in the list is the newest. This detail is critical.
++
+image:dsql_sfdc.png[dsql_sfdc]
++
+[WARNING]
+Be sure to configure the order of the output so that the LAST element in the collection is the most recent one! *ORDER BY LastModifiedDate*
+
+. Configure the poll scope according to the table below. The watermark will be a variable named `lastSync`. When the flow has finished processing, Mule updates the value of the variable to the value of the *flow variable* by named `lastUpdated`. Its default value is the result of evaluating the following expression: `#['YESTERDAY'].`
++
+image:poll_watermark_variable.png[poll_watermark_variable]
++
+[%header%autowidth.spread]
+|===
+|Attribute |Description |Sample XML
+|*Variable Name* |The watermark will be a variable named `lastSync` |`variable= "lastSync"`
+|*default-expression* |The default value of `lastSync` will be the result of `#['YESTERDAY'].` |`#['YESTERDAY']`
+|*update-expression* |`lastSync` updates to the value of the flow variable `lastUpdated` |`#[flowVars['lastUpdated']]`
+|===
+
+. Next, you need to process the output of the connector with an element that can handle collections, such as a [DataMapper] transformer. DataMapper can process each item in a collection individually, one at a time.
++
+image:ex22.png[ex22]
+
+. Configure the [DataMapper] so that each variable has its pairing, then add one extra output argument named *lastModified*. This output argument sets the value of a variable on each iteration of the DataMapper, overwriting it with a new value each time. Because you ordered your collection so that the last element is the newest, the value that "sticks" at the end of the DataMapper's iteration is what Mule needs for the watermark.
+
+In other words, the value of the LastModifiedDate of the last item in the collection becomes the new value of the lastUpdated flow variable, which, in turn, Mule will use to update the value of the variable lastSync the next time the poll executes.
++
+image:datamapper+clean.png[datamapper+clean]
+
+. Add a Logger at the end of your flow, outside the foreach scope, to log the value of `lastUpdated`. The logger also allows you to verify that the watermark works.
++
+image:fullex2.png[fullex2]
+....
+------
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:netsuite="http://www.mulesoft.org/schema/mule/netsuite" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/netsuite http://www.mulesoft.org/schema/mule/netsuite/3.0/mule-netsuite.xsd">
+    <sfdc:config name="Salesforce" username="example@mulesoft.com.sap" password="password" securityToken="fKESXfSAj43p8tjrnweo8otw9Uc" doc:name="Salesforce">
+        <sfdc:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sfdc:config>
+    <data-mapper:config name="sfdc_csv_grf" transformationGraphPath="sfdc-csv.grf" doc:name="DataMapper"/>
+    <data-mapper:config name="new_mapping_grf" transformationGraphPath="new_mapping.grf" doc:name="DataMapper"/>
+    <flow name="example2" doc:name="example2" >
+        <poll frequency="100000" doc:name="Poll">
+            <watermark variable="lastSync" default-expression="#['YESTERDAY']"  update-expression="#[flowVars['lastUpdated']]"/>
+            <sfdc:query config-ref="Salesforce" query="dsql:SELECT Email,FirstName,LastModifiedDate,LastName FROM Contact WHERE LastModifiedDate &gt; #[flowVars['lastSync']] ORDER BY LastModifiedDate ASC LIMIT 100" doc:name="Salesforce"/>
+        </poll>
+        <data-mapper:transform config-ref="new_mapping_grf" returnClass="java.lang.String" doc:name="DataMapper"/>
+        <logger message="#[flowVars['lastUpdated']]" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
+
+== 另请参阅
+
+* 了解如何配置[投票时间表]。
+* 阅读[MuleSoft博客]中有关使用水印来同步两个系统的文章
+* 详细了解[记录器]。
+* 了解有关[Anypoint（TM）连接器]和[自动分页]的更多信息。
+* 了解有关[流程处理策略]的更多信息。

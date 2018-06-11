@@ -1,0 +1,82 @@
+= 示例：在对象存储中存储和检索信息
+:keywords: ObjectStore, store, retrieve
+：TOC：
+：TOC标题：
+
+TOC :: []
+
+Object Store连接器提供Store（`<os:store/>`）和Retrieve（`<os:retrieve/>`）操作。
+
+== 从对象存储中存储信息
+
+您可以使用Object Store来存储这样的值：
+
+[source, xml, linenums]
+----
+<os:store key="state">
+  <os:value>
+    <![CDATA[#[
+      output application/json
+       ---
+       {
+          "id": attributes.queryParams.id,
+          "timestamp": now(),
+          "name": payload.name
+        }
+      ]]]>
+  </os:value>
+</os:store>
+----
+
+您可以使用Store操作来存储新值或更新现有值，具体取决于`failIfPresent`参数的值。当此参数设置为`false`（默认值）时，与该密钥关联的任何预先存在的值将被覆盖。如果参数设置为true，则会抛出`OS:KEY_ALREADY_EXISTS`错误。
+
+请注意，无法存储空值。但是，通过评估表达式或转换来获取值是很常见的：
+
+* 测试该值不为null。
+* 存储该值（如果存在）。
+* 否则，无所事事。
+
+`failOnNullValue`参数简化了这个用例。默认情况下（`true`），如果提供了空值，则会抛出`OS:NULL_VALUE`错误。但是，当参数设置为`false`时，空值会导致此操作不执行任何操作：不会引发错误，也不会更改值。
+
+== 从对象存储中检索信息
+
+Retrieve操作检索给定Object Store键的值。
+
+您可以使用该键来检索单个值：
+
+[source, xml]
+----
+<os:retrieve key="userId" />
+----
+
+您可以使用像这样的操作在商店中不存在密钥时提供默认值：
+
+[source, xml, linenums]
+----
+<os:retrieve key="timestamp">
+  <os:default-value>#[now()]</os:default-value>
+</os:retrieve>
+----
+
+您可以拥有默认的复杂结构：
+
+[source, xml, linenums]
+----
+<os:retrieve key="state">
+  <os:default-value>
+    <![CDATA[#[
+     output application/json
+     ---
+     {
+        "id": attributes.queryParams.id,
+        "timestamp": now(),
+        "name": payload.name
+      }
+    ]]]>
+  </os:default-value>
+</os:retrieve>
+----
+
+请注意，`defaultValue`参数处理给定键不存在值的情况。如果您未提供参数并且操作解析为空值，则会引发OS：KEY_NOT_FOUND错误。否则，返回`defaultValue`但不存储。
+
+提示：所有对象存储操作都在密钥级同步。在操作运行时，没有其他操作能够访问同一对象存储中的同一个键。如果运行时正在以群集模式运行，那么也可以保证跨节点的同步。

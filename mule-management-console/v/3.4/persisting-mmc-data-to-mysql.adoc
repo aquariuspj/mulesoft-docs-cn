@@ -1,0 +1,1002 @@
+= 将MMC数据保存到MySQL
+
+本文将介绍如何将环境和事务数据保存到MySQL数据库。按照<<MySQL Installation>>的说明操作，然后按照<<Persisting Environment Data>>或<<Persisting Transaction Data>>持久性的具体说明设置用户，创建数据库并配置MMC实例以保存数据。
+
+[WARNING]
+请记住*environment data and transaction data must exist in two separate databases*（不管它们是在同一台服务器上还是在同一个平台上）。
+
+*Jump to:*
+
+*  *<<Persisting Environment Data>>*
+*  *<<Persisting Transaction Data>>*
+
+== 假设
+
+本文档假设您已了解 link:/mule-management-console/v/3.7/setting-up-mmc[数据持久性选项]的环境和交易数据，并且您熟悉基本的 link:/mule-management-console/v/3.4/architecture-of-the-mule-management-console[Mule管理控制台的架构]。它还假定您已经安装：
+
+*  **Mule Enterprise 3.4.1**。如果您需要升级到此版本，请从 http://www.mulesoft.com/support-login[客户门户]下载。
+*  **MMC Version 3.4.1**。如果您需要升级到此版本，请从 http://www.mulesoft.com/support-login[客户门户]下载。
+*  *a* **Web application server such as Tcat, Tomcat, or JBoss**。有关硬件要求和支持的应用程序服务器，Java运行时环境和浏览器的最新信息，请参阅 link:/mule-user-guide/v/3.4/hardware-and-software-requirements[硬件和软件要求]。
+
+为了实际的目的，本文提到Tomcat作为servlet容器;但是，这里包含的说明也适用于Tcat或JBoss。如果您使用的是Tcat或JBoss，请确保将Management Console .war文件解压到相应的目录中。有关其他信息，请参阅 link:/mule-management-console/v/3.4/installing-the-production-version-of-mmc[安装MMC的生产版本]。
+
+[NOTE]
+在本文档中，`<MMC_HOME>`指的是安装MMC的目录。如果使用试用版，则这是`<Mule install path>/mmc/webapps/mmc`，例如`/opt/mule/mule-enterprise-3.4.1/mmc/webapps/mmc`。如果使用Tomcat等应用程序服务器，则应与`<Tomcat root>/webapps/mmc-console-3.4.1`类似，例如`/var/lib/tomcat6/webapps/mmc-console-3.4.1`。
+
+==  MySQL安装
+
+这里概述的MySQL安装是基本的：数据库安装在默认端口3306的本地计算机上，安全性停用（使用到数据库的不安全连接以及具有完全管理权限的用户）。
+
+=== 工具
+
+*  MySQL社区服务器（ http://dev.mysql.com/downloads/mysql/[下载]）
+*  mysql命令行实用程序
+*  phpMyAdmin，基于Web的数据库管理工具（可选）（ http://www.phpmyadmin.net/home_page/downloads.php[下载]）
+
+这个配置在MySQL社区服务器5.5上进行了测试。
+
+在MySQL中创建数据库和数据库用户相对简单。您可以使用`mysql`命令行实用程序或基于`phpMyAdmin`的基于Web的管理工具来执行这些任务。本文档不介绍如何设置或安装MySQL，或者如何使用`phpMyAdmin`创建表;但是，它列出了用于为下面的环境数据持久性示例创建数据库，用户和表的命令。有关详情，请参阅<<Creating the Tables>>中的展开式部分。
+
+== 坚持不懈的环境数据
+
+要设置MySQL来保存您的MMC环境数据，您需要完成以下步骤：
+
+. 创建数据库。
+. 创建数据库用户。
+. 创建表格。
+. 设置MMC。
+. 如果您的MySQL位于远程主机上，请执行一些其他配置。
+
+[NOTE]
+====
+Mule控制台的嵌入式数据库文件位于以下目录之一：
+
+* 如果在诸如Tomcat的Web servlet容器上：` <MMC_HOME>/mmc-data/db`
+* 如果在试用版上：`<Mule install path>/.mule/mmc/mmc-data/db`
+
+将MMC配置为使用外部数据库存储其持久数据后，请勿删除`mmc-data`文件夹。 `db`子文件夹不再使用，但`repository`，`version`和`workspaces`子文件夹将被Java内容存储库（JCR）内部设置使用。
+====
+
+=== 创建数据库
+
+使用以下参数创建一个新数据库：
+
+*  **Database name:** `mmc_persistency_status`
+*  **Database owner:** `MMC_STATUS`
+
+=== 创建数据库用户
+
+使用默认权限和以下参数创建一个新的数据库用户：
+
+*  **Username:** `MMC_STATUS`
+*  **Password:** `mmc123`
+
+=== 创建表格
+
+导航到以下目录：`<MMC_HOME>/WEB-INF/classes/quartz`。在这个目录中，你会发现MySQL的两个脚本：
+
+适用于早于4.1的MySQL服务器版本的*  `tables_mysql.sql`
+*  `tables_mysql_version_4_1_and_above.sql`用于MySQL服务器4.1及更高版本
+
+根据您的MySQL服务器版本，在目标数据库`mmc_persistency_status`中执行相应的脚本。
+
+[TIP]
+====
+*Creating the database, user and tables with the mysql utility*
+
+. 打开终端并使用以下命令运行`mysql`实用程序。
++
+
+[source, code, linenums]
+----
+mysql -u root -D mysql -p
+----
+
+.  `mysql`会提示您输入root的用户密码。输入密码，您应该看到以下`mysql`提示。
++
+
+[source, code, linenums]
+----
+mysql>
+----
+
+. 按照下面显示的顺序输入以下命令。每个命令都以分号（;）结尾。当您在每个分号后按Enter时，终端将显示一条以`Query OK`开头的消息，表示该命令已成功完成。
++
+
+[source, code, linenums]
+----
+CREATE DATABASE mmc_persistency_status;
+CREATE USER 'MMC_STATUS'@'localhost' IDENTIFIED BY 'mmc123';
+GRANT ALL PRIVILEGES ON mmc_persistency_status.* TO 'MMC_STATUS'@'localhost';
+exit
+----
+
+. 退出`mysql`后，找到管理控制台随附的MySQL相关脚本（默认情况下位于`$MMC_HOME/webapps/mmc/WEB-INF/classes/quartz`）。在您的终端中，通过运行`cd`命令切换到包含脚本的目录。下面是一个示例命令。
++
+
+[source, code, linenums]
+----
+cd /opt/mule/mule-ee-3.4.1/apps/mmc/webapps/mmc/WEB-INF/classes/quartz
+----
+
+. 从这个目录再次运行`mysql`，这次使用下面显示的参数。
++
+
+[source, code, linenums]
+----
+mysql -u MMC_STATUS -D mmc_persistency_status -p
+----
+
+. 输入密码后，以用户`MMC_STATUS`登录到数据库`mmc_persistency_status`。 +
+
+. 通过发出以下命令来运行MySQL脚本。
++
+
+[source, code, linenums]
+----
+source <script name>
+----
+
+. 根据您的MySQL服务器版本，脚本名称将为`tables_mysql.sql`或`tables_mysql_versions_4_1_and_above.sql`。运行脚本时，`mysql`将显示一长串状态消息，如下所示。
++
+
+[source, code, linenums]
+----
+Query OK, 0 rows affected, 1 warning (0.00 sec)
+Query OK, 0 rows affected, 1 warning (0.00 sec)
+Query OK, 0 rows affected, 1 warning (0.00 sec)
+Query OK, 0 rows affected, 1 warning (0.00 sec)
+...
+----
+
+. 上面列出的状态消息表明这些表已成功创建。要验证，发出以下命令（下面，顶部），它会产生以下输出（下面，底部）。
++
+
+[source, code, linenums]
+----
+SHOW TABLES IN mmc_persistency_status;
+----
+
++
+
+[source, code, linenums]
+----
++----------------------------------+
+| Tables_in_mmc_persistency_status |
++----------------------------------+
+| QRTZ_BLOB_TRIGGERS               |
+| QRTZ_CALENDARS                   |
+| QRTZ_CRON_TRIGGERS               |
+| QRTZ_FIRED_TRIGGERS              |
+| QRTZ_JOB_DETAILS                 |
+| QRTZ_JOB_LISTENERS               |
+| QRTZ_LOCKS                       |
+| QRTZ_PAUSED_TRIGGER_GRPS         |
+| QRTZ_SCHEDULER_STATE             |
+| QRTZ_SIMPLE_TRIGGERS             |
+| QRTZ_TRIGGERS                    |
+| QRTZ_TRIGGER_LISTENERS           |
++----------------------------------+
+12 rows in set (0.00 sec)
+----
+
+. 要查看特定表的内容，请运行以下命令。
++
+
+[source, code, linenums]
+----
+DESCRIBE <table name>;
+----
+
+以下示例包含表`QRTZ_BLOB_TRIGGERS`的命令输出：
+
+[source, code, linenums]
+----
+mysql> DESCRIBE QRTZ_BLOB_TRIGGERS;
++---------------+-------------+------+-----+---------+-------+
+| Field         | Type        | Null | Key | Default | Extra |
++---------------+-------------+------+-----+---------+-------+
+| TRIGGER_NAME  | varchar(80) | NO   | PRI | NULL    |       |
+| TRIGGER_GROUP | varchar(80) | NO   | PRI | NULL    |       |
+| BLOB_DATA     | blob        | YES  |     | NULL    |       |
++---------------+-------------+------+-----+---------+-------+
+3 rows in set (0.00 sec)
+----
+
+此时，您已完成MySQL的配置。您可以继续设置管理控制台以使用您刚刚创建的数据库。
+====
+
+=== 设置MMC以使用MySQL保存环境数据
+
+. 首先，安装适当的<<Obtaining MySQL Drivers>>。
+. 然后，按照以下说明编辑以下配置文件：
+
+*  <<Configuration file: mmc.properties>>
+*  <<Configuration file: applicationContext.xml>>
+*  <<Configuration file: jackrabbit-repo.xml>>
+*  <<Configuration file: scheduler.properties>>
+
+本示例使用创建MySQL数据库时使用的参数<<Persisting Environment Data>>。
+
+*  MySQL监听主机和端口：localhost端口3306
+* 数据库名称：`mmc_persistency_status`
+* 数据库用户：`MMC_STATUS`
+* 密码：`mmc123`
+
+==== 获取MySQL驱动程序
+
+.  http://dev.mysql.com/downloads/connector/j/5.0.html[下载]最新的MySQL驱动程序。 （您需要免费下载Oracle帐户。）该驱动程序称为`mysql-connector-java-<version>`，例如`mysql-connector-java-5.1.26`。您可以将驱动程序作为zip或tar.gz文件下载。
+. 解压缩.zip或.tar.gz安装文件。在生成的目录结构中，找到名为`mysql-connector-java-<version>-bin.jar`的文件。这是jbdc驱动程序本身，您将复制到管理控制台目录结构。
+
+=====  MMC驱动程序以Mule应用程序运行
+
+将MySQL jdbc驱动程序`mysql-connector-java-<version>-bin.jar`复制到以下目录：`<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/lib`。
+
+或者，通过将驱动程序复制到`<Mule install path>/lib/user`来使驱动程序通常可用。
+
+用于MMC的===== 驱动程序以Web应用程序的形式运行
+
+将MySQL jdbc驱动程序`mysql-connector-java-<version>-bin.jar`复制到以下目录：`<MMC_HOME>/WEB-INF/lib.`
+
+==== 配置文件：`mmc.properties`
+
+（目录：`<MMC_HOME>/WEB-INF/classes/META-INF.)`
+
+. 在上面列出的目录中，找到文件`mmc.properties`。
+. 打开文件进行编辑，然后按照以下方式进行编辑。 ++
+
+[source, code, linenums]
+----
+datasource.driver=com.mysql.jdbc.Driver
+datasource.username=MMC_STATUS
+datasource.password=mmc123
+datasource.url=jdbc:mysql://localhost/mmc_persistency_status
+script=mysql
+mmc.data=./mmc-data
+plugin.directory=WEB-INF/plugins
+console.inactivityTimeout=60
+----
+
+[NOTE]
+在上面的示例中以及本节中的所有配置文件中，数据库URL将假定MySQL服务器的默认端口为3306.如果您的MySQL服务器正在侦听其他端口，请使用以下格式在URL中包含端口号： `jdbc:mysql://<host>:<port>/<database name>`。
+
+
+[IMPORTANT]
+====
+确保没有出现以下行：
+
+[source, code, linenums]
+----
+datasource.dbName=${galaxy.data}/db from mmc.properties
+----
+
+该行与用于访问正确数据库的参数冲突，导致连接错误。如果该行存在于`mmc.properties`文件中，请将其删除。
+====
+
+==== 配置文件：`applicationContext.xml`
+
+（目录：与之前的文件相同（`<MMC_HOME>/WEB-INF/classes/META-INF).)`
+
+. 在上面列出的目录中，找到名为`applicationContext.xml`的文件并将其打开进行编辑。
+. 查找名为`internalDataSource`的bean，然后根据以下内容对其进行编辑。
+
+[source, xml, linenums]
+----
+<bean name="internalDataSource" class="org.springframework.jdbc.datasource.SimpleDriverDataSource">
+   <!-- TODO: change this via the configurator -->
+   <property name="driverClass" value="com.mysql.jdbc.Driver"/>
+   <property name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+   <property name="username" value="MMC_STATUS"/>
+   <property name="password" value="mmc123"/>
+</bean>
+----
+
+==== 配置文件：`jackrabbit-repo.xml`
+
+[IMPORTANT]
+====
+编辑此文件之前，删除以下文件（如果列出）：
+
+*  `jackrabbit-repo-default.xml`
+*  `jackrabbit-repo-test.xml`
+====
+
+（目录：与之前的文件相同（`<MMC_HOME>/WEB-INF/classes/META-INF).)`
+
+. 在上面列出的目录中，找到文件`jackrabbit-repo.xml`并将其打开进行编辑。
+. 替换适当的参数以使用MySQL，而不是默认的Derby数据库。使用以下参数进行数据库连接：+
+* 用户：`MMC_STATUS`
+* 密码：`mmc123`
+* 网址：`jdbc:mysql://localhost/mmc_persistency_status`
+* 架构：`mysql`
+* 司机：`com.mysql.jdbc.Driver`
+*  IP：`localhost`
+* 端口：`3306`（默认安装）
+. 替换下面代码片段中显示的相应部分中的参数。
+
+[WARNING]
+架构应始终为`mysql`。它定义了数据库，而不是用于存储持久数据的实际模式。
+
+[source, xml, linenums]
+----
+...
+<Repository>
+    <!--
+        virtual file system where the repository stores global state
+        (e.g. registered namespaces, custom node types, etc.)
+    -->
+    <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+        <param name="driver" value="com.mysql.jdbc.Driver"/>
+        <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+        <param name="schema" value="mysql"/>
+        <param name="schemaObjectPrefix" value="rep_"/>
+        <param name="user" value="MMC_STATUS"/>
+        <param name="password" value="mmc123"/>
+    </FileSystem>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<!--
+        workspace configuration template:
+        used to create the initial workspace if there's no workspace yet
+    -->
+    <Workspace name="Jackrabbit Core">
+        <!--
+            virtual file system of the workspace:
+            class: FQN of class implementing the FileSystem interface
+        -->
+        <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+            <param name="driver" value="com.mysql.jdbc.Driver"/>
+            <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+            <param name="schema" value="mysql"/>
+            <param name="schemaObjectPrefix" value="rep_"/>
+            <param name="user" value="MMC_STATUS"/>
+            <param name="password" value="mmc123"/>
+        </FileSystem>
+...
+----
+
+[WARNING]
+====
+在配置默认工作区和工作区名称本身时，请确保您符合下列条件之一：
+
+* 为两个工作区（例如`mySQL workspace`）+分配相同的_new_名称
+ +
+要么
+
+* 删除`mmc-data/workspaces`中的所有子文件夹，特别是`default`子文件夹。您可以在Web应用程序服务器安装的根文件夹中找到`mmc-data`文件夹（例如，`/var/lib/tomcat6/mmc-data`）。
+
+如果上述两个条件都不满足，则所有二进制数据将保留在本地而不是外部数据库中。
+====
+
+[source, xml, linenums]
+----
+...
+<!--
+            persistence manager of the workspace:
+            class: FQN of class implementing the PersistenceManager interface
+        -->
+        <PersistenceManager class="org.apache.jackrabbit.core.persistence.pool.MySqlPersistenceManager">
+          <param name="schemaObjectPrefix" value="Jackrabbit Core_"/>
+          <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+          <param name="externalBLOBs" value="true"/>
+          <param name="schemaCheckEnabled" value="true"/>
+          <param name="user" value="MMC_STATUS"/>
+          <param name="password" value="mmc123"/>
+        </PersistenceManager>
+...
+----
+
+[TIP]
+====
+*PersistenceManager parameters*
+
+`externalBLOBs`布尔参数定义是否将二进制数据（通过管理控制台部署的应用程序）存储在数据库或文件系统上。默认值`true,`表示该数据存储在文件系统中。将值设置为`false`以将数据存储在数据库中。
+
+`schemaCheckEnabled`参数指定是否在管理控制台启动时创建其他必需的数据库表。它必须始终设置为`true`。
+====
+
+[source, xml, linenums]
+----
+...
+<!--
+            Search index and the file system it uses.
+            class: FQN of class implementing the QueryHandler interface
+        -->
+        <SearchIndex class="org.apache.jackrabbit.core.query.lucene.SearchIndex">
+            <param name="path" value="${wsp.home}/index"/>
+            <param name="textFilterClasses"
+                value="org.apache.jackrabbit.extractor.PlainTextExtractor,
+                       org.apache.jackrabbit.extractor.MsExcelTextExtractor,
+                       org.apache.jackrabbit.extractor.MsPowerPointTextExtractor,
+                       org.apache.jackrabbit.extractor.MsWordTextExtractor,
+                       org.apache.jackrabbit.extractor.PdfTextExtractor,
+                       org.apache.jackrabbit.extractor.HTMLTextExtractor,
+                       org.apache.jackrabbit.extractor.XMLTextExtractor,
+                       org.apache.jackrabbit.extractor.RTFTextExtractor,
+                       org.apache.jackrabbit.extractor.OpenOfficeTextExtractor" />
+            <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+                <param name="driver" value="com.mysql.jdbc.Driver"/>
+                <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+                <param name="schema" value="mysql"/>
+                <param name="schemaObjectPrefix" value="rep_"/>
+                <param name="user" value="MMC_STATUS"/>
+                <param name="password" value="mmc123"/>
+            </FileSystem>
+        </SearchIndex>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<Versioning rootPath="${rep.home}/version">
+        <!--
+            Configures the filesystem to use for versioning for the respective
+            persistence manager
+        -->
+        <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+            <param name="driver" value="com.mysql.jdbc.Driver"/>
+            <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+            <param name="schema" value="mysql"/>
+            <param name="schemaObjectPrefix" value="rep_"/>
+            <param name="user" value="MMC_STATUS"/>
+            <param name="password" value="mmc123"/>
+        </FileSystem>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<!--
+            Configures the persistence manager to be used for persisting version state.
+            Please note that the current versioning implementation is based on
+            a 'normal' persistence manager, but this could change in future
+            implementations.
+        -->
+        <PersistenceManager class="org.apache.jackrabbit.core.persistence.pool.MySqlPersistenceManager">
+        <param name="schemaCheckEnabled" value="true"/>
+          <param name="schemaObjectPrefix" value="version_"/>
+          <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+          <param name="externalBLOBs" value="true"/>
+          <param name="user" value="MMC_STATUS"/>
+          <param name="password" value="mmc123"/>
+        </PersistenceManager>
+    </Versioning>
+...
+----
+
+[source, xml, linenums]
+----
+...
+<!--
+        Search index for content that is shared repository wide
+        (/jcr:system tree, contains mainly versions)
+ 
+        -->
+    <SearchIndex class="org.apache.jackrabbit.core.query.lucene.SearchIndex">
+        <param name="path" value="${rep.home}/repository/index"/>
+        <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+            <param name="driver" value="com.mysql.jdbc.Driver"/>
+            <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+            <param name="schema" value="mysql"/>
+            <param name="schemaObjectPrefix" value="rep_"/>
+            <param name="user" value="MMC_STATUS"/>
+            <param name="password" value="mmc123"/>
+        </FileSystem>
+    </SearchIndex>
+</Repository>
+----
+
+。jackrabbit-repo.xml的示例
+
+[source, xml, linenums]
+----
+<?xml version="1.0"?>
+<!--
+   Licensed to the Apache Software Foundation (ASF) under one or more
+   contributor license agreements.  See the NOTICE file distributed with
+   this work for additional information regarding copyright ownership.
+   The ASF licenses this file to You under the Apache License, Version 2.0
+   (the "License"); you may not use this file except in compliance with
+   the License.  You may obtain a copy of the License at
+ 
+       http://www.apache.org/licenses/LICENSE-2.0
+ 
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+-->
+<!DOCTYPE Repository PUBLIC "-//The Apache Software Foundation//DTD Jackrabbit 1.2//EN"
+                            "http://jackrabbit.apache.org/dtd/repository-1.2.dtd">
+<Repository>
+    <!--
+        virtual file system where the repository stores global state
+        (e.g. registered namespaces, custom node types, etc.)
+    -->
+    <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+        <param name="driver" value="com.mysql.jdbc.Driver"/>
+        <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+        <param name="schema" value="mysql"/>
+        <param name="schemaObjectPrefix" value="rep_"/>
+        <param name="user" value="MMC_STATUS"/>
+        <param name="password" value="mmc123"/>
+    </FileSystem>
+ 
+    <!--
+        security configuration
+    -->
+    <Security appName="Jackrabbit">
+        <!--
+            access manager:
+            class: FQN of class implementing the AccessManager interface
+        -->
+        <AccessManager class="org.apache.jackrabbit.core.security.SimpleAccessManager">
+            <!-- <param name="config" value="${rep.home}/access.xml"/> -->
+        </AccessManager>
+ 
+        <LoginModule class="org.apache.jackrabbit.core.security.SimpleLoginModule">
+           <!-- anonymous user name ('anonymous' is the default value) -->
+           <param name="anonymousId" value="anonymous"/>
+           <!--
+              default user name to be used instead of the anonymous user
+              when no login credentials are provided (unset by default)
+           -->
+           <!-- <param name="defaultUserId" value="superuser"/> -->
+        </LoginModule>
+    </Security>
+ 
+    <!--
+        location of workspaces root directory and name of default workspace
+    -->
+    <Workspaces rootPath="${rep.home}/workspaces" defaultWorkspace="default"/>
+    <!--
+        workspace configuration template:
+        used to create the initial workspace if there's no workspace yet
+    -->
+    <Workspace name="Jackrabbit Core">
+        <!--
+            virtual file system of the workspace:
+            class: FQN of class implementing the FileSystem interface
+        -->
+        <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+            <param name="driver" value="com.mysql.jdbc.Driver"/>
+            <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+            <param name="schema" value="mysql"/>
+            <param name="schemaObjectPrefix" value="rep_"/>
+            <param name="user" value="MMC_STATUS"/>
+            <param name="password" value="mmc123"/>
+        </FileSystem>
+        <!--
+            persistence manager of the workspace:
+            class: FQN of class implementing the PersistenceManager interface
+        -->
+        <PersistenceManager class="org.apache.jackrabbit.core.persistence.pool.MySqlPersistenceManager">
+          <param name="schemaObjectPrefix" value="Jackrabbit Core_"/>
+          <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+          <param name="externalBLOBs" value="true"/>
+          <param name="schemaCheckEnabled" value="true"/>
+          <param name="user" value="MMC_STATUS"/>
+          <param name="password" value="mmc123"/>
+        </PersistenceManager>
+        <!--
+            Search index and the file system it uses.
+            class: FQN of class implementing the QueryHandler interface
+        -->
+        <SearchIndex class="org.apache.jackrabbit.core.query.lucene.SearchIndex">
+            <param name="path" value="${wsp.home}/index"/>
+            <param name="textFilterClasses"
+                value="org.apache.jackrabbit.extractor.PlainTextExtractor,
+                       org.apache.jackrabbit.extractor.MsExcelTextExtractor,
+                       org.apache.jackrabbit.extractor.MsPowerPointTextExtractor,
+                       org.apache.jackrabbit.extractor.MsWordTextExtractor,
+                       org.apache.jackrabbit.extractor.PdfTextExtractor,
+                       org.apache.jackrabbit.extractor.HTMLTextExtractor,
+                       org.apache.jackrabbit.extractor.XMLTextExtractor,
+                       org.apache.jackrabbit.extractor.RTFTextExtractor,
+                       org.apache.jackrabbit.extractor.OpenOfficeTextExtractor" />
+            <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+                <param name="driver" value="com.mysql.jdbc.Driver"/>
+                <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+                <param name="schema" value="mysql"/>
+                <param name="schemaObjectPrefix" value="rep_"/>
+                <param name="user" value="MMC_STATUS"/>
+                <param name="password" value="mmc123"/>
+            </FileSystem>
+        </SearchIndex>
+    </Workspace>
+ 
+    <!--
+        Configures the versioning
+    -->
+    <Versioning rootPath="${rep.home}/version">
+        <!--
+            Configures the filesystem to use for versioning for the respective
+            persistence manager
+        -->
+        <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+            <param name="driver" value="com.mysql.jdbc.Driver"/>
+            <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+            <param name="schema" value="mysql"/>
+            <param name="schemaObjectPrefix" value="rep_"/>
+            <param name="user" value="MMC_STATUS"/>
+            <param name="password" value="mmc123"/>
+        </FileSystem>
+ 
+        <!--
+            Configures the persistence manager to be used for persisting version state.
+            Please note that the current versioning implementation is based on
+            a 'normal' persistence manager, but this could change in future
+            implementations.
+        -->
+        <PersistenceManager class="org.apache.jackrabbit.core.persistence.pool.MySqlPersistenceManager">
+        <param name="schemaCheckEnabled" value="true"/>
+          <param name="schemaObjectPrefix" value="version_"/>
+          <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+          <param name="externalBLOBs" value="true"/>
+          <param name="user" value="MMC_STATUS"/>
+          <param name="password" value="mmc123"/>
+        </PersistenceManager>
+    </Versioning>
+ 
+    <!--
+        Search index for content that is shared repository wide
+        (/jcr:system tree, contains mainly versions)
+ 
+        -->
+    <SearchIndex class="org.apache.jackrabbit.core.query.lucene.SearchIndex">
+        <param name="path" value="${rep.home}/repository/index"/>
+        <FileSystem class="org.apache.jackrabbit.core.fs.db.DbFileSystem">
+            <param name="driver" value="com.mysql.jdbc.Driver"/>
+            <param name="url" value="jdbc:mysql://localhost/mmc_persistency_status"/>
+            <param name="schema" value="mysql"/>
+            <param name="schemaObjectPrefix" value="rep_"/>
+            <param name="user" value="MMC_STATUS"/>
+            <param name="password" value="mmc123"/>
+        </FileSystem>
+    </SearchIndex>
+</Repository>
+----
+
+
+==== 配置文件：`scheduler.properties`
+
+（目录：与以前的文件相同（`<MMC_HOME>/` WEB-INF / classes / META-INF）。）
+
+. 在上面列出的目录中，找到名为`scheduler.properties`的文件，然后打开它进行编辑。
+. 根据以下内容编辑文件。
++
+
+[source, code, linenums]
+----
+org.quartz.jobStore.isClustered=false
+org.quartz.jobStore.driverDelegateClass=org.quartz.impl.jdbcjobstore.StdJDBCDelegate
+org.quartz.jobStore.useProperties=true
+org.quartz.scheduler.instanceId=AUTO
+----
+
+.  Management Console现在配置为将其持久数据存储在指定的MySQL数据库中。启动管理控制台并正常登录。
+
+=== 连接到远程MySQL服务器
+
+如果MySQL服务器驻留在远程主机上，则很可能无法连接，除非执行以下两个操作：
+
+* 配置MySQL服务器以允许远程数据库连接
+* 授予您的数据库用户权限，允许其远程连接
+
+这两个操作在以下两节中进行介绍。
+
+==== 远程数据库连接
+
+. 要检查MySQL服务器是否允许远程数据库连接，请找到MySQL服务器配置文件，例如`/etc/mysql/my.cnf`。
+. 搜索以下行。
++
+
+[source, code, linenums]
+----
+bind-address        = 127.0.0.1
+----
+
+. 如果该行存在，请执行以下步骤：
+
+.. 停止MySQL服务器。
+.. 打开配置文件进行编辑，然后用数字符号（＃）注释掉该行，如下所示。
++
+
+[source, code, linenums]
+----
+# bind-address      = 127.0.0.1
+----
+
+.. 关闭文件，然后重新启动MySQL服务器。
+
+==== 远程访问权限
+
+. 要向数据库用户授予远程数据库访问权限，请使用以下命令以MySQL服务器root用户身份登录到MySQL。
++
+
+[source, code, linenums]
+----
+mysql -u root -D mysql -p
+----
+
+. 输入root的密码。
+. 通过运行以下命令获取数据库用户密码的41位十六进制表示形式（在本例中为用户MMC_STATUS的密码）。
++
+
+[source, code, linenums]
+----
+SELECT * FROM user WHERE User = '<user>';
+----
+
+. 在上一个命令的输出中，查找，然后复制41位数的十六进制数字，前面带星号。确保将此编号保存到剪贴板或文本文件中，因为您将在下一步中使用它。下面显示了一个示例输出的代码片段。
++
+
+[source, code, linenums]
+----
+mysql> SELECT * FROM user WHERE User = 'MMC_STATUS';
++--------------+------------+-------------------------------------------+-------------+-------------+-------------+-------------+-------------+-----------+-------------+---------------+--------------+-----------+------------+-----------------+------------+------------+--------------+------------+-----------------------+------------------+--------------+-----------------+------------------+------------------+----------------+---------------------+--------------------+------------------+------------+--------------+------------------------+----------+------------+-------------+--------------+---------------+-------------+-----------------+----------------------+--------+-----------------------+
+| Host         | User       | Password                                  | Select_priv | Insert_priv | Update_priv | Delete_priv | Create_priv | Drop_priv | Reload_priv | Shutdown_priv | Process_priv | File_priv | Grant_priv | References_priv | Index_priv | Alter_priv | Show_db_priv | Super_priv | Create_tmp_table_priv | Lock_tables_priv | Execute_priv | Repl_slave_priv | Repl_client_priv | Create_view_priv | Show_view_priv | Create_routine_priv | Alter_routine_priv | Create_user_priv | Event_priv | Trigger_priv | Create_tablespace_priv | ssl_type | ssl_cipher | x509_issuer | x509_subject | max_questions | max_updates | max_connections | max_user_connections | plugin | authentication_string |
++--------------+------------+-------------------------------------------+-------------+-------------+-------------+-------------+-------------+-----------+-------------+---------------+--------------+-----------+------------+-----------------+------------+------------+--------------+------------+-----------------------+------------------+--------------+-----------------+------------------+------------------+----------------+---------------------+--------------------+------------------+------------+--------------+------------------------+----------+------------+-------------+--------------+---------------+-------------+-----------------+----------------------+--------+-----------------------+
+| localhost    | MMC_STATUS | *14695FC49478AC013A63030250DD44DE579D54E1 | N           | N           | N           | N           | N           | N         | N           | N             | N            | N         | N          | N               | N          | N          | N            | N          | N                     | N                | N            |
+----
+
+. 使用以下命令授予权限。对于`<password>`参数，粘贴您在上一步中复制的41位十六进制数。
++
+
+[source, code, linenums]
+----
+GRANT ALL PRIVILEGES ON <database>.* TO '<user>'@'<host|net>' IDENTIFIED BY PASSWORD '<password>' WITH GRANT OPTION;
+----
+
+. 通过以下命令告诉MySQL服务器重新加载授权表。
++
+
+[source, code, linenums]
+----
+FLUSH PRIVILEGES;
+----
+
+[TIP]
+====
+*Details and usage example for the GRANT ALL PRIVILEGES command*
+
+`<host|net>`的值可以是主机或网络规范。可以使用通配符，例如`'MMC_STATUS'@'172.16.0.%'`。
+
+`<password>`的值是代表密码的41位十六进制数字。要获取用户的密码，请从`mysql`提示符处运行以下命令。
+
+[source, code, linenums]
+----
+SELECT * FROM user WHERE User = '<user>';
+----
+
+一个完整的命令示例如下。
+
+[source, code, linenums]
+----
+mysql> GRANT ALL PRIVILEGES ON mmc_persistency_status.* TO 'MMC_STATUS'@'192.168.56.1' IDENTIFIED BY PASSWORD '*14695FC49478AC013A63030250DD44DE579D54E1' WITH GRANT OPTION;
+Query OK, 0 rows affected (0.01 sec)
+----
+====
+
+[NOTE]
+====
+使用telnet命令测试远程连接
+
+如果您不确定MySQL服务器的配置，但确定您已连接到MySQL服务器主机和端口_（即您确定没有路由问题，防火墙等阻止连接），那么您可以使用{{ 0}}命令来执行MySQL服务器的远程测试。
+
+如果MySQL服务器不接受远程连接，即使服务器确实在监听指定的主机和端口，尝试远程登录到MySQL主机和端口也会生成"Connection refused error,"。
+
+[source, code, linenums]
+----
+~> telnet xubuntu 3306
+Trying 192.168.56.2...
+telnet: connect to address 192.168.56.2: Connection refused
+telnet: Unable to connect to remote host
+~>
+----
+
+如果MySQL服务器正在接受远程连接，但没有允许远程连接的用户，则输出如下所示。在这个例子中，连接成功，但被远程主机关闭。
+
+[source, code, linenums]
+----
+~> telnet xubuntu 3306
+Trying 192.168.56.2...
+Connected to xubuntu    .
+Escape character is '^]'.
+<Host 'mac' is not allowed to connect to this MySQL serverConnection closed by foreign host.
+~>
+----
+
+如果与MySQL服务器的连接正常工作，并且服务器授予用户访问权限，则输出与以下内容类似。
+
+[source, code, linenums]
+----
+~>
+Trying 192.168.56.2...
+Connected to xubuntu.
+Escape character is '^]'.
+[
+5.5.32-0ubuntu0.12.04.1.1asB.^p�h"kx9Pf1]ecBmysql_native_password
+----
+
+如果您获得此输出，但无法成功将管理控制台连接到远程MySQL服务器，那么管理控制台配置可能有问题。有关详细信息，请查看Mule或Web应用程序服务器中的日志。
+====
+
+== 持久性交易数据
+
+要设置MySQL来保存您的MMC交易数据，您需要完成以下步骤：
+
+. 创建数据库。
+. 创建数据库用户。
+. 设置MMC。
+.  <<Modifying the Cleanup Script For MySQL>>。
+
+=== 创建数据库
+
+使用以下参数创建一个新数据库：
+
+*  **Database name:** `event_tracker`
+*  **Database owner:** `MMC_EVENTS`
+
+=== 创建数据库用户
+
+使用默认权限和以下参数创建一个新的数据库用户：
+
+*  **Username:** `MMC_EVENTS`
+*  **Password:** `mmc123`
+
+=== 设置MMC以使用MySQL保存交易数据
+
+==== 获取MySQL驱动程序
+
+.  http://dev.mysql.com/downloads/connector/j/5.0.html[下载]最新的MySQL驱动程序。 （您需要免费下载Oracle帐户。）该驱动程序称为`mysql-connector-java-<version>`，例如`mysql-connector-java-5.1.26`。您可以将驱动程序作为zip或tar.gz文件下载。
+. 解压zip或tar.gz安装文件。在生成的目录结构中，找到名为`mysql-connector-java-<version>-bin.jar`的文件。这是jbdc驱动程序本身，您将复制到管理控制台目录结构。
+
+===== 安装驱动程序
+
+将MySQL jdbc驱动程序`mysql-connector-java-<version>-bin.jar`复制到以下目录：`<MMC_HOME>/WEB-INF/lib.`
+
+==== 特定于数据库的配置
+
+===== 配置文件：`persistence.xml`
+
+（目录：`<MMC_HOME>/` WEB-INF /类/ META-INF）`
+
+. 在上面列出的目录中，找到文件`persistence.xml`。
+. 打开文件进行编辑，然后找到下面列出的行。
++
+
+[source, xml, linenums]
+----
+<property name="openjpa.jdbc.DBDictionary" value="org.apache.openjpa.jdbc.sql.H2Dictionary(batchLimit=-1)" />
+----
+
+. 按照以下方式编辑该行。
++
+
+[source, xml, linenums]
+----
+<property name="openjpa.jdbc.DBDictionary" value="mysql" />
+----
+
+===== 配置文件：`applicationContext-tracking.xml`
+
+（目录：与之前的文件相同（`<MMC_HOME>/` WEB-INF / classes / META-INF）。）`
+
+. 在上面列出的目录中，找到文件`applicationContext-tracking.xml`。
+. 打开文件进行编辑。
+. 根据下面的列表查找bean `dataSource`和`jpaAdapter`。
+
+[source, xml, linenums]
+----
+<bean id="dataSource" class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+        <property name="driverClassName" value="com.mysql.jdbc.Driver" />
+        <property name="url" value="jdbc:mysql://<db_host>:3306/event_tracker" />
+        <property name="username" value="MMC_EVENTS" />
+        <property name="password" value="mmc123" />
+    </bean>   
+ 
+[...]
+ 
+    <bean id="jpaAdapter" class="org.springframework.orm.jpa.vendor.OpenJpaVendorAdapter">
+        <property name="databasePlatform" value="mysql" />
+    </bean>
+----
+
+=== 修改MySQL的清理脚本
+
+MMC包含一个脚本来执行MMC数据库的例行清理，默认情况下每天在午夜发生。当前的MySQL脚本包含一个导致MySQL抛出SQL异常的错误。为避免此问题，请通过完成以下步骤将原始脚本替换为下面提供的脚本。
+
+==== 新的清理脚本
+
+新的清理脚本
+
+[source, java, linenums]
+----
+import javax.persistence.EntityManager;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.Persistence;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import com.mulesoft.mmc.tracking.repository.jpa.entities.*
+ 
+import java.util.Calendar;
+ 
+def logger = log
+ 
+def oneWeekAgo = Calendar.getInstance()
+oneWeekAgo.add(Calendar.DAY_OF_MONTH, -7);
+ 
+log.info("About to delete all tracking details older than "+oneWeekAgo.getTime());
+ 
+DriverManagerDataSource ds = applicationContext.getBean("dataSource");
+ 
+Properties properties = new Properties();
+properties.put("openjpa.jdbc.DBDictionary", "mysql"); 
+properties.put("javax.persistence.jdbc.url", ds.getUrl());
+properties.put("javax.persistence.jdbc.user", ds.getUsername());
+properties.put("javax.persistence.jdbc.password", ds.getPassword());
+properties.put("openjpa.ConnectionDriverName", "com.mysql.jdbc.Driver");
+ 
+EntityManagerFactory emf = null;
+EntityManager em = null;
+ 
+try {
+     
+    emf = Persistence.createEntityManagerFactory("tracking-persistence-unit", properties);
+ 
+    em = emf.createEntityManager();
+ 
+    em.getTransaction().begin();
+ 
+    em.createNativeQuery("DELETE p FROM EVENT_PROPERTIES p where p.id in (select e.id from EVENTS e where e.transaction_id in (select t.id from TRANSACTION_SUMMARIES t where t.timestamp < ?1))").setParameter(1, oneWeekAgo).executeUpdate();
+             
+    em.createNamedQuery(EventEntity.DELETE_OLDER_THAN_QUERY_NAME).setParameter("timestamp", oneWeekAgo).executeUpdate();
+            em.createNamedQuery(TransactionSummaryEntity.DELETE_OLDER_THAN_QUERY_NAME).setParameter("timestamp", oneWeekAgo).executeUpdate();
+ 
+    em.getTransaction().commit();
+ 
+} catch (RuntimeException re)
+    {
+        if (em?.getTransaction()?.isActive()) {
+            em.getTransaction().rollback();
+        }
+        throw re;
+    }
+ 
+finally {
+    em?.close();
+    emf?.close();   
+}
+----
+
+
+==== 替换旧脚本
+
+. 登录到MMC。
+. 转到*Administration*标签，然后是*Admin Shell*。你应该看到下面的屏幕。 +
+
++
+image:admin_shell.png[admin_shell] +
++
+
+. 点击右侧列中的*Cleanup Tracking DB*。这将在编辑框中显示脚本的内容，如下所示。 +
+
++
+image:admin_shell2.png[admin_shell2] +
++
+
+. 现在您可以根据需要编辑脚本。删除脚本的所有内容，将编辑器留空。
+. 将<<New Cleanup Script>>复制粘贴到编辑器中。
+. 点击*Save*。这会导致新脚本覆盖旧脚本。
+
+== 另请参阅
+
+* 详细了解 link:/mule-management-console/v/3.4/setting-up-mmc[MMC设置]。
+* 查看 link:/mule-management-console/v/3.4/architecture-of-the-mule-management-console[Mule管理控制台的架构]。

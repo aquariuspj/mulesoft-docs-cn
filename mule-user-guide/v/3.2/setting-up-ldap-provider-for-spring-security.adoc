@@ -1,0 +1,74 @@
+= 为Spring Security设置LDAP提供程序
+
+
+image:arrow_closed_active_16.png[arrow_closed_active_16]点击以显示页面ToC
+
+
+本页描述如何配置Spring Security LDAP提供程序，它可以被Mule 2.2或更高版本使用，如下所示：
+
+* 通过 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/module/spring/security/SpringProviderAdapter.html[SpringProviderAdapter]作为其安全提供商
+* 执行 link:/mule-user-guide/v/3.2/component-authorization-using-spring-security[组件授权]
+
+有关配置内存提供程序的信息，请参阅 link:/mule-user-guide/v/3.2/configuring-security[配置安全性]。
+
+== 声明豆
+
+您必须在Spring中设置两个bean，一个 http://static.springsource.org/spring-security/site/docs/3.0.x/apidocs/org/springframework/security/ldap/DefaultSpringSecurityContextSource.html[DefaultSpringSecurityContextSource]和一个 http://static.springframework.org/spring-security/site/docs/3.0.x/apidocs/org/springframework/security/ldap/authentication/LdapAuthenticationProvider.html[LdapAuthenticationProvider可疑]。 `DefaultSpringSecurityContextSource`是用于获取LDAP上下文的接入点，`LdapAuthenticationProvider`提供了与LDAP服务器的集成。例如：
+
+[source, xml, linenums]
+----
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:mule="http://www.mulesource.org/schema/mule/core"
+       xmlns:mule-ss="http://www.mulesource.org/schema/mule/spring-security"
+       ...cut...
+
+  <bean id="contextSource"      class="org.springframework.security.ldap.DefaultSpringSecurityContextSource">
+     <constructor-arg value="ldap://localhost:389/dc=com,dc=foobar"/>
+     <property name="userDn" value="cn=root,dc=com,dc=foobar"/>
+     <property name="password" value="secret"/>
+  </bean>
+
+  <bean id="authenticationProvider"class="org.springframework.security.ldap.authentication.LdapAuthenticationProvider">
+    <constructor-arg>
+       <bean class="org.springframework.security.authentication.ldap.authenticator.BindAuthenticator">
+           <constructor-arg ref="contextSource"/>
+           <property name="userDnPatterns">
+               <list><value>uid={0},ou=people</value></list>
+           </property>
+       </bean>
+     </constructor-arg>
+     <constructor-arg>
+       <bean class="org.springframework.security.ldap.populator.DefaultLdapAuthoritiesPopulator">
+           <constructor-arg ref="contextSource"/>
+           <constructor-arg value="ou=groups"/>
+           <property name="groupRoleAttribute" value="ou"/>
+       </bean>
+     </constructor-arg>
+
+  </bean>
+----
+
+== 配置Mule安全提供程序
+
+`SpringSecurityProviderAdapter`委派给`AuthenticationProvider`，例如`LdapAuthenticationProvider`。
+
+[source, xml, linenums]
+----
+<mule-ss:security-manager>
+    <mule-ss:delegate-security-provider name="spring-security-ldap" delegate-ref="authenticationManager"/>
+</mule-ss:security-manager>
+----
+
+通过上述配置，您可以在需要一个或多个安全提供程序的Mule中实现端点级安全性和其他安全性功能。
+
+== 配置MethodSecurityInterceptor
+
+组件授权的配置与 link:/mule-user-guide/v/3.2/component-authorization-using-spring-security[使用Spring Security的组件授权]中所述的配置类似。配置的关键点是`securityMetadataSource`：
+
+[source, xml, linenums]
+----
+<property name="securityMetadataSource" value="org.mule.api.lifecycle.Callable.onCall=ROLE_MANAGERS"/>
+----
+
+角色由您在前面章节中配置的`DefaultLdapAuthoritiesPopulator`查找。默认情况下，角色的前缀为`ROLE_`，其值会从`groupRoleAttribute`定义的LDAP属性中提取并转换为大写。

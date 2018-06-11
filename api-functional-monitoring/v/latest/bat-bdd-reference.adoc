@@ -1,0 +1,406 @@
+=  BDD测试写作语言参考
+
+行为驱动开发（BDD）是编写用于在DataWeave中处理的BAT测试的语法。 BDD是一种嵌入式领域专用语言（EDSL），类似于其他测试框架，如Mocha和Jasmine。
+
+每次BAT测试都需要以下声明：
+
+`import * from bat::BDD`
+
+此语句导入域特定语言（DSL）测试库BDD.dwl，该库定义您在编写时经常使用的单词，例如describe，it，GET，POST和sleep）。
+
+该语句导入常见匹配器，例如mustEqual，mustMatch，every，oneOf和assert。
+
+以下示例显示了您通常如何开始编写测试：
+
+[source,code,linenums]
+----
+import * from bat::BDD
+import * from bat::Assertions
+import * from bat::Mutable
+
+
+var context = HashMap()
+---
+describe("the login flow") in [
+  it("tries a secured endpoint") in [
+    GET `http://127.0.0.1:4567/secured_by_token` with {
+
+    } assert [
+      $.response.status mustEqual 401,
+    ]
+  ],
+  it("gets the access token") in [
+    POST `http://127.0.0.1:4567/get_access_token` with {} assert [
+      $.response.body.new_token mustMatch /accessToken_\d+/,
+    ] execute [
+      context.set('token', $.response.body.new_token)
+    ] assert [
+      context.get('token') mustMatch /accessToken_\d+/,
+      context.get('token') mustEqual $.response.body.new_token,
+      $.response.status mustEqual 200,
+    ]
+  ],
+  it("tries to get a secured endpoint") in [
+    GET `http://127.0.0.1:4567/secured_by_token/header` with {
+      headers: {
+        Authorization: context.get('token')
+      }
+    } assert [
+      $.request.headers.Authorization mustEqual context.get('token'),
+      $.response.status mustEqual 200
+    ]
+  ]
+]
+----
+
+== 关于测试文件
+
+为每个功能场景创建一个`.dwl`文件。建议使用基于文件夹的文件组织。该组织容纳BAT测试产生的报告。例如：
+
+----
+tests
+├── CoreServices
+│   └── Sanity.dwl
+└── DesignCenter
+    ├── APIDesigner
+    │   └── Designer.dwl
+    └── MyFolder
+        ├── DataSense.dwl
+        └── GetProjects.dwl
+----
+
+测试文件必须包含`describe`表达式。
+
+----
+import * from bat::BDD
+---
+describe `Demo scenario` in [
+
+]
+----
+
+测试套件必须包含至少一个测试（.dwl）文件。
+
+== 测试块
+
+测试块使测试更具可读性。您可以将每个测试块编写为函数调用或自定义插值函数。
+
+=== 测试关键字
+
+在测试中，您使用以下关键字并遵循Fowler的_GivenWhenThen_结构：
+
+[%header,cols="3*a"]
+|===
+|函数名称 |描述 |如果失败，则停止执行
+| `describe`    |对于可嵌套为深层的分组，可为报告添加上下文信息 |否
+| `scenario`    |与描述相同 |否
+| `suite`       |与描述相同 |否
+| `given`       |测试步骤，用于准备 |是的
+| `when`        |测试步骤，通常用于创建副作用 |是
+| `it`          |测试步骤，验证 |否
+| `should`      |测试步骤 |否
+| `must`        |测试步骤 |是的
+| `it should "str"` |测试步骤 |否
+| `it must ""`  |测试步骤 |是的
+| `while`  |测试步骤 | 否
+| `until`  |测试步骤 | 否
+|===
+
+=== 关于测试块
+
+测试块具有简写名称，可以跳过描述为`x<name>`的块。例如，`describe`的跳过版本是`xdescribe`。
+
+[source,code,linenums]
+----
+describe("A flow")  in [ ... ] // Describes a sequence of test blocks
+xdescribe("A flow") in [ ... ] // The same, but skipped.
+
+describe `A flow` in [ ... ]   // The same as describe, but with a custom interpolation
+xdescribe `A flow` in [ ... ]  // The same, but skipped.
+----
+
+=== 关于自定义插值器
+
+自定义内插器提供了一种调用函数并分解两个列表中的插值的方法：
+
+* 第一个列表包含所有字符串文字。
+* 第二个包含插值。
+
+您不需要将值转换为字符串。在反引号（```）中附上自定义插值文本和值。
+
+以下块中的每个项目都可以用作自定义插值器，并具有`x<name>`版本。
+
+[source,code,linenums]
+----
+import * from bat::BDD         // <-----
+import * from bat::Assertions
+---
+describe `User trades stocks` in [
+  scenario `User requests a sell before close of trading` in [
+    given `I have 100 shares of MSFT stock` in [
+      POST `http://broker/create_stocks` with {
+        body: {
+          quantity: 100,
+          paper: 'MSFT'
+        }
+      } assert [
+        $.response.status == 201
+      ]
+    ],
+    given `I have 150 shares of APPL stock` in [
+      POST `http://broker/create_stocks` with {
+        body: {
+          quantity: 150,
+          paper: 'APPL'
+        }
+      } assert [
+        $.response.status == 201
+      ]
+    ],
+    when `I ask to sell 20 shares of MSFT stock` in [
+      POST `http://broker/sell_stocks` with {
+        body: {
+          quantity: 20,
+          paper: 'APPL'
+        }
+      } assert [
+        $.response.status == 201
+      ]
+    ],
+    it should "have 80 shares of MSFT stock" in [
+      GET `http://broker/get_stocks/MSFT` with {
+        headers: {}
+      } assert [
+        $.response.status == 200,
+        $.response.body.quantity == 80
+      ]
+    ],
+    it should "have 150 shares of APPL stock" in [
+      GET `http://broker/get_stocks/APPL` with {
+        headers: {}
+      } assert [
+        $.response.status == 200,
+        $.response.body.quantity == 150
+      ]
+    ]
+  ]
+]
+----
+
+You can also write the block without custom interpolators to conform to your coding style guide. This doesn't affect behavior:
+
+[source,code,linenums]
+----
+import * from bat::BDD         // <-----
+import * from bat::Assertions
+---
+describe("User trades stocks") in [
+  scenario("User requests a sell before close of trading") in [
+    given("I have 100 shares of MSFT stock") in [
+      POST `http://broker/create_stocks` with {
+        body: {
+          quantity: 100,
+          paper: 'MSFT'
+        }
+      } assert [
+        $.response.status == 201
+      ]
+    ],
+    given("I have 150 shares of APPL stock") in [
+      POST `http://broker/create_stocks` with {
+        body: {
+          quantity: 150,
+          paper: 'APPL'
+        }
+      } assert [
+        $.response.status == 201
+      ]
+    ],
+    when("I ask to sell 20 shares of MSFT stock") in [
+      POST `http://broker/sell_stocks` with {
+        body: {
+          quantity: 20,
+          paper: 'APPL'
+        }
+      } assert [
+        $.response.status == 201
+      ]
+    ],
+    should("have 80 shares of MSFT stock") in [
+      GET `http://broker/get_stocks/MSFT` with {
+        headers: {}
+      } assert [
+        $.response.status == 200,
+        $.response.body.quantity == 80
+      ]
+    ],
+    should("have 150 shares of APPL stock") in [
+      GET `http://broker/get_stocks/APPL` with {
+        headers: {}
+      } assert [
+        $.response.status == 200,
+        $.response.body.quantity == 150
+      ]
+    ]
+  ] 
+]
+----
+
+== 控制执行和删除资产
+
+如果在测试中出现故障，则需要删除所有已创建的资产。例如，用户创建资产，执行验证，然后删除它。
+通常，验证失败，并且由于它打破了测试，资产不会被删除，您的数据库将开始累计测试数据。通常这意味着将`must`更改为`should`，以便执行可以继续，但不会离开
+资产失败。
+
+错误的例子：
+
+如果第6行中的更新名称失败，则该项目不会被删除，因为执行会停止。
+
+[source,code,linenums]
+----
+describe `update project names` in [
+  it must 'create a project' in [
+    createProject()     // OK
+  ],
+  it must 'update the name' in [
+    updateProjectName() // FAILS
+  ],
+  // Because the previous step is a `must` that failed, execution stops here and the next steps don't execute
+  it must 'clean up deleting the project' in [
+    deleteProject()     // CANCELLED
+  ]
+]
+----
+
+使用这些保留字包装步骤以停止或允许执行继续：
+
+*  `should`意味着某些东西可能会失败，但对测试来说不是强制性的。
+*  `must`意味着某些内容（如项目创建）必须执行才能继续。
+
+正确的例子：
+
+[source,code,linenums]
+----
+describe `update project names` in [
+  it must 'create a project' in [
+    /**
+     * Project creation is a MUST, because in this scenario
+     * we depend on the created project to continue.
+     */
+    createProject()     // OK
+  ],
+  it should 'update the name' in [
+    /**
+     * Validations are should because the execution must continue
+     * if the validation fails.
+     */
+    updateProjectName() // FAILS
+  ],
+  // Because the previous step is a should and it failed, continue executing.
+  it must 'clean up deleting the project' in [
+    deleteProject()     // OK
+  ]
+]
+----
+
+== 选择性地执行步骤
+
+如果结果为假，`assuming`函数将跳过测试。该命令具有以下语法：
+
+`[TestBlockExpression] assuming [BooleanExpression] in ...`
+
+例如：
+
+[source,code,linenums]
+----
+describe `E2E Scenario` in [
+  it should 'always do something' in [
+    doSomething()
+  ],
+  it should 'do something else' in [
+    doSomethingElse()
+  ],
+  it should 'sometimes, do something else' assuming (random() > 0.5) in [
+    // This is executed randomly, based on          ^^^^^^^^^^^^^^^^ that condition
+    doSomethingElse()
+  ],
+  it should 'do something in dev environments' assuming (config.env == 'DEV') in [
+    // This is executed only when                       ^^^^^^^^^^^^^^^^^^^^^ that == true
+    doSomethingElse()
+  ]
+]
+----
+
+为了使代码更具可读性和可理解性，您可以为此函数使用两个别名。 `when`和`whenNot`。例如：
+
+[source,code,linenums]
+----
+describe `E2E Scenario` in [
+  it should 'always do something' in [
+    doSomething()
+  ],
+  it must 'do something else' when config.runSanity in [
+    doSomethingElse()
+  ],
+  it should 'do something else' when a == b in [
+    doSomethingElse()
+  ],
+  it should 'do something in dev environments' whenNot config.isSmokeTests in [
+    doSomethingElse()
+  ]
+]
+----
+
+== 执行循环句子
+
+while或until函数在（或直到）条件变为真或假时运行测试。
+
+while函数的签名：
+
+*  `while( sentence , condition, time per request, number of retries)`
+*  `do { sentence } while (condition) //-> Default values: 1 second and 3 retries`。
+
+until函数的签名：
+
+*  `until( sentence , condition, time per request, number of retries)`
+*  `do { sentence } until (condition) //-> Default values: 1 second and 3 retries`。
+
+例：
+
+[source,java,linenums]
+----
+dwl
+import * from bat::BDD
+import * from bat::Assertions
+import * from bat::Types
+---
+suite("Example for until and while") in [
+  it should 'test the while prefix' in [
+    while(() -> GET `http://apimon.cloudhub.io/users` with {}, 
+    (x: BATHttpStep) -> x.result.response.status != 200, 10000, 5)
+  ],
+  it should 'test the while infix' in [
+    do {
+      () -> GET `http://apimon.cloudhub.io/users` with {} assert [
+          $.response.status mustEqual 200
+        ]
+    } while ($.response.status != 200)
+  ],
+  it should 'test the until prefix' in [
+    until(() -> GET `http://apimon.cloudhub.io/users` with {}, 
+     (x: BATHttpStep) -> x.result.response.status != 200, 10000, 5)
+  ],
+  it should 'test the until infix' in [
+    do {
+      () -> GET `http://apimon.cloudhub.io/users` with {} assert [
+          $.response.status mustEqual 200
+        ]
+    } until ($.result.response.status != 200)
+  ]
+]
+----
+
+== 另请参阅
+
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。

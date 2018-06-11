@@ -1,0 +1,835 @@
+数据库连接器= 
+
+*Database Connector*允许您针对每种情况使用单一接口连接几乎任何Java数据库连接（JDBC）关系数据库。数据库连接器允许您在数据库上运行不同的SQL操作，包括选择，插入，更新，删除甚至存储过程。
+
+*Note*：数据库连接器替换JDBC连接器。从Mule 3.5.0开始，JDBC连接器已被弃用。
+
+通过数据库连接器，您可以执行预定义的查询以及将连接器的输入指定为变量参数或者动态构建查询部分的查询。数据库连接器还允许使用既自足又可自定义的模板查询。您也可以在单个批量更新中执行多个SQL请求。该连接器还允许您执行数据定义语言（DDL）请求，这些请求会更改数据结构而不是数据本身。数据库连接器可用于Mule Community和Mule Enterprise运行时。
+
+== 假设
+
+本文档假定您熟悉数据库，并使用 http://www.w3schools.com/sql/sql_syntax.asp[SQL语法]。为了完成这里介绍的示例，我们假设您可以访问必须连接到的数据库，并且已经为数据库下载了适当的数据库驱动程序。
+
+== 基本解剖学
+
+在Mule应用程序中使用数据库连接器：
+
+. 检查您的数据库引擎是否为<<ForDatabase Engines Supported Out of the Box>>;如果不是，则为数据库引擎添加数据库驱动程序
+
+. 配置您定义的数据库全局元素
+
+.. 您的数据库的位置和连接详细信息
+
+.. 是否启用DataSense
+.. 高级连接参数，例如连接池
+
+. 配置您在Mule流中嵌入的数据库连接器元素，其中+
+
+.. 包含要在数据库上执行的查询
+
+.. 引用数据库全局元素
+
+但是，要充分利用连接器的设计时功能，请考虑将它与以下Mule功能结合使用：
+
+*  *DataSense*：启用时，DataSense使用查询语句中的信息（在数据库连接器中配置）自动提取有关应用程序必须传递给或可能期望从数据库传递的消息的元数据。通过启用此功能（在全局数据库连接器元素中），Mule会发现必须发送到的数据类型，或准备从数据库接收数据。
+
+*  *DataMapper transformer*：当与启用DataSense的数据库连接器配合使用时，DataMapper可以自动提取可用于可视化地映射和/或转换为不同数据格式或结构的消息元数据。例如，如果您在应用程序中配置了数据库连接器，然后将DataMapper放在其后，DataMapper使用DataSense提取的信息预先填充输入值以进行映射，以便您只需确认（或调整）选择，然后继续映射到您想要的输出。换句话说，DataSense确保DataMapper确定它必须工作的数据格式和结构，因此您不必手动将其解决。
+
+有关DataSense和DataMapper的最佳设计时实践的更多信息，请参阅 link:/mule-user-guide/v/3.6/datasense[DataSense文档]。
+
+== 支持的操作
+
+数据库连接器支持以下操作：
+
+* 选择
+
+* 插入
+
+* 更新
+
+* 删除
+
+* 存储过程
+
+* 批量执行
+
+*  DDL操作，如CREATE，ALTER等。
+
+另外，通过选择*Update*作为操作，您可以在数据库上运行TRUNCATE查询。
+
+== 配置数据库连接器
+
+下面的例子说明了Studio中一个非常简单的Mule应用程序，它满足最低配置要求：配置的数据库连接器，配置的全局数据库连接器和安装的数据库驱动程序当然，在应用程序的图形表示中可见的这三个必需部件中只有一个是数据库连接器本身。
+
+image:db_example_flow.png[图片]
+
+要准备应用程序以使用数据库连接器（如上例所示），必须先将数据库的驱动程序添加到Mule项目中，然后至少配置Database Connector元素和Global Database Connector元素的必需参数。下面的图表和部分描述了如何解决这些要求。
+
+image:modif_flowchart.png[图片]
+
+开箱即用支持=== 数据库引擎
+
+数据库连接器目前包含三种数据库引擎的开箱即用支持：
+
+* 的Oracle
+
+* 的MySQL
+
+* 德比
+
+所有其他数据库引擎（包括MS SQL）均受*Generic Database Configuration*选项支持。
+
+[WARNING]
+====
+请注意，下面的步骤根据您尝试连接到其中一个支持的DB或不支持的DB而不同，请仅遵循与您的用例相对应的那些DB。
+====
+
+使用通用数据库配置时，需要手动导入数据库引擎的驱动程序，并将驱动程序类别指定为连接参数之一。这使您可以将数据库连接器与任何您拥有驱动程序的数据库引擎配合使用。
+
+有关为上述任何情况配置数据库连接器的详细信息，请参阅下面的部分。
+
+*Adding the Database Driver*
+
+ForDatabase引擎立即支持=== 
+
+对于直接支持的数据库引擎，添加数据库驱动程序的最简单方法是使用全局元素配置窗口中的*Add File*按钮。以下是创建全局数据库连接器并添加驱动程序所需步骤的简要总结。有关完整的配置详细信息，包括连接参数和高级设置，请参阅下面的<<Configuring the Database Connector for Your Application>>。
+
+为即开即用的数据库引擎添加数据库驱动程序：
+
+. 确保您已下载数据库驱动程序，并确保它在您的计算机上可用。
+
+. 将Studio构图板中的*Database*构建块拖放到画布上。
+
+. 点击*Database*构建块打开其属性编辑窗口。
+
+. 单击*Connector configuration*右侧的 image:plus.png[图片]图标为此数据库连接器创建数据库全局元素。
++
+image:choose.global.type.png[图片]
+
+
+.  Studio将显示*Global Element Properties*窗口，如下所示。在窗口的底部可以找到*Required dependencies*部分。点击*Add File*，为您的数据库驱动添加`.jar`文件。
++
+image:add.driver.oracle.png[图片]
+
+. 浏览并选择数据库驱动程序的`.jar`文件。驱动程序会自动添加到项目中。
+
+如果需要在安装后修改驱动程序（例如，升级驱动程序版本时），则可以使用相同的配置窗口。 *Add File*按钮被替换为*Modify*按钮（如下所示，安装了MySQL驱动程序）。点击*Modify*，您可以编辑项目的Java构建路径。
+
+image:installed_mysql_driver.png[图片]
+
+==== 支持开箱即用的数据库引擎
+
+要为通用安装安装数据库驱动程序，请按照以下步骤操作。
+
+[tabs]
+------
+[tab,title=" Studio Visual Editor"]
+....
+. If you haven't already done so, download the driver for your particular database. For example, the driver for a MySQL database is available for http://dev.mysql.com/downloads/connector/j/[download] online.
+. Drag and drop the driver's jar file from your local drive to the root folder in your project.
+. Add the `.jar` file to the build path of your project. Right click the project name, then select *Build Path > Configure Build Path…*
+. In the wizard that appears, click the *Libraries* tab, then click *Add Jars…*
+. Navigate to the root folder in your project, then select the .jar file for your database driver.
+. Click *OK* to save, then *OK* to exit the wizard. Notice that your project now has a new folder named *Referenced Libraries* in which your database driver `.jar` resides. +
+ +
+image:pack_explorer.png[pack_explorer]
+....
+[tab,title="XML Editor or Standalone"]
+....
+. If you haven't already done so, download the driver for your particular database. For example, the driver for a MySQL database is available for http://dev.mysql.com/downloads/connector/j/[download] online.
+. Add the driver's `.jar` file to the root folder  in your project. In Studio, you can drag and drop the file from your local drive into the project folder.
+. Add the `.jar` file to the build path of your project.
+....
+------
+
+在不支持开箱即用的数据库引擎添加数据库驱动程序之后，需要在数据库连接器引用的全局元素中输入驱动程序类的完全限定名称。
+
+==== 配置全局数据库连接器
+
+*Configuring for Database Engines Supported Out of the Box*
+
+目前，下列数据库引擎是开箱即用的：
+
+* 的Oracle
+* 的MySQL
+* 德比
+
+本节介绍如何配置数据库连接器以用于任何这些数据库。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+*REQUIRED:*  The following table describes the attributes of the Global Database connector element that you  _must_ configure to be able to connect, then submit queries to a database. For a full list of elements, attributes, and default values, consult the  link:/mule-user-guide/v/3.6/database-connector-reference[Database Connector Reference] .
+
+*Oracle*
+
+[%header%autowidth.spread]
+|===
+|Attribute, Required |Use |Properties Editor
+|*Name* |Use to define a unique identifier for the global Database connector element in your application. .6+| image:oracle_global_elem.png[image]
+|*Database Configuration Parameters* +
+
+OR +
+
+*Configure via spring-bean* +
+
+OR +
+
+*Database URL * |Use to define the details needed for your connector to actually connect with your database. When you have completed the configuration, click *Test Connection...* to confirm that you have established a valid, working connection to your database.
+|*Required dependencies* |Click *Add File* to add the database driver to your project. See Adding the Database Driver above for details.
+|===
+
+*MySQL*
+
+[%header%autowidth.spread]
+|===
+|Attribute, Required |Use |Properties Editor
+|*Name* |Use to define a unique identifier for the global Database connector element in your application. .6+|  image:mysql_global_elem.png[image]
+|*Database Configuration Parameters* +
+
+OR +
+
+*Configure via spring-bean* +
+
+OR +
+
+*Database URL * |Use to define the details needed for your connector to actually connect with your database. When you have completed the configuration, click *Test Connection...* to confirm that you have established a valid, working connection to your database.
+|*Required dependencies* |Click *Add File* to add the database driver to your project. See Adding the Database Driver above for details.
+|===
+
+*Derby*
+
+[%header%autowidth.spread]
+|===
+|Attribute, Required |Use |Properties Editor
+|*Name* |Use to define a unique identifier for the global Database connector element in your application. .6+| image:derby_global_elem.png[image]
+|*Database Configuration Parameters* +
+
+OR +
+
+*Configure via spring-bean* +
+
+OR +
+
+*Database URL * |Use to define the details needed for your connector to actually connect with your database. When you have completed the configuration, click *Test Connection...* to confirm that you have established a valid, working connection to your database.
+|*Required dependencies* |Click *Add File* to add the database driver to your project. See Adding the Database Driver above for details.
+|===
+
+**OPTIONAL:**  The following table describes the attributes of the element that you can  _optionally_  configure to customize some functionality of the Global Database Connector. For a full list of elements, attributes and default values, consult the  link:/mule-user-guide/v/3.6/database-connector-reference[Database Connector Reference] .
+
+[%header%autowidth.spread]
+|===
+|Attribute, Optional |Use |Properties Editor
+3+|*General tab*
+|*Enable DataSense* |Use to "turn on" DataSense, which enables Mule to make use of message metadata during design time. | image:config_enable_DS.png[image]
+3+|*Advanced tab*
+|*Use XA Transactions* |Enable to indicate that the created datasource must support extended architecture (XA) transactions. .6+| image:Advanced+GE.png[image]
+|*Connection Timeout* |Define the amount of time a database connection remains securely active during a period of non-usage before timing-out and demanding logging in again.
+|*Transaction isolation* |Define database read issue levels.
+|*Driver Class Name* |The fully qualified name of the database driver class.
+|*Advanced Parameters* |Send parameters as key-value pairs to your DB. The parameters that can be set depend on what database software you are connecting to.
+|*Connection Pooling* a|Define values for any of the connection pooling attributes to customize how your Database Connector reuses connections to the database. You can define values for:
+
+* Max Pool Size
+* Min Pool Size
+* Acquire Increment
+* Prepared Statement Cache Size
+* Max Wait Millis
+|===
+....
+[tab,title="XML Editor"]
+....
+[%header%autowidth.spread]
+|===
+|Attribute |Use
+2+|DB Config `<db:generic-config>`
+|*name* |Use to define unique identifier for the global Database Connector element in your application.
+|*database* +
+
+*host* +
+
+*password* +
+
+*port* +
+
+*user* +
+
+*instance* (Oracle only) |Use to define the details needed for your connector to actually connect with your database. When you have completed the configuration, click *Test Connection...* to confirm that you have established a valid, working connection to your database.
+|*useXaTransactions* |Enable to indicate that the created datasource must support extended architecture (XA) transactions.
+|===
+
+[%header%autowidth.spread]
+|===
+|*Attribute* |*Use*
+2+|Pooling Profile  `<db:pooling-profile `/>
+|*driverClass Name* a|The fully qualified name of the database driver class.
+|*maxPoolSize* +
+
+*minPoolSize* +
+
+*acquireIncrement* +
+
+*preparedStatementCacheSize* +
+
+*maxWaitMillis* a|Define values for any of the connection pooling attributes to customize how your Database Connector reuses connections to the database. You can define values for:
+
+* Max Pool Size
+
+* Min Pool Size
+
+* Acquire Increment
+
+* Prepared Statement Cache Size
+
+* Max Wait Millis
+
+2+|*Connection Properties*  `<db:connection-properties>`
+|*Advanced Parameters* a|Send parameters as key-value pairs to your database. The parameters that can be set depend on what database software you are connecting to. Each parameter must be included in a separate tag, enclosed by connection properties like so:
+
+[source, xml, linenums]
+----
+<db:connection-properties>
+    <db:property name="myProperty" value="myValue"/>
+    <db:property name="myProperty2" value="myValue2"/>
+</db:connection-properties>
+----
+|===
+....
+------
+
+== 为其他数据库引擎进行配置（通用数据库配置）
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+REQUIRED: The following table describes the attributes of the Global Database Connector element that you must configure in order to be able to connect, then submit queries to a database.
+
+[%header%autowidth.spread]
+|===
+|Attribute, required	|Use	.4+|Properties Editor
+|*Name*	|Use to define unique identifier for the global Database Connector element in your application.
+|Configure via spring-bean |*Optional*. Configure this database connection by the Spring bean referenced in *DataSource Reference*. Mutually exclusive with *Database URL.*
+|*Database URL*	|*Optional* (can also be configured with *Configure via spring-bean*). The URL for the database connection. Mutually exclusive with *Configure via spring-bean.*
+|*Driver Class Name*	|Fully-qualified driver class name of the driver for your database, which must be already imported into your project. +
+  +
+When browsing the available driver classes, type the beginning of the driver class name (which you can check by clicking the driver file under Referenced Libraries in the Package Explorer). Studio will display the list of classes provided by the driver. +
+ +
+| image:global_elem-generic_DB-gral_tab.png[global_elem-generic_DB-gral_tab]
+|===
+
+*OPTIONAL*: The following table describes the attributes of the element that you can optionally configure to customize some functionality of the Global Database Connector.
+
+[%header%autowidth.spread]
+|===
+|Attribute, Optional	|Use	|Properties Editor
+3+|General tab
+|*Use XA Transactions*	|Enable to indicate that the created datasource must support extended architecture (XA) transactions. Default: `false`. | image:use_XA_transact.png[use_XA_transact]
+|*Enable DataSense* |Use to "turn on" DataSense, which enables Mule to make use of message metadata during design time. Default: `true`. | image:config_enable_DS.png[config_enable_DS]
+3+|Advanced tab
+|*Advanced Parameters*	|Send parameters as key-value pairs to your DB. The parameters that can be set depend on what database software you are connecting to. .3+| image:global_elem-generic_DB-adv_tab.png[global_elem-generic_DB-adv_tab]
+|*Connection Timeout*	|Define the amount of time a database connection remains securely active during a period of non-usage before timing-out and demanding logging in again.
+|*Connection Pooling*	|Define values for any of the connection pooling attributes to customize how your database connector reuses connections to the database. You can define values for: +
+* Max Pool Size +
+* Min Pool Size +
+* Acquire Increment +
+* Prepared Statement Cache Size +
+* Max Wait Millis
+|===
+....
+[tab,title="XML Editor"]
+....
+[%header%autowidth.spread]
+|===
+|Attribute	|Use
+2+|DB Config <db:generic-config>
+|*name*	|Use to define a unique identifier for the global Database Connector element in your application.
+|database .5+|Use to define the details needed for your connector to actually connect with your database. When you have completed the configuration, click *Test Connection...* to confirm that you have established a valid, working connection to your database.
+|host
+|password
+|port
+|user
+|*useXaTransactions* |Enable to indicate that the created datasource must support XA transactions.
+|===
+
+[%header%autowidth.spread]
+|===
+|Attribute	|Use
+2+|Pooling Profile  <db:pooling-profile/>
+|*driverClassName*	|The fully qualified name of the database driver class.
+|maxPoolSize .5+|Define values for any of the connection pooling attributes to customize how your database connector reuses connections to the database. You can define values for: +
+* Max Pool Size +
+* Min Pool Size +
+* Acquire Increment +
+* Prepared Statement Cache Size +
+* Max Wait Millis
+|minPoolSize
+|acquireIncrement
+|preparedStatementCacheSize
+|maxWaitMillis
+2+|Connection Properties  <db:connection-properties>
+|Advanced Parameters |Send parameters as key-value pairs to your database. The parameters that can be set depend on what database software you are connecting to. Each parameter must be included in a separate tag, enclosed by connection properties like so: +
+ +
+`<db:connection-properties>
+    <db:property name="myProperty" value="myValue"/>
+    <db:property name="myProperty2" value="myValue2"/>
+</db:connection-properties>`
+|===
+....
+------
+
+==== 常见的驱动程序类别规格
+
+为通用数据库服务器配置全局元素时，您需要输入驱动程序类的完全限定名称，如上表中“驱动程序类名称”单元格中所述。以下是一些最常见的数据库驱动程序提供的驱动程序类名称。
+
+[%header%autowidth.spread]
+|===
+|数据库 |驱动程序版本 |驱动程序类名称
+|的PostgreSQL  | `postgresql-9.3-1101.jdbc3.jar`  | `org.postgresql.Driver`
+| MS-SQL  | `sqljdbc4.jar`  | `com.microsoft.sqlserver.jdbc.SQLServerDriver`
+|===
+
+=== 为您的应用程序配置数据库连接器
+
+**REQUIRED:**下表描述了您必须配置才能连接的数据库连接器元素的属性，然后将查询提交给数据库。有关元素，属性和默认值的完整列表，请参阅 link:/mule-user-guide/v/3.6/database-connector-reference[数据库连接器参考]。
+
+[WARNING]
+====
+Oracle和Derby数据库受Mule支持，但为了正确配置它们，您无法通过Studio的Visual Interface执行，而是通过Studio的XML Editor执行此操作。
+====
+
+[%header%autowidth.spread]
+|===
+|属性，必需 |使用 |属性编辑器
+| *Display Name*  |用于为流中的数据库连接器元素定义唯一标识符。 0.5 + A | image:config_db_connector.png[图片]
+
+*Examples:*
+
+image:select.png[图片]
+
+image:insert_w_MEL.png[图片]
+
+image:truncate.png[图片]
+
+| *Config Reference*  |用于标识数据库连接器引用连接详细信息的全局数据库连接器元素等等。
+| *Operation* a |用于指示数据库连接器提交请求以在数据库中执行特定查询：
+
+* 选择
+* 插入
+* 更新
+* 删除
+* 存储过程
+* 批量执行
+* 执行DDL
+
+[TIP]
+====
+您也可以通过选择*Update*作为操作来运行TRUNCATE查询，如右下图所示。
+====
+
+| *Type* a |用于定义您希望用来向数据库提交查询的SQL语句的类型：
+
+* 参数
+* 动态
+* 来自模板
+
+有关更多详细信息，请参阅下面的<<Query Types>>。
+
+一个| *SQL Statement*
+
+要么
+
+*Template Query Reference* a |如果您选择使用参数化或动态查询类型，请使用此属性定义SQL语句本身。 +
+
+如果您选择使用From模板查询类型，请使用此属性来引用您在其中定义SQL语句的模板（在全局模板查询元素中定义）。有关更多详细信息，请参阅下面的配置来自模板查询。
+|===
+
+
+**OPTIONAL:**下表介绍了您可以自定义配置以自定义数据库连接器某些功能的元素的属性。有关元素，属性和默认值的完整列表，请参阅 link:/mule-user-guide/v/3.6/database-connector-reference[数据库连接器参考]。
+
+[TIP]
+====
+*Take advantage of Bulk Mode*
+
+启用此可选功能可以使用一个查询提交数据集合，而不是对集合中的每个参数集执行一个查询。启用批量模式可以提高应用程序的性能，因为它可以减少应用程序触发的单个查询执行次数。批量模式需要至少包含一个参数的参数化查询或至少包含一个表达式的动态查询。
+
+见下面的配置细节。
+====
+
+[%header%autowidth.spread]
+|===
+|属性，可选 |与操作一起使用 |使用 |属性编辑器
+4 + | *General tab*
+| *Parameter Name*  |参数化存储过程 |用于在应用程序提交查询时，在您希望在运行时使用该值的SQL语句中标识命名参数它调用存储在数据库实例中。 0.4 + | image:stored+procedure.png[图片]
+| *Parameter Type*  |参数化存储过程 |用于识别存储过程可能期望从查询语句接收的数据类型。
+| *IN/OUT*  |参数化存储过程a |定义存储过程的行为：
+
+*  IN存储过程只能接收数据
+*  OUT  - 存储过程只能预期返回数据
+*  INOUT  - 存储过程可以期望接收，然后返回数据
+| *Value*  |参数化存储过程 |用于定义应用程序提交查询时覆盖SQL语句中指定参数的默认值的值。
+| *Query Text*  |批量执行|键入几个语句（用分号和换行符分隔）以批量执行它们。
+
+支持除`Select`和`Stored procedure`之外的所有操作。
+
+| image:bulk.png[图片]
+
+| *From File*  |批量执行|引用包含多个语句的文件（用分号和换行符分隔）以批量执行它们。
+
+支持除`Select`和`Stored procedure`以外的所有操作。 |
+
+| *Dynamic query*  |执行DDL  |通过DDL请求对数据结构执行操作，而不是数据本身。 | image:DLL.png[图片]
+4 + | *Advanced tab*
+| *Target*   |全部 |使用丰富的表达式来丰富消息并进行SQL处理。使用此属性可指定输出数据的替代源，如变量或属性。 .10 + a |操作=插入
+
+image:advanced+insert.png[图片]
+
+操作=选择
+
+image:advanced+select.png[图片]
+
+| *Source*  |全部 |使用此表达式可获取计算参数的值。默认情况下，这是`#[payload]`
+| *Transactional Action*  | ALL a |使用此属性将默认值更改为以下值之一：
+
+*  JOIN_IF_POSSIBLE  -  _（默认）_加入正在进行的交易;如果没有交易存在，Mule会创建一个交易。
+*  ALWAYS_JOIN  - 总是期待交易正在进行中;如果它找不到要加入的事务，则会引发异常。
+*  NOT_SUPPORTED  - 在任何存在的事务之外执行。
+
+| *Max Rows* a |
+* 选择
+* 存储过程 |用于定义应用程序在来自数据库的响应中接受的最大行数。
+| *Fetch Size* a |
+* 选择
+* 存储过程 |指示应从resultSet中提取多少行。流属性为true时，此属性是必需的，默认值为10。
+| *Streaming* a |
+* 选择
+* 存储过程 |启用该功能以便通过数据库连接器将数据流传输到数据库。 Mule以数据块的形式从数据库中读取数据，而不是将完整的结果集加载到内存中。
+| *Bulk Mode* a |
+* 插入
+* 更新
+* 删除|
+使用一个查询来提交数据集合，而不是对集合中的每个参数集执行一个查询。启用批量模式可以提高应用程序的性能，因为它减少了单个查询执行的次数。
+
+批量模式需要使用至少一个参数的参数化查询。
+
+例如，假设您有一个旨在将员工插入数据库表的查询，并且对于每个员工，它都必须插入姓氏和ID。如果数据库连接器为1000名员工中的每一个提交了一个查询，则操作将非常耗时且不具有高性能。如果您启用批量模式，则数据库连接器会执行一次查询以将数据库中的所有员工值插入到姓氏和ID参数集列表中。
+
+| *Auto-generated Keys*  |插入 |使用此属性可指示自动生成的密钥应可用于检索。
+
+| *Auto-generated Keys Column Indexes*  |插入 |提供逗号分隔的列索引列表，指出哪些自动生成的键应该可用于检索。
+
+| *Auto-generated Keys Column Names*  |插入 |提供逗号分隔的列名称列表，指示应该使哪些自动生成的键可用于检索。
+|===
+
+== 查询类型
+
+Mule提供了三种类型的查询，可用于从应用程序中执行对数据库的查询。下表描述了三种查询类型以及使用每种查询的优点。
+
+[%header%autowidth.spread]
+|===
+|查询类型 |描述 |优势
+一个|
+*Parameterized*
+
+_（推荐的）_
+
+ 为|
+Mule使用"?"替换查询中的所有Mule表达式语言（MEL）表达式，以创建预准备语句，然后使用当前事件评估MEL表达式以获取每个参数的值。
+
+有关编写参数化查询语句的提示，请参阅<<Tips>>部分。
+
+ 为|
+相对于动态查询，参数化查询具有以下优点：
+
+* 安全性 - 使用参数化查询语句可防止SQL注入
+* 性能 - 在多次执行查询的情况下，使用参数化查询有助于更快地重复执行语句
+* 类型管理：使用参数化查询允许数据库驱动程序自动管理指定为参数的变量类型，并且对于某些类型，可提供自动类型转换。 +
+例如，在声明+中
+  `insert into employees where name = \#[message.payload.name]` +
+Mule将`#[message.payload.name]`的值映射到数据库中`name`列的变量类型。此外，您不需要在语句中添加引号，例如“3”而不是3，或“字符串”而不是字符串
+
+| *Dynamic* a |
+Mule将查询中的所有MEL表达式替换为表达式求值的结果，然后将结果发送到数据库。因此，您有责任确保查询语句中的任何字符串可被数据库解释（即引用字符串，数据格式等）
+
+使用动态查询语句最重要的缺点是安全性，因为它会使SQL注入的语句打开，可能会危及数据库中的数据。例如，在DB连接器之前在您的流程中添加过滤器可以缓解此风险。
+
+ 为|
+相对于参数化查询，动态查询具有以下优点：
+
+* 灵活性 - 您对SQL语句具有极大的灵活性。例如，以下所有内容都是有效的动态查询语句：+
+**  `select * from #[tablename] where id = 1;`
+**  `insert into #[message.payload.restOfInsertStatement];`
+**  `#[flowVars[‘deleteStatement’]]`
+* 性能 - 如果语句只执行一次，Mule可以相对于参数化查询语句稍微更快地执行动态SQL
+
+| *From Template*  |使您可以在应用程序的全局元素（全局模板查询引用元素）中定义一次查询语句，然后在同一应用程序中多次重复使用该查询，根据需要动态改变特定值。一个|
+相对于参数化和动态查询，来自模板查询的优点是可以重用查询语句。
+
+例如，您可以在模板内的查询语句（全局模板查询引用元素内）中定义一个参数，然后使用流中的数据库连接器中的查询语句指示Mule将参数的值替换为在数据库连接器中定义的值。阅读下面有关如何配置此查询类型的更多信息。
+
+|===
+
+=== 配置从模板查询
+
+您可以使用*template*预先定义可在应用程序流中使用并重复使用的SQL查询。此SQL查询可能包含可变参数，其值将从您指定的数据库连接器元素继承。 SQL模板可以包含参数化或动态SQL查询。
+
+要利用*From Template*查询类型，您必须先将模板定义为全局元素，然后从流中数据库连接器内引用模板。
+
+以下步骤描述如何配置数据库连接器以使用模板中的查询语句。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. From within the *Properties Editor* of the *Database Connector* element in your flow, use the drop-down next to *Type* to select `From Template`. 
+
+. Click the plus sign next to the *Template Query Reference* field to create a new *Global Template Query Reference* element (see image, below).
++
+image:template.png[image]
+
+. Studio displays the *Global Element Properties* panel, shown below. Provide a *Name* for your global element, then select a query type, either `Parameterized` or `Dynamic`.
++
+image:template_GE.png[image]
+
+. Use the radio buttons to choose the method by which you wish to define the query statement: define it inline, or define from a file.
+
+. Write your SQL query, which can optionally include variables. If you include a variable, reference it by prepending its name with a colon (:) as in `:myvar`.
+
+. Use the plus sign next to *Input Parameters* to create the variable, assign its default value and optionally select the data type.
+
+. Click *OK* to save your template and return to the Properties Editor of the Database Connector in your flow. Studio auto-populates the value of the *Template Query Reference* field with the name of the global template element you just created.
+
+. You can optionally add variables and values to the *Input Parameters* section of the database connector. These variables and their values are valid for _all_ SQL templates. If a variable has been defined here and also in an individual template, then the value specified here takes precedence. In the image below, the variable `value` has a value of `100`. This value is valid for any defined templates (which you can see in the drop-down menu) that reference the variable.
++
+
+image:global_var.png[image] 
+
+. Click the blank space in the Studio canvas to save your changes.
+
+*Example of Parameterized Query Using Variables*
+
+image:template_with_vars.png[image]
+
+In the image above, the parameterized query inserts the values referenced by variables `:ename`, `:hdate` and `:dept`. The names and values of these variables are set in the *Input parameters* section below the SQL query. Note that MEL expressions are allowed as values, as in the case of the `:hdate` field, which retrieves a date stored in a flow variable.
+
+For each variable, the database connector automatically determines and sets the data type for inserting into the database; however, if type resolution fails, you can manually select the data type by clicking in the *Type* row for the variable. Studio displays a drop-down menu with data types, as shown below.
+
+image:datatypes_menu.png[image]
+
+If the desired data type is not listed, simply type it into the empty field.
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+. At the top of your project's XML config file, above all flows, add a ` db:template-query  `element. Configure the attributes of the element according to the code sample below.
+
+. To the `db:template-query` element, add one of the following child elements, according to the type of query you wish to write: ` db:parameterized-query` or `db:dynamic-query`. Configure the attribute of the child element in order to define your SQL statement. The statement may include *named variables* whose values can be dynamically replaced by values defined in individual Database Connector elements. To create a named variable, prepend your desired variable name with a colon (`:`).  For example, to create a named variable for `id`, use `:id` in the query statement of your template. Use the `db:in-param` child element to define a default value of your named variable, if you wish.
++
+[source, xml, linenums]
+----
+<db:template-query name="Template_Query" doc:name="Template Query">
+   <db:parameterized-query><![CDATA[insert into simpleemp values (id)]]></db:parameterized-query>
+   <db:in-param name="id" defaultValue="2"/>
+</db:template-query>
+----
+
+. In the Database connector in your Mule flow, define the values for the variables in your query statement that Mule should use at runtime when executing the query from the template. In other words, define the values you want to use to replace the default value for any variable that you defined within your template query statement. 
+
+*Input Parameter Attributes*
+
+Child element: `db:in-param`
+
+[%header%autowidth,width=80%]
+|===
+|Attribute |Description
+|`name` |Name for the input parameter
+|`defaultValue` |Input parameter default value
+|`type` |Input parameter data type
+|===
+
+*Example of Parameterized Query Using Variables*
+
+[source, xml, linenums]
+----
+<db:template-query name="insert_values" doc:name="Template Query">
+   <db:parameterized-query><![CDATA[INSERT INTO register("employer_name", "hire_date", "dept") VALUES(:ename,:hdate,:dept);]]></db:parameterized-query>
+   <db:in-param name="ename" defaultValue="Genco Pura Olive Oil"/>
+   <db:in-param name="hdate" defaultValue="#[flowVar['tdate']]"/>
+   <db:in-param name="dept" defaultValue="PR"/>
+</db:template-query>
+----
+
+In the code above, the parameterized query inserts the values referenced by variables for employer name `:ename`, hire date `:hdate` and `:dept`. The names and values of these variables are defined by `in-param` child elements. Note that MEL expressions are allowed as values, as in the case of the `:hdate` field, which retrieves a date stored in a flow variable.
+
+For each variable, the database connector automatically determines and sets the data type for inserting into the database; however, you can also manually define the data type by using the `type` attribute as shown below.
+
+[source, xml, linenums]
+----
+...
+<db:in-param name="value" defaultValue="#[flowVar['price']]" type="MONEY"/>
+...
+----
+....
+------
+
+== 执行DDL
+
+数据定义语言（DDL）是SQL的一个子集，用于操纵数据结构而不是数据本身。这种请求用于创建，更改或删除表。
+
+[WARNING]
+====
+使用DDL时，只能进行动态查询（可能有或没有MEL表达式）。以下是*not supported*：
+
+* 参数的查询
+*  bulkMode
+* 在-PARAMS
+* 模板
+====
+
+=== 示例
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+===== Example 1
+
+image:dllexample.png[image]
+
+===== Example 2
+
+image:dllexample2.png[image]
+....
+[tab,title="XML Editor"]
+....
+
+===== Example 1
+
+[source, xml, linenums]
+----
+<db:execute-ddl config-ref="myDb">
+    <db:dynamic-query>
+        truncate table #[tablename]
+    </db:dynamic-query>
+</db:execute-ddl>
+----
+
+===== Example 2
+
+[source, xml, linenums]
+----
+<db:execute-ddl config-ref="myDb">
+    <db:dynamic-query>
+        CREATE TABLE emp (
+        empno INT PRIMARY KEY,
+        ename VARCHAR(10),
+        job  VARCHAR(9),
+        mgr  INT NULL,
+        hiredate DATETIME,
+        sal  NUMERIC(7,2),
+        comm  NUMERIC(7,2) NULL,
+        dept  INT)
+    </db:dynamic-query>
+</db:execute-ddl>
+----
+....
+------
+
+== 批量更新
+
+数据库连接器可以在批量模式下运行多个SQL语句。这种请求的返回类型是更新计数，而不是数据库中的实际数据。
+
+此MP中的各个SQL语句必须用分号和换行符分隔。所有查询都必须是动态的，它们可能包含也可能不包含MEL表达式。
+
+可以不直接编写语句，而是引用包含多个用分号和换行符分隔的语句的文件。
+
+[WARNING]
+====
+作为批量操作的一部分，您无法执行`select`操作。您只能使用`insert, delete, update`
+====
+
+=== 示例
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+==== Example 1
+
+image:bulkex1.png[image]
+
+==== Example 2
+
+image:bulkex2.png[image]
+....
+[tab,title="XML Editor"]
+....
+==== Example 1
+
+[source, xml, linenums]
+----
+<db:bulk-update config-ref="myDb">
+    insert into employees columns (ID, name) values (abc, #[some    expression]);
+    update employees set name = "Pablo" where id = 1; delete from employees where id = 2;
+</db:bulk-update>
+----
+
+==== Example 2
+
+[source, xml, linenums]
+----
+<db:bulk-update config-ref="dbConfig" source="#[bulkQuery]">
+    #[payload]
+</db:bulk-update>
+----
+....
+------
+
+== 提示
+
+*  **Installing the database driver:**请务必在您的Mule项目中安装数据库驱动程序的`.jar`文件，然后配置项目的构建路径以将`.jar`作为引用库。参见上面的说明。
+
+*  **Inserting data drawn from a SaaS provider into a database:**在您的查询语句中，请确保使用"?"预先输入值，以确保查询可以为空字段返回NULL值，而不是返回错误。例如，下面的查询语句使用从Salesforce字段BillingCity，BillingCountry，OwnerId和Phone拉取的信息来填充数据库中的表。如果这些字段的值在Salesforce中为空白，则这样的插入语句将返回错误。
++
+[source, code, linenums]
+----
+insert into accounts values (#[message.payload.BillingCity], #[message.payload.BillingCountry], #[message.payload.OwnerId], #[message.payload.Phone])
+----
++
+但是，如果您操作语句以包含"?"，那么insert语句会成功，只需将Salesforce字段的值为空的任何位置的NULL插入到数据库表中即可。
++
+[source, code, linenums]
+----
+insert into accounts values (#[message.payload.?BillingCity], #[message.payload.?BillingCountry], #[message.payload.?OwnerId], #[message.payload.?Phone])
+----
++
+
+在此版本的Mule中，请注意，MySQL的全局数据库连接器会自动为连接详细信息添加一个参数，以便DataSense提取有关数据结构和格式的信息的能力。参数是：`generateSimpleParameterMetadata = true`该驱动程序返回"`string`"作为每个输入参数的类型（例如不能是真实的参数类型）。 +
+
+*  **Avoiding complex MEL expressions in SQL statements:**因为DataSense根据数据库连接器中的查询语句推断数据结构，请避免在查询语句中使用复杂的MEL表达式，例如涉及函数的MEL表达式。 DataSense只能从简单的MEL表达式中检测数据结构，例如`\#[payload.BillingCity]`，而不是`#[payload.get(0)]`。如果是后者，DataSense只能向DataMapper表明它要接收或发送的数据结构是"unknown"。
+
+*  **Enclosing named variables in quotes.**参数化查询语句中的变量不应包含在引号中。例如，用户应该指定：
++
+[source, code, linenums]
+----
+    select * from emp where id = #[payload.id]
+not:
+    select * from emp where id = '#[payload.id]'
+----
+
+*  *Streaming with the Database connector:*当您在数据库连接器上启用数据流时，可以在执行后保持连接，语句和结果集处于打开状态。发生下列任何一种情况时，Mule会关闭这些资源：
+
+** 结果迭代器被消耗
+
+** 在处理消息期间（当结果迭代器在当前消息的有效载荷中时）有一个异常+
+
+== 另请参阅
+
+* 研究几个利用数据库连接器的 link:/mule-user-guide/v/3.7/database-connector-examples[示例应用程序]。
+
+* 为数据库连接器访问普通的 link:/mule-user-guide/v/3.6/database-connector-reference[参考资料]。
+
+* 详细了解 link:/mule-user-guide/v/3.6/datasense[DataSense]。
+
+* 详细了解 link:/anypoint-studio/v/5/datamapper-user-guide-and-reference[的DataMapper]。

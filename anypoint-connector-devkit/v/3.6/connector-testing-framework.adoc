@@ -1,0 +1,608 @@
+= 连接器测试框架
+:keywords: devkit, test, framework
+：imagessdir：./img/
+
+连接器测试框架简化了连接器功能测试的创建，其中开发人员不一定参与Mule的内部工作，例如流程，配置和Spring bean。这个框架的目标是双重的。一方面，我们将Mule的工作原理和功能测试的写法分开。另一方面，我们使运行时平台能够通过在远程Mule实例中执行测试来运行具有多个Mule版本的连接器测试，从而实现分离的运行时环境。
+
+文件组织如下：
+
+. 框架概述
+. 框架接口
+. 一个实际的例子
+. 测试@Paged方法和DataSense
+. 框架配置
+
+如果您来自旧的测试框架，Mule连接器测试，请首先阅读此处的迁移指南。
+
+== 概述
+
+连接器测试框架是编写连接器功能测试的默认测试框架。它从先前的测试框架发展而来，其中使用了Mule流和Spring bean的概念。我们现在有一个简单明确的界面，以不同的方式运行功能测试：嵌入式或远程。
+
+总体方法是将测试本身与其执行位置分离，从而使开发人员能够确定测试是否在不同的Mule版本中运行。例如，为Mule 3.5编写的连接器现在可以在Mule版本3.x中自动进行测试，并确定向后兼容性和向前兼容性问题以及类加载问题。
+
+以下方案说明如何执行连接器测试。主要思想是测试与执行它的Mule运行时分离。连接器测试框架使我们能够在独立或CloudHub实例的远程Mule实例中执行连接器操作。
+
+== 框架接口
+
+这个框架提供了一个简单但完整的接口来保持连接器测试的简单性和可读性。有三个主要组件：
+
+*  `ConnectorTestContext<T>`：框架的主类，为其他两个重要的类提供接口：`ConnectorDispatcher`和Platform Manager。这个类包含以下方法：
+**  `initialize(Class<T> connectorClass)`：初始化整个框架的类方法，可能包括连接器的打包，这可能需要一段时间才能执行。它要求被测连接器的类别。
+**  `getInstance()`：在初始化之前返回连接器上下文的唯一实例的类方法。否则，如果框架尚未初始化，则会引发异常。
+**  `getPlatformManager()`：返回负责处理框架生命周期的平台管理器的唯一实例。
+**  `getConnectorDispatcher()`：返回连接器分派器的唯一实例，负责执行连接器操作。
+*  `ConnectorDispatcher<T>`：启用连接器操作的接口，包括分页和DataSense操作。它包含以下方法：
+**  `createMockup()`：返回正在测试的连接器的一个实例，它与通过`ConnectorTestContext.initialize(connectorClass)`在框架初始化中使用的参数类型相同。通过此实例执行测试操作，但使用`@Paged`注释的操作除外。
+**  `runPaginatedMethod(String methodName, Object[] args)`：使用@Paged注释的连接器操作通过此方法执行，该方法需要该操作的操作名称（驼峰大小）和参数数组。
+**  `fetchMetaDataKeys()`：为了测试DataSense，返回包含`MetaDataKeys`（来自`org.mule.common.metadata`）列表的结果（来自org.mule.commons）。
+**  `fetchMetaData(MetaDataKey key)`：为特定的`MetaDataKey`（来自`org.mule.common.metadata`）返回一个MetaData对象（来自`org.mule.common.metadata`）。
+*  `PlatformManager`：代表负责初始化和关闭框架的底层平台管理器的接口。它公开两个操作来相应地处理这种行为，并维护一个`PlatformState`，它可以是STOPPED或STARTED。
+
+下一节介绍一个实际的例子和这些接口的正确使用。
+
+== 一个实际的例子
+
+测试框架与连接器内使用的实际单元测试框架完全不可知。通常我们在Mule连接器测试用例中使用JUnit测试用例;然而，我们可以将这个新的测试框架与任何其他单元测试工具（如TestNG）一起使用。
+
+在这个实例中，我们将JUnit视为我们的单元测试框架，其中以下两个步骤详细介绍了此框架的一个简单用例。
+
+. 通常使用一个测试套件，一个SmokeTestSuite，一个RegressionTestSuite或类似的。此示例使用RegressionSuite，它聚合连接器中的所有可用测试。我们将以下初始化代码添加到我们的测试套件中。如果没有使用测试套件，则以下初始化代码应在测试本身内进行：
++
+[source,java, linenums]
+----
+package org.mule.modules.connector.automation.testrunners;
+import org.mule.tools.devkit.ctf.mockup.ConnectorTestContext;
+import org.mule.tools.devkit.ctf.platform.PlatformManager;
+...
+@RunWith(Categories.class)
+@IncludeCategory(RegressionTestSuite.class)
+@SuiteClasses({
+    SampleTestCase.class,
+})
+public class RegressionTestSuite {
+    @BeforeClass
+    public static void initializeSuite(){
+        ConnectorTestContext.initialize(Connector.class);
+    }
+    @AfterClass
+    public static void shutdownSuite() throws Exception{
+        ConnectorTestContext<Connector> context = ConnectorTestContext.getInstance(Connector.class);
+        PlatformManager platform =  context.getPlatformManager();
+        platform.shutdown();
+    }
+}
+----
++
+一方面，我们使用ConnectorTestContext.initialize（Connector.class）测试的连接器类初始化连接器测试上下文。这将初始化整个框架。这可以重新编译和打包整个连接器，因此可能需要一段时间。由于连接器测试上下文在所有测试中共享，因此将此初始化阶段放置在方法中并在使用测试套件时指定JUnit @ `BeforeClass`注释是正常的。
+. 另一方面，在所有测试完成后，测试上下文关闭，释放所有测试资源（例如Mule实例）。从连接器测试上下文请求平台管理器并执行关闭。 PlatformManager管理测试框架的整个生命周期。与初始化阶段一样，此过程位于包含JUnit @AfterClass注释的方法中。
+
+对于这个实际的例子，让我们考虑一下这个测试套件有一个名为SampleTestCase的测试，下面将会介绍它。
+
+我们现在需要在我们的测试中使用这个初始化的连接器测试环境，如下所示：
+
+[source,java, linenums]
+----
+package org.mule.modules.connector.automation.testcases;
+import org.mule.tools.devkit.ctf.mockup.ConnectorDispatcher;
+import org.mule.tools.devkit.ctf.mockup.ConnectorTestContext;
+...
+public class SampleTestCase {
+    private static Connector connector;
+    private String jobId;
+    @Before
+    public void setUp() throws Exception {
+        //Current connector context instance
+        ConnectorTestContext<Connector> context = ConnectorTestContext.getInstance(Connector.class);
+        //Connector dispatcher
+        ConnectorDispatcher<Connector> dispatcher = context.getConnectorDispatcher();
+        connector = dispatcher.createMockup();
+        JobInfo jobInfo = connector.createJob(OperationEnum.insert, "Account", "Id", ContentType.XML, ConcurrencyMode.Parallel);
+        jobId = jobInfo.getId();
+    }
+    @Category({ RegressionTestSuite.class })
+    @Test
+    public void testSample() {
+        try {
+            JobInfo jobInfo = connector.abortJob(jobId);
+            assertEquals(com.sforce.async.JobStateEnum.Aborted, jobInfo.getState());
+            assertEquals(jobId, jobInfo.getId());
+            assertEquals(ConcurrencyMode.Parallel.toString(), jobInfo.getConcurrencyMode().toString());
+            assertEquals(OperationEnum.insert.toString(), jobInfo.getOperation().toString());
+            assertEquals(ContentType.XML.toString(), jobInfo.getContentType().toString());
+        } catch (Exception e) {
+            fail(ConnectorTestUtils.getStackTrace(e));
+        }
+    }
+}
+----
+
+我们首先需要使用ConnectorTestContext.getInstance（Connector.class）获取当前的连接器测试上下文。
+
+这个连接器测试上下文允许我们检索两件事情：
+
+* 前面提到的平台管理器
+* 通过context.getConnectorDispatcher（）的连接器调度程序。
+
+Connector Dispatcher允许我们检索Connector Mockup，运行DataSense方法以及分页方法。
+
+让我们从连接器模型开始，它通过以下方式获取：
+
+`Connector connector = dispatcher.createMockup()`
+
+此方法返回正在开发的当前连接器的一个实例，以用于整个测试。此连接器模型从连接器方法执行的方式和位置抽象出测试开发人员。
+
+例如，要执行`createJob`方法，我们使用`connector.createJob(..)`及其实际参数。测试是独立的，完全可读。要执行`abortJob`方法，我们使用先前存储的`jobID`调用`connector.abortJob(jobID)`。现在通过定义为实例变量的`JobInfo`对象和测试中定义的特定值计算测试断言。
+
+== 使用FunctionalTestParent进行多项测试
+
+值得一提的是，当考虑一个测试套件中的多个测试用例时，建议使用FunctionalTestParent。这个类包含以下内容：
+
+[source,java, linenums]
+----
+package org.mule.modules.connector.automation.testcases;
+
+import org.mule.tools.devkit.ctf.mockup.ConnectorDispatcher;
+import org.mule.tools.devkit.ctf.mockup.ConnectorTestContext;
+...
+
+public class FunctionalTestParent {
+
+    private static Connector connector;
+    private String jobId;
+
+    @Before
+    public void setUp() throws Exception {
+
+        //Current connector context instance
+        ConnectorTestContext<Connector> context = ConnectorTestContext.getInstance(Connector.class);
+
+        //Connector dispatcher
+        ConnectorDispatcher<Connector> dispatcher = context.getConnectorDispatcher();
+        connector = dispatcher.createMockup();
+
+        setUp();
+    }
+
+    protected void setUp() throws Exception{
+    //Do not complete this method here. If you wish to add @Before behavior in your test case, extend it the subclasses.
+    }
+
+    }
+}
+----
+
+现在，每个测试（如SampleTestCase）都从FunctionalTestCase扩展，并在必要时实现setUp方法。
+
+== 测试@Paged Operations和DataSense
+
+前面的例子提供了一个简单的用例来测试连接器实例的操作。连接器模型用于访问连接器操作。然而，Mule有不同的特性，例如分页，在测试时需要稍微不同的方法。
+
+== 分页方法
+
+连接器方法可以注释为@Paged，这意味着在调用该方法时，会生成对底层API的多个调用，以避免在一次API调用中检索可能的大集结果。因此，尽管Mule会自动生成不同的API调用，但用户只需调用该方法即可消耗整个结果集。
+
+我们来考虑下面的`Query(..)`方法，它被注释为`@Paged`并且被定义为：
+
+[source,java, linenums]
+----
+@Processor
+@OAuthProtected
+@Category(name = "Category name", description = "A description here.")
+@Paged
+public ProviderAwarePagingDelegate<Map<String, Object>, Connector> query(@Query @Placement(group = "Query") final String query, final PagingConfiguration pagingConfiguration, @Placement(group = "SOAP Headers") @FriendlyName("Headers") @Optional final Map<Header, Object> headers) {
+...
+}
+----
+
+为了测试这种分页方法，我们在测试中启用了以下机制：
+
+[source,java, linenums]
+----
+  ...
+
+@Before
+    public void setUp() throws Exception {
+
+        //Current connector context instance
+        ConnectorTestContext<Connector> context = ConnectorTestContext.getInstance(Connector.class);
+
+        //Connector dispatcher
+        ConnectorDispatcher<Connector> dispatcher = context.getConnectorDispatcher();
+        connector = dispatcher.createMockup();
+
+        JobInfo jobInfo = connector.createJob(OperationEnum.insert, "Account", "Id", ContentType.XML, ConcurrencyMode.Parallel);
+        jobId = jobInfo.getId();
+    }
+
+@Category({RegressionTestSuite.class})
+    @Test
+    public void testQuery() {
+
+        List<String> queriedRecordIds = sObjectsIds;
+        List<String> returnedSObjectsIds = new ArrayList<String>();
+
+        try {
+            Object[] args = new Object[] { "SELECT Id, Name, FROM Account WHERE BillingCity = 'Chicago'", null, null };
+
+            Collection<Map<String, Object>> list = (Collection<Map<String, Object>>) dispatcher.runPaginatedMethod("query", args);
+
+            int count = 0;
+            Iterator<Map<String, Object>> iter = list.iterator();
+            while (iter.hasNext()) {
+                Map<String, Object> sObject = iter.next();
+                returnedSObjectsIds.add(sObject.get("Id").toString());
+                count++;
+            }
+
+            assertTrue(returnedSObjectsIds.size() > 0);
+            assertEquals(count,  list.size());
+
+            for (int index = 0; index < queriedRecordIds.size(); index++) {
+                assertTrue(returnedSObjectsIds.contains(queriedRecordIds.get(index).toString()));
+             }
+
+        } catch (Exception e) {
+            fail(ConnectorTestUtils.getStackTrace(e));
+        }
+    }
+----
+
+此测试摘录说明分页是如何工作的。如果我们尝试执行`connector.Query(...)`，则框架会引发运行时异常`UnsupportedMethodAnnotationException`。我们需要使用调度器，它会公开`runPaginatedMethod(methodName, args)`。
+
+第一个参数是方法名称（驼峰大小写），而第二个参数是该方法按照其签名中定义的相同顺序采用的参数列表。在这种情况下，第一个参数是查询本身，而最后两个参数（`PagingConfiguration`实例和一个`Map`头部）不存在。
+
+需要注意的是，我们提供了一种机制来测试使用`@Paged`注释的操作，这会间接测试基础分页机制。但是，测试分页机制的工作方式，比如测试检索页数和每个页面内的值，目前无法在此测试框架中执行，因为它很可能是单元测试而不是功能测试。
+
+== 测试DataSense
+
+DataSense允许连接器在设计时从远程服务收集元数据，使Anypoint开发人员能够处理实际的对象类型和对象描述。
+
+为了测试DataSense，连接器调度程序提供了两个操作。以下示例说明了这种情况：
+
+[source,java, linenums]
+----
+...
+@Before
+    public void setUp() throws Exception {
+
+        //Current connector context instance
+        ConnectorTestContext<Connector> context = ConnectorTestContext.getInstance(Connector.class);
+
+        //Connector dispatcher
+        ConnectorDispatcher<Connector> dispatcher = context.getConnectorDispatcher();
+    }
+
+@Category({RegressionTestSuite.class})
+    @Test
+    public void testGetMetaDataKeys() {
+        try {
+
+            Result<List<MetaDataKey>> metaDataKeysResult = dispatcher.fetchMetaDataKeys();
+
+            assertTrue(Result.Status.SUCCESS.equals(metaDataKeysResult.getStatus()));
+            List<MetaDataKey> metaDataKeys = metaDataKeysResult.get();
+
+            for (MetaDataKey key : metaDataKeys) {
+                if (accountKey == null && key.getId().equals("Account")) {
+                    accountKey = key;
+                }
+                if (contactKey == null && key.getId().equals("Contact")) {
+                    contactKey = key;
+                }
+                if (customObjectKey == null && key.getId().equals("CustomObject")) {
+                    customObjectKey = key;
+                }
+                if (customFieldKey == null && key.getId().equals("CustomField")) {
+                    customFieldKey = key;
+                }
+                if (externalDataSourceKey == null && key.getId().equals("ExternalDataSource")) {
+                    externalDataSourceKey = key;
+                }
+            }
+
+            assertNotNull(accountKey);
+            assertNotNull(contactKey);
+            assertNotNull(customObjectKey);
+            assertNotNull(customFieldKey);
+            assertNotNull(externalDataSourceKey);
+
+           Result<MetaData> accountKeyResult = dispatcher.fetchMetaData(accountKey);
+            assertTrue(Result.Status.SUCCESS.equals(accountKeyResult.getStatus()));
+
+            Result<MetaData> contactKeyResult = dispatcher.fetchMetaData(contactKey);
+            assertTrue(Result.Status.SUCCESS.equals(contactKeyResult.getStatus()));
+
+            Result<MetaData> customObjectKeyResult = dispatcher.fetchMetaData(customObjectKey);
+            assertTrue(Result.Status.SUCCESS.equals(customObjectKeyResult.getStatus()));
+
+            Result<MetaData> customFieldKeyResult = dispatcher.fetchMetaData(customFieldKey);
+            assertTrue(Result.Status.SUCCESS.equals(customFieldKeyResult.getStatus()));
+
+            Result<MetaData> externalDataSourceKeyResult = dispatcher.fetchMetaData(externalDataSourceKey);
+            assertTrue(Result.Status.SUCCESS.equals(externalDataSourceKeyResult.getStatus()));
+
+        } catch (Exception e) {
+            fail(ConnectorTestUtils.getStackTrace(e));
+        }
+    }
+----
+
+连接器调度程序公开了两个方法，fetchMetaDataKeys（）和fetchMetaData（keyName）。第一个获取DataSense底层服务的所有密钥，第二个获取特定MetadataKey的描述符。
+
+== 框架配置
+
+本节介绍为了使用框架和不同的配置值而添加的依赖关系。
+
+首先，我们需要为我们的`pom.xml`文件添加依赖项。我们目前不会将框架Maven依赖关系打包到开发连接器所需的DevKit Maven依赖项中，因此需要在`pom.xml`中手动添加它。
+
+要添加的依赖关系如下所示：
+
+发布版本：
+
+[source,xml, linenums]
+----
+<dependency>
+   <groupId>org.mule.tools.devkit</groupId>
+   <artifactId>connector-testing-framework</artifactId>
+   <version>0.9.0</version>
+    <scope>test</scope>
+</dependency>
+----
+
+快照版本：
+
+[source,xml, linenums]
+----
+<dependency>
+   <groupId>org.mule.tools.devkit</groupId>
+   <artifactId>connector-testing-framework</artifactId>
+   <version>0.9.1-SNAPSHOT</version>
+    <scope>test</scope>
+</dependency>
+----
+
+我们需要通过Maven选项或VM参数来注入框架属性（例如在eclipse中）。如果不需要可配置的参数，我们可以在我们的代码中添加这些属性`System.setProperty(key,value)`。以下框架参数是可配置的：
+
+. 自动化凭证属性文件：可选。该文件包含运行测试套件所需的凭证，并且它被指定为`-Dautomation-credentials.properties=FILENAME`。如果没有给出任何选项并且不存在名为`automation-credentials.properties`的文件，则会在src / test / resources内创建默认文件并引发异常。如果一个文件已经存在这个名字，默认情况下它会被使用，并发出警告。如下指定文件是强制性的：
++
+[source,java, linenums]
+----
+configName1.configurationAttribute1=value
+configName1.configurationAttribute2=value
+...
+configName2.configurationAttribute1=value
+configName2.configurationAttribute2=value
+...
+----
++
+. 该文件可以为连接器的不同连接策略包含不同的凭据。请务必注意，配置名称必须与连接器中定义的相同，以及配置中定义的属性相同。例如，让我们考虑一下连接器中的以下配置：
++
+[source,java, linenums]
+----
+@OAuth2(configElementName = "config-with-oauth", ...)
+
+public class OAuth2Strategy extends CustomStrategy {
+
+    @Configurable
+    @OAuthConsumerKey
+    private String consumerKey;
+
+    @Configurable
+    @OAuthConsumerSecret
+    private String consumerSecret;
+
+    @OAuthAccessToken
+    private String accessToken;
+
+    @Configurable
+    @Default("0")
+    private Integer readTimeout;
+
+    ...
+----
++
+. 完成自动化凭证文件，如下所示：
++
+[source,java, linenums]
+----
+config-with-oauth.consumerKey= <value>
+config-with-oauth.consumerSecret= <value>
+config-with-oauth.accessToken= <value>
+config-with-oauth.readTimeout= <value>
+...
+----
++
+. 我们解析这个文件，并将找到的值与定义的配置进行比较。如果自动化凭证文件中缺少必需的配置属性，则会引发异常。
++
+. 部署配置文件：可选。部署配置文件可以采用嵌入式，本地，远程或者cloudhub的值。该配置文件定义测试执行的位置：
+** 嵌入式：测试在连接器开发的相同环境中执行。测试执行的Mule版本与使用DevKit版本绑定的版本相同。
+** 本地：测试在本地计算机上执行，并且由用户指定Mule运行时。
+** 远程：与本地类似，只是运行时位于远程机器中，很可能是专用测试机器。
+**  CloudHub：测试在Mule CloudHub的实例中执行。
++
+指定此选项：
++
+[source, code, linenums]
+----
+-Ddeploymentprofile={embedded | local | remote | cloudhub}
+----
++
+如果没有给出选项，则使用嵌入式部署配置文件。
++
+*Note*：目前只支持*embedded*和*local*。
++
+该配置文件包含：
++
+***  Mule版本：部分必需。运行测试时使用，并指定：
++
+[source, code, linenums]
+----
+-Dmuleversion={mule34 | mule35 | mule36 | mule37}
+----
++
+这是在远程或CloudHub中运行时的必需参数。在本地运行时，Mule版本将从您指定的Mule目录中提取。
+***  Mule目录：部分必需。在本地模式下运行时，定义Mule运行时目录或以其他方式抛出异常。 +
+设置此参数：
++
+[source, code, linenums]
+----
+-Dmuledirectory=yourMuleDirectory
+----
++
+指向Mule运行时的根目录。
+*** 强制编译：可选。在部署测试之前，需要编译和打包连接器，这可能需要一段时间。但是，如果代码本身已被修改，则只需要重新编译和重新打包连接器即可。如果我们只修改测试代码，那么我们可以跳过`-Dforcecompiling=false`的编译/打包。如果没有给出该选项，则默认情况下将其设置为FALSE，这意味着每次运行测试时都会编译连接器。
+*** 主动配置：可选。此选项是强制性的，并指定在运行测试时使用自动化凭据属性文件中的哪些配置。它可以用`-Dactiveconfiguration=CONFIGURATION`来设置。例如，考虑到以前的配置，我们可能会使用`-Dactiveconfiguration=config-with-oauth`。如果没有设置选项，则使用第一个检测到的配置并发出警告。
+***  M2主页：可选。目前的M2 Maven主页。它可以用`-Dm2home=M2Home`来设置。如果未设置，DevKit会尝试检测您当前的M2存储库文件夹。
+***  Maven主页：*Required*。当前的Maven home，指向现有Maven安装的根文件夹。它可以用`-Dmavenhome=MavenHome`来设置。
+
+=== 示例配置
+
+* 嵌入式：
++
+[source, code, linenums]
+----
+-Dautomation-credentials.properties=salesforce-credentials.properties
+-Ddeploymentprofile=embedded
+-Dforcecompiling=false
+-Dactiveconfiguration=config
+-Dmavenhome=/Users/mulesoft/apache-maven-3.2.3
+----
++
+本地使用Mule 3.6运行时：* ：
++
+[source, code, linenums]
+----
+-Dautomation-credentials.properties=salesforce-credentials.properties
+-Ddeploymentprofile=local
+-Dactiveconfiguration=config-with-oauth
+-Dm2home=/Users/mulesoft/.m2
+-Dmavenhome=/Users/mulesoft/apache-maven-3.2.3
+-Dmuledirectory=/Users/mulesoft/mule-enterprise-standalone-3.6.0
+----
+
+== 测试配置
+
+有时需要在测试套件中使用多个配置。例如，两组不同的凭据或不同的URL。在任何情况下，配置文件的参数都不相同。为了支持不同的配置，我们鼓励使用不同的测试套件。
+
+我们来看一个实际的例子如下。我们有三个测试用例，SampleTestCaseA，SampleTestCaseB和SampleTestCaseC。前两个测试用例在文件automation-credentials-short-timeout.properties中使用以下配置：
+
+[source,java, linenums]
+----
+config-with-oauth.consumerKey= AABBCCDD
+config-with-oauth.consumerSecret= DDCCBBAA
+config-with-oauth.accessToken= A1B2C3D4
+config-with-oauth.readTimeout= 100
+...
+SampleTestCaseC needs a longer readTimeout and therefore uses the following configuration in file automation-credentials-long-timeout.properties:
+
+config-with-oauth.consumerKey= AABBCCDD
+config-with-oauth.consumerSecret= DDCCBBAA
+config-with-oauth.accessToken= A1B2C3D4
+config-with-oauth.readTimeout= 5000
+...
+----
+
+要用这两种不同的配置来运行这三个测试，我们有两个不同的测试套件。一方面我们有`TestSuiteShortTimeOut`如下：
+
+[source,java, linenums]
+----
+package org.mule.modules.connector.automation.testrunners;
+
+import org.mule.tools.devkit.ctf.mockup.ConnectorTestContext;
+import org.mule.tools.devkit.ctf.platform.PlatformManager;
+...
+
+@RunWith(Categories.class)
+@IncludeCategory(TestSuiteShortTimeOut.class)
+
+@SuiteClasses({
+    SampleTestCaseA.class,
+    SampleTestCaseB.class,
+})
+
+public class TestSuiteShortTimeOut {
+
+    @BeforeClass
+    public static void initialiseSuite(){
+
+       //This replaces using -Dautomation-credentials.properties as VM arguments or Maven options
+        System.setProperty("automation-credential.properties", "automation-credentials-short-timeout.properties");
+
+        ConnectorTestContext.initialize(Connector.class);
+    }
+
+    @AfterClass
+    public static void shutdownSuite() throws Exception{
+
+        ConnectorTestContext.shutDown();
+    }
+}
+----
+
+或者，我们有`TestSuiteLongTimeOut`，如下所示：
+
+[source,java, linenums]
+----
+package org.mule.modules.connector.automation.testrunners;
+
+import org.mule.tools.devkit.ctf.mockup.ConnectorTestContext;
+import org.mule.tools.devkit.ctf.platform.PlatformManager;
+...
+
+@RunWith(Categories.class)
+@IncludeCategory(TestSuiteLongTimeOut.class)
+
+@SuiteClasses({
+    SampleTestCaseC.class,
+})
+
+public class TestSuiteLongTimeOut {
+
+    @BeforeClass
+    public static void initialiseSuite(){
+
+        //This replaces using -Dautomation-credentials.properties as VM arguments or Maven options
+        System.setProperty("automation-credential.properties", "automation-credentials-long-timeout.properties");
+
+        ConnectorTestContext.initialize(Connector.class);
+    }
+
+    @AfterClass
+    public static void shutdownSuite() throws Exception{
+
+        ConnectorTestContext.shutDown();
+    }
+}
+----
+
+我们可以在一个测试套件中聚合两个套件，如下所示：
+
+[source,java, linenums]
+----
+package org.mule.modules.connector.automation.testrunners;
+
+import org.mule.tools.devkit.ctf.mockup.ConnectorTestContext;
+import org.mule.tools.devkit.ctf.platform.PlatformManager;
+...
+
+@RunWith(Categories.class)
+@IncludeCategory(FullTestSuite.class)
+
+@SuiteClasses({
+    TestSuiteShortTimeOut.class,
+    TestSuiteLongTimeOut.class
+})
+
+public class FullTestSuite {
+}
+----
+
+因此，我们现在有两个独立的测试套件和他们自己的配置。通过执行`FullTestSuite`，`TestSuiteShortTimeOut`和`TestSuiteLongTimeOut`以其各自的测试用例执行。
+
+我们观察到引入了`ConnectorTestContext.shutDown()`方法。当关闭上下文并且多次初始化时，该方法会替代对`PlatformManager`的操作，就像使用多个测试套件一样。
+
+== 另请参阅
+
+*  link:/anypoint-connector-devkit/v/3.6/[Anypoint连接器DevKit]
+*  link:/anypoint-connector-devkit/v/3.6/developing-devkit-connector-tests[开发DevKit连接器测试]
+*  link:/anypoint-connector-devkit/v/3.6/installing-and-testing-your-connector-in-studio[安装和测试连接器]

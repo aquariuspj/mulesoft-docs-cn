@@ -1,0 +1,95 @@
+= 在亚马逊网络服务（AWS）上创建Anypoint私有云资源
+
+本主题介绍如何创建在Amazon Web Services（AWS）上安装Anypoint Platform Private Cloud Edition所需的资源。 Anypoint私有云在AWS上的生产环境中支持3节点和6节点配置。
+
+== 先决条件
+
+要在AWS上安装Anypoint Platform私有云版，您必须拥有包含以下内容的AWS账户：
+
+* 您的帐户必须具有EC2FullAccess权限的AWS密钥。
+* 创建AWS环境时，会创建以下资源：
++
+[%header%autowidth.spread]
+|===
+|  AWS资源 | 需要的数量（3个节点） | 需要的数量（6个节点）
+|  {m4.2xlarge {1}} 3  |  6
+| 根磁盘@ 500 iops  |  3  |  6
+|  EBS卷@ 1500 iops  |  6  |  12
+|  EBS卷@ 3000 iops  |  6  |  12
+| 亚马逊ELB  |  1  |  1
+|  {t2.medium {1}} 1  |  1
+|===
+
+* 下载Terraform版本0.11.0。这是Terraform支持的唯一版本。
+
+== 在AWS中创建您的环境
+
+. 确保您拥有包含上述先决条件的AWS账户。
+. 请联系您的客户成功代表以获取Anypoint Platform私有云版本的terraform配置。
++
+[WARNING]
+不要修改提供的Terraform文件。 Anypoint Platform私有云版不支持修改或自定义Terraform脚本。
+
+. 提取下载的存档。
+. 将Terraform二进制文件复制到之前提取的文件夹中。
+. 在您的系统上设置以下环境变量：
++
+[%header%autowidth.spread]
+|===
+| 属性 | 说明
+|  ROLE_TAG_VALUE  | （可选）为terraform创建的资产指定标签。如果您不提供值，则Terraform默认使用`anypoint-platform`
+|  CLUSTER_NAME  | 指定AWS中的集群名称。该值不能包含任何空格。
+|  AWS_ACCESS_KEY_ID  | 指定Terraform用于连接到您的AWS账户的AWS访问ID。
+|  AWS_SECRET_ACCESS_KEY   | 指定Terraform用来连接您的AWS账户的AWS访问密钥。
+| 区域 | 指定Terraform创建集群的AWS区域。
+|  NODES  | 指定Terraform创建的节点数量。有效值为：`1`，`3`，`6`
+|  KEY_PAIR  | 指定Terraform在创建群集时使用的AWS密钥对。请勿将`.pem`扩展名作为此值的一部分。
+|===
++
+这些环境变量定义Terraform连接到您的AWS环境的凭证。
+
+. 从存档文件夹运行以下命令：
++
+----
+make create-cluster
+----
++
+此脚本显示Terraform计划，其中概述了要在您的AWS环境中创建的所有资源。
+
+. 输入`yes`并按下回车键确认Terraform计划。
++
+确认后，Terraform会在您的AWS账户中创建所需的资源。
+
+. 登录AWS控制台以确定堡垒的公共IP地址。
++
+您必须使用此IP地址通过堡垒连接到群集的节点，才能安装Anypoint Platform私有云版。
+
+== 将Anypoint私有云安装程序上传到AWS
+
+使用Terraform创建您的AWS环境后，您必须将Anypoint Private Cloud安装程序上传到您的系统。
+
+MuleSoft建议使用SCP通过堡垒将安装程序从本地机器传输到您环境中的其中一个节点。
+
+. 从您的客户成功代表获取`anypoint-1.7.0-installer.tar.gz`档案。
+. 配置您的SSH客户端以使用堡垒作为群集中节点的代理。
+. 运行以下命令将安装程序上传到堡垒：
++
+----
+scp -i key.pem anypoint-1.7.0-installer.tar.gz ec2-user@<installer-node-host-ip>:/home/ec2-user
+----
+
+== 安装Anypoint平台私有云版
+
+在您的AWS环境中配置资源并将安装程序上传到其中一个节点后，使用其中一个安装程序安装Anypoint Platform Private Cloud Edition：
+
+*  link:/anypoint-private-cloud/v/1.7/install-installer[使用GUI安装程序安装Anypoint私有云]
+*  link:/anypoint-private-cloud/v/1.7/install-auto-install[使用命令行安装程序安装Anypoint私有云]
+
+== 安装后禁用端口61009
+
+在AWS上配置资源时，Terraform脚本将启用端口61009上的入站和出站流量。此端口是允许浏览器访问安装程序所必需的。完成Anypoint Platform Private Cloud Edition的安装后，必须从AWS Web控制台的`<cluster-name>-cluster`安全组的端口61009上禁用外部入站通信。
+
+== 另请参阅
+
+*  https://www.terraform.io/intro/getting-started/install.html [安装Terraform]
+*  https://docs.aws.amazon.com/quickstart/latest/linux-bastion/welcome.html [AWS云上的Linux Bastion主机：快速启动参考部署]

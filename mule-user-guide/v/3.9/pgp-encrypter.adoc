@@ -1,0 +1,402 @@
+=  PGP加密器
+:keywords: anypoint studio, esb, connector, endpoint, pgp encrypter, encryption, pretty good privacy
+
+Mule有能力使用Pretty Good Privacy（PGP）加密消息有效载荷或有效载荷的一部分。 PGP结合了数据压缩和数据加密来保护消息。压缩减少了原点和目的地之间的消息传输时间。
+
+本文档提供了两种情况：
+
+* 在Mule应用程序中使用另一方的公钥来*encrypt*消息
+* 使用自己的一组私钥和公钥来接受Mule应用中的*decrypt*个消息
+
+PGP加密器是密钥生成时请求的名称，注释和电子邮件的组合。 +
+以下部分概述了使用Mule中的PGP加密或解密消息的步骤。
+
+== 先决条件
+
+本文档假设您对PGP加密以及公钥和私钥的概念非常熟悉。
+
+== 加密
+
+在PGP加密的世界中，消息的发送者必须使用接收者的 link:http://en.wikipedia.org/wiki/RSA_%28algorithm%29[公钥]加密其内容。因此，在您的Mule流处理必须使用别人的公钥加密的消息的情况下，您需要将接收者的公钥添加到Mule中的"key ring"。实质上，Mule存储会要求用户输入消息加密消息处理器访问的密钥环文件，以在发送之前对消息的任何部分进行加密。
+
+*Anypoint Studio Visual Editor*
+
+. 使用诸如GPG Keychain之类的工具访问另一方的公钥。*import*。有关使用GPG来帮助在Mule中实施PGP加密和解密的更多细节，请参阅下面的部分。
+. 使用相同的工具*export*公钥，选择二进制作为输出格式。这会生成一个带有`.gpg`扩展名的密钥环文件。
+. 确保`.gpg`文件存储在Mule应用程序可以在运行时访问它的位置;记录`.gpg`文件（也称为公用密钥环文件）的文件路径。
+. 在您的Mule应用程序中，创建一个全局*Encryption*元素，为元素指定一个名称;将*Default Encrypter*的默认值更改为`PGP_ENCRYPTER`。
+. 在*Pgp Encrypter*选项卡上，根据下表配置字段。
++
+image:pgp_both2.png[pgp_both2]
++
+[%header,cols="2*a"]
+|===
+| {字段{1}}值
+2 + | *General Tab*
+| *Name*  |必需 - 全局元素的唯一名称。
+| *Default Encrypter*  | PGP_ENCRYPTER
+2 + | *Pgp Encrypter Tab*
+| *Reference or expression*  |如果选中，则在*Pgp Encrypter Config Reference*中使用表达式来引用您在应用程序的XML配置中其他位置定义的属性，或者引用定义的配置在一个bean中。
+| *Define attributes*  |如果选中，请在以下字段中输入值。
+| *Public Key Ring File Name*  |输入公钥环的文件路径。这个二元"key ring"包含消息接收者的公钥。阅读更多关于创建上面的公钥环的信息。请注意，您不会输入公钥本身，只会输入公钥所在的密钥环文件的位置。
+| *Secret Key Ring File Name*  | 输入私钥环的文件路径。这个二元"key ring"包含消息发送者的私钥。详细了解如何在上面的“生成PGP密钥”部分中查找和创建公共公钥和私钥环。
+| *Secret Alias Id*  | 用于签署消息的密钥的64位（16个字符）密钥ID。
+| *Secret Passphrase*  | 访问私钥的密码。使用GPG生成密钥时，向导或命令行提示要求输入真实姓名和电子邮件地址，然后要求您创建用于访问密钥的密码。您用来生成密钥的密码是您输入的作为密码短语的值，Mule用它来访问私钥环的内容。
+| *Principal*  | 使用clientID和secret来验证客户端的另一种方法是将用户名和密码定义为主体。
+
+| *Encryption algorithm*  | 用于对称密码的加密算法。 +
+默认算法：AES_256
+
+允许的算法：
+
+*  IDEA
+*  TRIPLE_DES
+*  CAST5
+*  BLOWFISH
+*  SAFER
+*  DES
+*  AES_128
+*  AES_192
+*  AES_256
+*  TWOFISH
+*  CAMELLIA_128
+*  CAMELLIA_192
+*  CAMELLIA_256
+| *Output Mode*  |  PGP加密输出模式。 +
+默认值：ARMOR
+
+允许的模式：
+
+* 装甲
+*  BINARY
+|===
++
+. 在您希望对消息有效载荷中的数据进行加密的流程中设置一个*Encryption*消息处理器。
+. 根据下表配置消息处理器。
++
+image:PGP_encrypter.png[PGP_encrypter]
++
+[%header,cols="2*a"]
+|===
+| {字段{1}}值
+| *Display Name*  |您的消息处理器的唯一名称。
+| *Config Reference*  |必需 - 使用下拉菜单选择您在上述步骤中创建的全局加密元素。
+| *Operation*  |必需 - 加密器
+| *Input reference*  |输入一个Mule表达式来定义Mule应该加密的部分。如果没有输入任何值，Mule将加密整个消息有效载荷。
+| *Select encrypter*  |必需 -  PGP_ENCRYPTER
+| *Reference or expression*  |如果选中，则在*Pgp Encrypter Reference*中使用表达式来引用您在应用程序的XML配置中其他位置定义的属性，或者引用定义的配置在一个bean中。
+| *Define attributes*  |如果选中，请在以下字段中输入值。
+| *Principal*  |使用clientID和secret来验证客户端的另一种方法是将用户名和密码定义为主体。
+| *Encryption algorithm*  | 用于对称密码的加密算法。 +
+默认算法：AES_256
+
+允许的算法：
+
+*  IDEA
+*  TRIPLE_DES
+*  CAST5
+*  BLOWFISH
+*  SAFER
+*  DES
+*  AES_128
+*  AES_192
+*  AES_256
+*  TWOFISH
+*  CAMELLIA_128
+*  CAMELLIA_192
+*  CAMELLIA_256
+| *Output Mode*  |  PGP加密输出模式。 +
+默认值：ARMOR
+
+允许的模式：
+
+* 装甲
+*  BINARY
+|===
++
+. 单击确定以保存您的PGP加密器配置。
+
+
+*XML Editor or Standalone*
+
+. 使用诸如GPG Keychain之类的工具访问另一方的公钥。*import*。
+. 使用相同的工具*export*公钥，选择二进制作为输出格式。这会生成一个带有`.gpg`扩展名的密钥环文件。
+. 确保`.gpg`文件存储在Mule应用程序可以在运行时访问它的位置;记录`.gpg`文件（也称为公用密钥环文件）的文件路径。
+. 在您的Mule应用程序中，创建一个全局`encryption:config`元素，设置配置文件中的所有流程。
+. 根据下表配置全局元素的属性和子元素。
++
+[source, xml, linenums]
+----
+<encryption:config name="Encryption_PGP" defaultEncrypter="PGP_ENCRYPTER" doc:name="Encryption_PGP">
+        <encryption:pgp-encrypter-config publicKeyRingFileName="./mule.gpg"/>
+</encryption:config>
+----
++
+[%header,cols="2*a"]
+|===
+| {属性{1}}值
+| *name*  |必需 - 全局元素的唯一名称。
+| *defaultEncrypter*  |必需 -  PGP_ENCRYPTER
+| *doc:name*  | Studio可视化编辑器中元素的显示名称。不适用于独立。
+|===
++
+** 子元素：必需 -  `encryption:pgp-encrypter-config`
+** 子元素属性：*publicKeyRingFileName*  - 必需 - 将值设置为公钥环的文件路径。这个二元"key ring"包含消息接收者的公钥。阅读更多关于创建上面的公钥环的信息。请注意，您不会输入公钥本身，只会输入公钥所在的密钥环文件的位置。
++
+. 添加一个`encryption:encrypt`元素到您希望对消息有效载荷中的数据进行加密的流程。
+. 根据下表配置元素的属性和子元素。
++
+[source, xml, linenums]
+----
+<encryption:encrypt config-ref="Encryption_PGP" doc:name="Encryption" using="PGP_ENCRYPTER" input-ref="#[message.payload]">
+        <encryption:pgp-encrypter principal="fernando.martinez &lt;fernando.martinez@mulesoft.com&gt;" />
+</encryption:encrypt>
+----
++
+[%header,cols="2*a"]
+|===
+| {属性{1}}值
+| *config-ref*  |必需 - 使用您创建的全局加密元素的名称。
+| *doc:name*  | Studio可视化编辑器中元素的显示名称。不适用于独立。
+| *using*  |必需 -  PGP_ENCRYPTER
+| *input-ref*  |输入一个Mule表达式来定义Mule应该加密的部分。如果这个属性没有定义，Mule加密整个消息有效载荷。
+|===
++
+[%header%autowidth.spread]
+|===
+需要|子属性 |
+| *encryption:pgp-encrypter*  | X
+|===
++
+[%header%autowidth.spread]
+|========
+|子元素属性需要 |  |值
+| *principal*  |  x   |使用clientID和secret来验证客户端的另一种方法是将用户名和密码定义为主体。当您使用GPG生成一组密钥时，系统会要求您输入一个真实姓名和一个电子邮件地址 - 这两部分数据构成您校长的值。
+|========
+
+
+== 解密
+
+在PGP加密的世界中，消息的接收者必须准备好使用私钥来解密用公钥加密的内容。因此，加密消息的接收者必须首先生成一组PGP密钥：
+
+*  A *public key*分发给那些使用它来加密和发送消息给您的人
+*  A *private key*解密您收到的使用公钥加密的邮件
+
+因此，如果您的Mule流接收到必须使用您自己的私钥解密的消息，则必须完成以下步骤：
+
+. 生成一组密钥。
+. 将公钥发送给那些向您发送加密邮件的人。
+. 在您的Mule流中设置一个消息加密处理器，该处理器使用私钥对接收到的消息进行解密。
+
+骡本身并不生成密钥组，也不分配公钥。访问下面的*Generating PGP Keys*部分，详细了解密钥生成;否则，如果您已经拥有密钥，请按照下面的说明直接在Mule流中设置消息加密处理器。
+
+=== 生成PGP密钥
+
+您可以使用诸如GPG Keychain Access之类的工具在应用程序中创建一组新的密钥（请参见下面的屏幕快照）或从命令行回答问题以自定义和识别密钥（请参阅下面的代码示例）。最佳做法建议在所有环境（开发，质量保证和生产）中使用相同的密钥大小（1536位或2048位）。
+
+image:generate_keys.png[generate_keys]
+
+[source, code, linenums]
+----
+Aarons-MacBook-Air:~ aaron$ gpg --gen-key
+gpg (GnuPG/MacGPG2) 2.0.19; Copyright (C) 2012 Free Software Foundation, Inc.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+Please select what kind of key you want:
+   (1) RSA and RSA (default)
+   (2) DSA and Elgamal
+   (3) DSA (sign only)
+   (4) RSA (sign only)
+Your selection? 1
+RSA keys may be between 1024 and 8192 bits long.
+What keysize do you want? (2048) 2048
+Requested keysize is 2048 bits      
+Please specify how long the key should be valid.
+         0 = key does not expire
+      <n>  = key expires in n days
+      <n>w = key expires in n weeks
+      <n>m = key expires in n months
+      <n>y = key expires in n years
+Key is valid for? (0) <n=2>
+invalid value             
+Key is valid for? (0) 2
+Key expires at Tue Aug 25 11:46:00 2015 PDT
+Is this correct? (y/N) y
+                         
+GnuPG needs to construct a user ID to identify your key.
+Real name: Aaron Somebody
+Email address: aaron.somebody@mulesoft.com
+Comment: no comment                    
+You selected this USER-ID:
+    "Aaron Somebody (no comment) <aaron.somebody@mulesoft.com>"
+Change (N)ame, (C)omment, (E)mail or (O)kay/(Q)uit? O
+You need a Passphrase to protect your secret key. 
+<passphrase entered, and hidden>  
+We need to generate a lot of random bytes. It is a good idea to perform
+some other action (type on the keyboard, move the mouse, utilize the
+disks) during the prime generation; this gives the random number
+generator a better chance to gain enough entropy.
+We need to generate a lot of random bytes. It is a good idea to perform
+some other action (type on the keyboard, move the mouse, utilize the
+disks) during the prime generation; this gives the random number
+generator a better chance to gain enough entropy.
+gpg: key D54945B4 marked as ultimately trusted
+public and secret key created and signed.
+gpg: checking the trustdb
+gpg: 3 marginal(s) needed, 1 complete(s) needed, PGP trust model
+gpg: depth: 0  valid:   3  signed:   0  trust: 0-, 0q, 0n, 0m, 0f, 3u
+gpg: next trustdb check due at 2015-08-25
+pub   2048R/D54945B4 2015-08-23 [expires: 2015-08-25]
+      Key fingerprint = 68BC E0A3 A377 417A 5102  ABB3 7689 9D95 D549 45B4
+uid                  Aaron Somebody (no comment) <aaron.somebody@mulesoft.com>
+sub   2048R/C1596E6C 2015-08-23 [expires: 2015-08-25]
+----
+
+完成操作后，密钥生成工具会将您的新公钥添加到系统范围的公钥环中，并将您的私钥添加到并行系统范围的私钥环中。下一步是确定密钥环的文件路径，以便使它们可供Mule访问。
+
+* 在本地驱动器上查找公用密钥环文件（`pubring.gpg`）
+* 找到私钥环文件（`secring.gpg`）
+*  *Mac or Unix*：位于本地驱动器上的_hidden_​​ `.gnupg`文件夹中
+*  *Windows*：位置因您的本地配置而异，但可能位于与`C:/Users/myuser/AppData/Roaming/gnupg`类似的位置
+
+
+=== 示例
+
+两个MuleSoft博客文章提供了如何在Mule中使用PGP加密的例子。访问以下链接深入了解PGP：
+
+*  https://blogs.mulesoft.com/biz/anypoint-studio/pgp-encryption-and-salesforce-integration-using-mulesofts-anypoint-platform/ [PGP加密和Salesforce集成]
+*  https://blogs.mulesoft.com/dev/mule-dev/using-pgp-security-explained-from-the-top/ [使用PGP安全：从顶部解释]
+
+=== 配置解密器
+
+
+*Studio Visual Editor*
+
+. 开始之前，请确保您拥有以下三条信息：
+.. 您的公钥环的文件路径
+.. 私钥环的文件路径
+.. 用于签名消息的秘密密钥（秘密客户端ID）的64位（16个字符）密钥ID。
++
+请参阅上面的*Generating PGP Keys*部分以了解有关获取这些值的更多信息。
+. 创建一个全局*Encryption*元素，如果您愿意，可以指定该元素的名称。将*Default Encrypter*的默认值更改为`PGP_ENCRYPTER`。
+. 在*Pgp Encrypter*选项卡上，根据下表配置字段。
++
+image:pgp_both_decrypt.png[pgp_both_decrypt]
++
+[%header,cols="2*a"]
+|===
+| {字段{1}}值
+2 + | *General Tab*
+| *Name*  |必需 - 全局元素的唯一名称。
+| *Default Encrypter*  | PGP_ENCRYPTER
+2 + | *Pgp Encrypter Tab*
+| *Reference or expression*  |如果选中，则在*Pgp Encrypter Reference*中使用表达式来引用您在应用程序的XML配置中其他位置定义的属性，或者引用定义的配置在一个bean中。
+| *Define attributes*  |如果选中，请在以下四个字段中输入值。
+| *Public Key Ring File Name*  |输入公钥环的文件路径。这个二元"key ring"持有公钥。详细了解如何在上面的“生成PGP密钥”部分中查找和创建公钥环。
+| *Secret Key Ring File Name*  |输入私钥环的文件路径。这个二元"key ring"包含消息发送者的私钥。详细了解如何在上面的“生成PGP密钥”部分中查找和创建公共公钥和私钥环。
+| *Secret Alias Id*  |用于签署消息的密钥的64位（16个字符）密钥ID。
+| *Secret Passphrase*  |访问私钥的密码。使用GPG生成密钥时，向导或命令行提示要求输入真实姓名和电子邮件地址，然后要求您创建用于访问密钥的密码。您用来生成密钥的密码是您输入的作为密码短语的值，Mule用它来访问私钥环的内容。
+|===
++
+. 在您希望对消息有效载荷中的数据进行加密的流程中设置一个*Encryption*消息处理器。
+. 根据下表配置消息处理器。
++
+[%header,cols="2*a"]
+|========
+| {字段{1}}值
+| *Display Name*  |您的消息处理器的唯一名称。
+| *Config Reference*  |必需 - 使用下拉菜单选择您创建的全局加密元素。
+| *Operation*  |必需 -  Decrypter
+| *Input reference*  |输入一个Mule表达式来定义Mule应该解密的消息部分。如果没有输入任何值，Mule解密整个消息有效载荷。
+| *Select encrypter*  |必需 -  PGP_ENCRYPTER
+| *Reference or expression*  |如果选中，则在*Pgp Encrypter Reference*中使用表达式来引用您在应用程序的XML配置中其他位置定义的属性，或者引用定义的配置在一个bean中。
+| *Define attributes*  |如果选中，请在以下字段中输入值。
+| *Principal*  |使用clientID和secret来验证客户端的另一种方法是将用户名和密码定义为主体。当您使用GPG生成一组密钥时，系统会要求您输入一个真实姓名和一个电子邮件地址 - 这两部分数据构成您校长的值。
+|========
+
+*XML Editor or Standalone*
+
+. 开始之前，请确保您拥有以下三条信息：
+.. 您的公钥环的文件路径
+.. 私钥环的文件路径
+.. 用于签名消息的秘密密钥（秘密客户端ID）的64位（16个字符）密钥ID。
++
+请参阅上面的*Generating PGP Keys*部分以了解有关获取这些值的更多信息。
+. 创建全局`encryption:config`元素，将其设置为配置文件中的所有流。
+. 根据下表配置全局元素的属性和子元素。
++
+
+[source, xml, linenums]
+----
+<encryption:config name="Decryption_PGP" defaultEncrypter="PGP_ENCRYPTER" doc:name="Decryption_PGP">
+        <encryption:pgp-encrypter-config publicKeyRingFileName="./mule.gpg" secretKeyRingFileName="./secring.gpg" secretAliasId="A7743F3F" secretPassphrase="mule1234"/>
+</encryption:config>
+----
+
++
+[%header%autowidth.spread]
+|===
+| {属性{1}} {需要{2}}值
+| *name*  | x  |您的全局元素的唯一名称。
+| *defaultEncrypter*  |   | PGP_ENCRYPTER
+| *doc:name*  |   | Studio可视化编辑器中元素的显示名称。不适用于独立。
+|===
++
+[%header%autowidth.spread]
+|===
+需要|子元素 |
+| *encryption:pgp-encrypter-config*  | X
+|===
++
+[%autowidth.spread]
+|========
+| *Child Element Attributes*  | *required*  | *Value*
+| *publicKeyRingFileName*  |  x  |为公钥环的文件路径输入一个值。这个二元"key ring"持有公钥。阅读更多关于查找和创建上面的公钥环的信息。
+| *secretKeyRingFileName*  | x   |为私钥环的文件路径输入一个值。这个二元"key ring"包含消息发送者的私钥。详细了解如何查找和创建上面的公共公钥和私钥。
+| *secretAliasId*  |  |  RSA公钥的十六进制值。 +
+如果未设置，则运行时从消息中获取该值以解密。 +
+如果设置，运行时将会抛出一个异常，如果它与解密消息所需的密钥不匹配。
+| *secretPassphrase*  | x   |访问私钥的密码。当您使用GPG生成密钥时，向导或命令行会提示您输入真实姓名和电子邮件地址，然后要求您创建用于访问密钥的密码。您用来生成密钥的密码是您输入的作为密码短语的值，Mule用它来访问私钥环的内容。
+|========
+. 将`encryption:decrypt`元素添加到您希望解密消息负载中的数据的流中。
+. 根据下表配置元素的属性和子元素。
++
+
+[source, xml, linenums]
+----
+<encryption:decrypt config-ref="Decryption_PGP" doc:name="Decryption" using="PGP_ENCRYPTER" input-ref="#[message.payload]">
+        <encryption:pgp-encrypter principal="fernando.martinez &lt;fernando.martinez@mulesoft.com&gt;" />
+</encryption:decrypt>
+----
+
++
+[%header%autowidth.spread]
+|===
+| {属性{1}} {需要{2}}值
+| *config-ref*  | x  |使用您创建的全局加密元素的名称。
+| *doc:name*  |   | Studio可视化编辑器中元素的显示名称。不适用于独立。
+| *using*  | X  | PGP_ENCRYPTER
+| *input-ref*  |   |输入一个Mule表达式来定义Mule应该解密的消息部分。如果没有输入任何值，Mule解密整个消息有效载荷。
+|===
++
+[%header%autowidth.spread]
+|===
+需要|子属性 |
+| *encryption:pgp-encrypter*  | X
+|===
++
+[%header%autowidth.spread]
+|========
+|子元素属性需要 |  |值
+| *principal*  |   |使用clientID和secret来验证客户端的另一种方法是，将用户名和密码定义为主体。当您使用GPG生成一组密钥时，系统会要求您输入一个真实姓名和一个电子邮件地址 - 这两部分数据构成您校长的值。
+|========
+
+== 另请参阅
+
+* 了解如何使用 link:/mule-user-guide/v/3.9/mule-credentials-vault[Mule证书库]加密您的属性文件。
+* 了解如何使用 link:/mule-user-guide/v/3.9/mule-message-encryption-processor[XML或JCE加密]加密或解密邮件。
+
+两篇MuleSoft博客文章提供了如何在Mule中使用PGP加密的例子。访问以下链接深入了解PGP：
+
+**  https://blogs.mulesoft.com/biz/anypoint-studio/pgp-encryption-and-salesforce-integration-using-mulesofts-anypoint-platform/ [PGP加密和Salesforce集成]
+**  https://blogs.mulesoft.com/dev/mule-dev/using-pgp-security-explained-from-the-top/ [使用PGP安全：从顶部解释]

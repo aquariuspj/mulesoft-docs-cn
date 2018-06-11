@@ -1,0 +1,115 @@
+[[aggregators-examples]]
+= 聚合器示例
+:keywords: aggregators, connector
+：TOC：
+：TOC标题：
+
+聚合器的一个常见用例是存储多个值，然后将其作为批处理进行处理。
+这很容易通过使用基于大小的聚合器来完成。
+
+假设您想要聚合的数据是之前存储在名称为`personName`的变量中的人员姓名，并且您想要处理100个元素的批次。一旦收集完所有数据，就要执行在名为`whatToDoWithAllTheseNames`的流程中定义的一些逻辑。
+
+所以，你可以使用这个：
+
+[source, xml, linenums]
+----
+<aggregators:size-based-aggregator name="personsNameAggregator" maxSize="100">
+    <aggregators:content>#[vars.personName]</aggregators:content>
+    <aggregators:aggregation-complete>
+        <flow-ref name="whatToDoWithAllTheseNames"/>
+    </aggregators:aggregation-complete>
+</aggregators:size-based-aggregator>
+----
+
+现在，假设你想在每次你的名字列表填充10％时执行一些动作。您不希望为每个新元素执行此操作，因为这会导致执行过多。您可以假定要执行的逻辑位于名为`partialAction`的另一个流中。我们可以为您提供`incremental-aggregation`路线。
+
+[source, xml, linenums]
+----
+<aggregators:size-based-aggregator name="personsNameAggregator" maxSize="100">
+    <aggregators:content>#[vars.personName]</aggregators:content>
+    <aggregators:incremental-aggregation>
+        <choice>
+            <when expression="#[(sizeOf(payload) mod 10) == 0]">
+                <flow-ref name="partialAction"/>
+            </when>
+        </choice>
+    </aggregators:incremental-aggregation>
+    <aggregators:aggregation-complete>
+        <flow-ref name="whatToDoWithAllTheseNames"/>
+    </aggregators:aggregation-complete>
+</aggregators:size-based-aggregator>
+----
+
+但是，如果你不想永远等待填满每一批。在这种情况下，即使未到达`maxSize`，您也可能需要处理所有已发生的事件。为此，您可以为您的聚合器配置超时。此示例将等待限制设置为10秒。
+
+
+[source, xml, linenums]
+----
+<aggregators:size-based-aggregator name="personsNameAggregator"
+                                   maxSize="100"
+                                   timeout="10"
+                                   timeoutUnit="SECONDS">
+    <aggregators:content>#[vars.personName]</aggregators:content>
+    <aggregators:incremental-aggregation>
+        <choice>
+            <when expression="#[(sizeOf(payload) mod 10) == 0]">
+                <flow-ref name="partialAction"/>
+            </when>
+        </choice>
+    </aggregators:incremental-aggregation>
+    <aggregators:aggregation-complete>
+        <flow-ref name="whatToDoWithAllTheseNames"/>
+    </aggregators:aggregation-complete>
+</aggregators:size-based-aggregator>
+----
+
+为了确保在发生超时后`aggregation-complete`路由将被执行，您还需要包含一个侦听器，例如：
+[source, xml, linenums]
+----
+<aggregators:aggregator-listener aggregatorName="personsNameAggregator" includeTimedOutGroups="true"/>
+<flow-ref name="whatToDoWithAllTheseNames"/>
+----
+
+请记住，对于这种情况，来自`aggregation-complete`路线和`aggregator-listener`的数据类型是相同的。因此，对于流`whatToDoWithAllTheseNames`的执行，数据来自何处并不重要。
+
+最后，你意识到你需要根据国籍来处理每个人。这些信息来自一个变量。但是，在这种情况下，假设您想要在同一批次中一起处理来自同一个国家/地区的每个人。
+
+您可以使用基于组的聚合器来分割它们。例如，假定该人的国籍以前存储在名称为`personNac`的变量中。在这种情况下，流程应包含以下内容：
+
+[source, xml, linenums]
+----
+<aggregators:group-based-aggregator name="personsNameByNacAggregator"
+                                    groupId="#[vars.personNac]"
+                                    groupSize="100"
+                                    timeout="10"
+                                    timeoutUnit="SECONDS"
+                                    evictionTime="0">
+    <aggregators:content>#[vars.personName]</aggregators:content>
+    <aggregators:incremental-aggregation>
+        <choice>
+            <when expression="#[(sizeOf(payload) mod 10) == 0]">
+                <flow-ref name="partialAction"/>
+            </when>
+        </choice>
+    </aggregators:incremental-aggregation>
+    <aggregators:aggregation-complete>
+        <flow-ref name="whatToDoWithAllTheseNamesFromSomeCountry"/>
+    </aggregators:aggregation-complete>
+</aggregators:group-based-aggregator>
+----
+
+流程还需要超时监听器：
+
+[source, xml, linenums]
+----
+<aggregators:aggregator-listener aggregatorName="personsNameByNacAggregator" includeTimedOutGroups="true"/>
+<flow-ref name="whatToDoWithAllTheseNamesFromSomeCountry"/>
+----
+
+请注意，该示例没有在聚合器中配置驱逐时间。这是因为默认值是`0`（在组被释放后立即执行），这是所需的行为。因此，如果一个小组完成或超时，可以将一个后续值添加到该小组而不被拒绝。
+
+
+[[see_also]]
+== 另请参阅
+
+*  link:aggregators-documentation[聚合器模块文档参考]

@@ -1,0 +1,256 @@
+=  X12 EDI连接器HIPAA
+：imagesdir：./_images
+
+_Premium_
+
+除了基本的X12标准外，X12模块还支持基于X12版本005010的HIPAA（健康保险可移植性和责任法案）标准。
+
+X12模块HIPAA支持包括：
+
+*  X12 HIPAA EDI消息读取，消息验证和消息写入
+* 与DataSense和DataWeave集成
+{0}} 005010X212,005010X214B3,005010X217,005010X218,005010X220A1,005010X221A1,005010X222A2,005010X223A2的HIPAA消息包。 005010X223A3,005010X224A3和005010X279A1
+* 自定义基本X12 HIPAA模式的能力
+
+与X12模块一起使用HIPAA的大多数方面与使用标准X12相同。主要区别是：
+
+* 模式的形式。
+* 执行的验证的范围和类型。
+* 数据结构表示。
+
+提供的HIPAA模式使用与基本X12模式不同的结构。用于HIPAA的结构反映了在不同目的的事务集中的不同位置使用相同的段的方式，并且通常对代码集和字段用法有不同的要求。为了帮助区分不同的用法，HIPAA模式使用全名作为段密钥。这与基本X12标准使用的方法不同，其中段键通常使用数字前缀和段标签。
+
+HIPAA模式还包括为元素定义的代码集的详细信息。数据在解析和写入事务集时都针对这些代码集进行验证。
+
+此页面有助于提供有关使用X12模块用于HIPAA事务集的详细信息，以及用法与标准X12的不同之处。
+
+== 先决条件
+
+本文档假定您熟悉X12，HIPAA，Mule，Anypoint
+连接器，Anypoint Studio，Mule流和Mule全局元素。
+
+有关兼容性信息，请参阅发行说明。链接到
+发布说明列在本文档的另请参见部分。
+
+要在生产环境中使用X12 EDI连接器，您必须
+已经为Anypoint B2B购买了MuleSoft许可证。
+
+== 此连接器的新增功能
+
+X12 EDI连接器2.x用于HIPAA数据的数据结构不同于
+与Mule 3.x一起使用的1.x版本。
+
+在1.x版本的连接器中，复合组件被有效地插入
+在使用点，以便每个单独的元素
+嵌套在复合组件内的是基于key的key
+包含段并直接从地图引用
+代表细分市场。
+
+在每个连接器的4.x版本中
+复合组件由一个子地图代替
+并且组合中的值具有基于组合标识符的键。
+
+这种结构变化允许使用一致的映射
+数据在复合组件中，而不管包含
+段或段内的位置。
+
+== 配置HIPAA使用情况
+
+要为HIPAA事务集使用X12模块连接器，您必须：
+
+* 选择一个或多个要使用的HIPAA模式。
+* 根据所需的SNIP验证类型，将表单和验证配置参数（`formValidation`）设置为“HIPAA_SNIP1”或“HIPAA_SNIP2”。
+
+=== 确定HIPAA架构位置
+
+要使用连接器，您需要知道项目中模式的位置。如果您使用开箱即用的HIPAA架构，而不是自定义任何内容，架构位置将遵循`/hipaa/{version}/{transaction-set}.esl`模式。例如，如果您使用的是`005010X222A2`版本和837交易集，那么您的模式位置是`/hipaa/005010X222A2/837.esl`。
+
+如果您使用的是修改的HIPAA架构，则应该将架构放在src / main / app目录下，并使用`${app.home}`引用该位置。例如，如果您已将HIPAA 837架构置于src / main / app / mypartner / 837.esl之下，则架构位置为`${app.home}/mypartner/837.esl`。
+
+== 关于HIPAA模式定义
+
+X12模块使用名为ESL（用于EDI模式语言）的YAML格式来表示标准X12和HIPAA模式。 HIPAA标准基于X12，但在几个方面修改相应的X12基本标准，包括：
+
+*  HL（Hierarchical Level）循环的多个专门定义，其中将X12中定义的基本循环结构扩展为多个变体，通常是嵌套的。
+* 模块化循环定义可以在定义中的不同点重用。
+* 通过特定元素中的代码值区分重复段的不同用法。
+* 更改段和段组件的使用要求。
+
+为了表示HIPAA的这些功能，ESL模式定义与标准X12模式有很大不同。以下是部分示例，摘自005010X222A2 837事务集的模式：
+
+[source,yaml, linenums]
+----
+form: HIPAA
+version: '005010X222A2'
+structures: 
+- id: '837'
+  name: 'Health Care Claim'
+  class: 'HC'
+  areas: 
+  - code: '1'
+    items: 
+    - { idRef: 'ST_TransactionSetHeader', position: '0050', usage: M }
+    - { idRef: 'BHT_BeginningOfHierarchicalTransaction', position: '0100', usage: M }
+    - groupId: '1000A_Loop'
+      usage: O
+      items: 
+      - { idRef: 'NM1_SubmitterName', position: '0200', usage: M }
+      - { idRef: 'PER_SubmitterEDIContactInformation', position: '0450', usage: M, count: 2 }
+    - groupId: '1000B_Loop'
+      usage: O
+      items: 
+      - { idRef: 'NM1_ReceiverName', position: '0500', usage: M }
+  - code: '2'
+    items: 
+    - groupId: '2000A_Loop'
+      count: '>1'
+      usage: M
+      items: 
+      - { idRef: 'HL_BillingProviderHierarchicalLevel', position: '0010', usage: I }
+      - { idRef: 'PRV_BillingProviderSpecialtyInformation', position: '0030', usage: O }
+      - { idRef: 'CUR_ForeignCurrencyInformation', position: '0100', usage: O }
+      - groupId: '2010AA_Loop'
+        usage: O
+        items: 
+        - { idRef: 'NM1_BillingProviderName', position: '0150', usage: M }
+        - { idRef: 'N3_BillingProviderAddress', position: '0250', usage: M }
+        - { idRef: 'N4_BillingProviderCityStateZIPCode', position: '0300', usage: M }
+        - { idRef: 'REF_BillingProviderTaxIdentification', position: '0350', usage: M }
+        - { idRef: 'REF_BillingProviderUPINLicenseInformation', position: '0360', usage: O, count: 2 }
+        - { idRef: 'PER_BillingProviderContactInformation', position: '0400', usage: O, count: 2 }
+      - { area: '3', usage: O }
+      - { area: '4', count: '>1', usage: O }
+  - code: '3'
+    items: 
+    - groupId: '2010AB_Loop'
+      usage: O
+      items: 
+      - { idRef: 'NM1_PayToAddressName', position: '0150', usage: O }
+      - { idRef: 'N3_PayToAddressADDRESS', position: '0250', usage: M }
+      - { idRef: 'N4_PayToAddressCityStateZIPCode', position: '0300', usage: M }
+    - groupId: '2010AC_Loop'
+      usage: O
+      items: 
+      - { idRef: 'NM1_PayToPlanName', position: '0450', usage: O }
+      - { idRef: 'N3_PayToPlanAddress', position: '0550', usage: M }
+      - { idRef: 'N4_PayToPlanCityStateZIPCode', position: '0600', usage: M }
+      - { idRef: 'REF_PayToPlanSecondaryIdentification', position: '0650', usage: O }
+      - { idRef: 'REF_PayToPlanTaxIdentificationNumber', position: '0655', usage: M }
+----
+
+== 关于区域键
+
+在上述模式部分中，区域键具有单个区域定义的值数组。这些区域类似于将常规X12事务集分解为头，细节和摘要部分，但提供了更好的粒度。取代X12中定义的事务集的三个固定部分，HIPAA事务集中可能会定义二十个或更多个区域。
+
+每个区域都是定义的可重用组件，并且由代码字符值标识，该代码字符值通常可以是单个数字或单个字母字符。
+
+引用区域以包含在组件列表中的区域项目的定义中。在X12架构定义中，组或者区域的组件列表可能只包含段，组和被称为包裹的组变量（用于X / 12的LS / LE循环）。在HIPAA模式定义中，组件列表还可能包含区域引用。引用区域的效果与将该区域的所有组件插入到参考点的定义中相同。
+
+回头参考上面的模式部分，在区域代码"2"的组件列表末尾指向区域"3"和"4"，区域"4"可选地重复。
+
+HIPAA消息的数据结构将X12划分维护到标题，详细信息和摘要部分。标题总是具有最低排序顺序代码的区域，细节是下一个（包括所有参考区域），并且摘要是最高排序顺序代码。
+
+== 关于代码集
+
+以下是上面使用的同一个005010X222A2 837事务集架构的另一部分，这部分显示了BHT_BeginningOfHierarchicalTransaction段的定义：
+
+[source,yaml, linenums]
+----
+- id: 'BHT_BeginningOfHierarchicalTransaction'
+  name: 'Beginning of Hierarchical Transaction'
+  varTag: 'BHT'
+  values: 
+  - { id: '1005', name: 'Hierarchical Structure Code', usage: M, codeSet: { '0019': 'Information Source, Subscriber, Dependent' }, type: ID, length: 4 }
+  - { id: '353', name: 'Transaction Set Purpose Code', usage: M, codeSet: { '00': 'Original', '18': 'Reissue' }, type: ID, length: 2 }
+  - { id: '127', name: 'Originator Application Transaction Identifier', usage: M, type: AN, minLength: 1, maxLength: 50 }
+  - { id: '373', name: 'Transaction Set Creation Date', usage: M, type: DT, length: 8 }
+  - { id: '337', name: 'Transaction Set Creation Time', usage: M, type: TM, minLength: 4, maxLength: 8 }
+  - { id: '640', name: 'Claim or Encounter Identifier', usage: M, codeSet: { 'RP': 'Reporting', 'CH': 'Chargeable', '31': 'Subrogation Demand' }, type: ID, length: 2 }
+----
+
+此段中的第一个，第二个和最后一个元素以键值对的数组形式定义`codeSet`个值。每对中的关键字是HIPAA标准允许的字段的特定值，而关键字的值是来自标准的该值的文本描述。
+
+X12 EDI连接器为HIPAA文档强制执行这些代码集，如果事务集在分析或写入时使用未定义的字段值（即，未在{{0}中作为键列出的值），则发出错误。在某些情况下，例如BHT定义的第一个元素，只允许一个值。在其他情况下，可能有很多潜在的价值。
+
+== 关于细分变体
+
+以下是同一个005010X222A2 837交易集架构的第三部分，其中显示了两个不同的DTP段定义：
+
+[source,yaml, linenums]
+----
+- id: 'DTP_DateAccident'
+  name: 'Date - Accident'
+  varTag: 'DTP'
+  values: 
+  - { id: '374', name: 'Date Time Qualifier', usage: M, varValue: true, codeSet: { '439': 'Accident' }, type: ID, length: 3 }
+  - { id: '1250', name: 'Date Time Period Format Qualifier', usage: M, codeSet: { 'D8': 'Date Expressed in Format CCYYMMDD' }, type: ID, minLength: 2, maxLength: 3 }
+  - { id: '1251', name: 'Accident Date', usage: M, type: AN, minLength: 1, maxLength: 35 }
+- id: 'DTP_DateAcuteManifestation'
+  name: 'Date - Acute Manifestation'
+  varTag: 'DTP'
+  values: 
+  - { id: '374', name: 'Date Time Qualifier', usage: M, varValue: true, codeSet: { '453': 'Acute Manifestation of a Chronic Condition' }, type: ID, length: 3 }
+  - { id: '1250', name: 'Date Time Period Format Qualifier', usage: M, codeSet: { 'D8': 'Date Expressed in Format CCYYMMDD' }, type: ID, minLength: 2, maxLength: 3 }
+  - { id: '1251', name: 'Acute Manifestation Date', usage: M, type: AN, minLength: 1, maxLength: 35 }
+----
+
+这两个定义适用于DTP段的不同实例，作为2300 Claim Information循环的一部分。在交易集结构中，DTP段的这些用途基本上发生在相同的位置，匹配基本X12标准中的重复DTP段的两种可能的出现。但是由于该段的两种用途提供了不同的信息，HIPAA标准为它们提供了不同的名称，并以不同的方式解释了DTP03字段。
+
+在这种情况下，段的第一个字段中的数据值即日期时间限定符字段标识段实际上正在使用哪个变化。由于为该字段设置的代码对于这些用途中的每一个具有不同的值，因此字段中存在的值指示分析文档中的DTP段是DTP_DateAccident还是DTP_DateAcuteManifestation（或同一DTP段的其他几个用途中的任何一个位置）。模式定义中的`varValue: true`标志表示以这种方式使用此第一个字段来区分变体。
+
+请注意，即使该字段的值在每次使用段时都得到有效修正，但在写入数据时仍然必须正确设置。如果您为此字段提供不同的值，或者不提供值，则写入时会出现错误。
+
+== 关于语法规则
+
+以下是005010X222A2 837事务集模式的最后一个示例，以说明语法规则是如何表示的：
+
+[source,yaml, linenums]
+----
+- id: 'N4_PayerCityStateZIPCode'
+  name: 'Payer City, State, ZIP Code'
+  varTag: 'N4'
+  values: 
+  - { id: '19', name: 'Payer City Name', usage: M, type: AN, minLength: 2, maxLength: 30 }
+  - { id: '156', name: 'Payer State or Province Code', usage: O, type: ID, length: 2 }
+  - { id: '116', name: 'Payer Postal Zone or ZIP Code', usage: O, type: ID, minLength: 3, maxLength: 15 }
+  - { id: '26', name: 'Country Code', usage: O, type: ID, minLength: 2, maxLength: 3 }
+  - { id: '309', name: 'Location Qualifier', usage: U, type: ID, minLength: 1, maxLength: 2 }
+  - { id: '310', name: 'Location Identifier', usage: U, type: AN, minLength: 1, maxLength: 30 }
+  - { id: '1715', name: 'Country Subdivision Code', usage: O, type: ID, minLength: 1, maxLength: 3 }
+  rules: 
+  - { type: E, items: [2, 7] }
+  - { type: C, items: [6, 5] }
+  - { type: C, items: [7, 4] }
+----
+
+在X12和HIPAA中使用语法规则来定义a中的值之间的关系
+段或复合。规则包含在模式中与
+价值清单。规则类型的代码与X12和HIPAA使用的代码相同
+规格和项目列表给出了由规则管理的值的数量。
+
+在上面的例子中，这三条规则说：
+
+*  N402或N407中只有一个可能存在（`{ type: E, items: [2, 7] }`）
+* 如果存在N406，则需要N405（`{ type: C, items: [6, 5] }`）
+* 如果存在N407，则需要N404（`{ type: C, items: [7, 4] }`）
+
+
+== 修改模式
+
+由于标准X12和HIPAA模式之间的差异，使用重叠模式来修改基础
+HIPAA不支持定义。相反，使用修改的推荐方法是
+从x12-schemas-2.0.0.jar中提取提供的HIPAA模式，这可以在标准的MuleSoft企业Maven存储库（位于组ID com.mulesoft.connectors下）中找到。您可以从此JAR（包含标准X12和HIPAA模式）复制消息结构模式，并修改提取的模式以使用
+直。与X12架构不同，该架构使用段，复合和元素的基本集合
+定义，HIPAA模式是独立的。这使得更改模式变得很容易
+无需使用多个文件。
+
+== 关于WEDI推荐的测试类型
+
+* 类型1：EDI语法完整性测试 - 测试EDI文件的有效段，段顺序，元素属性，测试数值数据元素中的数值，验证X12或NCPDP语法以及符合X12和NCPDP规则。这验证了EDI提交的基本语法完整性。
+* 类型2：HIPAA语法要求测试 - 测试HIPAA实施指南的特定语法要求，例如重复次数限制，已使用和未使用的限定符，代码，元素和段。此类型还包括测试所需的HIPAA或片段内情景数据元素，测试WEDI SNIP实施指南中规定的非医疗代码集，以及使用X12代码在WEDI SNIP实施指南中注明的值和代码列表或表格。
+** 由于连接器无法确定段内情景数据元素的行动方案，因此X12 EDI连接器不包含段内情景数据元素。用户需要在连接器外部设置验证逻辑。
+
+== 另请参阅
+
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。

@@ -1,0 +1,812 @@
+=  MUnit Maven支持
+：版本信息：3.7.0和更新
+:keywords: munit, testing, unit testing
+
+MUnit提供了一个Maven插件，它允许您将MUnit测试作为持续集成环境的一部分运行。
+
+注意：有关将日志重定向到文件的信息，请参阅 link:/munit/v/1.2/logging-in-munit#redirecting-logs-to-a-file[登录MUnit]。
+
+== 设置您的pom.xml文件
+
+MUnit是由几个模块组成的，所有这些模块都是运行MUnit测试所必需的。 Maven提供了尽可能多的灵活性。
+
+为了让MUnit正确运行Maven，您需要在您的`pom.xml`文件中添加几个部分。
+
+提示：如果您使用的是Anypoint Studio，Maven集成已经为您解决了。有关详细信息，请参阅 link:/anypoint-studio/v/6/using-maven-in-anypoint-studio[在Anypoint Studio中使用Maven]。
+
+[NOTE]
+--
+本文档假定您拥有`pom.xml`中的`<munit.version>`和`<mule.munit.support.version>`属性。 +
+例如：
+
+[source, xml, linenums]
+----
+<munit.version>1.2.0</munit.version>
+<mule.munit.support.version>3.7.1</mule.munit.support.version>
+----
+--
+
+不要组合不同版本的MUnit模块。也就是说，`munit.version`应该与您的`pom.xml`中的所有MUnit构件相同，例如插件或跑步者。
+
+关于Mule MUnit支持模块，`mule.munit.support.version`应该匹配`mule.version`。例如，支持模块的`3.7.0`版本将与`3.7.0`，`3.7.1`，`3.7.2`和其他版本的Mule兼容，但不一定与`3.6.0`兼容。
+
+===  MUnit Maven插件
+
+MUnit Maven插件允许您从Maven运行MUnit测试。要启用该插件，请将以下部分添加到您的`pom.xml`。
+
+[source, xml, linenums]
+.MUnit Maven插件
+----
+<build>
+  <plugins>
+  ...
+
+    <plugin>
+      <groupId>com.mulesoft.munit.tools</groupId>
+      <artifactId>munit-maven-plugin</artifactId>
+      <version>${munit.version}</version>
+      <executions>
+        <execution>
+          <id>test</id>
+          <phase>test</phase>
+          <goals>
+            <goal>test</goal>
+          </goals>
+        </execution>
+      </executions>
+    </plugin>
+
+  ...
+  </plugins>
+</build>
+----
+
+====  MUnit文件夹
+
+所有MUnit测试套件文件都位于`src/test/munit`中。你需要告诉Maven将这个文件夹添加到类路径中。
+
+[source, xml, linenums]
+.MUnit文件夹
+----
+<build>
+...
+
+  <testResources>
+    <testResource>
+      <directory>src/test/munit</directory>      // <1>
+    </testResource>
+    <testResource>
+      <directory>src/test/resources</directory>  // <2>
+    </testResource>
+  </testResources>
+
+...
+</build>
+----
+<1>实际的MUnit测试文件夹。
+<2>普通资源文件夹，通常用于存储其他文件。
+
+===  MUnit依赖关系
+
+下面列出了使MUnit能够从Maven运行所需的_minimal artifacts_。
+
+[source, xml, linenums]
+.MUnit相关性
+----
+<dependencies>
+...
+
+  <dependency>
+    <groupId>com.mulesoft.munit</groupId>
+    <artifactId>mule-munit-support</artifactId>
+    <version>${mule.munit.support.version}</version>
+    <scope>test</scope>
+  </dependency>
+  <dependency>
+    <groupId>com.mulesoft.munit</groupId>
+    <artifactId>munit-runner</artifactId>
+    <version>${munit.version}</version>
+    <scope>test</scope>
+  </dependency>
+
+...
+</dependencies>
+----
+
+===  MUnit存储库
+
+Mueit工件部署在Mule Maven仓库中，您可能已经见过。
+
+[source, xml, linenums]
+.Repositories
+----
+<repositories>
+  <repository>
+    <id>mulesoft-releases</id>
+      <name>MuleSoft Releases Repository</name>
+      <url>http://repository.mulesoft.org/releases/</url>
+      <layout>default</layout>
+    </repository>
+</repositories>
+----
+
+您还需要添加插件存储库。
+
+[source, xml, linenums]
+.Plugin存储库
+----
+<pluginRepositories>
+  <pluginRepository>
+    <id>mulesoft-release</id>
+    <name>mulesoft release repository</name>
+    <layout>default</layout>
+    <url>http://repository.mulesoft.org/releases/</url>
+    <snapshots>
+      <enabled>false</enabled>
+    </snapshots>
+  </pluginRepository>
+</pluginRepositories>
+----
+
+提示：如果您使用Java编写MUnit测试代码，则不需要MUnit Maven插件或插件存储库。
+
+==  MUnit Maven插件
+
+MUnit Maven插件可以运行基于XML的测试。它有几个我们在下面讨论的功能。
+
+=== 从Maven运行MUnit测试
+
+[source,console]
+在项目示例中运行MUnit测试
+----
+mvn clean test
+----
+
+==== 运行特定的MUnit测试套件
+
+您可以指示MUnit Maven Plugin仅运行属于特定测试套件的测试。
+
+为此，我们使用属性`munit.test`。
+
+[source,console]
+运行特定的MUnit测试套件示例
+----
+mvn clean test -Dmunit.test=<regex-test-suite>
+----
+
+属性`munit.test`接受正则表达式。该表达式应用于MUnit测试套件文件的名称。正则表达式语言是Java实现。
+
+以下是一个有效的例子：
+[source,console]
+----
+mvn clean test -Dmunit.test=.*my-test.*
+----
+
+您可以通过将命名约定添加到MUnit测试套件来利用此功能。
+
+==== 运行特定的MUnit测试
+
+就像你指示MUnit运行一个测试套件一样，你也可以告诉它在该测试套件中运行一个特定的测试。为此，我们再次使用属性`munit.test`，并添加一个：
+
+[source,console]
+----
+mvn clean test -Dmunit.test=<regex-test-suite>#<regex-test-name>
+----
+
+添加是特殊字符`#`。在它的右边你应该输入测试名称。它也接受正则表达式。该表达式应用于MUnit Test的属性`name`。 +
+正则表达式必须包含在双引号之间。
+
+以下是一个有效的例子：
+[source,console]
+----
+mvn clean test -Dmunit.test=".*my-test.*#.*test-scenario-1.*"
+----
+
+
+提示：MUnit测试套件中与正则表达式不匹配的测试被标记为*ignored*。
+
+=== 跳过MUnit测试
+
+==== 跳过所有测试
+
+在构建应用程序时，您可能想要阻止测试运行。 MUnit使用与Maven相同的机制，因此如果您想跳过测试，可以使用参数`skipTests`。
+
+[source,console]
+。滑雪测试示例
+----
+mvn clean package -DskipTests
+----
+
+==== 仅跳过MUnit测试
+
+MUnit还附带了另一个仅阻止MUnit测试运行的属性。
+同时允许任何其他测试（如JUnit测试）继续运行。
+
+如果您只想跳过MUnit测试，则可以使用参数`skipMunitTests`。
+
+[source,console]
+.Skipping MUnit测试示例
+----
+mvn clean package -DskipMunitTests
+----
+
+提示：属性`skipMunitTests`仅适用于基于XML的MUnit测试。
+
+=== 常规配置
+
+MUnit Maven插件提供了一些小配置。
+
+
+==== 设置系统变量
+
+您可能希望定义MUnit测试成功运行所需的特定系统变量。下面的例子显示了你可以如何发送它们。
+
+[source, xml, linenums]
+发送系统变量
+----
+<plugin>
+  <groupId>com.mulesoft.munit.tools</groupId>
+  <artifactId>munit-maven-plugin</artifactId>
+  <version>${munit.version}</version>
+  <executions>
+    <execution>
+      <id>test</id>
+      <phase>test</phase>
+      <goals>
+        <goal>test</goal>
+      </goals>
+    </execution>
+  </executions>
+  <configuration>
+    <systemPropertyVariables>   //<1>
+      <my.property.key>my.property.value></my.property.key>
+    </systemPropertyVariables>
+  </configuration>
+</plugin>
+----
+<1>发送变量。
+
+系统属性变量会覆盖`mule-
+app.properties`文件或属性占位符。
+
+[TIP]
+====
+使用Maven运行MUnit时，您可以使用`-D`参数覆盖这些变量。这完全优先于任何其他财产。
+
+例如：
+
+`-Dmy.property.key=my.property.another.value`
+====
+
+=== 动态端口
+
+在持续集成（CI）环境中测试Mule应用程序时，以下情况并不罕见：
+
+`Your application tries to open a specific port. The port is already in use. The application fails with a port binding exception.`
+
+这肯定会发生，解决此问题的简单方法是让您的应用程序使用自由端口。
+MUnit Maven插件带有一个内置的功能来做到这一点。
+
+`MUnit Dynamic Ports`指示MUnit Maven Plugin在运行Mule应用程序的测试之前查找未绑定的端口并保留它们。选定的每个端口都放置在配置中指定的名称下的系统属性中。
+之后，端口号可以由应用程序通过使用占位符来获取。
+
+提示：插件选择的端口取自以下范围：`[40000,50000)`
+
+注意：动态端口功能仅作为MUnit Maven插件的一部分提供，因此在从Anypoint Studio内部运行测试时，不能期望此功能可用。
+
+==== 启用动态端口
+
+为了启用该功能，您需要将以下代码添加到MUnit Maven插件的`configuration`部分：
+
+[source, xml, linenums]
+。动态端口配置
+----
+<dynamicPorts>
+  <dynamicPort>a.dynamic.port</dynamicPort>
+</dynamicPorts>
+----
+
+如果您的应用程序中有`${http.port}`占位符，则配置如下所示：
+
+[source, xml, linenums]
+。例
+----
+<dynamicPorts>
+  <dynamicPort>http.port</dynamicPort>
+</dynamicPorts>
+----
+
+==== 准备您的应用程序
+
+尝试使用端口的应用程序部分必须通过使用占位符进行参数化。
+例如，您可能希望让您的Mule应用程序侦听HTTP通信。为了做到这一点，你应该提供以下配置：
+
+[source, xml, linenums]
+.HTTP简单应用程序
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081"/>
+<flow name="httpFlow">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/"/>
+</flow>
+----
+
+现在，此应用程序始终监听端口`8081`。要使其动态化，请将其更改为：
+
+[source, xml, linenums]
+.HTTP简单的应用程序与动态端口
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="${http.port}"/> //<1>
+<flow name="httpFlow">
+    <http:listener config-ref="HTTP_Listener_Configuration" path="/" />
+</flow>
+----
+<1>请注意占位符`${http.port}`。
+
+通过以这种方式编码的应用程序以及适当的动态端口配置，您的应用程序将开始每次运行监听不同的端口。
+
+=== 覆盖
+
+MUnit只具有Anypoint Studio提供的基本覆盖功能。
+由于MUnit版本`1.2.0`此功能也可以通过使用MUnit Maven插件从命令行获得。
+
+==== 配置
+
+以下部分介绍如何配置 link:/munit/v/1.2/munit-coverage-report[单位覆盖面]。
+
+一个基本的Coverage相关功能集在Anypoint Studio中。但是，全套功能仅限于此
+从Maven运行时可用。因此，所有配置都通过`pom.xml`文件完成。
+
+===== 启用覆盖
+
+要启用 link:/munit/v/1.2/munit-coverage-report[单位覆盖面]，请将以下配置添加到MUnit插件：
+
+[source,xml,linenums]
+.MUnit Coverage  - 最小配置
+----
+<plugin>
+  <groupId>com.mulesoft.munit.tools</groupId>
+  <artifactId>munit-maven-plugin</artifactId>
+  <version>${project.version}</version>
+  ...
+  <configuration>
+    <coverage>
+      <runCoverage>true</runCoverage>   //<1>
+    </coverage>
+  </configuration>
+</plugin>
+----
+<1>这将启用覆盖功能
+
+启用MUnit Coverage时，您只能在控制台中看到摘要报告。
+默认情况下，不会采取其他操作，因此它只是提供信息。
+
+这是一个总结报告的样子：
+
+[source,console,linenums]
+----
+[INFO] [CoverageManager] Printing Coverage Report...
+[INFO] ===============================================================================
+[INFO] MUnit Coverage Summary
+[INFO] ===============================================================================
+[INFO]  * Resources: 3 - Flows: 6 - Message Processors: 7
+[INFO]  * Application Coverage: 71.43%
+----
+
+要为MUnit插件配置JSON报告生成，您需要在您的`pom.xml`文件中添加以下配置：
+
+[source,xml,linenums]
+----
+<coverage>
+<runCoverage>true</runCoverage>
+  <formats>
+    <format>json</format>
+  </formats>
+</coverage>
+----
+
+===== 构建失败
+
+如果未达到特定的覆盖率级别，MUnit Coverage的其中一项功能是使构建失败。
+
+要使构建失败，请将以下行添加到配置中：
+
+[source,xml,linenums]
+单位覆盖率 - 失败构建
+----
+<coverage>
+  <runCoverage>true</runCoverage>
+  <failBuild>true</failBuild>       //<1>
+</coverage>
+----
+<1>启用*Fail Build Feature*
+
+现在，下一个合乎逻辑的步骤是定义覆盖级别。
+
+MUnit Coverage处理三个不同的级别：
+
+* 申请
+* 资源
+* 流
+
+以下是如何定义所需的覆盖级别：
+
+[source,xml,linenums]
+单位覆盖率 - 需要覆盖率
+----
+<coverage>
+  <runCoverage>true</runCoverage>
+  <failBuild>true</failBuild>
+
+  <requiredApplicationCoverage>20</requiredApplicationCoverage>
+  <requiredResourceCoverage>10</requiredResourceCoverage>
+  <requiredFlowCoverage>5</requiredFlowCoverage>
+</coverage>
+----
+
+提示：每个值代表一个百分比。
+
+如果您定义覆盖率级别，但将属性`failBuild`设置为*false*，并且未达到级别，则会在MUnit Coverage摘要中显示警告。
+
+像这样的东西：
+
+[source,console,linenums]
+----
+INFO] [CoverageManager] Printing Coverage Report...
+[INFO] ===============================================================================
+[INFO] MUnit Coverage Summary
+[INFO] ===============================================================================
+[INFO]  * Resources: 3 - Flows: 6 - Message Processors: 7
+[INFO]  * Application Coverage: 71.43%
+[INFO]
+[WARNING] ----------------------------- WARNING --------------------------------------
+[WARNING]  * Application coverage is below defined limit. Required: 100.0% - Current: 71.43%  //<1>
+----
+<1> Warning detailing which coverage level wasn't meet
+
+TIP: If no level is defined, -1 is assumed, which indicates that the build won't fail due to lack of coverage.
+
+===== Ignoring Flows
+
+Another feature we provide is the ability to ignore a flow. This means that a flow doesn't count as coverage data, doesn't affect the overall number of message processors, and doesn't cause a build to fail if the flow is not tested or if the flow doesn't reach coverage metrics.
+
+To ignore a flow, add the following lines to the configuration:
+
+[source,xml,linenums]
+.MUnit Coverage - Ignoring Flows
+----
+<coverage>
+  <ignoreFlows>
+	  <ignoreFlow>the-name-of-your-flow</ignoreFlow>       //<1>
+  </ignoreFlows>
+</coverage>
+----
+<1> The name of the flow you want to ignore.
+
+This is a list, so you can ignore as many flows as you need.
+
+===== Reports
+
+As we've shown before by default, link:/munit/v/1.2/munit-coverage-report[MUnit Coverage] shows summary report in the console. But that's not the only option.
+MUnit Coverage currently offers two types of reports:
+
+* Console
+* HTML
+* JSON
+
+The *Console* report, is printed in the console. It works with the summary report and
+shows details of each resource, flow, sub-flow, and batch, and its coverage level.
+
+The *HTML* report shows the same information, which you can view in any web browser.
+To access the *HTML* report, browse your application folder structure:
+
+* `${application.path}/target/munit-reports/coverage`
+
+Locate the file *summary.html*, which is the starting point of the report and lets you navigate through all the data.
+
+The *JSON* report shows the same information as the _HTML_ report, in a JSON format. +
+To access the JSON report file, browse your application folder structure:
+
+----
+${application.path}/target/munit-reports/coverage-json/report.json
+----
+
+To enable the reports, add the following configuration:
+
+[source,console,linenums]
+.MUnit Coverage - Report Configuration
+----
+<coverage>
+  <runCoverage>true</runCoverage>
+
+  <formats>
+    <format>console</format>  //<1>
+    <format>html</format>     //<2>
+    <format>json</format>     //<3>
+  </formats>
+</coverage>
+----
+<1> Console report
+<2> HTML report
+<3> JSON report
+
+TIP: You can have none, one, or all the report types added to your configuration.
+
+== Working With Parent POMs
+
+You can declare the MUnit plugin in a parent POM file and every child project under this file can choose to reference this definition.
+
+In order to make a proper use of the MUnit plugin in a parent-child POM relationship, you need to include the MUnit plugin declaration in the `<pluginManagement>` section of your parent `pom.xml` file:
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.pirate</groupId>
+    <artifactId>pirate-pom</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <properties>
+        <munit.version>1.2.0-SNAPSHOT</munit.version>
+    </properties>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>com.mulesoft.munit.tools</groupId>
+                    <artifactId>munit-maven-plugin</artifactId>
+                    <version>${munit.version}</version>
+                    <executions>
+                        <execution>
+                            <id>test</id>
+                            <phase>test</phase>
+                            <goals>
+                                <goal>test</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                    <configuration>
+                        <coverage>
+                            <runCoverage>true</runCoverage>
+                            <failBuild>false</failBuild>
+                            <requiredApplicationCoverage>0</requiredApplicationCoverage>
+                            <requiredResourceCoverage>0</requiredResourceCoverage>
+                            <requiredFlowCoverage>0</requiredFlowCoverage>
+                            <formats>
+                                <format>console</format>
+                                <format>html</format>
+                            </formats>
+                        </coverage>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>
+----
+
+This *pirate-pom* project declares the MUnit Maven plugin in its _plugin management_ section, which defines a global configuration that each child under this parent can choose to <<inherit, reference>>, <<override,override>> or even <<ignore,ignore>>.
+
+[[inherit]]
+=== Inherit Parent's Plugin
+
+If you choose to inherit the MUnit plugin in your child POM files, you need to reference it in a _<plugin>_ section of each child _POM_ file individually:
+
+[source,xml,linenums]
+.POM child file sample
+----
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <parent>
+        <groupId>org.pirate</groupId>
+        <artifactId>pirate-pom</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.mycompany</groupId>
+    <artifactId>ninja</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>mule</packaging>
+    <name>Mule ninja Application</name>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <mule.version>3.8.0</mule.version>
+        <mule.tools.version>1.1</mule.tools.version>
+        <munit.version>1.2.0</munit.version>
+        <mule.munit.support.version>3.8.0</mule.munit.support.version>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.mulesoft.munit.tools</groupId>
+                <artifactId>munit-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+    </project>
+----
+
+This quick sample references _pirate-pom_ file as its parent and then declares the MUnit plugin in a `<plugin>` section without specifying its `<version>` because MUnit plugin configuration is being inherited from the `<pluginManagement>` section in the parent.
+
+[[override]]
+==== Inherit Plugin and Override Parent's Configuration
+
+When inheriting the plugin from a parent POM file, you can also choose to override the parent's configuration, but keep in mind that overriding completely suppresses the original configuration, requiring you to declare all necessary configurations again:
+
+[source,java,linenums]
+.POM child file overriding coverage report's format
+----
+<plugin>
+	<groupId>com.mulesoft.munit.tools</groupId>
+	<artifactId>munit-maven-plugin</artifactId>
+	<configuration>
+		<coverage>
+			<runCoverage>true</runCoverage>
+			<formats>
+				<format>html</format>
+			</formats>
+		</coverage>
+	</configuration>
+</plugin>
+----
+
+In this example, this child project is overriding the console coverage report, replacing it only by the HTML one, but since the values from the other elements in the parent (`<failBuild>`, `<requiredApplicationCoverage>`, `<requiredResourceCoverage>`, `<requiredFlowCoverage>`) are not being referenced, this child file won't inherit them and the default values will apply.
+
+[[ignore]]
+=== Ignore Parent's Plugin
+
+Each child project under a parent `pom` file can choose to ignore the plugin referenced in the  parent's plugin management section and not implement the plugin declared there.
+
+By not declaring the Munit Plugin in your `<plugin>` section, you avoid inheriting the plugin declared in *pirate-pom*:
+
+[source,xml,linenums]
+.Child POM file not inheriting the MUnit Maven Plugin
+----
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <parent>
+        <groupId>org.pirate</groupId>
+        <artifactId>pirate-pom</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.mycompany</groupId>
+    <artifactId>ninja</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>mule</packaging>
+    <name>Mule ninja Application</name>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <mule.version>3.8.0</mule.version>
+        <mule.tools.version>1.1</mule.tools.version>
+        <munit.version>1.2.0</munit.version>
+        <mule.munit.support.version>3.8.0</mule.munit.support.version>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.mule.tools.maven</groupId>
+                <artifactId>mule-app-maven-plugin</artifactId>
+                <version>${mule.tools.version}</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <copyToAppsDirectory>true</copyToAppsDirectory>
+                </configuration>
+            </plugin>
+            <plugin>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>2.2.1</version>
+                <configuration>
+                    <descriptorRefs>
+                        <descriptorRef>project</descriptorRef>
+                    </descriptorRefs>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+    </project>
+----
+
+== Reading MUnit Test Results
+
+This section briefly explains how to read the MUnit console logs.
+
+[source,console,linenums]
+.Successful Build
+----
+=======================================================
+===========  Running  test-config.xml  test ===========
+=======================================================
+Running testingEchoFlow
+SUCCESS - Test testingEchoFlow finished Successfully.
+
+===========================================================================
+Number of tests run: 1 - Failed: 0 - Errors: 0 - Skipped: 0
+===========================================================================
+
+    =====================================
+      Munit Summary
+    =====================================
+     >> test-config.xml test result: Errors: 0, Failures:0
+----
+
+[source,console,linenums]
+.Failed Build
+----
+=======================================================
+===========  Running  test-config.xml  test ===========
+=======================================================
+Running testingEchoFlow
+FAILURE - The test testingEchoFlow finished with a Failure.
+expected:< Bye world!> but was:< Hello world!>
+java.lang.AssertionError: expected:< Bye world!> but was:< Hello world!>
+    at testingEchoFlow.munit:assert-payload-equals{payloadIs-ref= Bye world!}(test-config.xml:22)
+    at testingEchoFlow.munit:assert-not-null{}(test-config.xml:21)
+    at echoFlow .mule:echo-component{}(mule-config.xml:8)
+    at testingEchoFlow.munit:set{payload-ref= Hello world!}(test-config.xml:19)
+
+
+===========================================================================
+Number of tests run: 1 - Failed: 1 - Errors: 0 - Skipped: 0
+===========================================================================
+
+    =====================================
+      Munit Summary
+    =====================================
+     >> test-config.xml test result: Errors: 0, Failures:1
+         ---testingEchoFlow <<< FAILED
+----
+
+[source,console,linenums]
+.Build Error
+----
+=======================================================
+===========  Running  test-config.xml  test ===========
+=======================================================
+Running testingEchoFlow
+ERROR - The test testingEchoFlow finished with an Error.
+Failed to invoke set. Message payload is of type: NullPayload
+org.mule.api.MessagingException: Failed to invoke set. Message payload is of type: NullPayload
+    at testingEchoFlow.munit:set{payload-ref=#[string: Hello world!]}(test-config.xml:19)
+Caused by: org.mule.api.expression.InvalidExpressionException: [Error: unknown class or illegal statement: org.mvel2.ParserContext@b6ba69]
+[Near : {... string: Hello world! ....}]
+                               ^
+[Line: 1, Column: 19]
+    at org.mule.el.mvel.MVELExpressionLanguage.validate(MVELExpressionLanguage.java:244)
+    at org.mule.el.mvel.MVELExpressionLanguage.evaluateInternal(MVELExpressionLanguage.java:195)
+    at org.mule.el.mvel.MVELExpressionLanguage.evaluate(MVELExpressionLanguage.java:169)
+
+
+===========================================================================
+Number of tests run: 1 - Failed: 0 - Errors: 1 - Skipped: 0
+===========================================================================
+
+    =====================================
+      Munit Summary
+    =====================================
+     >> test-config.xml test result: Errors: 1, Failures:0
+         ---testingEchoFlow <<< ERROR
+----
+
+== Surefire Support
+
+MUnit has Surefire support built in. No additional configuration is needed.
+
+The reports can be found under `target/surefire-reports`.

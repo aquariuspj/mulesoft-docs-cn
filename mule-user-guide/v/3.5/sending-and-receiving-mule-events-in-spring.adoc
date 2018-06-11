@@ -1,0 +1,97 @@
+= 在Spring中发送和接收Mule事件
+:keywords: anypoint studio, esb, spring, mule events
+
+您可以配置Spring bean以将事件发布到Mule，并将Spring事件侦听器配置为接收Mule事件。本页介绍如何设置配置。
+
+== 春季活动概述
+
+Spring为bean之间发送和接收事件提供了一个简单的机制。为了接收一个事件，一个bean实现了 http://static.springframework.org/spring/docs/2.5.x/api/org/springframework/context/ApplicationListener.html[ApplicationListener]，它有一个方法：
+
+*ApplicationListener.java*
+
+[source, java, linenums]
+----
+public void onEvent(ApplicationEvent event);
+----
+
+
+要将事件发布给侦听器，可以调用ApplicationContext上的 http://static.springframework.org/spring/docs/2.5.x/api/org/springframework/context/ApplicationEventPublisher.html#publishEvent(org.springframework.context.ApplicationEvent)[publishEvent（）]方法。这将在上下文中向每个聆听者发布相同的事件。您还可以将自定义事件处理程序插入到应用程序上下文中。
+
+Spring中的==  Mule事件
+
+要开始接收Mule事件，您需要在Mule配置文件中创建一个基于MuleEventMulticaster的bean。这个类是 http://static.springframework.org/spring/docs/2.5.x/api/org/springframework/context/event/ApplicationEventMulticaster.html[应用程序事件Multicaster]，它使Spring bean能够发送和接收Mule事件。您还可以添加一个或多个接收事件的端点：
+
+[source, xml, linenums]
+----
+xmlns:spring="http://www.springframework.org/schema/beans"
+...
+<spring:beans>
+  <spring:bean id="applicationEventMulticaster "class="org.mule.module.spring.events.MuleEventMulticaster">
+    <spring:property name="subscriptions">
+      <spring:list>
+        <spring:value>jms://my.queue</value>
+        <spring:value>pop3://ross:secret@mail.muleumo.org</value>
+      </spring:list>
+    </spring:property>
+  </spring:bean>
+</spring:beans>
+----
+
+使用此配置，所有收到`ross@muleumo.org`的电子邮件或发送给`my.queue`的任何JMS邮件都将被所有Spring事件侦听器接收。请注意，MuleEventMulticaster不会干扰正常的Spring事件行为。如果通过ApplicationContext发送非Mule applicationEvent，则注册为接收事件的所有Bean仍将获得该事件。
+
+入站端点可以是任何有效的 link:/mule-user-guide/v/3.6/endpoint-configuration-reference[骡子端点]，因此您可以接收JMS消息，SOAP请求，文件，HTTP和servlet请求，TCP，多播等。
+
+=== 添加Bean订阅
+
+您可以让bean仅订阅相关事件。 MuleSubscriptionEventListener包含两种获取和设置bean将接收事件的端点数组的方法。
+
+*TestSubscriptionBean.java*
+
+[source, java, linenums]
+----
+package org.mule.module.spring.events;
+public class TestSubscriptionEventBean extends TestMuleEventBean implements MuleSubscriptionEventListener
+{
+    private String[] subscriptions;
+    public void setSubscriptions(String[] subscriptions)
+    {
+        this.subscriptions = subscriptions;
+    }
+    public String[] getSubscriptions()
+    {
+        return subscriptions;
+    }
+}
+----
+
+像其他bean一样配置这个bean：
+
+[source, xml, linenums]
+----
+xmlns:spring="http://www.springframework.org/schema/beans"
+...
+<spring:beans>
+  <spring:bean id="subscriptionBean" class="org.mule.module.spring.events.TestSubscriptionEventBean">
+    <spring:property name="subscriptions">
+      <spring:list>
+        <spring:value>vm://event.*</value>
+      </spring:list>
+    </spring:property>
+  </spring:bean>
+</spring:beans>
+----
+
+=== 将活动发布到Mule
+
+发布活动与接收活动一样简单。您在应用程序上下文中使用标准的 http://static.springframework.org/spring/docs/2.5.x/api/org/springframework/context/ApplicationEventPublisher.html#publishEvent(org.springframework.context.ApplicationEvent)[publishEvent（）]方法。您的bean可以通过实现 http://static.springframework.org/spring/docs/2.5.x/api/org/springframework/context/ApplicationContextAware.html[了ApplicationContextAware]或通过查询MuleApplicationEvent来获得对应用程序上下文的引用。
+
+[source, java, linenums]
+----
+//Create a new MuleEvent.
+Object message = new String("This is a test message");
+MuleApplicationEvent muleEvent = new MuleApplicationEvent(
+                        message, "jms://processed.queue");
+ 
+//Call publishEvent on the application context, and Mule does the rest
+applicationContext.publishEvent(muleEvent);
+----

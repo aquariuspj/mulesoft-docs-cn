@@ -1,0 +1,210 @@
+= 配置启用OAuth的模块
+:keywords: mule, sdk, security, oauth
+// TODO：SEE resourceOwnerId
+
+OAuth模块的一个重要方面是如何使用它们。和SDK一样，隐藏OAuth协议的复杂性，OAuth舞蹈等事情是不可避免的。 SDK解决此问题的方法是将所有OAuth模块的体验标准化，以不断简化用户体验。
+
+本节讨论用户使用该模块必须执行的步骤。
+
+== 合成参数
+
+除了在连接提供程序中明确定义的所有内容之外，SDK还会自动添加一些额外的参数并为其注入适当的行为。
+
+[options="header"]
+|===
+|参数名称|必需|表达式|默认值|说明
+| `resourceOwnerId`
+| NO
+|支
+| N / A
+|为了支持多租户，用户可以指定拥有相关访问和刷新令牌的租户的ID。执行授权舞蹈时，此值将提供获得的令牌的ID。当组件需要获取新连接时，它将充当要使用的默认所有者ID。
+
+| `consumerKey`
+| YES
+| NOT_SUPPORTED
+| N / A
+|在服务提供商处注册的OAuth `consumerKey`。
+
+| `consumerSecret`
+| YES
+| NOT_SUPPORTED
+| N / A
+|在服务提供商处注册的OAuth `consumerSecret`。
+
+| `authorizationUrl`
+| NO
+| NOT_SUPPORTED
+|在`` @ AuthorizationCode注释中提供的值。
+|服务提供商的授权网址。
+
+| `accessTokenUrl`
+| NO
+| NOT_SUPPORTED
+| `@AuthorizationCode`注释中提供的值。
+|服务提供商的访问令牌网址。
+
+| `state`
+| NO
+|必
+| N / A
+|您启动OAuth dance并且由服务提供商使用令牌回调返回时发送的String值。它用于将舞蹈启动与令牌回调关联起来。此属性最常见的用例是多租户。
+
+| `scope`
+| NO
+| NOT_SUPPORTED
+| `@AuthorizationCode`注释中提供的值。
+| OAuth范围在舞蹈期间被请求。如果未提供，则默认为注释中的那些。
+
+| `listenerConfig`
+| YES
+| NOT_SUPPORTED
+| N / A
+|对`<http:listener-config />`的引用，用于创建将捕获访问令牌回调端点的侦听器。
+
+| `callbackPath`
+| YES
+| NOT_SUPPORTED
+| N / A
+|访问令牌回调端点的路径。
+
+| `authorizePath`
+| YES
+| NOT_SUPPORTED
+| N / A
+|触发OAuth跳舞的本地HTTP端点路径。
+
+| `externalCallbackUrl`
+| NO
+| NOT_SUPPORTED
+| N / A
+|如果回调端点位于代理之后或者应通过非直接URL访问，请使用此参数告知OAuth提供商应该使用访问回调的URL。
+
+| `resourceOwnerId`
+| YES
+|支
+| N / A
+|如果不另外引用，则每个组件应使用的`resourceOwnerId`。
+
+| `objectStore`
+| NO
+| NOT_SUPPORTED
+| N / A
+|对用户存储每个资源所有者ID数据的对象存储的引用。如果未指定，运行时将自动提供默认值。
+
+| `before`
+| NO
+| NOT_SUPPORTED
+| N / A
+|在开始OAuth舞蹈之前要执行的流程的名称（请参阅<<before_flow, Before Flow>>）。
+
+| `after`
+| NO
+| NOT_SUPPORTED
+| N / A
+|接收到`accessToken`之后立即执行的流程的名称（请参阅<<after_flow, After Flow>>）
+|===
+
+== 关于表达式的使用
+
+上表列出了许多接受表达式的综合参数。使用表达式与在常规参数中使用表达式具有相同的效果：它会将配置变成动态的。
+
+==  OAuth连接DSL
+
+这就是生成的DSL的样子：
+
+[source, xml, linenums]
+----
+<sfdc:config name="salesforce">
+    <sfdc:oauth-connection display="PAGE" immediate="FALSE" prompt="CONSENT">
+        <sfdc:oauth-authorization-code consumerKey="${sfdc.consumerkey}" consumerSecret="${sfdc.consumersecret}" authorizationUrl="http://..."
+accessTokenUrl="http://..."/
+localAuthorizationUrl="{{0}}"
+before="myBeforeFlow" after="myAfterFlow" />
+        <sfdc:oauth-callback-config listenerConfig="myHtttpListener" callbackPath="/callback" authorizePath="/authorize" />
+        <sfdc:oauth-store-config objectStore="oauthObjectStore" />
+</sfdc:config>
+----
+
+* 常规和OAuth参数全部显示在连接提供商级别，就像任何其他提供商一样。
+* 与授权代码授权类型（`consumerKey`，`consumerSecret`，`authorizationUrl`，`accessTokenUrl`}
+`localAuthorizationHost`，`localAuthorizationPort`，`localAuthorizationPath`，`before`，`after`，`scope`，`defaultResourceOwnerId`）
+放置在名为`<oauth-authorization-code>`的子元素上。
+* 与回调相关的参数将放置在名为`<oauth-callback-config>`的子元素中。
+* 与对象存储相关的参数将放置在名为`<oauth-store-config>`的子元素中。
+
+舞蹈之前和之后== 自定义逻辑
+
+最终用户通常希望在启动OAuth舞蹈之前或在其完成之后执行一些随机逻辑。用例包括通知外部系统某个给定的所有者ID已成功登录，保留活动日志等。
+
+通过点击自动创建的端点来触发授权流程，因此`<oauth-authorization-code>`子元素具有`before`和`after`参数。
+
+这些可选参数指定要在OAuth舞蹈之前或之后调用的`<flow>`的名称。
+
+[[before_flow]]
+=== 在流程之前
+
+之前的流程将在OAuth舞蹈开始之前执行。发送到该流的事件的有效内容将是`AuthorizationCodeRequest`的一个实例，它是一个不可变的POJO，如下所示：
+
+[source, java, linenums]
+----
+public interface AuthCodeRequest {
+
+  /**
+   * @return The id of the user being authenticated
+   */
+  String getResourceOwnerId();
+
+  /**
+   * @return The scopes that were requested
+   */
+  Optional<String> getScopes();
+
+  /**
+   * @return The OAuth state that was sent
+   */
+  Optional<String> getState();
+
+  /**
+   * @return The external callback url that the user configured or {@link Optional#empty()} if none was provided
+   */
+  Optional<String> getExternalCallbackUrl();
+}
+----
+
+在这个流程中，用户可以根据需要执行任何定制逻辑。特别是，用户可以设置流量变量（请参阅<<after_flow, After Flow>>）。
+
+[[after_flow]]
+=== 之后
+后续流程在访问令牌被接收并存储之后立即执行。这个流程执行的事件相当于从前一个流程中产生的事件（或者在流程未定义之前没有空白事件），除了有效载荷，
+它被替换为`ConnectionProvider`中注入的相同`AuthorizationCodeState`对象。但是，之前设置的任何变量仍然存在（或者如果在定义流之前没有，则将为空）。
+
+== 配置自定义ObjectStore
+
+获得的访问令牌存储在`ObjectStore`中。默认情况下，SDK将它们存储在应用程序的默认存储区中，但用户可以定义自己的自定义存储区，例如：
+
+[source, xml, linenums]
+----
+<os:object-store name="tokenStore" // <1>
+   entryTtl="1"
+   entryTtlUnit="HOURS"
+   maxEntries="100"
+   persistent="true"
+   expirationInterval="30"
+   expirationIntervalUnit="MINUTES" />
+
+<sfdc:config name="salesforce">
+    <sfdc:oauth-connection display="PAGE" immediate="FALSE" prompt="CONSENT">
+        <sfdc:oauth-authorization-code consumerKey="${sfdc.consumerkey}" consumerSecret="${sfdc.consumersecret}"
+        authorizationUrl="http://..." accessTokenUrl="http://..."/
+        localAuthorizationUrl="http://localhost:8080/.." />
+        <sfdc:oauth-callback-config listenerConfig="myHtttpListener" callbackPath="/callback" authorizePath="/authorize" />
+        <sfdc:oauth-store-config objectStore="tokenStore" /> // <2>
+</sfdc:config>
+----
+
+<1>定义您的自定义商店。
+<2>在模块的配置中引用它。
+
+== 下一步
+
+<<oauth-dance#, Performing the OAuth Dance with an OAuth-Enabled Module>>

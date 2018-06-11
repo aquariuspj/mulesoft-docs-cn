@@ -1,0 +1,377 @@
+：toc：离开
+：toc-title：OAuth2提供者模块
+：toclevels：2
+：最后更新标签!:
+：文档信息：
+：source-highlighter：coderay
+：图标：字体
+
+[[oauth2-provider-reference]]
+==  OAuth2提供者模块文档参考
+
+OAuth2提供者模块允许将Mule应用程序配置为OAuth2 Dance中的验证管理器。
+通过这个角色，应用程序将能够在流程执行过程中验证先前注册的客户端，授予令牌并验证它们或注册和删除客户端。
+
+
+[WARNING]
+以下文档假定了OAuth2授权协议的基本知识。如果您不熟悉RFC规范，请参阅 link:https://tools.ietf.org/html/rfc6749[RFC6749] +
+另外，如果应用程序的行为与*Client in the OAuth2 Dance*相同，则应使用 link:oauth-documentation.adoc[OAuth模块]。
+
+由于OAuth舞蹈是通过HTTP完成的，因此OAuth2提供者使用 link:connectors/v/latests/http-connector.adoc[Mule HTTP连接器]。
+因此，除了OAuth2提供程序配置的定义之外，mule应用程序还必须具有要由提供程序使用的HTTP侦听程序配置。
+
+配置完成后，提供者的工作如下：
+
+如OAuth2定义所述，创建两个HTTP端点来侦听验证码和令牌请求。这些将独立于mule应用程序工作，并将通过HTTP进行响应。 +
+除此之外，提供者定义了一个操作：<<validate-token>>可以检查令牌是否被授权。该操作可以添加到流中的任何地方以控制其执行。如果令牌确实被授权，
+流将继续执行，在有效负载中设置令牌信息，否则会引发{{0}​​}错误。开发人员需要在需要令牌授权的部分应用程序中添加该操作。 +
+此外，由于令牌验证几乎总是与HTTP侦听器一起使用，所以如果失败，监听器的响应机制可以处理该错误并正确响应请求者。可以添加其他逻辑来处理该类型的错误。 +
+最后，提供附加操作来添加或删除客户端，并在需要时撤销令牌。
+
+
+== 配置
+
+[[general-configuration]]
+=== 常规配置
+
+[source, xml]
+----
+ <oauth2-provider:config name="OAuth2Provider"
+                         listenerConfig="httpListenerConfig"
+                         resourceOwnerSecurityProvider="resourceOwnerSecurityProvider"
+                         clientSecurityProvider="clientSecurityProvider"
+                         supportedGrantTypes="AUTHORIZATION_CODE"
+                         scopes="USER,ADMIN"
+                         defaultScopes="USER"
+                         clientStore="clientObjectStore">
+         <oauth2-provider:client-validation-rate-limiter>
+            <oauth2-provider:period-rate-limiter duration="600"
+                                                 durationTimeUnit="SECONDS"
+                                                 maximumFailureCount="5"/>
+         </oauth2-provider:client-validation-rate-limiter>
+         <oauth2-provider:token-config path="/token"
+                                       tokenStore="tokenObjectStore"
+                                       tokenTtl="86400"
+                                       tokenTtlTimeUnit="SECONDS">
+            <oauth2-provider:refresh-token-strategy>
+                <oauth2-single-refresh-token objectStore="refreshTokenObjectStore"/>
+            </oauth2-provider:refresh-token-strategy>
+         </oauth2-provider:token-config>
+         <oauth2-provider:authorization-config loginPage="static/auth.html"
+                                               path="/authorize"
+                                               objectStore="authorizationCodeObjectStore"/>
+         <oauth2-provider:clients>
+             <oauth2-provider:client clientId="clientId1"
+                                     clientName="someClient"
+                                     secret="clientSecret1"
+                                     principal="clusr"
+                                     description="Some test client"
+                                     type="CONFIDENTIAL">
+                 <oauth2-provider:client-redirect-uris>
+                     <oauth2-provider:client-redirect-uri value="http://fake/redirect"/>
+                 </oauth2-provider:client-redirect-uris>
+                 <oauth2-provider:client-authorized-grant-types>
+                     <oauth2-provider:client-authorized-grant-type value="AUTHORIZATION_CODE"/>
+                 </oauth2-provider:client-authorized-grant-types>
+                 <oauth2-provider:client-scopes>
+                     <oauth2-provider:client-scope value="USER"/>
+                 </oauth2-provider:client-scopes>
+             </oauth2-provider:client>
+         </oauth2-provider:clients>
+     </oauth2-provider:config>
+----
+
+==== 参数
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 名称 | 字符串 |  OAuth2提供商的名称 |  |  *x* {
+| 提供商名称 | 字符串 | 提供给API客户的名称。这用于OAuth2 API的一些响应 | 与姓名 |  {
+| 侦听程序配置 | 字符串 | 要引用的Http侦听程序配置的名称。它将处理令牌和授权终结点 |   |  {{}} {n}
+| 资源所有者安全提供商 | 字符串 | 对安全提供程序的引用，用于对资源所有者进行身份验证。如果仅使用CLIENT_CREDENTIALS授予类型，则不需要 |   |  {nbsp}
+| 客户端安全提供商 | 字符串 | 对用于认证客户端的安全提供程序的引用。如果只使用公开客户或使用秘密的私人客户，则不需要 |   |  {nbsp}
+| 客户端商店 | 对象商店 | 对全局定义的对象商店或专用对象商店的定义的引用。它用于存储由对象存储管理器 | 创建的注册客户信息 | 对象存储{
+| 授予类型 | 字符串 | 支持授予类型的逗号分隔列表。可能的值包括：AUTHORIZATION_CODE，IMPLICIT，RESOURCE_OWNER_PASSWORD_CREDENTIALS或CLIENT_CREDENTIALS  |  AUTHORIZATION_CODE  |  {nbsp}
+| 范围 | 字符串 | 以逗号分隔的受支持作用域列表 |   |  {n}
+| 默认范围 | 字符串 | 如果客户没有定义自己的 |   |  {}，则应用于客户的范围列表NBSP}
+| 客户端验证速率限制器 | 客户端验证速率限制器 | 速率限制器控制访问以验证客户端操作。它将控制在一定时间内失败呼叫不超过最大计数。达到失败次数后，请求将被拒绝 | 持续时间= 600秒，最大失败次数= 5  | 的周期费率限制器{
+| 授权配置 | 授权配置 | 与授权代码处理相关的配置 |   |  {n}
+| 令牌配置 | 令牌配置与 |  {{4}
+|======================
+
+
+=== 安全提供商
+
+如<<general-configuration>>所示，应该在应用程序中定义两个安全提供程序，稍后将由OAuth2配置元素引用。
+
+这样做的一种方式是使用Spring Framework，定义两个安全提供者，然后使用 link:spring-module.adoc[Spring模块]将它们添加到Mule安全管理器中，如下所示：
+
+[source, xml]
+----
+<spring:security-manager>
+    <spring:delegate-security-provider name="clientSecurityProvider"
+                                       delegate-ref="clientAuthenticationManager"/>
+    <spring:delegate-security-provider name="resourceOwnerSecurityProvider"
+                                       delegate-ref="resourceOwnerAuthenticationManager"/>
+</spring:security-manager>
+----
+
+=== 客户端验证速率限制器
+
+允许配置一种机制，以防止在使用无效凭证时持续进行客户端验证。
+
+至于这一刻，只有一个`period-rate-limiter`被实现，该处理基于时间段来处理速率限制。
+
+==== 参数
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 持续时间 | 号码 | 重置费率限制器之前需要等待的时间。这意味着，在_duration_长度的时间间隔内，每次客户端验证失败时，都会将其添加到失败计数 |  600  |  {nbsp}
+| 持续时间单位 | 时间单位 | 持续时间属性 | 的时间单位SECONDS  |  {n}
+| 最大失败次数 |  Number  | 在抢先拒绝请求之前允许的最大失败次数 |  5  |  {n}
+|======================
+
+
+=== 授权码配置
+
+与授权码处理和授权端点相关的配置。
+
+==== 参数
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 登录页面 | 字符串 | 资源所有者提供凭据的相对文件路径  |  www-static / auth.html  |  {NBSP}
+| 路径 | 字符串 |  HTTP服务器中授权端点的Url相对路径，用于侦听授权请求 |  /授权 |  {n}
+| 授权代码商店 | 对象商店 | 对全局定义的对象商店或专用对象商店的定义的引用。它用于存储生成的授权码 | 从ObjectStoreManager创建的持久对象库，其条目TTL为600 SECONDS  |  {
+|======================
+
+=== 令牌配置
+
+与令牌处理和令牌端点相关的配置。
+
+==== 参数
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 路径 | 字符串 |  HTTP服务器中用于监听令牌请求的 |  /令牌 |  {}的相对路径。
+| 令牌存储 | 对象存储 | 对全局定义的对象存储的引用或私有对象存储的定义。它用于存储生成的令牌 | 一个持久对象存储，其条目TTL为86400 SECONDS  |  {n}
+| 令牌Ttl  | 数字 | 授予令牌后授予令牌的时间。如果配置了自定义配置，则该值应该与令牌存储的entryTtl相同 |  86400  |  {nbsp}
+| 令牌时间单位 | 时间单位 | 用于令牌TTL的时间单位。如果配置了自定义配置，它应该与令牌存储的entryTtlTimeUnit相同 |  SECONDS  |  {nbsp}
+| 刷新令牌策略 | 刷新令牌策略 | 配置如何在每个刷新令牌请求中处理刷新令牌 | 无刷新令牌 |  {n}
+|======================
+
+==== 刷新令牌策略
+
+刷新令牌策略配置刷新令牌的授予方式，以及每次执行刷新令牌请求时应如何处理刷新令牌。
+
+===== 没有刷新令牌
+
+每个访问令牌都不会有刷新令牌。因此，当刷新令牌请求到来时，它总是被拒绝。
+
+===== 单刷新令牌
+
+对于每个被授予的新访问令牌，一个刷新令牌将与其关联。每次访问令牌刷新时都应使用相同的刷新令牌。
+
+====== 参数
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 对象库 | 对象库 | 对全局定义的对象库的引用或私有对象库的定义。它用于存储生成的刷新标记 | 从ObjectStoreManager创建的持久对象存储，其条目TTL为86400 SECONDS  |  {n}
+|======================
+
+===== 多个刷新令牌
+
+每次执行刷新令牌请求时都会生成一个新的刷新令牌。之后，之前的刷新标记将失效。
+
+====== 参数
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 对象库 | 对象库 | 对全局定义的对象库的引用或私有对象库的定义。它用于存储生成的刷新标记 | 从ObjectStoreManager创建的持久对象存储，其条目TTL为86400 SECONDS  |  {n}
+|======================
+
+=== 客户端
+[source, xml]
+----
+<oauth2-provider:clients>
+    <oauth2-provider:client clientId="clientId1"
+                            clientName="someClient"
+                            secret="clientSecret1"
+                            principal="clusr"
+                            description="Some test client"
+                            type="CONFIDENTIAL">
+        <oauth2-provider:client-redirect-uris>
+            <oauth2-provider:client-redirect-uri value="http://fake/redirect"/>
+        </oauth2-provider:client-redirect-uris>
+        <oauth2-provider:client-authorized-grant-types>
+            <oauth2-provider:client-authorized-grant-type value="AUTHORIZATION_CODE"/>
+        </oauth2-provider:client-authorized-grant-types>
+        <oauth2-provider:client-scopes>
+            <oauth2-provider:client-scope value="USER"/>
+        </oauth2-provider:client-scopes>
+    </oauth2-provider:client>
+</oauth2-provider:clients>
+----
+
+所有被授权请求令牌的注册客户端。该列表可以在运行时通过<<create-client>>和<<delete-client>>操作进行修改。
+
+每位注册的客户都将拥有一个包含以下信息的条目。
+
+==== 参数
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 配置 | 字符串 | 全局定义的用于令牌验证的OAuth提供程序配置的名称 |  |  *x* { NBSP}
+| 客户端ID  | 字符串 | 要分配给创建的客户端的ID  |   |  *x* {
+| 客户名称 | 字符串 | 客户端友好名称 |   |  {nbsp}
+| 主体 | 字符串 | 对于某些安全提供程序，clientId不能用于客户端用户名。在这些情况下，客户的委托人用于身份验证 |   |  {nbsp}
+| 描述 | 字符串 | 客户端的简短描述 |   |  {n}
+| 类型 | 客户端类型 | 客户端的类型。允许的值为PUBLIC（客户端无法维护其凭据的机密性）或CONFIDENTIAL（客户端能够维护其凭据的机密性） |  PUBLIC  |  {
+| 秘密 | 字符串 | 用于身份验证的客户端秘密（密码）。 |  {nbsp}  | 仅当客户端类型为CONFIDENTIAL
+| 客户端重定向Uris  | 重定向Uri  | 一个或多个重定向Uris用于客户端的请求 | 空列表 |  {
+| 客户端授权的授权类型 | 授权的授予类型 | 将允许客户端使用的授权授予类型。有效值包括：AUTHORIZATION_CODE，REFRESH_TOKEN，TOKEN，PASSWORD，CLIENT_CREDENTIALS。 | 空清单 |  {
+| 客户端范围 | 客户端范围 |  客户端可以请求令牌的一个或多个客户端范围。如果没有提供，则会使用<<general-configuration>>的默认范围 | 空白列表 |  {
+|======================
+
+请记住，对于客户端重定向Uris，客户端授权的授权类型或客户端范围，每个新值都应该在新的XML标签中给出，如下例所示：
+
+`<oauth2-provider:client-redirect-uri value="http://fake/redirect"/>`
+
+`<oauth2-provider:client-authorized-grant-type value="AUTHORIZATION_CODE"/>`
+
+`<oauth2-provider:client-scope value="USER"/>`
+
+
+== 操作
+
+[[validate-token]]
+=== 验证令牌
+[source, xml]
+----
+<oauth2-provider:validate-token config="OAuthProviderConfiguration"
+                                token="#[vars.accessToken]"
+                                scopes="#[vars.scopes]"
+                                resourceOwnerRoles=#[vars.resourceOwnerRoles]/>
+----
+
+验证给定的令牌是否被授予并处于有效状态。另外，如果已定义，则检查令牌范围或资源所有者角色是否与提供的角色匹配。
+
+如果提供的令牌有效，那么操作将使用以下信息将有效负载设置为JSON。
+[options="header"]
+|============
+| 键 | 值 | 始终
+|  expires_in剩余的 | 令牌被认为无效，以秒为单位 | 是
+| 作用域 | 与标记 | 关联的空间分隔范围是
+|  client_id  | 仅在存在请求此令牌 | 的客户端的ID
+| 用户名 | 授权此令牌的资源所有者的用户名{}如果存在
+|============
+
+如果您想在执行操作之前保留有效负载集，可以使用属性_target_和_targetValue_将此JSON信息设置为变量，而不是覆盖有效负载。
+
+==== 参数
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 配置 | 字符串 | 全局定义的用于令牌验证的OAuth提供程序配置的名称 |  |  *x* { NBSP}
+| 令牌 | 表达式 | 解析为将被验证的令牌的表达式。查找令牌的默认位置在'授权'HTTP头的第一个值 | ＃[（attributes.headers ['authorization'] splitBy''）[1]]  |  { NBSP}
+| 范围 | 表达式 | 解析为验证标记时要实施的范围列表的表达式 | 空列表 |  {
+| 资源所有者角色 | 表达式 |  解析为验证令牌时要强制实施的资源所有者角色列表的表达式 | 空列表 |  {nbsp }
+|======================
+
+
+==== 引发
+* 的oauth2-PROVIDER：TOKEN_UNAUTHORIZED（OAUTH_SERVER_SECURITY）
++
+当验证令牌无效时。
+
+
+[[revoke-token]]
+=== 撤消令牌
+
+[source, xml]
+----
+<oauth2-provider:revoke-token  config="OAuthProviderConfiguration"
+                               token="#[vars.token]"/>
+----
+
+撤销现有的访问令牌和关联的刷新令牌。它们中的任何一个都可以提供以撤消两者。
+
+==== 参数
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 配置 | 字符串 | 全局定义的用于令牌验证的OAuth提供程序配置的名称 |  |  *x* { NBSP}
+| 令牌 | 字符串 | 要撤销的令牌 |   |  *x* {n}
+|======================
+
+==== 引发
+* 的oauth2-PROVIDER：INVALID_TOKEN（OAUTH_SERVER_SECURITY）
++
+当要撤销的令牌不是有效的令牌时。
+
+[[create-client]]
+=== 创建客户端
+[source, xml]
+----
+<oauth2-provider:create-client config="OAuthProviderConfiguration"
+                               clientId="#[payload.clientId]"
+                               clientName="#[payload.clientName]"
+                               principal="#[payload.clientPrincipal]"
+                               description="#[payload.clientDescription]"
+                               type="#[payload.clientType]"
+                               secret="#[payload.clientSecret]"
+                               redirectUris="#[payload.redirectUris]"
+                               authorizedGrantType="#[payload.authorizedGrantTypes]"
+                               scopes="#[payload.scopes]"
+                               failIfPresent="false"/>
+----
+
+
+==== 参数
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 配置 | 字符串 | 全局定义的用于令牌验证的OAuth提供程序配置的名称 |  |  *x* { NBSP}
+| 客户端ID  | 字符串 | 要分配给创建的客户端的ID  |   |  *x* {
+| 客户名称 | 字符串 | 客户端友好名称 |   |  {nbsp}
+| 主体 | 字符串 | 对于某些安全提供程序，clientId不能用于客户端用户名。在这些情况下，客户的委托人用于身份验证 |   |  {nbsp}
+| 描述 | 字符串 | 客户端的简短描述 |   |  {n}
+| 类型 | 客户端类型 | 客户端的类型。允许的值为PUBLIC（客户端无法维护其凭据的机密性）或CONFIDENTIAL（客户端能够维护其凭据的机密性） |  PUBLIC  |  {
+| 秘密 | 字符串 | 用于身份验证的客户端秘密（密码）。 |  {nbsp}  | 仅当客户端类型为CONFIDENTIAL
+| 重定向Uris  | 表达式 | 一个表达式，它解析为当客户端向OAuth提供程序发出请求时使用的重定向uris列表 | 空列表{{4} } {} NBSP
+| 授权的授权类型 | 表达式 | 一个表达式，它解析为客户端可用来请求令牌的授权授予类型列表。有效值包括：AUTHORIZATION_CODE，REFRESH_TOKEN，TOKEN，PASSWORD，CLIENT_CREDENTIALS。 | 空清单 |  {
+| 范围 | 表达式 |  解析为客户端支持的范围列表的表达式。如果没有提供，则会使用<<general-configuration>>的默认范围 | 空白列表 |  {
+| 如果存在则失败 | 布尔值 | 定义如果具有相同Id的客户端已经注册，该怎么做。如果为true，则会引发错误。否则，客户端将更新 |  false  |  {nbsp}
+|======================
+
+==== 引发
+* 的oauth2-PROVIDER：CLIENT_ALREADY_EXISTS（OAUTH_SERVER_SECURITY）
++
+如果客户端已经存在相同的客户端ID，并且flag：failIfPresent设置为true
+*  INVALID_CONFIGURATION
++
+如果提供的参数无效，那么授权授权类型为AUTHORIZATION_CODE且不包含重定向URI。
+
+[[delete-client]]
+=== 删除客户端
+
+用给定的ID删除客户端。因此，来自已删除客户端的任何新请求都将被拒绝，授予该客户端的令牌将不再有效。
+
+==== 参数
+[cols=".^20%,.^20%,.^35%,.^20%,^.^5%", options="header"]
+|======================
+| 姓名 | 类型 | 描述 | 默认值 | 必需
+| 配置 | 字符串 | 全局定义的用于令牌验证的OAuth提供程序配置的名称 |   |  *x* { NBSP}
+| 客户端ID  | 字符串 | 要删除的客户端的ID  |   |  *x* {n}
+|======================
+
+==== 引发
+* 的oauth2-PROVIDER：NO_SUCH_CLIENT（OAUTH_SERVER_SECURITY）
++
+如果要删除的客户端不存在。
+
+
+[[see_also]]
+== 另请参阅
+link:oauth-documentation.adoc[OAuth模块文档] +
+link:mule4-user-guide/v/4.1/migration-oauth2-provider.adoc[OAuth2提供程序迁移指南]

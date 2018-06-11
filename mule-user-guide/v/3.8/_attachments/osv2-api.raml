@@ -1,0 +1,224 @@
+#%RAML 0.8
+title: ObjectStore
+version: v1
+baseUri: http://54.152.249.236:8080/object-store
+
+traits:
+  - pageable:
+      queryParameters:
+        nextPageToken:
+          description: When requesting a series of result pages, specify which page this request should resume on
+          type: string
+          required: false
+          example: "key12/34"
+          default: ""
+        pageSize:
+          description: Limit the number of elements in the response
+          type: integer
+          required: false
+          example: 80
+          default: 25
+  - confirmable:
+      queryParameters:
+        confirmable:
+          type: boolean
+          default: false
+          description: |
+            defines whether or not an operation should be confirmed
+  - searchableByPrefix:
+      queryParameters:
+        startsWith:
+          description: |
+            searches the field from the left using the passed string
+  - successWithNoBody:
+      responses:
+        204:
+          description: |
+            Operation completed successfully.
+  - nonImplementable:
+      responses:
+        501:
+          description: |
+            This kind of request in the form it is performed is not implemented by this broker.
+  - nonExistent:
+      responses:
+        404:
+          description: |
+            The requested resource in the form it is requested is not found on this broker.
+  - deleteable:
+       responses:
+         204:
+           description: |
+             The resource has been correctly removed.
+  - failable:
+        responses:
+          501:
+            description: |
+              There has been an unexpected error performing this request.
+
+/organizations:
+  /{organizationId}:
+    uriParameters:
+      organizationId:
+        type: string
+        example: 1236a3a6-1234-1234-87b1-a027439d5456
+    # delete:
+    #   description: Deletes all resources related with the organization
+    #   is: [nonImplementable, nonExistent, failable]
+
+    /environments:
+      /{environmentId}:
+        uriParameters:
+          environmentId:
+            type: string
+            example: 333-1234-1234-444-2222439d5456
+        # delete:
+        #   description: Deletes all resources related with the environment
+        #   is: [nonImplementable, nonExistent, failable]
+
+        /stores:
+          get:
+            description: Get list of object stores in the given environment
+            is: [nonImplementable, failable, pageable]
+            responses:
+              200:
+                description: List of stores
+                body:
+                  application/json:
+                    example: !include examples/storelist.json
+
+          /{storeId}:
+            uriParameters:
+              storeId:
+                type: string
+                example: myStore
+            get:
+              description: Get object store details
+              is: [nonImplementable, nonExistent, failable]
+              responses:
+                200:
+                  description: Store details
+                  body:
+                    application/json:
+                      example: !include examples/store.json
+            put:
+              description: Creates an object store
+              is: [nonImplementable, nonExistent, failable]
+              responses:
+                200:
+            patch:
+              description: Modifies object store attributes
+              is: [nonImplementable, nonExistent, failable]
+              responses:
+                200:
+            delete:
+              description: Deletes the object store
+              is: [nonImplementable, nonExistent, failable]
+              responses:
+                204:
+
+            /objects:
+               get:
+                 description: Returns a paginated list of keys in this store, along with a token for making a request for the next page of keys.
+                 is: [nonImplementable, failable, pageable]
+                   responses:
+                     200:
+                       description: List of keys
+                       body:
+                         application/json:
+                           example: !include examples/keys.json
+# delete:
+# description: Removes all items of this store without disposing it, meaning that after |
+# performing this operation it should still be possible to perform other operations. |
+# The behavior of other object store operations while this operation is being executed |
+# is undefined.
+# is: [nonImplementable, nonExistent, falible]
+
+              /{objectKey}:
+                head:
+                  description: Check whether the given key is already registered in this store.
+                  is: [successWithNoBody, nonImplementable, nonExistent, failable]
+
+                get:
+                  description: Retrieve the values stored for the given key.
+                  is: [nonImplementable, failable, pageable]
+                  queryParameters:
+                    inclusion:
+                      description: Defines what to fetch
+                      enum: [all, metadata, body]
+                      default: metadata
+                      required: false
+
+                  responses:
+                    200:
+                      description: Returns the values for the given key.
+                      body:
+                        application/json:
+                          example: !include examples/items.json
+
+                post:
+                  description: Alters the object in a non-idempotent fashion.
+                  body:
+                    application/vnd.objectstore.v1.numberoperation+json:
+                      example: !include examples/numberoperation.json
+                  responses:
+                    200:
+                      description: Operation done and result
+
+                delete:
+                  description: Remove the object and all the values in the contained list.
+                  is: [successWithNoBody, confirmable, nonImplementable, nonExistent, failable]
+
+                /nextIndex:
+                  description: Obtains the next available index to access the list, this is not guaranteed to be sequential as there can be gaps.
+
+                  post:
+                    description: Retrieve the values stored for the given key.
+
+                /indexes/{listIndex}:
+                  description: Index to access the list, this is not guaranteed to be sequential as there can be |
+                    gaps.
+
+                  get:
+                    description: Retrieves the given object.
+                    is: [confirmable, nonImplementable, nonExistent, failable]
+
+                  put:
+                    description: Create/Modifies the given object. Total object size must be 10MB or less, and metadata must be 4KB or less.
+                    is: [confirmable, nonImplementable, nonExistent, failable]
+                    body:
+                      application/json:
+                        example: !include examples/item.json
+
+                  post:
+                    description: Alters the object in a non-idempotent fashion.
+                    body:
+                      application/vnd.objectstore.v1.numberoperation+json:
+
+                  delete:
+                    description: Remove the object with the given id.
+                    is: [successWithNoBody, confirmable, nonImplementable, nonExistent, falible]
+
+                  /confirmations/{confirmationId}:
+                    post:
+                      description: Acks the operation.
+                      is: [successWithNoBody, nonImplementable, nonExistent, failable]
+
+                    patch:
+                      description: Extends the operation ttl.
+                      is: [successWithNoBody, nonImplementable, nonExistent, failable]
+                      body:
+                        application/json:
+                          example: !include ./examples/changeTtl.json
+                    delete:
+                      description: Nacks the operation.
+                      is: [successWithNoBody, nonImplementable, nonExistent, failable]
+    /regions:
+      get:
+        description: Retrieve a list of regions in which the service is available.
+        responses:
+          200:
+            description: Successfully return a JSON array containing objects for each region.
+            body:
+              application/json:
+                example: !include ./examples/regions.json

@@ -1,0 +1,146 @@
+=  Mule端点和连接器
+
+image:connector-1.png[连接器1]作为在Mule和一个或多个外部源之间接收或发送消息的元素，Mule中的端点和连接器属于*消息源类别。这些是数据通过其进入或退出骡流的元素。
+
+由于它们位于Mule流的"ends"，因此它们通常被称为*endpoints*，并根据它们促成的通信类型（如FTP，Ajax，JMS或HTTP）在Mule中进行标记。但是，消息源可能会显示为*Anypoint Connectors*，或者简单地显示为连接器。两种消息来源之间的区别在于区分特定于企业的端点和非企业特定的端点。例如，SMTP端点便于连接到任何邮件服务器，因此它作为端点存在于Mule中; Facebook Connector便于连接到Facebook，因此它作为Anypoint Connector存在。 （注意：在Studio中，Anypoint连接器以其传统名称引用：Cloud Connectors。）
+
+
+== 入站和出站
+
+Mule流中有两种类型的消息源：*inbound*和*outbound*。
+
+*Inbound message sources*，正如你可能从名字中推断出的那样，接收来自频道或资源的新消息，从而触发流程的执行。入站消息源读取它接收的数据，将内容打包为消息，然后将其传递到Mule流中的第一个消息处理器。消息源可以通过以下方式接收数据：
+
+使用服务器套接字的* 
+* 轮询远程套接字或资源
+* 注册一个监听器
+
+入站端点使用Mule流中的两个*message exchange patterns*（MEP）中的一个。
+
+* 具有*one-way*交换模式的端点仅接受来自外部源的信息以供Mule处理。例如，JMS端点将使用单向交换模式来接受来自外部队列的消息，并在Mule中处理它们（队列不期待后处理响应）。
+
+* 具有*request-response*交换模式的端点不仅接受来自外部源的信息，还会向Mule流动的外部源返回响应。"called"例如，HTTP端点可能使用请求 - 响应交换模式来接受来自调用者的Web服务请求，然后在Mule处理完消息后返回响应。
+
+*Outbound message sources*将来自Mule的消息发送到外部系统或应用程序。通常，这些出站消息源设置在Mule流或子流的末尾，在Mule处理消息进行转换，充实或以其他方式处理消息之后，将消息发送到外部系统。出站消息源接收来自消息处理器的消息有效载荷和路由指令，该消息处理器在流中位于其之前，然后将消息发送到其目的地。
+
+出站消息源始终使用单向消息交换模式，因为它们不期望来自外部源的任何输入;他们只能发送输出。
+
+image:flow_endpoints2.png[flow_endpoints2]
+
+[NOTE]
+====
+在必须响应请求者的地方，端点使用*request-response message exchange pattern*（如左下方的小双箭头图标所示）。
+
+如果端点只需将信息输入到应用程序中，则需要*one-way message exchange pattern*（如右下图）。
+
+image:mep_ways.png[mep_ways]
+====
+
+== 传输和连接器
+
+Mule中的消息源利用*transports*将消息从应用程序传递到Mule框架中的应用程序。在企业收集模式（EIP）的背景下，传输实现消息通道并为底层数据源或消息通道提供一致的连接。每当Mule中有消息源时，在后台有相应的传输工具来建立和维护通信。例如，HTTP传输处理通过HTTP协议发送到Mule中的HTTP端点的消息。
+
+在Mule中，您还可以将传输配置为在将响应返回给调用者之前将同步*transformers*应用于响应。
+
+运输的核心是维护运输配置和状态的*connector*。换句话说，连接器几乎包含了Mule需要实际连接到另一个系统或应用程序的所有连接细节。
+
+应用程序中各种Mule流中的许多单独配置的端点可以引用单个连接器以获取传输详细信息。例如，具有四个不同HTTP入站端点的Mule应用程序都可以引用全局配置的HTTP连接器，其中设置了安全性，协议和代理设置等详细信息。由于它们都引用相同的连接器并使用相同的传输方式，因此所有四个HTTP端点在应用程序中的行为一致。
+
+== 示例
+
+===  HTTP端点
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+ 
+    <http:connector name="HTTP_Connector" cookieSpec="netscape" validateConnections="true" sendBufferSize="0" receiveBufferSize="0" receiveBacklog="0" clientSoTimeout="10000" serverSoTimeout="10000" socketSoLinger="0" doc:name="HTTP\HTTPS">
+        <reconnect/>
+    </http:connector>
+ 
+    <flow name="myNewProjectFlow1" doc:name="myNewProjectFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP" connector-ref="HTTP_Connector"/>
+    </flow>
+ 
+</mule>
+----
+
+=== 数据库端点
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:jdbc-ee="http://www.mulesoft.org/schema/mule/ee/jdbc" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/current/mule-jdbc-ee.xsd">
+ 
+    <jdbc-ee:mysql-data-source name="MySQL_Data_Source" user="test" password="test" url="jdbc:mysql://localhost:3306/[dbName]" transactionIsolation="UNSPECIFIED" doc:name="MySQL Data Source"/>
+ 
+    <jdbc-ee:connector name="Database_Connector" dataSource-ref="MySQL_Data_Source" validateConnections="true" queryTimeout="-1" pollingFrequency="0" doc:name="Database"/>
+ 
+    <flow name="myNewProjectFlow1" doc:name="myNewProjectFlow1">
+        <jdbc-ee:inbound-endpoint queryKey="test" queryTimeout="-1" pollingFrequency="1000" connector-ref="Database_Connector" doc:name="Database">
+            <jdbc-ee:query key="test" value="test"/>
+        </jdbc-ee:inbound-endpoint>
+    </flow>
+ 
+</mule>
+----
+
+===  JMS端点
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+ 
+    <jms:activemq-connector name="Active_MQ" username="test" password="test" brokerURL="tcp://localhost:61616" validateConnections="true" doc:name="Active MQ"/>
+ 
+    <flow name="myNewProjectFlow1" doc:name="myNewProjectFlow1">
+        <jms:inbound-endpoint queue="test" connector-ref="Active_MQ" doc:name="JMS Endpoint"/>
+    </flow>
+ 
+</mule>
+----
+
+===  Salesforce连接器
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd">
+ 
+    <sfdc:config name="Salesforce" username="test" password="test" securityToken="test" doc:name="Salesforce">
+        <sfdc:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sfdc:config>
+ 
+    <flow name="myNewProjectFlow1" doc:name="myNewProjectFlow1">
+        <sfdc:subscribe-topic config-ref="Salesforce" topic="test" doc:name="Salesforce "/>
+    </flow>
+ 
+</mule>
+----
+
+== 另请参阅
+
+*  *NEXT STEP*：请阅读大约 link:/mule-user-guide/v/3.4/mule-components[组件]。
+* 向前浏览以了解 link:/mule-user-guide/v/3.4/mule-message-structure[骡信息]的结构。

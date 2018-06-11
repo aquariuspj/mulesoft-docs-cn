@@ -1,0 +1,283 @@
+= 迁移对象存储连接器
+
+Mule 4中的对象存储连接器与Mule 3中的对象存储连接器非常相似
+这些主要版本之间的差异是：
+
+* 如何创建自定义对象存储：在Mule 4创建自定义对象存储
+不需要使用Spring或者知道某些java类的存在。
+
+* 键必须始终为字符串：对象存储连接器用于接受任何`Serializable`作为键。
+在Mule 4上，所有键必须是`String`。
+
+== 本节涵盖的内容：
+
+*  <<namespace>>
+*  <<configs-object-stores>>
+*  <<custom-object-store>>
+*  <<change-on-keys>>
+*  <<storing-values>>
+*  <<persistent-default-value>>
+*  <<dispose-clear>>
+*  <<dual-store>>
+*  <<remove-behavior>>
+
+[[namespace]]
+== 命名空间更改
+
+在Mule 3 ObjectStore连接器上，使用的命名空间是`objectstore`。这个命名空间
+已在新的Mule 4连接器上更改为`os`。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<objectstore:contains config-ref="ObjectStoreConnector" key="#[flowVars.userId]"/>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<os:contains key="#[vars.userId]" objectStore="customObjectStore"/>
+----
+
+[[configs-object-stores]]
+== 使用顶层对象
+
+在前面的例子中，您可能已经注意到`config-ref`参数已被删除，并且
+而是出现`objectStore`参数。这是因为Mule 3的大部分连接器
+操作需要_Connector配置参考_，而Mule 4最多
+操作将接收对_Object Store顶层element_的引用。
+
+[[custom-object-store]]
+== 创建自定义对象存储
+
+自定义对象存储是可以按名称引用的操作系统的全局定义
+在操作中使用它，让你调整和配置
+对象存储行为满足您的需求。
+
+在Mule 3上，为了创建一个新的ObjectStore，你需要创建一个spring bean和
+知道用于ObjectStore的特定Java类。在Mule 4上这很容易，
+您只需创建一个使用`os:object-store`组件声明ObjectStore的全局元素。
+
+这是如何在Mule 3上完成这个过程的例子，以及它现在在Mule 4上如何完成的例子
+一个使用HTTP端点公开`store`和`retrieve`的简单情况
+持久定制对象存储：
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<spring:beans>
+  <spring:bean id="myCustomObjectStore" class="org.mule.util.store.SimpleMemoryObjectStore"/> // <1>
+</spring:beans>
+
+<objectstore:config name="ObjectStoreConnector" objectStore-ref="myCustomObjectStore"  partition="users" entryTtl="3600000" expirationInterval="10000" maxEntries="1000" persistent="true"/> // <2>
+<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8080"/>
+
+<flow name="storeBook">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/store"/>
+  <dw:transform-message>
+    <dw:set-payload><![CDATA[%dw 1.0 // <3>
+%output application/java
+---
+{
+	id: inboundProperties.'http.query.params'.id,
+	book: inboundProperties.'http.query.params'.book,
+	author: inboundProperties.'http.query.params'.author
+}]]></dw:set-payload>
+  </dw:transform-message>
+  <objectstore:store config-ref="ObjectStoreConnector" key="#[payload.id]" value-ref="#[payload]"/> // <4>
+</flow>
+
+<flow name="retrieveBook">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/retrieve"/>
+  <objectstore:retrieve config-ref="ObjectStoreConnector" key="#[message.inboundProperties.'http.query.params'.id]/>
+  <json:object-to-json-transformer/>
+</flow>
+----
+
+在这个片段中有几件事要注意：
+
+<1>使用Spring bean和对java类的引用创建自定义对象存储。
+
+<2>在配置中引用自定义对象存储。
+
+<3>在使用存储操作之前，使用DataWeave转换来设置
+有效载荷什么将被存储。
+
+<4>有效内容存储在对象存储中。
+
+在Mule 4中实现相同的应用程序将如下所示：
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config">
+  <http:listener-connection host="localhost" port="8080" />
+</http:listener-config>
+
+<os:object-store name="booksObjectStore" maxEntries="1000" entryTtl="1" entryTtlUnit="HOURS" expirationIntervalUnit="SECONDS" expirationInterval="10"/> // <1>
+
+<flow name="storeBook">
+  <http:listener config-ref="HTTP_Listener_config" path="/store"/>
+  <os:store key="#[attributes.queryParams.id]" objectStore="booksObjectStore" failIfPresent="true"> // <2>
+    <os:value>
+    #[{
+      id: attributes.queryParams.id,
+      book: attributes.queryParams.book,
+      author: attributes.queryParams.author
+    }]
+    </os:value>
+  </os:store>
+</flow>
+
+<flow name="retrieveBook">
+  <http:listener config-ref="HTTP_Listener_config" path="/retrieve"/>
+  <os:retrieve key="#[attributes.queryParams.id]" objectStore="booksObjectStore"/>
+  <set-payload value="#[output application/json --- payload]">
+</flow>
+----
+
+您可能会看到，主要区别是：
+
+<1>创建一个新的对象存储，不需要任何关于spring beans和java类的知识。注意
+这里定义的是没有配置，而是一个对象存储顶级元素。
+
+<2>不需要在变量或有效负载上存储值，即内联表达式
+定义对象存储中将要存储的内容。
+
+请注意，在Mule 3中，您曾经必须指定对象存储的分区。上
+骡4你不再需要指定一个分区，而只是使用另一个对象存储。
+此外，您可以为入住时间和入住时间单位指定时间单位
+您将检查输入是否已过期或超过最大数量的频率
+条目。
+
+[[change-on-keys]]
+== 更改为键
+
+在Mule 3上，用于在对象存储上引用值的键可以是任何`Serializable`。在骡子4
+只有`String`对象用于此目的。
+
+如果您使用不是`String`的{​​{0}}作为键，则应该进行转换
+它转换为`String`值。
+
+[[storing-values]]
+== 存储值
+
+在Mule 4上，现在将值参数作为内容参数，这意味着
+它应该被内联定义。这被配置为Mule 3的属性。
+
+此外，更新对象存储区上的值的方式也有轻微变化。在骡子3你有一个
+标志为`overwrite`，默认情况下为false。在骡子4上你有一面旗帜
+称为`failIfPresent`，默认情况下为false。这意味着现在使用商店时
+使用已经用过的键操作，默认行为是覆盖该值。
+
+迁移时要密切注意标记是如何配置的，因为缺省行为
+是不同的。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8080"/>
+<objectstore:config name="ObjectStoreConnector" partition="users"/>
+
+<flow name="storeClient">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/put"/>
+  <dw:transform-message>
+    <dw:set-variable variableName="client"><![CDATA[%dw 1.0
+      %output application/java
+      ---
+      {
+        id: payload.id,
+        name: payload.name,
+        lname: payload.lname
+      }]]></dw:set-variable>
+    </dw:transform-message>
+  <objectstore:store config-ref="ObjectStoreConnector" key="#[flowVars.client.id]" value-ref="#[flowVars.client]"/> // <1>
+</flow>
+----
+
+<1>由于在Mule 3上，你不能插入DataWeave表达式，你的选择是
+将内容保存到变量上或修改有效负载。在这被分配给
+客户端变量。
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_config">
+  <http:listener-connection host="localhost" port="8080" />
+</http:listener-config>
+
+<os:object-store name="Object_store" persistent="false"/>
+
+<flow name="storeClient">
+  <http:listener config-ref="HTTP_Listener_config" path="/put"/>
+  <os:store key="#[payload.id]" objectStore="Object_store" failIfPresent="true">
+    <os:value >#[{ // <1>
+      id: payload.id,
+      name: payload.name,
+      lname: payload.lname,
+      age: payload.age
+    }]</os:value>
+  </os:store>
+</flow>
+----
+
+<1>在Mule 4上，您可以插入内容以进行内联存储。这次手术之后
+净荷保持不变。
+
+[[persistent-default-value]]
+将== 默认值设置为持久属性
+
+在Mule 4对象存储默认情况下是持久的，而在Mule 3连接器上它们是
+默认存储在内存中。正因为如此，你必须小心谨慎
+迁移你的实现。没有明确说明对象存储的偏见
+将意味着不同的事情。
+
+这个例子显示了在迁移之后，必须明确地添加持久属性：
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<objectstore:config name="ObjectStoreConnector" partition="users"/>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<os:object-store name="customObjectStore" persistent="false"/>
+----
+
+[[dispose-clear]]
+== 清理对象存储
+
+Mule 3的配置操作用于清除对象存储的特定分区。
+在Mule 4上，我们有清除整个对象存储的清除操作。没有
+分区概念了。
+
+.Mule 3的例子
+[source,xml,linenums]
+----
+<objectstore:dispose-store config-ref="ObjectStoreConnector" partitionName="users"/>
+----
+
+.Mule 4的例子
+[source,xml,linenums]
+----
+<os:clear objectStore="customObjectStore"/>
+----
+
+警告：在Mu​​le 4上，清除操作将清除整个Object Store。
+
+[[dual-store]]
+== 取消双存储操作
+
+Mule 3对象存储连接器有一个操作`dual-store`，它使用键和键存储一个值
+也存储了相同的密钥使用值。由于密钥限制为`String`，所以在Mule 4这个操作上
+没有意义，所以它被删除。
+
+[[remove-behavior]]
+== 删除操作行为
+
+在Mule 3上，`remove`操作有一个名为`ignoreNotExists`的标志，默认为false
+这表明如果要删除的密钥没有被执行，该操作是否会失败
+存在。在Mule 4上，如果密钥不存在，错误`OS:KEY_NOT_FOUND`将被抛出并且你
+可以处理它，但是你想在错误处理上。

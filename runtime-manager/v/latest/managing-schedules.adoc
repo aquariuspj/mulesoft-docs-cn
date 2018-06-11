@@ -1,0 +1,111 @@
+= 管理计划（CloudHub）
+:keywords: schedules, cloudhub, polling
+
+image:logo-cloud-active.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-disabled.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-disabled.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+CloudHub控制台在左侧导航菜单中包含一个*Schedules*选项卡，您可以在其中查看和控制已部署应用程序流中的任何轮询元素。 CloudHub会自动检测流程中的轮询元素，并将它们列在“时间表”选项卡上。在此选项卡上，您可以选择轮询元素并启用或禁用它们，更改轮询频率或立即运行 - 所有这些都在运行时期间进行，而不会对基础应用程序进行任何更改。
+
+== 用例
+
+“时间表”选项卡对于以下用例特别有用：
+
+* 您有一项夜间运行的工作，但您想立即触发它，以便您可以进行调试。您希望在运行时执行此操作，因此您无需更新基础应用程序中的计划。
+* 您希望在运行时更改应用程序中的日程表，而无需重新部署。
+* 当您正在连接的其中一个应用程序正在进行维护时，您希望禁用预定作业。
+* 您希望运行时查看应用程序中的时间表。
+
+== 注意事项
+
+* 调度程序由CloudHub管理，如果有更多可用的调用程序，它们仅在一名工作人员中触发。
+* 虽然CloudHub支持几秒钟内的轮询频率，但您可能会发现各个轮询呼叫之间的差异为几秒钟。不建议在10秒内将轮询频率设置为高于一次。
+* 如果由于应用程序关闭而导致计划作业错过（未触发）一次或多次，则一旦应用程序重新启动，CloudHub会立即触发该作业一次。
+*  Cloudhub调度程序每次运行时都会读取一个调度作业配置。这意味着如果您更新计划时间，则更改不会立即生效。作业将按照已配置的方式执行，只有调度程序才会为下一次运行选择下一个设置。要立即应用更改，请在每次更新计划后运行作业。
+
+
+== 在控制台中查看应用程序日程表
+
+要在运行时管理器中使用调度功能，请部署包含一个或多个轮询元素的应用程序。例如，下面说明的应用程序包含两个简单的流程，每个都有一个轮询范围。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:scheduling+cloudhub.png[scheduling+cloudhub]
+....
+[tab,title="Studio XML Editor"]
+....
+[source,xml, linenums]
+----
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.7.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+ 
+    <flow name="synchronize-accounts" doc:name="synchronize-accounts">
+        <poll frequency="300000" doc:name="Poll">
+            <logger level="INFO" doc:name="Start" message="Start Account Synchronization ${salesforce.username}"/>
+        </poll>
+        <logger level="INFO" doc:name="End" message="End Account Synchronization"/>
+    </flow>
+    <flow name="synchronize-contacts" doc:name="synchronize-contacts">
+        <poll frequency="600000" doc:name="Poll">
+            <logger level="INFO" doc:name="Start" message="Start Contact Synchronization ${salesforce.username}"/>
+        </poll>
+        <logger level="INFO" doc:name="End" message="End Contact Synchronization"/>
+    </flow>
+</mule>
+----
+....
+------
+
+由于CloudHub会自动同步您的日程表，因此覆盖包含轮询范围的流上设置的任何同步属性，因此不需要执行任何其他特殊配置。
+
+部署完成后，请在Runtime Manager控制台中选择应用程序，然后单击左侧导航菜单中的*Schedules*。运行时管理器按照它们出现在应用程序中的顺序列出应用程序中的轮询元素：
+
+image:SchedulesView.png[SchedulesView]
+
+*Note*：如果您在XML中添加一个元素，则每个元素的名称由轮询范围中的`doc:name`属性确定。如果您未指定`doc:name`，则CloudHub将应用名称*yourFlowname Poll*。
+
+*Last Run*列显示每个轮询元素最近运行的确切日期和时间。您可以查看日志以查看有关作业何时开始并结束其计划运行的更多详细信息。
+
+== 在运行时管理计划
+
+管理轮询元素：
+
+. 选中您要管理的各个元素旁边的复选框。
+. 如果您要覆盖计划并立即执行该作业，请点击*Run now*。
+. 点击*Disable*暂停轮询元素。 CloudHub在您再次*Enable*之前不会执行投票任务。
+. 在*Schedule *列中，CloudHub列出了每个轮询元素的轮询频率。
+. 单击轮询元素的频率以打开计划编辑器：
++
+image:SchedulesChangeTime.png[SchedulesChangeTime]
++
+. 在日程安排编辑器中，通过取消选中*Enabled*来调整元素的轮询频率或禁用轮询频率：
++
+image:CHSetPollFreq.png[CHSetPollFreq]
++
+. 如果您想使用Cron表达式，请单击*Switch to advanced mode*，然后单击*Quick reference*以获取有关必填字段和允许值的信息。点击*more*查看Quartz link:http://www.quartz-scheduler.org/documentation/quartz-2.x/tutorials/tutorial-lesson-06.html[CronTrigger教程]。如果您更改Cron设置，请点击*Update*。或点击*Cancel*退出。点击*Switch to basic mode*退出高级模式。
++
+image:CHAdvModeWithQkRef.png[CHAdvModeWithQkRef]
++
+[NOTE]
+请注意，无论您的CloudHub工作人员在哪个区域，所有时间表均基于UTC时区。时区配置也被忽略。
+
+. 要查看日程安排选项卡，请选择一个或多个预定作业，然后点击*Run Now*。出现"The schedules have been queued to run"消息。
++
+image:SchedulesRunNow.png[SchedulesRunNow]
++
+. 要查看结果，请单击左侧导航菜单中的*Logs*，然后查看条目以验证您选择的作业是否按预期运行：+
+image:SchedulesLogs.png[SchedulesLogs]
+
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.8/poll-schedulers[投票计划]
+*  link:/runtime-manager/deploying-to-cloudhub[部署到CloudHub]
+*  link:/runtime-manager/deployment-strategies[部署策略]
+*  link:/runtime-manager/managing-deployed-applications[管理已部署的应用程序]
+*  link:/runtime-manager/managing-applications-on-cloudhub[在CloudHub上管理应用程序]
+*  link:/runtime-manager/monitoring[监测应用]

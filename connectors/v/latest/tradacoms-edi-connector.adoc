@@ -1,0 +1,416 @@
+=  TRADACOMS EDI连接器
+：imagesdir：./_images
+
+_Premium_
+
+TRADACOMS EDI连接器可让您将TRADACOMS传输转换为和传输
+使用列表和地图的DataWeave兼容表示。
+
+支持的TRADACOMS文件和版本为：ACKMNT：4，AVLDET：4，CORDER：6，CRAINF：3，CREDIT：9，CUSINF：8，DELIVR：9，DLCDET：5，DRAINF：3，EXCINF：3，GENRAL：3 ，发票：9，LPRDET：2，ORDERS：9，PAYINF：3，PICKER：4，PPRDET：2，PRIINF：8，PROINF：8，SADDET：3，SNPSTS：3，SRMINF：9，UCNDET：3，UPLIFT ：4，UTLBIL：3。
+
+== 先决条件
+
+本文档假定您熟悉TRADACOMS，Mule，Anypoint
+连接器，Anypoint Studio，Mule流和Mule全局元素。
+
+有关兼容性信息，请参阅发行说明。链接到
+发布说明列在本文档的另请参见部分。
+
+要在生产环境中使用TRADACOMS EDI连接器，您必须
+已经为Anypoint B2B购买了MuleSoft许可证。
+
+== 此连接器的新增功能
+
+TRADACOMS EDI连接器2.x对TRADACOMS EDI连接器1.x实现的配置和处理进行了一些更改。
+
+*  TRADACOMS EDI连接器1.x仅支持来自单一版本标准的消息。 Mule 4 TRADACOMS EDI连接器2.x支持来自多个版本标准的消息。消息头（UNH段）数据中的版本信息用于标识标准版本，消息标识符确定特定模式。
+
+* 识别参数不再用于读取和写入操作。您可以配置传递给写操作的实际消息数据中的所有参数值。
+
+*  TRADACOMS EDI连接器2.x添加了对"default"模式配置的支持。如果在配置中没有引用任何模式，则从类路径中查找每个消息的模式的标准版本并用于读取和写入。发生这种情况时，没有元数据可用于消息数据结构，因为实际消息在设计时未知。
+
+== 在Anypoint Studio 7中安装此连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索连接器，然后单击安装。
+. 按照提示安装连接器。
+
+Studio有更新时，会在右下角显示一条消息，您可以单击该消息来安装更新。
+
+您必须更改默认Anypoint配置才能使用TRADACOMS EDI连接器2.0.0。
+
+== 创建模式
+
+如果您的实现约定与标准不同，则可以根据实现来创建模式来描述消息。所有已定义的TRADACOM文件的标准版本都包含在发行版中。
+
+=== 关于EDI模式语言
+
+TRADACOMS EDI模块使用名为ESL（用于EDI模式语言）的YAML格式来表示EDI模式。 ESL根据结构（消息，TRADACOMS术语中），组，段，组合和元素定义EDI消息的结构。
+
+针对TRADACOMS的ESL定义的特定用法与其他EDI格式有所不同，特别是在处理TRADACOMS "files"和"messages"的概念时。由TRADACOMS定义的每种文件格式都给出了某些特定用途的数据表示。文件格式被分解为几个消息组件，其中一个特定的消息组件被允许重复。每个消息组件又被分解成段和段组，其中一些也可以重复。
+
+在ESL术语中，每种TRADACOMS文件格式都由特定的模式定义表示。提供的ESL模式使用文件的通用名称，这与重复详细信息的名称相同。因此，例如，Prince信息文件结构由PRIINF.esl模式定义给出。在文件模式中，每个组件消息类型都被定义为一个结构。文件中组件消息的顺序由`class`值给出，该值必须是由单个数字组成的字符串。值`'1'`标识标题消息，值`'2'`标识重复的详细消息，并且所有更高的值是文件内的连续消息。
+
+您可以通过定义覆盖模式来自定义TRADACOMS模式定义以适合您的数据。覆盖模式是一种特殊的ESL形式，允许您使用特定的约定修改基本模式（如TRADACOMS INVOIC模式）。如果您使用标准定义的结构，则不需要覆盖模式。
+
+您也可以从头开始定义自己的模式，或者复制和编辑基础TRADACOMS模式定义以适合您的数据。有关更多详细信息，请参阅 link:/anypoint-b2b/edi-schema-language-reference[EDI模式语言参考]。
+
+[NOTE]
+====
+YAML使用列表和一组键值对。的顺序
+只要所需物品存在，价值并不重要。行情
+（单引号或双引号）用于可能包含的值
+的数字，但意味着被解释为字符串（因为否则的
+YAML解析器将这些值视为数字）。缩进用于显示列表的嵌套。
+
+为了便于阅读，这里显示的ESL结构定义了所有简单的键值
+在属于相同定义的任何列表之前配对。
+====
+
+=== 用覆盖架构来定义您的实施公约
+
+要根据您的实施惯例指定模式，您可以按照以下流程进行操作：
+
+. 创建导入您要自定义的基础架构的覆盖模式 - 例如，TRADACOMS INVOIC。
+. 自定义细分使用情况，职位，群组和计数的总体结构。
+. 自定义细分，包括使用情况和计数。
+
+覆盖架构在结构上与 link:/anypoint-b2b/edi-schema-language-reference[完整的模式定义]非常相似，但不提供架构结构的所有细节，而只是列出更改。覆盖模式指定如何使用与特定贸易伙伴的实施约定来扩展和自定义标准。
+
+举例来说，下面是一个修改基本TRADACOMS INVOIC文件定义的示例覆盖模式。本示例在6版本增加了一个重发帐单信息到文件中，以下在文件中的所有现有消息（类值`'5'`，由于有四个消息成分通常存在于一个INVOIC文件）。
+
+[source,yaml, linenums]
+----
+form: TRADACOMS
+version: 'INVOIC9'
+imports: [ '/tradacoms/INVOIC.esl' ]
+structures:
+- id: 'REBILL'
+  name: 'REBILL:6'
+  class: '5'
+  data: 
+  - { idRef: 'MHD', usage: M }
+  - { idRef: 'RBL', usage: M }
+  - { idRef: 'MTR', usage: M }
+segments:
+- id: 'RBL'
+  name: 'REBILLING DETAILS'
+  values: 
+  - { id: 'RBLA', name: 'Rebill From Field', usage: M, type: char, minLength: 1, maxLength: 14 }
+  - { id: 'RBLB', name: 'Rebill To Field', usage: M, type: char, minLength: 1, maxLength: 14 }
+  - { idRef: 'PAI', position: '0040', usage: U }
+----
+
+=== 结构覆盖
+
+结构覆盖详细说明对TRADACOMS消息的基本模式定义的修改。大多数情况下，这些修改采用将基本定义中的片段或组标记为未使用的形式，但允许使用或重复计数更改。
+
+以下是一个结构覆盖的例子：
+
+[source,yaml, linenums]
+----
+structures: 
+- idRef: 'INVFIL'
+  data: 
+  - { idRef: 'FDT', position: '07', usage: M }
+  - { idRef: 'ACD', position: '08', usage: M }
+----
+
+本示例中的修改指定每个INVFIL消息中都需要FDT（位置7）和ACD（位置8）段（用法：M为强制）。使用此覆盖，如果FDT或ACD段不存在于消息中，则会报告错误。
+
+结构级别的键值对是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| idRef  |被修改消息的ID。
+| class  |消息在文件中的位置（可选）。
+|名称 |消息名称和版本（可选）。
+|数据 |结构中的分段和分组修改列表（可选，每个分段仅在修改该分段时使用）。
+|===
+
+结构数据组件列表中的每个项目都是段引用或组定义。这两种方法都使用紧凑的YAML语法显示，其中每个引用的值都以大括号中的逗号分隔键值对的形式给出。这些值是：
+
+这些值是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| idRef  |引用的段ID。这是可选的，如果提供了验证，但是被忽略。位置值用于唯一标识段中的段。
+|位置 |消息部分中的段位置。
+|用法 |使用代码，可能是M表示强制，C表示条件，或者U表示未使用。
+| count  |最大重复计数值，可能是一个数字或特殊值`'>1'`，表示任意数量的重复。计数值是可选的，如果未指定值，则使用基本定义值。
+|===
+
+组定义中的值是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| groupIdRef  |引用的组ID。这个密钥是可选的，并且如果提供，则被验证，否则被忽略位置值用于唯一标识某个部分中的一个组。
+|位置 |消息部分中的段位置。
+|用法 |使用代码，可能是M表示强制，C表示条件，或者U表示未使用。
+| count  |最大重复计数值，可能是一个数字或特殊值`>1`，表示任意数量的重复。计数值是可选的，如果未指定值，则使用基本定义值。
+|项 |构成组的分段列表（以及潜在的嵌套组）。
+|===
+
+=== 分段覆盖图
+
+段重叠再次详述对基本模式定义的修改。大多数情况下，这些修改的形式是将基本定义中的元素或组合标记为未使用，但允许使用或重复计数更改。以下是一些示例分段覆盖图：
+
+[source,yaml, linenums]
+----
+structures: 
+- idRef: 'INVFIL'
+  data: 
+  - { idRef: 'FDT', position: '07' }
+segments:
+- idRef: 'FDT'
+  values:
+  - { position: 1, usage: M }
+  - { position: 2, usage: M }
+----
+
+本示例修改FDT段的基本定义，使两个值在段必填字段中定义（它们在基本定义中是可选的）。
+
+分段修改仅影响覆盖层中包含明确引用修改分段的结构。这就是FDT段引用需要包含在模式的INVFIL消息结构部分中的原因，即使在消息中使用此段的方式没有任何内容（如使用情况或重复计数）正在发生变化。
+
+段叠加中的键值对是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+| idRef  |分段标识符。
+| trim  |修剪段中的位置，表示此时所有值都被标记为未使用（可选）。
+|值 |个别值修改列表。
+|===
+
+值列表引用片段中的值。这些参考值是：
+
+[%header,cols="30a,70a"]
+|===
+|键 |说明
+|位置 |段中的值位置。
+|名称 |段中的值的名称（如果未指定，则使用可选的基本定义值）。
+|用法 |使用代码，可能是M表示强制，C表示条件，或者U表示未使用。
+|===
+
+=== 确定TRADACOMS架构位置
+
+要使用连接器，您需要知道模式的位置
+在你的项目中。如果您使用的是现成的TRADACOMS架构和
+没有定制任何东西，架构位置跟在
+`/tradacoms/{file}.esl`模式，因此对于ORDERS文件，您的模式位置是"/tradacoms/ORDERS.esl"。
+
+如果您使用一个或多个自定义模式，则应将其置于下方
+`src/main/app`中的目录，并使用`${app.home}`引用该位置。
+例如，如果您已将CREDIT架构（overlay或full）放在src / main / app / mypartner / CREDIT.esl下，
+您的架构位置是`${app.home}/mypartner/CREDIT.esl`。
+
+Mule Runtime自动检查任何位置的`src/main/app`
+包含`${app.home}`值。
+
+== 在Anypoint Studio 7中创建一个Mule项目
+
+在安装连接器并自定义模式（如果需要）后，可以开始使用连接器。为每个实施约定创建单独的配置。
+
+. 单击画布底部的全局元素选项卡，然后单击创建。
+. 在选择全局类型向导中，找到并选择TRADACOMS EDI：配置，然后单击确定。
+. 单击确定以保存全局连接器配置。
+. 返回到Studio中的消息流选项卡。
+
+按照以下部分所述设置全局元素属性中的每个选项卡。
+
+=== 关于常规选项卡
+
+image:tradacoms-edi-general.jpg[常规选项卡属性]
+
+常规选项卡允许您配置读写TRADACOMS消息的设置，包括STX段中使用的标识信息：
+
+* 手动创建或编辑要使用的消息结构的模式定义列表。
+* 合作伙伴发件人/收件人代码（STX FROM或UNTO代码）。
+* 合作伙伴发件人/收件人姓名（STX FROM或UNTO名称）。
+*  Mule应用程序发件人/收件人代码（STX FROM或UNTO代码）。
+*  Mule应用发件人/收件人姓名（STX FROM或UNTO名称）。
+
+所有这些标识值都是可选的。如果配置了任何值，则在读取输入传输时验证值，并在输出数据中没有指定值时写入输出传输时用作默认值。
+
+=== 关于解析器选项卡
+
+image:tradacoms-edi-parser.jpg[解析器选项卡属性]
+
+如果需要，您可以设置以下选项来控制接收消息的解析器验证：
+
+* 强制接收值的最小和最大长度。
+* 允许消息中的未知段。
+* 允许在消息中标记为“未使用”的段。
+* 在消息中强制分段顺序。
+
+=== 关于Writer选项卡
+
+image:tradacoms-edi-writer.jpg[编写器选项卡属性]
+
+写信息的设置：
+
+* 写入传输时使用的默认发件人传输参考。
+* 写入传输时使用的默认发件人传输参考。
+写入传输时使用的* 默认应用程序参考。
+写入传输时使用的* 默认应用程序参考。
+
+== 示例：TRADACOMS Studio
+
+以下流程可以加载到项目的XML中。
+
+image:tradacoms-edi-mapping-flow.jpg[映射流程图]
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" 
+xmlns:tradacoms="http://www.mulesoft.org/schema/mule/tradacoms"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" 
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http 
+http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/tradacoms 
+http://www.mulesoft.org/schema/mule/tradacoms/current/mule-tradacoms.xsd
+http://www.mulesoft.org/schema/mule/ee/core 
+http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config">
+		<http:listener-connection host="localhost" port="8081" />
+	</http:listener-config>
+	<tradacoms:config name="TRADACOMS_EDI_Config" doc:name="TRADACOMS EDI Config">
+		<tradacoms:schemas>
+			<tradacoms:schema value="/tradacoms/ORDERS.esl"/>
+			<tradacoms:schema value="/tradacoms/PROINF.esl"/>
+		</tradacoms:schemas>
+	</tradacoms:config>
+	<flow name="tradacomsmappingFlow">
+		<http:listener doc:name="Listener" config-ref="HTTP_Listener_config" path="/map"/>
+		<tradacoms:read doc:name="Read" config-ref="TRADACOMS_EDI_Config"/>
+		<ee:transform doc:name="Transform Message">
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	STX: payload.STX,
+	Id: payload.Id,
+	ORDERS: payload.ORDERS
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<tradacoms:write doc:name="Write"/>
+	</flow>
+</mule>
+----
+
+=== 关于XML中的配置选项
+
+Anypoint Studio配置中列出的所有值都可以直接以XML格式设置。
+
+常规参数控制发送和接收文档处理（全部是可选的）：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+|架构=值列表 |连接器要使用的架构的路径列表。路径可以是文件系统或类路径。
+| partnerCode  |用于识别合作伙伴的代码。当指定此值时，它既用于验证接收传输中的传输发送方代码，也用于设置发送传输中的传输接收方代码（如果尚未在地图数据中指定）。如果未指定，则传送发送方代码在接收到的传送中未被检查。
+| partnerName =用于标识合作伙伴的名称。当指定此值时，它既用于验证接收传输中的传输发送者名称，也用于设置发送传输中的传输收件人名称（如果尚未在地图数据中指定）。如果未指定，则传输发件人名称未在收到的传输中检入。
+| selfCode  |用于识别Mule应用程序的代码。当指定此值时，它既用于验证收到的传输中的传输收件人代码，又用于设置已发送传输中的传输发件人代码（如果尚未在地图数据中指定）。如果未指定，则传送收件人代码未在收到的传送中检入。
+| selfName  |用于标识自我的名称。指定此值时，它既用于验证接收传输中的传输收件人名称，也用于设置发送传输中的传输发件人名称（如果尚未在地图数据中指定）。如果未指定，则传送收件人名称未在收到的传送中检入。
+|===
+
+解析器参数控制解析器操作以及导致接收消息被拒绝的错误条件类型（全部都是可选的，具有默认值，如下所示）：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| enforceLengthLimits = "true"  |强制接收值的最小和最大长度。
+| allowUnknownSegments = "false"  |在邮件中允许未知的细分。
+| allowUnusedSegments = "false"  |允许在消息中标记为“未使用”的段。
+| enforceSegmentOrder = "true"  |在消息中强制分段顺序。
+|===
+
+编写器参数控制编写器操作（全部是可选的）：
+
+[%header%autowidth.spread]
+|===
+| XML值 | Visual Studio选项
+| sendSenderReference  |写入传输时使用的默认发件人传输参考。
+| sendRecipientReference  |写入传输时使用的默认发件人传输参考。
+| sendApplicationReference  |写入传输时使用的默认应用程序参考。
+| sendPriorityCode  |默认传输优先级编写传输时使用的代码。
+|===
+
+== 设置您的架构位置
+
+您可以在Anypoint Studio XML视图中配置架构位置。
+
+在Anypoint Studio中，通过单击配置XML切换到XML视图，并通过为每个文档类型添加一个`+<{{0}}>+`元素来修改您的TRADACOMS EDI配置，以包含您希望包含的所有模式的列表：
+
+[source, xml, linenums]
+----
+<tradacoms-edi:config name="TRADACOMS_EDI__Configuration" identKeys="true" doc:name="TRADACOMS EDI: Configuration">
+  <tradacoms-edi:schemas>
+    <tradacoms:schema value="/tradacoms/ORDERS.esl"/>
+  </tradacoms-edi:schemas>
+</tradacoms-edi:config>
+----
+
+为TRADACOMS EDI创建全局元素后，请配置任何模式和操作。
+
+== 关于TRADACOMS消息结构
+
+该连接器能够将TRADACOMS文档读入或写入规范的EDI消息结构。此结构表示为Java地图和列表的层次结构，可以使用DataWeave或代码进行操作。如上所述，每个事务都有自己的架构，如架构中所定义的。
+
+该消息本身包含以下键（其中一些仅适用于读操作或写操作，如所示）：
+
+[%header%autowidth.spread]
+|===
+|密钥名称 |说明
+| {文件}  |用于消息数据的包装器，其中的键与组件消息的名称链接到这些消息的数据。对于文件的重复细节消息（总是为类'2'），该值是一张地图列表;对于文件的单例消息，值是地图。
+|错误（只读） |与输入消息关联的错误列表。 （请参阅下面的阅读和验证TRADACOMS消息部分中的TradacomsError结构描述。）
+| Id  |文件（读取TRADACOMS文件的名称）。
+| STX  |从文件开始的STX段数据的映射。
+|===
+
+单个消息在文件名映射下有自己的映射，其中的键与消息的段相匹配。例如，一个INVOIC文件会
+在根映射中具有密钥`'INVOIC'`，并且在`'INVFIL'`，`'INVOIC'`（用于重复INVOIC消息的数据列表）的密钥下，
+`'VATTLR'`和`'INVTLR'`。在INVTLR映射中，将有关键字`'01_MHD'`，`'02_TOT'`和`'03_MTR'`
+INVTLR消息。
+
+== 阅读并验证TRADACOMS EDI消息
+
+. 要阅读TRADACOMS消息，请在调色板中搜索TRADACOMS EDI，然后将TRADACOMS读取操作拖到流程中。
+. 转到属性视图，选择您在上面创建的连接器配置并选择读取操作。该操作将任何字节流读入由TRADACOMS模式描述的结构。
+
+TRADACOMS模块在读取消息时验证消息。消息验证包括检查信封段STX和END的语法和内容以及文件中的实际消息。在TradacomsError实例中，通常会记录并累计和报告错误，并将所有接受的消息（无错误或非致命错误）作为输出消息Map的一部分传递进行处理。如果发现任何致命错误，则不返回文件数据，只返回错误列表。
+
+在接收数据映射中输入的错误数据使用EdifactError类，它是具有以下属性的只读JavaBean：
+
+[%header%autowidth.spread]
+|===
+|属性 |说明
+|段 |导致错误的段的输入内的从零开始的索引。
+|致命 |标记致命错误，在这种情况下不会返回文件数据。
+| errorText  |错误的文本描述。
+|===
+
+读取操作将错误数据作为可选列表在数据结构的根级别和消息级别使用"Errors"键返回。在消息级别，此列表包含解析该消息期间遇到的非致命错误。在根级别，该列表包含交换错误和致命的消息错误。
+
+== 编写TRADACOMS EDI消息
+
+要编写传出消息，请在调色板中搜索TRADACOMS EDI，然后将TRADACOMS写入操作拖入流中。根据以上定义的结构构建传出TRADACOMS EDI消息以输入到写入操作。如果在写操作中没有发现致命错误，则正常流程继续。否则，抛出描述错误的异常。
+
+== 另请参阅
+
+*  link:/release-notes/tradacoms-connector-release-notes[TRADACOMS EDI连接器发行说明]。
+*  link:/anypoint-b2b/edi-schema-language-reference[EDI模式语言参考]。
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。

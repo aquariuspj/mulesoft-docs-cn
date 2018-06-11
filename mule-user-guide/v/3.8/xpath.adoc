@@ -1,0 +1,152 @@
+= 的XPath
+:keywords: anypoint studio, esb, xpath
+
+*_Mule 3.6.0 and above_*
+
+== 支持的XPath版本
+
+Mule 3.6.0和更新版本为规范3.0版提供基本支持。这意味着只要不依赖模式感知，高阶函数或流，规范的任何功能都受支持。
+
+Mule 3.6.0和更新版本还提供了对XPath 2.0，XSLT 2.0和XQuery 1.0的改进支持。
+
+Mule 3.6.0和更新的版本包含`xpath3() function which provides full support for XPath 3.0 and 2.0. However, versions 3.0 and 2.0 are not fully compatible with version 1.0; for this reason, the old ` xpath（）函数，直到Mule 4.0才被支持。
+
+在Mule 3.6.0中，不赞成使用以下XPath组件：
+
+*   `xpath`表达式评估器
+*   `xpath2`表达式评估器
+*   `bean`表达式评估器
+*   `jxpath`过滤器
+*   `jxpath`提取器变压器
+*   `jaxen`过滤器
+
+由于XPath 3.0完全向后兼容XPath 2.0，因此新函数也适用于2.0表达式。但是XPath 1.0表达式不能保证工作。兼容模式有限，默认情况下禁用。
+
+有关新的xpath3（）函数的说明，请参阅下一节。
+
+==  xpath3（）函数
+
+`xpath3()`函数支持<<Function Parameters>>和<<Query Parameters>>。
+
+该函数采用以下形式：
+
+[source, code]
+----
+xpath3(xpath_expression, input_data, return_type)
+----
+
+=== 函数参数
+
+====  XPath表达式（字符串，必需）
+
+要评估的XPath表达式。不能为空或空白。
+
+==== 输入数据（对象，可选）
+
+如果未提供，则默认为消息有效负载。它支持以下输入类型：
+
+*  org.w3c.dom.Document中
+*  org.w3c.dom.Node中
+*  org.xml.sax.InputSource中
+*  OutputHandler
+* 字节[]
+* 的InputStream
+* 字符串
+*  XMLStreamReader的
+*  DelayedResult
+
+如果输入不是上述任何类型，则函数会尝试使用已注册的转换器将输入转换为DOM文档或节点。如果没有找到这样的变压器，则会抛出`IllegalArgumentException`。
+
+此外，此功能还可以验证输入是否为消费类型，如流或读取器。通过消耗性输入评估表达式会导致输入源耗尽，因此在输入值为实际消息负载（无论是由用户留空还是由缺省提供）的情况下，该函数会使用消耗输入获得的结果。
+
+==== 返回类型（字符串，可选）
+
+如果未提供，则默认为字符串。
+
+引入此参数是为了允许调用`xpath3()`函数时可能具有的不同意图，例如检索实际数据或仅验证特定节点是否存在。此功能符合JAXP API link:https://www.jcp.org/en/jsr/detail/summary?id=206[JSR-206]，该API定义Java应用程序处理XML的标准方式，因此可执行XPath表达式。通过此参数，您可以充分利用JAXP API的这一功能，而无需深入研究API的复杂性。
+
+您可以从以下可能的输出类型列表中进行选择：
+
+*  `BOOLEAN`：以`java.lang.String`的形式返回表达式的有效布尔值。相当于在XPath `boolean() `函数的调用中包装表达式。
+*  `STRING`：以`java.lang.String`的形式返回转换为字符串的表达式的结果。相当于将表达式封装到对XPath `string()`函数的调用中。
+*  `NUMBER`：以`java.lang.Double`的形式返回转换为double的表达式的结果。相当于在XPath `number()`函数的调用中包装表达式。
+*  `NODE`：以结点对象的形式返回结果。
+*  `NODESET`：返回一个DOM NodeList对象。
+
+==== 查询参数
+
+`xpath3()`函数支持将参数传递到XPath查询中。下面的例子显示了一个查询，它返回包含给定单词的所有LINE元素：
+
+[source, code]
+----
+//LINE[contains(., $word)]
+----
+
+$符号标记参数。该函数根据当前流量变量自动解析该变量。下面的示例返回所有出现的单词"handkerchief:"
+
+[source, xml, linenums]
+----
+<set‐variable variableName="word" value="handkerchief"/>
+<expression‐transformer>
+   xpath3('//LINE[contains(.,$word)]',payload,'NODESET')
+</expression‐transformer>
+----
+
+=== 名称空间管理器
+
+`xpath3()`函数为`namespace-manager`，这意味着通过`namespace-manager`组件配置的所有名称空间在XPath评估中都可用。
+
+下面的示例显示了如何对具有多个名称空间的文档执行XPath评估。
+
+[source, xml, linenums]
+----
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body foo="bar">
+    <ns1:echo xmlns:ns1="http://simple.component.mule.org/">
+      <ns1:echo>Hello!</ns1:echo>
+    </ns1:echo>
+  </soap:Body>
+</soap:Envelope>
+----
+
+上面的示例文档有几个名称空间，为了导航DOM树，Xpath引擎需要注意这些名称空间。相关的`xpath3()`功能如下所示。
+
+[source, xml, linenums]
+----
+<mulexml:namespace-manager includeConfigNamespaces="true">    
+  <mulexml:namespace prefix="soap" uri="http://schemas.xmlsoap.org/soap/envelope/"/>
+  <mulexml:namespace prefix="mule" uri="http://simple.component.mule.org/"/>
+</mulexml:namespace-manager>
+
+
+<flowname="xpathWithNamespace">
+  <expression‐transformer expression="xpath3('/soap:Envelope/soap:Body/mule:echo/mule:echo')"/>
+</flow>
+----
+
+[NOTE]
+====
+为确保一致性，还将名称空间支持添加到`xquery-transformer`元素。因此，如果某些应用程序在没有正确指定名称空间管理器的情况下使用具有自定义名称空间的表达式，则可能会遇到问题您可以通过声明命名空间管理器或使用通配符来避免此问题，例如使用`*`而不是命名空间，如下所示。
+
+[source, code]
+----
+xpath3('/*:/contacts/')
+----
+
+====
+
+=== 的XQuery
+
+xquery-transformer元素保留与以前版本相同的语法。您可以在XQuery脚本中使用xquery版本选择XQuery版本，如下所示：
+
+[source,xml,linenums]
+----
+<mxml:xquery‐text>
+<![CDATA[
+  xquery version "3.0";
+----
+
+XQuery 3.0引入了对XQuery转换器中几项新功能的支持，例如使用XQuery脚本一次对多个文档进行操作。有关更多信息，请参阅 link:/mule-user-guide/v/3.8/xquery-transformer[XQuery变换器]。
+
+
+

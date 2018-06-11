@@ -1,0 +1,182 @@
+= 例外策略最常见的用例
+
+本页说明了在Mule ESB应用程序中处理错误处理的六种方法。
+
+*  <<Route the Before-Error Message to the Dead Letter Queue>>
+*  <<Route the Initial-State Message to the Dead Letter Queue>>
+*  <<Route the Message Based on Exception Type>>
+*  <<Returning an Error Message>>
+*  <<Rollback the Transaction and Send a Notification>>
+*  <<Stop Processing When an Exception Occurs>>
+
+前两个示例实现事务性JMS队列，并包含一个消息转换器，它将字符串附加到原始消息。发生错误时，Mule通过流的异常策略将消息路由到JMS http://www.eaipatterns.com/DeadLetterChannel.html[死信队列]。这两个例子主要在它们发送给死信队列的“消息状态”中有所不同。
+
+[NOTE]
+====
+*About the Examples* +
+
+. 结束特定代码行的内嵌数字（即`<!-- [1] -->`）对应于紧挨着代码下方出现的编号注释。
+. 某些示例使用`throwException`测试组件来模拟流中的错误条件。
+====
+
+== 将错误前消息路由到死信队列
+
+在第一种情况下，异常策略会在发生错误之前恢复它存在的消息_just_。换句话说，Mule已经对消息进行了转换（即将一个字符串附加到有效负载），但该消息还没有抛出异常。
+
+[source, xml, linenums]
+----
+<flow name="LastMessageStateRouting">
+        <jms:inbound-endpoint queue="in">
+            <jms:transaction action="ALWAYS_BEGIN" />
+        </jms:inbound-endpoint>
+        <append-string-transformer message=" with some text added"/> <!-- [1] -->
+        <test:component throwException="true"/>
+        <jms:outbound-endpoint queue="out">
+            <jms:transaction action="ALWAYS_JOIN" />
+        </jms:outbound-endpoint>
+        <catch-exception-strategy>
+            <jms:outbound-endpoint queue="dead.letter"> <!-- [2] -->
+                <jms:transaction action="ALWAYS_JOIN" />
+            </jms:outbound-endpoint>           
+        </catch-exception-strategy>
+    </flow>
+----
+
+.  Mule将当前有效载荷替换为在抛出异常之前从*Append String Transformer*出现的有效载荷版本（即附加了指定字符串的已转换载荷）。
+.  Mule将消息的转换版本发送给JMS死信队列。为了实现这一点，在异常策略中嵌入的出站端点，Mule "joins"事务（即恢复事件与在就在抛出异常之前存在的消息版本）。 Mule在通过所有异常策略消息处理器路由消息之后提交事务。
+
+== 将初始状态消息路由到死信队列
+
+在第二种情况下，不是处理处于其转换状态的消息，而是必须恢复异常策略，然后将消息处理为其初始未转换状态。为了确保Mule将此初始状态消息发送到死信队列，Mule将消息有效载荷保存在`originalMessage`变量中。当发生异常时，Mule使用这个变量来恢复初始状态消息。
+
+[source, xml, linenums]
+----
+<flow name="OriginalMessageRouting">
+        <jms:inbound-endpoint queue="in">
+            <jms:transaction action="ALWAYS_BEGIN" />
+        </jms:inbound-endpoint>
+        <set-variable variableName="originalMessage" value="#[payload]"/> <!-- [1] -->
+        <append-string-transformer message=" with some text added"/>
+        <test:component/>
+        <jms:outbound-endpoint queue="out">
+            <jms:transaction action="ALWAYS_JOIN" />
+        </jms:outbound-endpoint>
+        <catch-exception-strategy>
+            <set-payload value="#[flowVars['originalMessage']]"/> <!-- [2] -->
+            <jms:outbound-endpoint queue="dead.letter">  <!-- [3] -->
+                <jms:transaction action="ALWAYS_JOIN" />
+            </jms:outbound-endpoint>
+        </catch-exception-strategy>
+    </flow>
+----
+
+. 为了保留原始消息，Mule将原始有效负载存储在`originalMessage`变量中。
+. 此时，Mule将当前的消息负载替换为保存在`originalMessage`变量中的消息。
+.  Mule将原始状态下的消息发送给死信队列。
+
+== 根据例外类型路由消息
+
+Mule可以根据消息抛出异常的类型执行不同的操作。这类似于基于内容的路由。然而，在这种情况下，Mule根据它抛出的异常类型而不是其有效载荷来确定消息的路由。
+
+[source, xml, linenums]
+----
+<flow name="RouteByExceptionType">
+        <jms:inbound-endpoint queue="in">
+            <jms:transaction action="ALWAYS_BEGIN" />
+        </jms:inbound-endpoint>
+        <test:component/>
+        <jms:outbound-endpoint queue="out">
+            <jms:transaction action="ALWAYS_JOIN" />
+        </jms:outbound-endpoint>
+        <choice-exception-strategy>
+            <catch-exception-strategy when="exception.causedBy(com.company.BusinessException)"> <!-- [1] -->
+                <jms:outbound-endpoint queue="dead.letter">
+                    <jms:transaction action="ALWAYS_JOIN" />
+                </jms:outbound-endpoint>
+            </catch-exception-strategy>
+            <rollback-exception-strategy when="exception.causedBy(com.company.NonBusinessException)"> <!-- [2] -->
+                <logger level="ERROR" message="Payload failing: #[payload]"/>
+            </rollback-exception-strategy>
+        </choice-exception-strategy>
+    </flow>
+----
+
+. 当消息抛出`com.company.BusinessException`时，选择异常策略将消息路由到`catch-exception-strategy`。捕获异常策略将消息发送到死信队列，然后消耗源代码。
+. 当消息抛出`com.company.NonBusinessException`（即意外失败）时，选择异常策略会将消息路由到`rollback-exception-strategy`。回滚异常策略记录错误，然后回滚JMS事务以准备重新处理消息。
+. 如果一条消息抛出既不是`BusinessException`也不是`NonBusinessException`的异常，Mule的隐式应用的默认异常策略处理错误。
+
+== 返回错误消息
+
+Mule可以捕获异常，然后在同步请求响应场景中创建一条错误消息以返回给调用者。
+
+[source, xml, linenums]
+----
+<flow name="CatchAndReturnError">
+        <http:inbound-endpoint host="localhost" port="8080" path="getSomething" exchange-pattern="request-response"/>
+ 
+        <test:component throwException="true"/>
+ 
+        <catch-exception-strategy>
+                <set-payload value="The request cannot be processed, the error is #[exception.getSummaryMessage()]"/> <!-- [1] -->
+                <set-property propertyName="http.status" value="500"/> <!-- [2] -->
+        </catch-exception-strategy>
+ 
+</flow>
+----
+
+. 捕获异常策略用新内容替换消息有效负载。 Mule使用 link:/mule-user-guide/v/3.4/mule-expression-language-mel[Mule表达语言MEL] `exception`变量在消息负载中包含错误编号。错误号码可以帮助调用者理解异常。
+. 捕获异常策略将响应的HTTP状态代码设置为`500`，以指示服务器错误。 Mule将新消息的有效载荷发送给调用者。
+
+== 回滚事务并发送通知
+
+发生错误时，Mule可以回滚事务，然后将故障通知发送给系统管理员。在这种情况下，Mule回滚事务，然后使用SMTP端点发送失败通知电子邮件。
+
+[source, xml, linenums]
+----
+<flow name="RollbackTransactionAndSendEmail">
+ 
+        <jms:inbound-endpoint queue="in">
+            <jms:transaction action="ALWAYS_BEGIN"/>
+        </jms:inbound-endpoint>
+        <test:component throwException="true"/>
+        <rollback-exception-strategy> <!-- [1] -->
+ 
+            <set-payload value="#['Failed to process message: ' + payload]"/> <!-- [2] -->
+ 
+            <smtp:outbound-endpoint user="pablolagreca" password="mypassword" host="smtp.gmail.com" from="failures-app@mycompany.com" to="technical-operations@mycompany.com" subject="Message Failure"/>  <!-- [3] -->
+        </rollback-exception-strategy>
+    </flow>
+----
+
+. 当消息抛出异常时，Mule会回滚事务。
+.  Mule在消息上设置一个新的有效载荷，其中包含两个：
+* 失败通知消息`'Failed to process message:'`
+* 消息的有效载荷
+.  Mules向`technical-operations@mycompany.com`发送失败通知电子邮件。
+
+== 发生异常时停止处理
+
+在发生某些类型的错误后，Mule可以防止流程接受更多消息。例如，当外部服务变得不可用（即脱机）时，每个消息处理尝试都将失败，直到不可用资源恢​​复。在这种情况下，Mule可以关闭流程以防止它尝试处理更多消息。
+
+[source, xml, linenums]
+----
+<flow name="StopFlowBasedOnExceptionType">
+        <vm:inbound-endpoint path="in" exchange-pattern="request-response"/>
+        <http:outbound-endpoint host="localhost" port="808" responseTimeout="5"/>
+        <choice-exception-strategy>
+            <rollback-exception-strategy when="exception.causedBy(java.net.ConnectException)">  <!-- [1] -->
+                <script:component>
+                    <script:script engine="groovy">
+                        flowConstruct.stop();
+                    </script:script>
+                </script:component>
+             </rollback-exception-strategy>
+            <rollback-exception-strategy> <!-- [2] -->
+                <logger/>
+            </rollback-exception-strategy>
+        </choice-exception-strategy>
+    </flow>
+----
+
+. 当异常类型为`ConnectionException`时，选择异常策略将消息路由到第一个回滚异常策略。回滚异常策略运行一个脚本，用于停止处理更多消息的流程。
+. 对于所有其他异常类型，选择异常策略将消息路由到第二个回滚异常策略，该策略记录错误。

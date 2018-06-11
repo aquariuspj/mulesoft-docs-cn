@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:wd-connector="http://www.mulesoft.org/schema/mule/wd-connector" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.7.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/wd-connector http://www.mulesoft.org/schema/mule/wd-connector/current/mule-wd-connector.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+<context:property-placeholder location="credentials.properties"/>
+ <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+
+ <wd-connector:config name="Workday_Connector_Configuration" username="${workday.username}" password="${workday.password}" tenantName="${workday.tenantname}" doc:name="Workday Connector: Configuration"/>
+
+ <flow name="demoFlow">
+   <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+   <set-payload value="#[['FundName':' I.M.F' , 'FundTypeID' : ' FUND_TYPE-6-3']]" doc:name="Set Payload"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 urn:com.workday/bsvc
+---
+{
+ns0#Put_Fund_Request @(ns0#Add_Only: true , ns0#version: "v25.0"): {
+  ns0#Fund_Data: {
+     ns0#Fund_Name: payload.FundName,
+       ns0#Fund_Type_Reference: {
+         ns0#ID @(ns0#type: "Fund_Type_ID"): payload.FundTypeID
+       }
+     }
+  }
+}]]></dw:set-payload>
+        </dw:transform-message>
+   <wd-connector:invoke config-ref="Workday_Connector_Configuration" type="Financial_Management||Put_Fund" doc:name="Workday Connector"/>
+ </flow>
+</mule>

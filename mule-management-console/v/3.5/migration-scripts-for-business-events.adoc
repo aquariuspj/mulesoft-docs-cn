@@ -1,0 +1,242 @@
+MMC 3.5.0中用于Business Events的= 迁移脚本
+:keywords: mmc, migration scripts, debug, monitoring
+
+MMC 3.5.0将更改引入到存储Business Events信息的其中一个表中。这些更改会影响以下数据库中的表格：
+
+* 与MMC 3.4.2一起使用的除MS SQL Server以外的任何外部数据库
+*  MMC的内部H2数据库，其中Business Events数据默认被跟踪
+
+升级到MMC 3.5.0时，如果出现以下情况，则需要运行Business Events数据迁移脚本：
+
+* 您正在使用MMC 3.4.2在除MS SQL Server之外的任何外部数据库上保留Business Events数据
+* 您在MMC的H2内部数据库上保留Business Events数据（默认）
+
+如果出现以下情况，则不需要运行迁移脚本：
+
+* 您当前的MMC版本是3.4.2，并且您正在MS SQL Server上保留Business Events数据
+
+== 在H2中运行迁移脚本（MMC默认数据库）
+
+默认情况下，MMC将Business Events数据库保留在内部H2数据库中。如果您尚未修改此配置，则在升级到MMC 3.5.0时，您需要按本节所述运行H2的Business Events迁移脚本。
+
+此外，如果从MMC 3.4.1或更早版本升级，则可以选择运行第二个脚本来删除3.5.0中不再使用的表。
+
+===  H2迁移脚本
+
+[NOTE]
+您必须在当前MMC未运行且第一次运行MMC 3.5.0之前运行此脚本。
+
+该脚本由单个SQL语句组成：
+
+要运行该脚本，请按照下列步骤操作：
+
+. 关闭MMC。
+. 在`<MMC_HOME>/WEB-INF/lib`目录中查找H2 JAR文件。该文件名为`h2-<version>.jar`，例如`h2-1.3.164.jar`。
+. 从命令行使用以下命令运行H2 JAR：
++
+[source, code, linenums]
+----
+java -jar h2-<version>.jar
+----
++
+[NOTE]
+您必须以拥有`mmc-data`目录写入权限的用户身份运行JAR文件。
++
+这将使用H2的Web客户端启动您的O.S.的默认Web浏览器，该客户端显示下面的配置屏幕。
++
+image:H2conf.png[H2conf]
++
+. 对于*Driver Class*，输入`org.h2.Driver`。
+. 对于JDBC URL，输入`jdbc:h2:file:///<path_to_mmc-data>/tracking/persistency`，将`<path_to_mmc-data>`替换为包含MMC跟踪数据库的目录的实际路径。例如，`jdbc:h2:file:/var/lib/tomcat6/webapps/persistency`（路径以`persistency`结尾，没有文件扩展名）。
+. 将*User Name*和*Password*留空。
+. 点击*Connect*。 H2 Web客户端应显示如下所示的窗口。 +
++
+image:h2conf2-sql_run.png[h2conf2-sql_run] +
++
+. 将Business Events迁移的SQL语句键入空白字段，然后单击*Run*。 +
+image:H2query.png[H2query] +
++
+.  H2将运行SQL语句，然后打印成功消息：+
++
+image:h2_success.png[h2_success] +
+. 或者，运行脚本以删除索引。
+. 通过单击断开连接按钮 image:h2disconnect.png[h2disconnect]断开H2 Web客户端， image:h2disconnect.png[h2disconnect]通常是屏幕左上角工具栏中的第一个。
+. 退出H2客户端Web界面。
+. 通过在启动它的终端上按Control-C来终止H2客户端。
+. 启动MMC。
+
+===  H2可选的删除索引脚本
+
+如果从MMC 3.4.1或更低版本升级，则可以选择运行脚本来删除MMC 3.5.0中不再使用的数据库索引。运行迁移脚本后，从<<H2 Migration Script>>中描述的H2 Web客户端运行此脚本。下面提供了删除索引的脚本。
+
+[source, code, linenums]
+----
+DROP INDEX IF EXISTS e_properties_value;
+DROP INDEX IF EXISTS e_flow_name;
+DROP INDEX IF EXISTS e_message_id;
+DROP INDEX IF EXISTS e_server_id;
+DROP INDEX IF EXISTS e_server_name;
+DROP INDEX IF EXISTS e_timestamp;
+DROP INDEX IF EXISTS e_type;
+DROP INDEX IF EXISTS events_name;
+DROP INDEX IF EXISTS t_s_processing_time;
+DROP INDEX IF EXISTS t_s_status_ordinal;
+----
+
+运行脚本后，请参阅<<H2 Migration Script>>中的步骤12,13和14，以退出H2 Web客户端并关闭H2 JAR。
+
+== 在外部数据库上运行迁移脚本
+
+无论使用何种外部数据库，在所有情况下，指令都是相同的：
+
+. 确保您在首次运行新版本的MMC之前运行迁移脚本。
+. 关闭旧版本的MMC，如果它正在运行。
+. 使用数据库客户端在目标数据库上运行脚本。
+. 如果从MMC 3.4.1或更低版本升级，可以选择运行其他脚本来删除3.5.0中未使用的索引。
+. 断开数据库客户端。
+. 启动新版本的MMC。
+
+有关每个支持的数据库的脚本，请参阅下面的部分。
+
+*Oracle*
+
+*Migration Script*
+
+[source, code, linenums]
+----
+ALTER TABLE EVENT_PROPERTIES RENAME COLUMN KEY to PROPKEY;
+----
+
+*Optional Drop Indexes Script*
+
+如果从MMC 3.4.1或更早版本升级，可选择运行此脚本。
+
+[source, code, linenums]
+----
+DROP INDEX e_properties_value;
+DROP INDEX e_flow_name;
+DROP INDEX e_message_id;
+DROP INDEX e_server_id;
+DROP INDEX e_server_name;
+DROP INDEX e_timestamp;
+DROP INDEX e_type;
+DROP INDEX events_name;
+DROP INDEX t_s_processing_time;
+DROP INDEX t_s_status_ordinal;
+----
+
+*Postgres*
+
+*Migration Script*
+
+[source, code, linenums]
+----
+ALTER TABLE EVENT_PROPERTIES RENAME COLUMN KEY to PROPKEY;
+----
+
+*Optional Drop Indexes Script*
+
+如果从MMC 3.4.1或更早版本升级，可选择运行此脚本。
+
+[source, code, linenums]
+----
+
+DROP INDEX IF EXISTS e_properties_value;
+DROP INDEX IF EXISTS e_flow_name;
+DROP INDEX IF EXISTS e_message_id;
+DROP INDEX IF EXISTS e_server_id;
+DROP INDEX IF EXISTS e_server_name;
+DROP INDEX IF EXISTS e_timestamp;
+DROP INDEX IF EXISTS e_type;
+DROP INDEX IF EXISTS events_name;
+DROP INDEX IF EXISTS t_s_processing_time;
+DROP INDEX IF EXISTS t_s_status_ordinal;
+----
+*MySQL*
+
+*Migration Script*
+
+将`<db_name>`替换为目标数据库的名称。
+
+[source, code, linenums]
+----
+USE <db_name>;
+ALTER TABLE EVENT_PROPERTIES CHANGE KEY0 PROPKEY varchar(30);
+----
+*Optional Drop Indexes Script*
+
+如果从MMC 3.4.1或更早版本升级，可选择运行此脚本。
+
+将`<db_name>`替换为目标数据库的名称。
+
+[source, code, linenums]
+----
+USE <db_name>;
+DROP INDEX e_properties_value ON EVENT_PROPERTIES;
+DROP INDEX e_flow_name ON EVENTS;
+DROP INDEX e_message_id ON EVENTS;
+DROP INDEX e_server_id ON EVENTS;
+DROP INDEX e_server_name ON EVENTS;
+DROP INDEX e_timestamp ON EVENTS;
+DROP INDEX e_type ON EVENTS;
+DROP INDEX events_name ON EVENTS;
+DROP INDEX t_s_processing_time ON TRANSACTION_SUMMARIES;
+DROP INDEX t_s_status_ordinal ON TRANSACTION_SUMMARIES;
+----
+*MS SQL Server*
+
+*Migration Script*
+
+如果对MS SQL Server使用MMC 3.4.1，则只需运行此脚本。
+
+将`<db_name>`替换为目标数据库的名称。
+
+[source, code, linenums]
+----
+USE <db_name>
+GO
+CREATE TABLE [dbo].[OPENJPA_SEQUENCE_TABLE](
+    [ID] [tinyint] NOT NULL,
+    [SEQUENCE_VALUE] [bigint] NULL,
+PRIMARY KEY CLUSTERED
+(
+    [ID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+INSERT INTO [dbo].[OPENJPA_SEQUENCE_TABLE]
+SELECT 0, SEQUENCE_VALUE FROM [dbo].[OPENJPA_SEQUENCES_TABLE] WHERE ID = 'EVENTS'
+GO
+/* VERIFY SEQUENCE_VALUE IN OPENJPA_SEQUENCE_TABLE IS THE SAME AS SEQUENCE_VALUE IN OPENJPA_SEQUENCES_VALUE */
+/* THEN DROP OLD TABLE */
+DROP TABLE [dbo].[OPENJPA_SEQUENCES_TABLE]
+GO
+----
+*Optional Drop Indexes Script*
+
+将`<db_name>`替换为目标数据库的名称。
+
+[source, code, linenums]
+----
+USE [enter_db_name_here]
+DROP INDEX [EVENT_PROPERTIES].[e_properties_value]
+GO
+DROP INDEX [EVENTS].[e_flow_name]
+GO
+DROP INDEX [EVENTS].[e_message_id]
+GO
+DROP INDEX [EVENTS].[e_server_id]
+GO
+DROP INDEX [EVENTS].[e_server_name]
+GO
+DROP INDEX [EVENTS].[e_timestamp]
+GO
+DROP INDEX [EVENTS].[e_type]
+GO
+DROP INDEX [EVENTS].[events_name]
+GO
+DROP INDEX [TRANSACTION_SUMMARIES].[t_s_processing_time]
+GO
+DROP INDEX [TRANSACTION_SUMMARIES].[t_s_status_ordinal]
+GO
+----

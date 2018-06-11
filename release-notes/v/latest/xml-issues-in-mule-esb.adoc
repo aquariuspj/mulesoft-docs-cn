@@ -1,0 +1,39 @@
+Mule ESB中的=  XML问题
+:keywords: release notes, xml
+
+2014年11月21日发布
+
+在14/13/14，David Jorm报告了两个与Mule ESB中的XML处理相关的问题。我们分析了这两个问题并在下面提供了回复。
+
+== 报告
+
+这两个问题报告如下：
+
+====  RCE通过XStream反序列化
+
+Mule使用XStream 1.4.2。 XML到目标转换器容易受 link:http://www.securityfocus.com/bid/64760[CVE-2013-7285]的影响。远程攻击者可以将消息发送到XML到目标转换器，并可以实现远程代码执行（RCE）。欲了解更多信息，请联系 http://www.mulesoft.com/support-and-services/mule-esb-support-license-subscription[MuleSoft客户支持。]
+
+JXPathExpressionEvaluator中的====  XXE
+
+`xml/src/main/java/org/mule/module/xml/expression/JXPathExpressionEvaluator.java`包括：
+
+----
+
+ document = XMLUtils.toW3cDocument(message.getPayload());
+----
+
+`XMLUtils.toW3cDocument`不禁用外部实体，因此消息有效载荷可能包含XXE攻击。
+
+== 评估和回应
+
+====  RCE通过XStream反序列化
+
+这个问题不太关于Mule ESB，更多的是关于如何使用引用的组件。 Mule ESB提供了可用于编写应用程序的构建块。使用xstream的块将XML文档转换为任意任意对象。这个漏洞利用了这个事实，比如一个不可信的xml被转换，xml可以被制作以便一种特殊类型的类被反序列化（例如，一个代理执行任何进程的值的进程执行类的代理）。
+
+XStream 1.4.7版本的黑名单反序列化了一个EventHandler类，这是在exploit中展现的情况，但这只是一种缓解，因为许多其他框架提供了类似的类。
+
+主要的一点是，问题主要在于消息处理器的不当使用，升级到1.4.7+只会缓解这个特定的向量。真正的解决方案是，构建在Mule ESB上的应用程序不应该盲目地转换任何输入，而无需首先进行消毒处理 - 这适用于任何应用程序。
+
+==== 解
+
+我们将在这4个变压器的文档中添加安全建议，并为Mule 3.6升级到XStream 1.4.7。我们预计这个季度会有一个补丁。 +

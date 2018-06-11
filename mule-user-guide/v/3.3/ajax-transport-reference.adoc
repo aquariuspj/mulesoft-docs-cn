@@ -1,0 +1,676 @@
+=  AJAX传输参考
+
+AJAX（异步Java和XML）是一组相互关联的Web开发技术，用于创建交互式Web应用程序或富Internet应用程序。借助Ajax，Web应用程序可以在后台异步地从服务器检索数据，而不会干扰现有页面的显示和行为。
+
+Mule AJAX连接器允许Mule事件与Web浏览器异步发送和接收。该连接器包含一个JavaScript客户端，可用于侦听事件，发送事件和执行RPC调用。它可以单独部署，也可以嵌入到Apache Tomcat或 http://mulesoft.com/tcat[Tcat服务器]等servlet容器中。
+
+== 传输信息
+
+[%header%autowidth.spread]
+|===
+|运输 |文档 |入站 |外向 |要求 |交易 |流 |重试{{ 8}} MEP  |默认MEP  | Maven工件
+| AJAX a | link:http://www.mulesoft.org/docs/site/current3/apidocs/org/mule/transport/ajax/package-summary.html[的JavaDoc]
+
+link:http://www.mulesoft.org/docs/site/current3/schemadocs/namespaces/http_www_mulesoft_org_schema_mule_ajax/namespace-overview.html[SchemaDoc]  | image:check.png[查]  | image:check.png[查]  | image:error.png[错误]  | image:error.png[错误]  | image:check.png[查]  | image:error.png[错误]  |单向 |单向 | org.mule.transport：骡传输的Ajax
+|===
+
+[TIP]
+====
+*Legend*
+
+*Transport*  - 运输的名称/协议
+
+*Docs*  - 指向传输的JavaDoc和SchemaDoc的链接
+
+*Inbound*  - 传输是否可以接收入站事件并可用于入站端点
+
+*Outbound*  - 传输是否可以生成出站事件并与出站端点一起使用
+
+*Request*  - 该端点是否可以通过请求调用直接查询（通过MuleClient或EventContext）
+
+*Transactions*  - 交易是否受交通工具支持。支持事务的传输可以在本地或分布式两阶段提交（XA）事务中进行配置。
+
+*Streaming*  - 此传输是否可以处理输入流中传入的消息。这可以非常有效地处理大数据。有关更多信息，请参阅流式传输。
+
+*Retry*  - 此传输是否支持重试策略。请注意，所有传输都可以配置Retry策略，但只有这里标记的传输才是MuleSoft官方支持的
+
+*MEPs*  - 此传输支持的消息交换模式
+
+*Default MEP*  - 使用此传输的端点的默认MEP，它不显式配置MEP
+
+*Maven Artifact*  - 组名称为 http://maven.apache.org/[Maven的]中此传输的工件名称
+====
+
+AJAX传输具有服务器和客户端部分。服务器部分类似于其他Mule交通工具。客户端部分是使用户能够在浏览器中发布和订阅Mule消息的<<Using the JavaScript Client>>。服务器连接器既可以作为嵌入式AJAX（cometD）服务器运行，也可以绑定到servlet容器。以下详细介绍了如何配置AJAX支持的服务器端。
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source, xml]
+----
+xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax"
+----
+
+XML架构位置：
+
+[source]
+----
+http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/3.3/mule-ajax.xsd
+----
+
+连接器语法：
+
+[source, xml]
+----
+<ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8090/mule/ajaxServer" resourceBase="${app.home}/docroot"/>
+----
+
+端点语法
+
+. 入站端点
++
+[source, xml]
+----
+<ajax:inbound-endpoint channel="/services/someAjaxService" />
+----
+
+. 出站端点
++
+[source, xml]
+----
+<ajax:outbound-endpoint channel="/mule/notifications" cacheMessages="true"/>
+----
+
+== 注意事项
+
+您应该使用Mule AJAX Transport与浏览器进行双向通信。在它的覆盖下，它使用CometD，可以实现更多的并发请求和优化的服务器资源使用。
+
+== 特点
+
+* 轻松地对Mule执行异步调用
+* 将事件广播给浏览AJAX频道的浏览器
+* 从浏览器执行Sudo  -  RPC调用
+* 使用独立或绑定到servlet容器
+
+== 用法
+
+对于配置中的AJAX传输，您需要添加ajax命名空间：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/3.3/mule-ajax.xsd
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.3/mule.xsd">
+...
+----
+
+=== 配置服务器
+
+设置Ajax服务器的常用方法是使用Mule中嵌入的方法。这可以通过在您的配置中添加ajax：connector元素来创建：
+
+[source, xml]
+----
+<ajax:connector serverUrl="http://0.0.0.0:8080/ajax"/>
+----
+
+这将启动一个ajax服务器，并准备开始发布和订阅。接下来，您可以创建一个在通道上侦听ajax消息的Flow：
+
+[source, xml, linenums]
+----
+<flow name="AjaxEcho">
+    <ajax:inbound-endpoint channel="/services/echo"/>
+    <echo-component/>
+</flow>
+----
+
+或者要在ajax频道上发布，请使用出站端点：
+
+[source, xml, linenums]
+----
+<flow name="AjaxBridge">
+    <jms:inbound-endpoint topic="football.scores"/>
+     
+    <ajax:outbound-endpoint channel="/football/scores"/>
+</flow>
+----
+
+=== 嵌入到Servlet容器中
+
+如果您在Apache Tomcat等servlet容器中运行Mule，则可能需要将任何ajax端点绑定到servlet容器。为此，您需要在您的网络应用中为您添加`org.mule.transport.ajax.container.MuleAjaxServlet` `web.xml`，并且您需要使用`ajax:servlet-xxx-endpoint`元素。
+
+使用以下命令配置您的\ {[web.xml}}：
+
+[source, xml, linenums]
+----
+<servlet>
+    <servlet-name>ajax</servlet-name>
+    <servlet-class>org.mule.transport.ajax.container.MuleAjaxServlet</servlet-class>
+    <load-on-startup>1</load-on-startup>
+</servlet>
+ 
+<servlet-mapping>
+    <servlet-name>ajax</servlet-name>
+    <url-pattern>/ajax/*</url-pattern>
+</servlet-mapping>
+----
+
+然后分别用`ajax:servlet-inbound-endpoint`和`ajax:servlet-outbound-endpoint`替换任何`ajax:inbound-endpoint`和`ajax:outbound-endpoint`。再次使用足球比分的例子：
+
+[source, xml, linenums]
+----
+<flow name="AjaxBridge">
+    <jms:inbound-endpoint topic="football.scores"/>
+     
+    <ajax:servlet-outbound-endpoint channel="/football/scores"/>
+</flow>
+----
+
+然后您需要按照以下所述配置连接器和端点。
+
+== 使用JavaScript客户端
+
+Mule提供了一个功能强大的JavaScript客户端，具有完整的 link:http://en.wikipedia.org/wiki/Ajax_%28programming%29[阿贾克斯]支持，可用于直接在浏览器中与Mule流进行交互。它还提供了使用Cometd（一种用于Ajax Web应用程序的消息总线）允许服务器和客户端之间的多通道消息传递直接与容器内运行的对象交互的支持。
+
+=== 配置服务器
+
+要使用JavaScript客户端，您只需要拥有一个具有可通过其发送请求的AJAX入站端点的流程。下面的示例显示了在`/services/echo` AJAX频道上发布的简单回声流。
+
+[source, xml, linenums]
+----
+<flow name="AjaxEcho">
+    <ajax:inbound-endpoint channel="/services/echo"/>
+    <echo-component/>
+</flow>
+----
+
+=== 启用客户端
+
+要在HTML页面中启用客户端，请在页面中添加一个脚本元素：
+
+[source, xml, linenums]
+----
+<head>
+...
+  <script type="text/javascript" src="mule-resource/js/mule.js"></script>
+----
+
+添加此脚本元素将为您的页面创建一个“mule”客户端对象。
+
+=== 发出RPC请求
+
+假设在主体中定义了一个按钮，单击该按钮时会向Echo流发送请求：
+
+[source, xml]
+----
+<input id="sendButton" class="button" type="submit" name="Go" value="Send" onclick="callEcho();"/>
+----
+
+该按钮调用处理请求逻辑的`callEcho`函数：
+
+[source, code, linenums]
+----
+function callEcho()
+{
+  var data = new Object();
+  data.phrase = document.getElementById('phrase').value;
+  mule.rpc("/services/echo", data, callEchoResponse);
+}
+----
+
+该函数使用`rpc`方法从流中请求数据。当响应数据可用时，`rpc`方法设置Mule将发布的专用响应频道。第一个参数是您发出请求的通道（与Echo Flow正在监听的通道相匹配），第二个参数是有效负载对象，第三个参数是处理响应的回调函数，in这种情况下称为callEchoResponse函数：
+
+[source, code, linenums]
+----
+function callEchoResponse(message)
+{
+    document.getElementById("response").innerHTML = "<b>Response:&nbsp;</b>" + message.data + "\n";
+}
+----
+
+在`rpc`仅用于单向请求的情况下（没有回调函数将作为参数传递，因为预期没有响应），建议使用AJAX连接器中的`disableReplyTo`标志：
+
+[source, xml, linenums]
+----
+<ajax:connector name="ajaxServer" ... disableReplyTo="true" />
+----
+
+==== 处理错误
+
+要检查是否发生错误，请在回调函数中设置`error`参数，以在处理之前验证错误是否为空。如果它不为空，则发生错误，应将错误记录或显示给用户。
+
+[source, code, linenums]
+----
+function callEchoResponse(message, error)
+{
+  if(error)
+    handleError(error)
+  else
+    document.getElementById("response").innerHTML = "<b>Response:&nbsp;</b>" + message.data + "\n";
+}
+ 
+function handleError(error) {
+   alert(error);
+}
+----
+
+== 收听服务器事件
+
+Mule JavaScript客户端允许开发人员订阅来自Mule流程的事件。这些事件只需要在AJAX端点上发布即可，这里是一个接收JMS事件并将它们发布到AJAX通道的流程。
+
+[source, xml, linenums]
+----
+<flow name="AjaxBridge">
+    <jms:inbound-endpoint topic="football.scores"/>
+     
+    <ajax:outbound-endpoint channel="/football/scores"/>
+</flow>
+----
+
+现在您可以通过Mule JavaScript客户端添加订阅者来注册这些足球比分的兴趣。
+
+[source, xml, linenums]
+----
+<script type="text/javascript">
+    mule.subscribe("/football/scores", scoresCallback);
+</script>
+----
+
+`subscribe`方法的第一个参数是流发布到的AJAX路径。第二个参数是处理消息的回调函数的名称。在这个例子中，它是下一个定义的`scoresCallback`函数：
+
+[source, code, linenums]
+----
+function scoresCallback(message)
+{
+    console.debug("data:" + message.data);
+ 
+    if (!message.data)
+    {
+        console.debug("bad message format " + message);
+        return;
+    }
+ 
+    // logic goes here
+    ...
+}
+----
+
+[TIP]
+====
+*JSON Support*
+
+Mule JSON支持包括对象和JSON绑定，这使得在调度到浏览器之前将数据封送到JSON标记非常简单，其中JSON是本机格式。
+====
+
+== 发送消息
+
+假设您想发送消息而不收到回复。在这种情况下，您可以调用Mule客户端上的`publish`函数：
+
+[source, xml, linenums]
+----
+<script type="text/javascript">
+    mule.publish("/services/foo", data);
+</script>
+----
+
+== 示例配置
+
+Mule捆绑了几个使用Ajax连接器的例子。我们建议您查看"Notifications Example"和"GPS Walker Example"（这在 link:https://blogs.mulesoft.com/dev/mule-dev/walk-this-way-building-ajax-apps-with-mule[这篇博文]中会进一步详细解释）。在以下典型用例中，我们将重点介绍使用和配置连接器时涉及的关键元素。
+
+=== 发布示例服务器代码
+
+首先，我们将在Mule配置中设置一个AJAX入站端点来接收请求。
+
+[%header,cols="1*a"]
+|===
+^ |配置AJAX入站端点
+|
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax" ❶
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/3.3/mule-ajax.xsd ❷
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.3/mule.xsd">
+ 
+    <ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8090/services/updates"
+        resourceBase="${app.home}/docroot"/> ❸
+ 
+    <flow name="TestNoReply">
+        <ajax:inbound-endpoint channel="/services/serverEndpoint" /> ❹
+        <!-- From here on, the data from the browser is available in Mule. -->
+        ...
+        <component .../>
+    </flow>
+ 
+</mule>
+----
+|===
+
+请注意以下更改：
+
+*  Mule Ajax名称空间和模式位置已添加到_mule_元素。
+*  Ajax连接器为此应用程序创建一个嵌入式Ajax服务器。 +
+** 'resourceBase'属性指定了可以发布HTML和其他资源的目录。当浏览器请求页面时，它们将从这个位置提供服务。
+**  $ \ {app.home}是Mule中可用的新占位符，它引用应用程序的根目录。
+** '0.0.0.0'是指运行Mule实例的计算机的IP。
+*  Ajax入站端点❹已添加到示例流程中。它将创建一个名为_ / services / serverEndpoint_的通道，并监听来自Mule JavaScript客户端的传入消息。
+
+=== 发布示例客户端代码
+
+当按下按钮时，浏览器会发送一些信息给Mule（使用JavaScript Mule客户端）。
+
+[%header,cols="1*a"]
+|===
+^ |发布数据
+|
+[source, xml, linenums]
+----
+<head>
+    <script type="text/javascript" src="mule-resource/js/mule.js"></script> ❶
+    <script type="text/javascript">
+     
+        function publishToMule() { ❷
+            // Create a new object and populate it with the request data.
+            var data = new Object();
+            data.phrase = document.getElementById('phrase').value;
+            data.user = document.getElementById('user').value;
+            // Send the data to the Mule endpoint and do not expect a response.
+            // The "mule" element is provided by the Mule JavaScript client.
+            mule.publish("/services/serverEndpoint", data); ❸
+        }
+    </script>
+</head>
+ 
+<body>
+    <div>
+        Your phrase: <input id="phrase" type="text"/>
+        <select id="user">
+            <option value="anonymous">Anonymous</option>
+            <option value="administrator" selected="true">Administrator</option>
+        </select>
+        <input id="sendButton" class="button" type="submit" name="Go" value="Send" onclick="publishToMule();"/>
+    </div>
+ 
+</body>
+----
+|===
+
+请注意以下更改：
+
+* 加载_mule.js_脚本使得Mule客户端可以通过_'mule'_变量自动使用。
+*  _rpcCallMule（）_方法从页面收集数据并将其提交给之前配置的_'/ services / noReplyEndpoint'通道。
+*  _mule.publish（）_方法实际调用Mule并接收两个参数：
+** 频道名称。
+** 要发布的数据。
+
+=== 订阅示例服务器代码
+
+这是一种向多个客户端同时发送信息的有用且友好的方式。他们所要做的就是订阅一个服务器发送任何需要广播的频道。
+
+Mule ESB提供了一个AJAX连接器，一个AJAX出站端点以及所需的JavaScript客户端库来处理这个问题。
+
+我们使用JavaScript客户端添加一个AJAX连接器来承载页面（HTML，CSS等），并允许它们与Mule的AJAX端点进行交互。这是我们在前两个例子中使用的连接器。
+
+我们还需要通过频道中的AJAX出站端点发布一些内容。
+
+[%header,cols="1*a"]
+|===
+^ |配置AJAX出站端点通道
+|
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax" ❶
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/3.3/mule-ajax.xsd ❷
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.3/mule.xsd">
+ 
+    <ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8090/services/updates"
+        resourceBase="${app.home}/docroot"/> ❸
+ 
+    <flow name="PublishUpdates">
+        <!-- ... here we create the content to be published -->
+        <ajax:outbound-endpoint channel="/mule/notifications" cacheMessages="true"/>❹
+    </flow>
+ 
+</mule>
+----
+|===
+
+请注意以下更改：
+
+*  Mule Ajax名称空间和模式位置已添加到_mule_元素。
+*  Ajax连接器为此应用程序创建一个嵌入式Ajax服务器。
+** 'resourceBase'属性指定了可以发布HTML和其他资源的目录。浏览器请求页面时，它们将从此位置提供。
+**  $ \ {app.home}是Mule中可用的新占位符，它引用应用程序的根目录。
+** '0.0.0.0'是指运行Mule实例的计算机的IP。
+*  Ajax出站端点已添加到示例流程中。
+** 它将收到的事件提交到名为_ / mule / notifications_的频道。
+** 在该频道上收听的任何页面都会收到该事件的副本。
+
+=== 订阅示例客户端代码
+
+[%header,cols="1*a"]
+|===
+^ |收听AJAX出站频道
+|
+[source, xml, linenums]
+----
+<head>
+    <script type="text/javascript" src="mule-resource/js/mule.js"></script> ❶
+ 
+    <script type="text/javascript">
+    
+        function init() ❷
+        {
+            mule.subscribe("/mule/notifications", notif);
+        }
+ 
+        function dispose() ❸
+        {
+            mule.unsubscribe("/mule/notifications", notif);
+        }
+ 
+        function notif(message) ❹
+        {
+            console.debug("data:" + message.data);
+ 
+            //... code to handle the received data
+        }
+     
+    </script>
+</head>
+ 
+<body onload="init()" onunload="dispose()"> ❺
+ 
+</body>
+----
+|===
+
+请注意以下更改：
+
+* 加载_mule.js_脚本使得Mule客户端可以通过_'mule'_变量自动使用。
+*  _init（）_方法将_'/ mule / notifications'_上的所有传入事件与_notif（）_回调方法相关联。
+{_ 0}} _dispose（）_方法将从_notif（）_回调方法分离_'/ mule / notifications'_上的所有传入事件。
+*  _notif（）_❹回调方法处理收到的消息。
+*  _body_ HTML元素的_onload_和_onunload_ atrributes应分别包含对_init（）_和_dispose（）_的调用，以确保页面已正确注册并取消注册到_'/ mule / notifications'_通道。
+
+===  RPC示例服务器代码
+
+这个配置与前面例子非常相似。事实上，唯一重要的变化是频道名称和一个即时回声组件，可以将请求反馈给调用者。
+
+[%header,cols="1*a"]
+|===
+^ |配置将发送响应的AJAX入站端点
+|
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:ajax="http://www.mulesoft.org/schema/mule/ajax" ❶
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/ajax http://www.mulesoft.org/schema/mule/ajax/3.3/mule-ajax.xsd ❷
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.3/mule.xsd">
+ 
+    <ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8090/services/updates"
+        resourceBase="${app.home}/docroot"/> ❸
+ 
+    <flow name="TestEcho">
+        <ajax:inbound-endpoint channel="/services/echo" /> ❹
+        <echo-component/>
+    </flow>
+ 
+</mule>
+----
+|===
+
+请注意以下更改：
+
+*  Mule Ajax名称空间和模式位置已添加到_mule_元素。
+*  Ajax连接器为此应用程序创建一个嵌入式Ajax服务器。
+** 'resourceBase'属性指定了可以发布HTML和其他资源的目录。浏览器请求页面时，它们将从此位置提供。
+**  $ \ {app.home}是Mule中可用的新占位符，它引用应用程序的根目录。
+** '0.0.0.0'是指运行Mule实例的计算机的IP。
+*  Ajax入站端点❹已添加到示例流程中。
+** 它创建一个名为_ / services / echo_的通道，并监听来自Mule JavaScript客户端的传入RPC调用。
+** 收到请求时，会由`<echo-component/>`进行处理，然后通过Ajax渠道发送回提交请求的客户端。
+
+===  RPC示例客户端代码
+
+当按下按钮时，浏览器会向Mule（使用JavaScript Mule客户端）发送一些信息，就像以前一样。但是，这次回调方法会显示响应。
+
+[%header,cols="1*a"]
+|===
+^ |进行RPC调用 - 期待响应
+|
+[source, xml, linenums]
+----
+<head>
+    <script type="text/javascript" src="mule-resource/js/mule.js"></script> ❶
+    <script type="text/javascript">
+     
+        function rpcCallMuleEcho() { ❷
+            // Create a new object and populate it with the request data.
+            var data = new Object();
+            data.phrase = document.getElementById('phrase').value;
+            data.user = document.getElementById('user').value;
+            // Send the data to the Mule endpoint and set a callback to handle the response.
+            // The "mule" element is provided by the Mule JavaScript client.
+            mule.rpc("/services/echo", data, rpcEchoResponse); ❸
+        }
+ 
+        // Display response message data.
+        function rpcEchoResponse(message) { ❹
+            document.getElementById("response").innerHTML = "<b>Response:&nbsp;</b>" + message.data + "\n";
+        }
+    </script>
+</head>
+ 
+<body>
+    <div>
+        Your phrase: <input id="phrase" type="text"/>
+        <select id="user">
+            <option value="anonymous">Anonymous</option>
+            <option value="administrator" selected="true">Administrator</option>
+        </select>
+        <input id="sendButton" class="button" type="submit" name="Go" value="Send" onclick="rpcCallMuleEcho();"/>
+    </div>
+    <pre id="response"></pre>
+</body>
+----
+|===
+
+请注意以下更改：
+
+* 加载_mule.js_脚本使得Mule客户端可以通过_'mule'_变量自动使用。
+*  _rpcCallMuleEcho（）_方法从页面收集数据并将其提交到我们事先配置的_'/ services / echo'_频道。
+*  _mule.rpc（）_方法实际调用Mule。这一次，它收到**three **个参数：
+** 频道名称。
+** 要发送的数据。
+** 返回响应时调用*callback method*。
+*  _rpcEchoResponse（）_回调方法采用一个参数，即响应消息，并在页面上显示其数据。
+
+== 配置参考
+
+=== 元素列表
+
+==== 连接器
+
+允许Mule使用Jetty HTTP服务器和Cometd通过HTTP公开Mule服务。为每个连接器实例创建一个Jetty服务器。一个连接器可以服务于许多端点。用户应该很少需要有多个AJAX servlet连接器。
+
+。<connector...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+| {的serverUrl {1}} {串{2}}是 |  为|
+当使用嵌入式AJAX（不在servlet容器内）时，需要配置一个URL来创建一个托管在Mule中的AJAX服务器。该URL应采用`+http://(host):(port)/(path)+`的形式 - 请注意，也可以使用HTTPS，但您需要在连接器上设置TLS信息。
+| resourceBase  |字符串 |否 |   |指定将从其提供文件的本地路径。本地路径直接映射到'serverUrl'上的路径。
+| disableReplyTo  |布尔值 |否 |   |默认情况下，回传入站端点的异步回复。这可能会在某些情况下导致不需要的副作用，请使用此属性禁用。
+| logLevel  |整数 |否 |   | 0 =无，1 =信息，2 =调试
+|超时 |整数 |否 |   |服务器端轮询超时（以毫秒为单位）（默认为250000）。这是服务器在响应之前将保持重新连接请求的时间。
+|间隔 |整数 |否 |   |客户端轮询超时以毫秒为单位（默认为0）。重新连接之间客户端需要等待多长时间
+| maxInterval  |整数 |否 |   |最大客户端轮询超时（以毫秒为单位）（默认30000）。如果此时未收到连接，客户端将被删除。
+| json评论 |布尔 |否 |   |如果"true"（默认），那么服务器将接受包装在评论中的JSON并生成JSON包装在评论中。这是针对Ajax劫持的防御。
+| multiFrameInterval  |整数 |否 |   |如果在同一浏览器中检测到多个连接，则客户端轮询超时（缺省值为1500）。
+| refsThreshold  |整数 |否 |   |单个消息响应将被缓存而不是为每个客户端生成的消息参考数送到了（送去了。完成以优化发送给多个客户端的单个消息。
+|===
+
+。<connector...>的子元素
+
+[%header%autowidth.spread]
+|===
+| {名称{1}}基数 |说明
+| {客户{1}} 0..1  |
+|密钥存储 | 0..1  |
+| {服务器{1}} 0..1  |
+|协议处理程序 | 0..1  |
+|===
+
+==== 入站端点
+
+允许Mule服务使用Jetty服务器通过HTTP接收AJAX事件。这与等同的`servlet-inbound-endpoint`不同，因为它使用嵌入式servlet容器，而不是依赖于预先存在的servlet容器实例。如果运行Mule嵌入到servlet容器中，则不应使用此端点类型。
+
+。<inbound-endpoint...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|频道 |字符串 |是 |   |将服务端点绑定到的ajax频道。此通道路径是您的应用程序部署到servlet容器中的独立上下文路径。
+|===
+
+无<inbound-endpoint...>的子元素
+
+
+==== 出站端点
+
+允许Mule服务通过使用Bayeux的HTTP发送AJAX事件。 JavaScript客户端可以使用Mule JavaScript客户端注册这些事件。
+
+。<outbound-endpoint...>的属性
+[%header%autowidth.spread]
+|===
+| {名称{1}}输入 |必 |缺省 |说明
+|频道 |字符串 |是 |   |将服务端点绑定到的ajax频道。此通道路径是您的应用程序部署到servlet容器中的独立上下文路径。
+| cacheMessages  |布尔值 |否 |   |如果设置为true，则在没有客户端订阅此通道时，分派器将缓存消息。
+| messageCacheSize  | int  |否 |   |如果缓存消息设置为true，则此值确定内存缓存的大小。缓存将自动过期较旧的项目，以为新项目腾出空间。
+|===
+
+== 的Maven
+
+AJAX传输可以包含以下依赖项：
+
+[source, xml, linenums]
+----
+<dependency>
+    <groupId>org.mule.transports</groupId>
+    <artifactId>mule-transport-ajax</artifactId>
+</dependency>
+----
+
+== 最佳实践
+
+* 使用AJAX出站端点主要用于同时向多个客户端广播信息。例如，实时向几个浏览器广播实时新闻更新，而无需重新加载页面。
+
+* 建议您在`<body>` onload和onunload上订阅和取消订阅与出站渠道关联的回拨方法。见上面的例子。特别注意取消订阅回调方法。
+
+* 使用AJAX在客户端和服务器之间来回发送信息时，应考虑使用JSON。 Mule提供了一个JSON模块来优雅地处理转换。

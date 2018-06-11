@@ -1,0 +1,265 @@
+= 迁移WSC
+
+在这里，我们将使用Web Service Consumer介绍几个常见的案例，他们是如何在Mule 3中完成的，以及他们现在如何制作
+新的Mule 4发布。
+
+== 连接到Web服务
+
+Mule 4引入了连接参数的概念，将它们与其他配置参数分开，这就是为什么你现在要看到一个新的<wsc:connection>
+标记在配置中。由于Web服务使用者所需的所有参数都用于创建连接，因此所有这些参数都已移至<wsc:connection>组。
+
+=== 简单的Web服务配置
+
+参数是相同的，唯一的区别是我们为过去的配置添加了一个新的参数`mtomEnabled`
+住在手术中。
+
+在mule 3.x中，我们定义了这样的配置中的所有元素。
+
+[source, xml, linenums]
+----
+<ws:consumer-config name="config" serviceAddress="http://company.com/Service" wsdlLocation="http://company.com/Service?wsdl" service="Service" port="Port"/>
+----
+
+现在所有参数都在连接中定义。
+
+[source, xml, linenums]
+----
+<wsc:config name="config">
+    <wsc:connection wsdlLocation="http://company.com/Service?wsdl" service="Service" port="Port" soapVersion="SOAP_11" address="http://company.com/Service/endpoint"/>
+</wsc:config>
+----
+
+==== 定义自定义http配置以发送消息
+
+在Mule 3中，定义自定义的<http:requester>配置非常普遍，Web服务使用者可以使用该配置来通过HTTP协议发送消息
+使用自定义配置（TLS，不同的HTTP认证类型等），当然你仍然可以在Mule 4中做到这一点。
+
+之前使用`connector-ref`配置参数来设置我们想要发送消息的连接器配置（这仅适用于HTTP和JMS）。
+
+[source, xml, linenums]
+----
+  <!-- this is the http configuration used to send the messages -->
+  <http:connector name="http-config"/>
+
+  <ws:consumer-config name="config" wsdlLocation="local.wsdl" service="Service" port="Port" connector-ref="http-config"/>
+----
+
+要在新的WSC中执行相同操作，您需要在连接中添加一个`<wsc:custom-transport-configuration>`参数并指定所需的http配置。
+这将*only*与HTTP请求者配置一起工作，如果配置不正确，则会在运行时失败。
+
+[source, xml, linenums]
+----
+<wsc:config name="config">
+   <wsc:connection wsdlLocation="local.wsdl" service="Service" port="Port">
+     <wsc:custom-transport-configuration>
+       <wsc:http-transport-configuration requesterConfig="http-config"/>
+     </wsc:custom-transport-configuration>
+   </wsc:connection>
+ </wsc:config>
+
+ <!-- this is the http configuration used to send the messages -->
+ <http:request-config name="http-config">
+----
+
+== 使用Web服务
+
+在Mule 3中，WSC预计负载是一个已经创建的xml体，所以在大多数情况下
+WSC组件在变换组件后使用。
+
+[source, xml, linenums]
+----
+<flow name="Mule3">
+  ...
+  <ee:transform>
+    <set-payload>
+      #[
+        %dw 1.0
+        output application/xml
+        ns con http://service.soap.service.mule.org/
+        ---
+        con#echo: {
+           text: "Hello!"
+        }
+      ]
+    </set-payload>
+  </ee:transform>
+  <ws:consumer operation="echo" />
+  ...
+</flow>
+----
+
+现在，您不需要使用消耗操作可以构建的额外组件
+将body XML直接作为使用DataWeave的操作参数，请看一下
+在下面的例子中。
+
+[source, xml, linenums]
+----
+<flow name="Mule4">
+  ...
+  <wsc:consume config-ref="config" operation="echo">
+    <wsc:message>
+        <wsc:body>
+        #[
+          %dw 2.0
+          output application/xml
+          ns con http://service.soap.service.mule.org/
+          ---
+          con#echo: {
+             text: "Hello!"
+          }
+        ]
+        </wsc:body>
+    </wsc:message>
+  </wsc:consume>
+...
+</flow>
+----
+
+=== 发送标题
+
+WSC使用Mule 3中的附件的方式是收集所有出站属性
+以`soap.`前缀开头，例如：如果我们添加变量`soap.CrazyHeader`
+WSC执行时会获取变量的内容并放入可变内容
+在信封的SoapHeaders元素中。这不是一个漂亮的行为，这就是为什么在Mule 4中，标题
+只是另一个参数（当然你也有这些元数据）。
+
+我们来看一下Mule 3的示例XML
+
+[source, xml, linenums]
+----
+<flow name="Mule3">
+  ...
+  <set-property propertyName="soap.aHeader" value="#[vars.headerContent]"/>
+  <ws:consumer operation="withHeaders" mtomEnabled="true"/>
+</flow>
+----
+
+现在，在骡4
+
+[source, xml, linenums]
+----
+<flow name="Mule4">
+  <wsc:consume config-ref="config" operation="echoWithHeaders">
+    <wsc:message>
+      <!-- here we assume there is not required body parameters -->
+      <wsc:headers>
+        #[
+        %dw 2.0
+        output application/xml
+        ns con http://service.soap.service.mule.org/
+        ---
+        "headers": {
+            con#aHeader: {
+              text: "Hello!"
+            },
+            con#anotherHeader: "Hello! says another header"
+        }]
+      </wsc:headers>
+    </wsc:message>
+  </wsc:consume>
+</flow>
+----
+
+可以使用DataWeave脚本直接在操作内部构建标题，因为
+你有这个元数据，是非常容易做到的。
+
+=== 添加附件
+
+现在，在使用*MTOM attachments*的Mule 3中添加附件要容易得多
+`set-attachment`组件用于创建新的出站附件并
+信封体应该被构造为添加一个参考XOP参考
+添加附件。
+
+注意：mtomEnabled参数已从操作移至连接。
+
+[source, xml, linenums]
+----
+<flow name="Mule3">
+  ...
+  <set-attachment attachmentName="attach" value="Hello!" contentType="text/plain"/>
+  <ee:transform>
+    <set-payload>
+      #[
+        %dw 1.0
+        output application/xml
+        ns con http://service.soap.service.mule.org/
+        ns xop http://www.w3.org/2004/08/xop/include
+        ---
+        con#echo: {
+           attachment: {
+            xop: "cid:attach"
+           }
+        }
+      ]
+    </set-payload>
+  </ee:transform>
+  <ws:consumer operation="uploadAttachment" mtomEnabled="true"/>
+  ...
+</flow>
+----
+
+如果使用*Soap With Attachments*而不是使用MTOM，那是它的责任
+骡子开发人员用Base64编码的内部附件构建身体
+（DataWeave提供了一个这样的功能）
+
+[source, xml, linenums]
+----
+<flow name="Mule3">
+  ...
+  <set-attachment attachmentName="attach" value="Hello!" contentType="text/plain"/>
+  <ee:transform>
+    <set-payload>
+      #[
+        %dw 1.0
+        output application/xml
+        ns con http://service.soap.service.mule.org/
+        ns xop http://www.w3.org/2004/08/xop/include
+        ---
+        con#echo: {
+           attachment: {
+            xop: "cid:attach"
+           }
+        }
+      ]
+    </set-payload>
+  </ee:transform>
+  <ws:consumer operation="uploadAttachment" mtomEnabled="true"/>
+  ...
+</flow>
+----
+
+在Mule 4中，无论是MTOM还是SWA都无所谓，开发者总是以同样的方式工作
+带附件，他只是创建一个新的附件，并为其分配内容
+（使用的mimetype是与内容关联的那个）。
+
+例如，在这里我们使用文件连接器读取JSON文件，然后创建一个新文件
+附件传递文件返回的内容：读取操作在有效载荷中。
+
+[source, xml, linenums]
+----
+<flow name="Mule4">
+  ...
+  <file:read config-ref="file" path="#[vars.pathToAJsonFile]"/>
+  <wsc:consume config-ref="config" operation="uploadAttachment">
+    <wsc:message>
+      <!-- here we assume there is not required body parameters -->
+      <wsc:attachments>
+        #[{ attach: payload } ]
+      </wsc:attachments>
+    </wsc:message>
+  </wsc:consume>
+  ...
+</flow>
+----
+
+要使用Web服务使用者，只需使用Studio调色板将其添加到应用程序中，或在您的`pom.xml`文件中添加以下依赖项：
+
+[source,XML,linenums]
+----
+<dependency>
+  <groupId>org.mule.connectors</groupId>
+  <artifactId>mule-wsc-connector</artifactId>
+  <version>1.1.0</version> <!-- or newer -->
+  <classifier>mule-plugin</classifier>
+</dependency>
+----

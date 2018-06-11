@@ -1,0 +1,559 @@
+=  Mule数字签名处理器
+
+*Mule Digital Signature Processor*向邮件有效负载或有效负载的一部分添加数字签名，以证明邮件发件人的身份。 Mule还可以验证收到的消息上的签名，以确认消息发件人的真实性。为了签署或验证邮件的签名，Mule使用以下两种数字签名策略之一：
+
+.  JCE签名者
+.  XML签名者
+
+作为邮件的发件人，当您希望通知邮件的收件人您是合法的发件人，并且保证其内容的全部或部分内容时，请使用数字签名。
+
+使用下表来确定哪种类型的数字签名策略最适合您的安全需求。
+
+[%header,cols="2*"]
+|===
+|数字签名策略 |特征
+| JCE签名者 |•使用密钥和算法对消息有效负载或有效负载的一部分进行签名
+| XML签名者 |使用密钥存储库签署消息有效内容或有效内容的一部分+
+•应用属性来指定算法的类型和签名的类型
+|===
+
+作为消息的接收者，当您需要验证身份并确认其发件人的合法性时，请使用数字签名功能。
+
+== 将数字JCE签名添加到消息中
+
+作为Mule的默认签名策略，Java Cryptology Extension（JCE）签名者通过数字签名丰富了消息有效载荷。
+
+[NOTE]
+本主题介绍全球元素的概念。
+
+至少，您必须明确定义以下内容：
+
+*  a *Global Signature*元素
+您的Mule流中的* 个*Signature*消息处理器
+
+[TIP]
+====
+*Global vs. Local* +
+
+要将数字签名应用于Mule中的消息，您必须使用两个元素，如上所述：Mule流中的*Signature message processor*和Signature消息处理器引用配置信息的*Global Signature*元素。
+
+*Learn more...*
+
+下面的示例使用*Global Signature*元素应用数字签名的大部分属性配置，Mule需要应用数字签名的三个最低配置：默认签名者，算法和密钥。然后该示例使用Mule流中的本地*Signature*消息处理器来引用Global Signature元素。
+
+但是，您可以反转配置，以便本地*Signature*消息处理器包含大多数配置信息（包括最低配置），并且*Global Signature*元素仅包含默认签署者类型：JCE_SIGNER。
+
+这两种配置都没有问题，但如果您打算将相同类型的签名应用于Mule应用程序的多个流程中的消息，则可能希望使用前者。在这种情况下，全局元素使您无需在一个应用程序中多次编码相同的配置。
+
+请注意，在本地消息处理器中输入的任何配置都将进一步指定或覆盖全局元素中的任何配置，并将导致应用程序仅引用全局元素中与本地配置不冲突的配置。例如，您可以首先为*Algorithm*，*Keystore Path*和*Keystore Password*配置全局元素属性，并在一个应用程序中多次应用此全局元素。然后，在每个引用此全局元素的消息处理器中，可以为*Key*和*Key Password*配置本地属性，以指定每个特定消息处理器应该引用密钥库中的哪个密钥。您也可以选择与您在全局元素中配置的*Algorithm*不同的{{}}  - 此本地配置的算法将仅覆盖此消息处理器全局元素中指定的算法。
+====
+
+您可以在Global Signature元素或本地签名消息处理器中定义所需的配置。但是，请注意，您只能通过Global Signature元素中的配置指示Mule使用密钥库中的密钥。
+
+以下过程描述如何将JCE数字签名应用于在Mule流中处理的消息。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Add a global *Signature* message processor to your application, applying a unique *Name* for the element and keeping the default value, `JCE_SIGNER`, in the *Default Signer* field (see image below, left).
+. Click the *JceSigner* tab (see image below, right), then configure the message processor's attributes according to the table below. Note that while none of the attributes on the Jce Signer tab are required, this global element is the only place you can define a *Keystore Path* and *Keystore Password* for your Signature element.
++
+image:global_JCE_Signer_both.png[global_JCE_Signer_both]
++
+[%header%autowidth.spread]
+|===
+|Field |Req'd |Value
+|*Reference or expression* |  |If selected, in the *Jce Signer Reference*, use an expression to reference attributes you have defined elsewhere in the XML configuration of your applications, or to reference the configurations defined in a bean.
+|*Define attributes* |  |If selected, enter values in the following five fields.
+|*Algorithm* |  |Algorithm to encrypt the key, not required if using a keystore. Refer to <<Appendix>> for list of available algorithms.
+|*Key* |  |Unique key that encrypts and decrypts message; or, if using keystore, the name of the specific key within the keystore.
+|*Keystore Path* |  |Indicates the location (that is, the filepath) of the keystore file, required if using keystore.
+|*Keystore Password* |  |Password to access the keystore, required if using keystore.
+|*Key Password* |  |Password to read the key within the keystore; required only if the specific keys within the keystore have their own passwords.
+|===
++
+
+[NOTE]
+====
+If you are using a *Keystore*, you must also define a *Key* to specify which key within the keystore the application should invoke. The key can be configured either on the Global Element Properties window or in the Pattern Properties window. 
+
+* If configured in the Global Element Properties window, that key will be invoked for all message processors which refer to that global element — unless there is a different key specified in the local Pattern Properties window for that building block, because local configuration overrides global configurations. 
+* If configured in the local Pattern Properties window, that key will be invoked only for that message processor, so any other message processors in the same flow that also refer to that global element would need a key configured in their Pattern Properties windows.
+====
+
+. Add a *Signature* message processor to your flow.
+. Configure the message processor's fields according to the table below.
+
++
+image:JCE_sign1.png[JCE_sign1]
+
++
+[%header%autowidth.spread]
+|===
+|Field |Req'd |Value
+|*Display Name* |x |A unique name for your message processor.
+|*Config Reference* |x |Use the name of the global element you created above.
+|*Operation* |x |Sign
+|*Input Reference* |  |Identify the part of the message payload to which you want to apply the signature. This value must be in byte array format. By default, Mule signs the entire message payload.
+|*Variable* |  |Indicate the location in which Mule should store the signature which enriches the message.
+|*Reference or expression* |  |If selected, in the *Jce Signer Reference*, use an expression to reference attributes you have defined elsewhere in the XML configuration of your applications, or to reference the configurations defined in a bean.
+|*Define attributes* |  |If selected, enter values in the following three fields.
+|*Algorithm* |  |Define an algorithm to encrypt the key, not required if using keystore.
+|*Key* | x |Unique key that encrypts and decrypts message; or, if using keystore, the name of the specific key within the keystore.
+|*Key Password* |  |Password to read the key within the keystore; required only if the specific keys within the keystore have their own passwords.
+|===
+....
+[tab,title="XML Editor or Standalone"]
+....
+. Add a global `signature:config` element to your application, set above all the flows in your application.
+. Configure the global element's attributes and child element according to the table below. Note that while none of the attributes on the Jce Signer tab are required, this global element is the only place you can define a *keystorePath* and *keystorePassword* for your Signature element.
++
+[source, xml, linenums]
+----
+<signature:config name="Global_JCE_Signature" doc:name="Signature">
+        <signature:jce-signer-config algorithm="HmacMD5" key="1@s9bl&gt;1LOJ94z4"/>
+</signature:config>
+----
+
++
+[%header,cols="34,33,33"]
+|===
+|Attribute |Req'd |Value
+|*name* |x |A unique name for your global element.
+|*doc:name* |  |A display name for the element in Studio's Visual Editor. Not applicable for Standalone.
+|===
++
+[%header%autowidth.spread]
+|===
+|Child Element |Req'd
+|*signature:jce-signer-config* | 
+|===
++
+[%header%autowidth.spread]
+|===
+|Child Element Attribute |Req'd |Value
+|*algorithm* |  |Define an algorithm to encrypt the key, not required if using keystore. Refer to <<Appendix>> for list of available algorithms.
+|*key* |  |Unique key that encrypts and decrypts message; or, if using keystore, the name of the specific key within the keystore.
+|*keystorePath* |  |Indicates the location (i.e. filepath) of the keystore file, required if using keystore.
+|*keystorePassword* |  |Password to access the keystore, required if using keystore.
+|*keyPassword* |  |Password to read the key within the keystore; required only if the specific keys within the keystore have their own passwords.
+|===
+
++
+[NOTE]
+====
+If you are using a *Keystore*, you must also define a *Key* to specify which key within the keystore the application should invoke. The key can be configured either the global element window or in the element in your flow. 
+
+* If configured in the global element, that key will be invoked for all message processors which refer to that global element — unless there is a different key specified in the local configuration for that element, because local configuration overrides global configurations. 
+* If configured in the local element, that key will be invoked only for that element, so any other elements in the same flow that also refer to that global element would need a key configured in their local configurtions.
+====
+
+. Add a `signature:sign` element to your flow.
+. Configure the element's attributes and child element according to the tables below.
++
+
+[source, xml, linenums]
+----
+<signature:sign config-ref="Signature" doc:name="Signature">
+  <signature:jce-signer algorithm="HmacMD5" key="testing" keyPassword="passtestng"/>
+</signature:sign>
+----
+
+[%header,cols="34,33,33"]
+|===
+|Attribute |Req'd |Value
+|*config-ref* |x |Use the name of the global element you created above.
+|*doc:name* |  |A display name for the element in Studio's Visual Editor. Not applicable for Standalone.
+|*input-ref* |  |Identify the part of the message payload to which you want to apply the signature. This value must be in byte array format. By default, Mule signs the entire message payload.
+|*variable* |  |Indicate the location in which Mule should store the signature which enriches the message.
+|===
+
+[%header%autowidth.spread]
+|===
+|Child Element |Req'd
+|*signature:jce-signer* |x
+|===
+
+[%header%autowidth.spread]
+|===
+|Child Element Attribute |Req'd |Value
+|*algorithm* |  |Define an algorithm to encrypt the key, not required if using keystore.
+|*key* | x |Unique key that encrypts and decrypts message; or, if using keystore, the name of the specific key within the keystore.
+|*keyPassword* |  |Password to read the key within the keystore; required only if the specific keys within the keystore have their own passwords.
+|===
+....
+------
+
+将{数字XML签名添加到消息中== 
+
+XML签名者通过数字签名丰富消息有效载荷。
+
+
+至少，您必须明确定义以下内容：
+
+*  a *Global Signature*元素
+您的Mule流中的* 个*Signature*消息处理器
+
+您可以在Global Signature元素或本地签名消息处理器中定义所需的配置。有关如何应用配置的更多信息，请参阅上面的全局与本地提示。但是，请注意，您只能通过Global Signature元素中的配置指示Mule使用密钥库中的密钥。
+
+以下过程描述如何将XML数字签名应用于在Mule流中处理的消息。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+
+. Add a global *Signature* message processor to your application, applying a unique *Name* for the element and change the default value, `JCE_SIGNER`, in the *Default Signer* field  to XML_SIGNER (see image below, left).
+
+. Click the **XML Signer** tab (see image below, right), then configure the message processor's attributes according to the table below. Note that while the *Keystore Path* and *Keystore Password* are optional, this global element is the only place you can define a them for your Signature element. +
+image:global_XML_Signer_Both.png[global_XML_Signer_Both]
++
+[%header,cols="34,33,33"]
+|===
+|Field |Req'd |Value
+|*Name* |x |A unique name for your global element.
+|*Default Signer* |x |XML_SIGNER
+|*Reference or Expression* |  |If selected, in the *Jce Signer Reference*, use an expression to reference attributes you have defined elsewhere in the XML configuration of your applications, or to reference the configurations defined in a bean.
+|*Define Attributes* |  |If selected, enter values in the following nine fields.
+|*Digest Method Algorithm* |x |The algorithm Mule uses to encrypt the digest: +
+RIPEMD160 +
+SHA1 +
+SHA256 (_Default_) +
+SHA512
+|*Canonicalization Algorithm* |x |The algorithm Mule uses for XML canonicalization: +
+EXCLUSIVE (_Default_) +
+EXCLUSIVE WITH COMMENTS +
+INCLUSIVE +
+INCLUSIVE WITH COMMENTS
+|*Signature Method Algorithm* |x |The algorithm Mule uses to protect the message from tampering: +
+RSA_SHA1 (_Default_) +
+DSA_SHA1 +
+HMAC_SHA1
+|*Signature Type* |x |Defines whether the signature applies to: +
+• data outside its containing document (DETACHED) +
+• a part of its containing document (ENVELOPED) (_Default_) +
+• data it contains within itself (ENVELOPING)
+|*Reference Uri* |  |External URI reference for messages with a Detached signature type.
+|*Key* |  |Unique key that encrypts and decrypts message; or, if using keystore, the name of the specific key within the keystore.
+|*Keystore Path* |  |Indicates the location (i.e. filepath) of the keystore file, required if using keystore.
+|*Keystore Password* |  |Defines the password to read the key stored in the keystore, required if using keystore.
+|*Key Password* |  |Password to read the key within the keystore; required only if the specific keys within the keystore have their own passwords.
+|===
+
++
+[NOTE]
+====
+If you are using a *Keystore*, you must also define a *Key* to specify which key within the keystore the application should invoke. The key can be configured either on the Global Element Properties window or in the Pattern Properties window. 
+
+* If configured in the Global Element Properties window, that key will be invoked for all building blocks which refer to that global element — unless there is a different key specified in the local Pattern Properties window for that building block, because local configuration overrides global configurations. 
+* If configured in the local Pattern Properties window, that key will be invoked only for that building block, so any other building blocks in the same flow that also refer to that global element would need a key configured in their Pattern Properties windows.
+====
+
+. Add a *Signature* message processor to your flow.
+. Configure the message processor's fields according to the table below.
+
++
+image:xml_sign_local.png[xml_sign_local]
++
+[%header,cols="34,33,33"]
+|===
+|Field |Req'd |Value
+|*Display Name* |x |A unique name for your message processor.
+|*Config Reference* |x |Use the name of the global element you created above.
+|*Operation* |x |Sign XML
+|*Input* |  |Identify the part of the message payload to which you want to apply the signature. This value must be in byte array format. By default, Mule signs the entire message payload.
+|*Key* |x |Unique key that encrypts and decrypts message; or, if using keystore, the name of the specific key within the keystore.
+|*Key Password* |  |Password to read the key within the keystore; required only if the specific keys within the keystore have their own passwords.
+|*Reference Uri* |  |External URI reference for messages with a Detached signature type.
+|*Canonicalization Algorithm* |  |The algorithm Mule uses for XML canonicalization: +
+EXCLUSIVE +
+EXCLUSIVE WITH COMMENTS +
+INCLUSIVE +
+INCLUSIVE WITH COMMENTS
+|*Digest Method Algorithm* |  |The algorithm Mule uses to encrypt the digest: +
+RIPEMD160 +
+SHA1 +
+SHA256 +
+SHA512
+|*Signature Method Algorithm* |  |The algorithm Mule uses to protect the message from tampering: +
+RSA_SHA1 +
+DSA_SHA1 +
+HMAC_SHA1
+|*Signature Type* |  |Defines whether the signature applies to: +
+• data outside its containing document (DETACHED) +
+• a part of its containing document (ENVELOPED) +
+• data it contains within itself (ENVELOPING)
+|===
+....
+[tab,title="XML Editor or Standalone"]
+....
+. Add a global `signature:config` element to your application, set above all the flows in your application.
+. Configure the global element's attributes and child element according to the table below. Note that while the `keystorePath` and `keystorePassword` are optional, this global element is the only place you can define a them for your Signature element.
++
+
+[source, xml, linenums]
+----
+<signature:config name="Global_XML_Signature" doc:name="Signature" defaultSigner="XML_SIGNER">
+    <signature:xml-signer-config digestMethodAlgorithm="SHA512" key="1@s9bl&gt;1LOJ94z4"/>
+</signature:config>
+----
+
++
+[%header,cols="34,33,33"]
+|===
+|Attribute |Req'd |Value
+|*name* |x |A unique name for your global element.
+|*defaultSigner* |x |XML_SIGNER
+|*doc:name* |  |A display name for the element in Studio's Visual Editor. Not applicable for Standalone.
+|===
++
+[%header%autowidth.spread]
+|===
+|Child Element |Req'd
+|*signature:xml-signer-config* |x
+|===
++
+[%header%autowidth.spread]
+|===
+|Child Element Attributes |Req'd |Value
+|*digestMethodAlgorithm* |x |The algorithm Mule uses to encrypt the digest: +
+RIPEMD160  +
+SHA1  +
+SHA256  +
+SHA512
+|*canonicalizationAlgorithm* |x |The algorithm Mule uses for XML canonicalization: +
+EXCLUSIVE  +
+EXCLUSIVE WITH COMMENTS  +
+INCLUSIVE  +
+INCLUSIVE WITH COMMENTS
+|*signatureMethodAlgorithm* |x |The algorithm Mule uses to protect the message from tampering: +
+RSA_SHA1  +
+DSA_SHA1  +
+HMAC_SHA1
+|*signatureType* |x |Defines whether the signature applies to:  +
+• data outside its containing document (DETACHED)  +
+• a part of its containing document (ENVELOPED)  +
+• data it contains within itself (ENVELOPING)
+|*referenceUri* |  |External URI reference for messages with a Detached signature type.
+|*key* |  |Unique key that encrypts and decrypts message; or, if using keystore, the name of the specific key within the keystore.
+|*keystorePath* |  |Indicates the location (i.e. filepath) of the keystore file, required if using keystore.
+|*keystorePassword* |  |Defines the password to read the key stored in the keystore, required if using keystore.
+|*keyPassword* |  |Password to read the key within the keystore; required only if the specific keys within the keystore have their own passwords.
+|===
+. Add a `signature:sign` element to your flow.
+. Configure the element's attributes according to the tables below.
++
+
+[source, xml]
+----
+<signature:sign-xml config-ref="Global_XML_Signature" doc:name="XML_Signature"/>
+----
+
+[%header,cols="34,33,33"]
+|===
+|Attribute |Req'd |Value
+|*config-ref* |x |Use the name of the global element you created above.
+|*doc:name* |  |A display name for the element in Studio's Visual Editor. Not applicable for Standalone.
+|*canonicalizationAlgorithm* |  |The algorithm Mule uses for XML canonicalization: +
+EXCLUSIVE  +
+EXCLUSIVE WITH COMMENTS  +
+INCLUSIVE  +
+INCLUSIVE WITH COMMENTS
+|*digestMethodAlgorithm* |  |The algorithm Mule uses to encrypt the digest: +
+RIPEMD160  +
+SHA1  +
+SHA256  +
+SHA512
+|*input* |  |Identify the part of the message payload to which you want to apply the signature. This value must be in byte array format. By default, Mule signs the entire message payload.
+|*key* |x |Unique key that encrypts and decrypts message; or, if using keystore, the name of the specific key within the keystore.
+|*keyPassword* |  |Password to read the key within the keystore; required only if the specific keys within the keystore have their own passwords.
+|*referenceUri* |  |External URI reference for messages with a Detached signature type.
+|*signatureMethodAlgorithm* |  |The algorithm Mule uses to protect the message from tampering: +
+RSA_SHA1  +
+DSA_SHA1  +
+HMAC_SHA1
+|*signatureType* |  |Defines whether the signature applies to:  +
+• data outside its containing document (DETACHED)  +
+• a part of its containing document (ENVELOPED)  +
+• data it contains within itself (ENVELOPING)
+|===
+....
+------
+
+=== 签名的有效负载的示例
+
+以下是消息有效载荷的示例：一个_不带数字签名（下面，顶部），另一个带有XML数字签名（下面，底部）。
+
+*View the XML Without Digital Signature*
+
+[source, xml, linenums]
+----
+<PurchaseOrder>
+ <Item number="130046593231">
+  <Description>Video Game</Description>
+  <Price>10.29</Price>
+ </Item>
+ <Buyer id="8492340">
+  <Name>My Name</Name>
+  <Address>
+   <Street>One Network Drive</Street>
+   <Town>Burlington</Town>
+   <State>MA</State>
+   <Country>United States</Country>
+   <PostalCode>01803</PostalCode>
+  </Address>
+ </Buyer>
+</PurchaseOrder>
+----
+
+*View the XML With Digital Signature*
+
+[source, xml, linenums]
+----
+<PurchaseOrder>
+ <Item number="130046593231">
+  <Description>Video Game</Description>
+  <Price>10.29</Price>
+ </Item>
+ <Buyer id="8492340">
+  <Name>My Name</Name>
+  <Address>
+   <Street>One Network Drive</Street>
+   <Town>Burlington</Town>
+   <State>MA</State>
+   <Country>United States</Country>
+   <PostalCode>01803</PostalCode>
+  </Address>
+ </Buyer>
+<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/><Reference URI=""><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>tkrLEansVMTKqAOuW6b8Dx+OUNWk9bVpW6RFvfuEmM8=</DigestValue></Reference></SignedInfo><SignatureValue>PeeHVw+XvZkkhhPlEopRp1PBDfTcR9U2IBimTTo1gOMF5cWq1tFqZ0B4ScNBiZVtd0yS4j06xl3W
+B2Q87oobwA==</SignatureValue><KeyInfo><KeyValue><RSAKeyValue><Modulus>i8OP+VX/EORWwHiHiqLmMgpXz4IubPv2y+gHdiSCUzKoFfUYD6wFGBwi6vVmRSrmNbNZvZ9DFvST
+PZJEyUhn5w==</Modulus><Exponent>AQAB</Exponent></RSAKeyValue></KeyValue></KeyInfo></Signature></PurchaseOrder>
+----
+
+== 签署消息有效负载的一部分
+
+默认情况下，当您应用签名时，Mule在整个消息有效载荷上签名。但是，您可以使用Mule Expression来标记消息有效载荷的特定部分，而不是整个有效载荷。在JCE或XML签名消息处理器的*Input Reference*字段中输入Mule表达式，以定义您希望签名的有效负载的特定部分。
+
+== 使用MEL应用签名
+
+如上所述，要将数字签名应用于Mule中的消息，通常需要两个要素：
+
+* 定义全部或部分签名属性的*Global Signature*元素
+*  Mule流中的*Signature*消息处理器，用于定义全部或部分签名属性
+
+但是，您也可以将签名添加到消息中，而不将特征消息处理器添加到Mule流。为此，您需要：
+
+* 定义所有签名属性的*Global Signature*元素
+* 附加到消息处理器的*Mule expression*为*message attribute*，它引用全局签名元素将签名应用于消息
+
+要通过另一个元素中的Mule表达式引用全局签名元素，必须首先将全局签名元素的*Enable Language*属性设置为true（下，左），然后应用所有全局签名属性（如下，右）。
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+image:enable_language3.png[enable_language3]
+....
+[tab,title="XML or Standalone Editor "]
+....
+[source, xml, linenums]
+----
+<signature:config name="hmacPlain" enableLanguage="true">
+        <signature:jce-signer-config algorithm="HmacMD5" key="JLfl5sER3kt4oVkzP2d39UQrUxrEK63LjmXAO45b6cU="/>
+</signature:config>
+----
+....
+------
+
+然后，将*message attribute*添加到流程中的某个元素（例如记录器），以根据Global Signature元素中的配置应用数字签名。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:add_message.png[add_message]
+....
+[tab,title="XML or Standalone Editor"]
+....
+[source, xml, linenums]
+----
+<flow name="testHmacPlain">
+        <logger level="ERROR" message="#[hmacPlain.usingJCESigner().sign(payload)]"/>
+ </flow>
+----
+....
+------
+
+== 验证数字签名
+
+除了签署消息之外，Mule还使用签名消息处理器来验证消息发件人的身份是否合法。 Mule在发现无效签名的地方丢弃该消息，不再进行处理。
+
+Mule根据任何可选属性的配置（如果明确定义的话）验证消息有效载荷上的签名（请参阅上面有关JCE和XML特定属性的列表）。
+
+[NOTE]
+本主题介绍全球元素的概念;如果您不熟悉此功能，请在继续之前访问 link:/mule-user-guide/v/3.4/global-elements[了解全球骡子元素]以了解更多信息。
+
+
+要验证Mule流中消息的JCE或XML签名，您至少必须创建：
+
+*  a *Global Signature*元素
+您的Mule流中的* 个*Signature*消息处理器
+
+以下过程介绍如何验证Mule流收到的消息上的数字签名。
+
+在您的Mule流程中，在Studio的流程中尽早添加一个*Signature*消息处理器，以验证待处理消息的签名。
+. 在*Operations field*中选择`Verify Signature`。或者，将Signature元素添加到您的流程中，配置为验证签名（请参阅下面的代码）。
++
+[source, xml]
+----
+<signature:verify-signature config-ref="" doc:name="Signature"/>
+----
++
+. 使用XML中的*Using*字段（或`using`属性）来指示签名的类型：` JCE_SIGNER`或`XML_SIGNER`。
+. （可选）在*Input Reference*字段中输入Mule表达式，以指示签名所应用的消息负载部分。换句话说，签名可能仅适用于消息有效负载的一部分。
+. 在*Expected Signature*字段中，输入一个Mule表达式，Mule可以用它来比较并验证它收到的消息上的签名是否真实。
+. 配置本地签名消息处理器的其他任何属性。有关属性配置详细信息，请参阅上面的JCE签名者和XML签名者部分。此外，请参阅全局与本地提示，以确定在本地配置哪些属性，签名消息处理器以及要在全局签名元素中配置哪些属性。
+. 配置Global Signature元素的任何其他属性。再次参考上面的JCE签名者和XML签名者部分了解属性配置细节。
+. 配置签名消息处理器以引用全局签名元素。
++
+[source, xml, linenums]
+----
+<signature:config name="Signature"  enableLanguage="true" doc:name="Signature">
+    <signature:jce-signer-config algorithm="HmacMD5" key="JLfl5sER3kt4oVkzP2d39UQrUxrEK63LjmXAO45b6cU="/>
+</signature:config>
+...
+ 
+ <flow name="Get_CC_information" doc:name="Get_CC_information">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <signature:verify-signature config-ref="Signature" input-ref="#[message.inboundProperties['user']]" expectedSignature="#[message.inboundProperties['token']]" doc:name="Verify User Signature" doc:description="Verify if the Signature is correct, so we can validate the User"/>
+        <set-payload value="#[new String(&quot;&lt;user&gt;&lt;name&gt;Royal Bank of Canada&lt;/name&gt;&lt;id&gt;Royal_Bank_Of_Canada&lt;/id&gt;&lt;cc&gt;&lt;company&gt;Visa&lt;/company&gt;&lt;number&gt;1234567890&lt;/number&gt;&lt;secret&gt;123&lt;/secret&gt;&lt;/cc&gt;&lt;/user&gt;&quot;)]" doc:name="Set Payload"/>
+        <encryption:encrypt config-ref="plainXml" doc:name="Encrypt the XML (only th CC Info)" using="XML_ENCRYPTER" input-ref="#[payload.toString()]"/>
+  </flow>
+----
+
+== 下一步
+
+检查说明如何验证消息的数字签名的 link:/mule-user-guide/v/3.4/anypoint-enterprise-security-example-application[Anypoint企业安全示例应用程序]。
+
+== 附录
+
+[%header,cols="1*"]
+|===
+| JCE签名者可用算法
+| HMACMD5
+| HMACSHA1
+| HmacSHA256
+| HmacSHA384
+| HmacSHA512
+| MD2WithRSAEncryption
+| MD4WithRSAEncryption
+| MD5WithRSAEncryption
+| RIPEMD128WithRSAEncryption
+| RIPEMD160WithRSAEncryption
+| RIPEMD256WithRSAEncryption
+| SHA1WithRSAEncryption
+| SHA224WithRSAEncryption
+| SHA256WithRSAEncryption
+|===

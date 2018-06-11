@@ -1,0 +1,76 @@
+= 骡集成
+
+有两种主要的方法可以在Mule中使用MQL。
+
+. 转换 -  <mql:transform>元素允许您在流中执行过滤器/连接/转换。
+. 查询服务 -  <mql:query-service>元素通过查询为您轻松构建RESTful服务
+
+在Mule中使用MQL时，可以使用几个特殊变量：
+
+[%header,cols="10,90"]
+|===
+| {名称{1}}说明
+|有效载荷 |当前Mule消息有效载荷
+| mule  |允许您使用mule端点进行连接的对象。
+|任何消息属性名称 |请参阅任何消息属性内联。例如，从SomeProperty ='foo'
+|===
+
+要使用Mule集成，请务必在您的Mule配置文件中声明MQL名称空间：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?><mule xmlns="http://www.mulesoft.org/schema/mule/core"     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"    xmlns:spring="http://www.springframework.org/schema/beans"    xmlns:mql="http://www.mulesoft.org/schema/mule/mql"     xsi:schemaLocation="               http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd               http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd               http://www.mulesoft.org/schema/mule/mql http://www.mulesoft.org/schema/mule/mql/3.1/mule-mql.xsd
+----
+
+== 变换
+
+<mql:transform>元素允许您在流中执行过滤器/连接/转换。例如：
+
+[source, xml, linenums]
+----
+<mql:transform query="from payload as p select new { name = p.firstName + ' ' + p.lastName }" />
+----
+
+<mql:transform>元素接受一个可选的类型参数，它指定了你想要如何处理Mule有效载荷。
+
+[%header,cols="10,90",width=80%]
+|===
+| {键入{1}}说明
+| POJO  |输入类型是不需要转换的POJO
+| JSON  |输入类型为JSON，应转换为MQL可识别的一组对象。
+| AUTO  |根据内容类型标题和Mule有效载荷的数据类型自动检测输入类型。这是默认值。
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<mql:transform type="POJO" query="from payload as p select new { name = p.firstName + ' ' + p.lastName }" />
+----
+
+== 查询服务
+
+<mql:query-service>元素可以轻松地为您在特定端点上构建Mule服务。有了这个，您可以轻松构建RESTful JSON服务。例如，这将查询一个对象并以JSON形式返回数据：
+
+[source, xml, linenums]
+----
+<mql:query-service   name="Users"    address="{{0}}.?Company,               mobile = sfuser[0].?MobilePhone          }"/>
+----
+
+您也可以构建处理POJO的服务：
+
+[source, xml, linenums]
+----
+<mql:query-service   name="Users"    address="vm://users"    type="POJO" query="from userManager.users as user            select new {               name = user.name,               email = user.email,             company = sfuser[0].?Company,               mobile = sfuser[0].?MobilePhone          }"/>
+----
+
+==  Mule客户端
+
+有时候，您想要在查询中查询端点以查找数据。您可以将它作为从声明或联接的一部分来完成。例如，此查询将加入来自端点的数据：
+
+[source, xml, linenums]
+----
+<flow name="join">    <inbound-endpoint address="vm://join"        exchange-pattern="request-response" />    <mql:transform         query="from payload as p                  join mule.send('vm://locationService', p.geoIp) as location                 select new {                     name = firstName + ' ' + lastName,                     location = location                 }" /></flow>
+----
+
+此代码将查询每个对象上具有属性"geoIp"的vm：// locationService端点。结果将存储在位置变量中以供select语句使用。

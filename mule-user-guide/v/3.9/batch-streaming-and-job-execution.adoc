@@ -1,0 +1,183 @@
+= 批处理流和作业执行
+:keywords: connectors, anypoint, studio, esb, batch, batch processing
+
+*_Enterprise, CloudHub_*
+
+Anypoint Studio捆绑了流化批处理和配置批处理作业执行顺序的功能。
+
+== 流式批量提交
+
+Mule提供了处理固定大小记录组的能力 - 例如，一次从CSV文件向Salesforce插入100条记录。 Mule还支持流式提交，这使您可以批量处理作业实例中的记录，无论有多少或多大。例如，如果您需要将数百万条记录从Salesforce写入CSV文件，则可以将记录作为流批处理提交进行处理。
+
+而不是使用固定大小的批量提交收到的元素列表，流式传输功能（迭代器）确保您可以接收批处理作业中的记录，而不会耗尽内存。通过在流中组合流式批量提交和DataMapper流式处理，您可以将大型数据集转换为单个操作和单个写入磁盘。下面的例子说明了Mule用来批量处理流数据的行为。
+
+image:example_actions.png[example_actions]
+
+[TIP]
+====
+要使您的应用程序批量处理流式数据，请配置_both_批量提交和DataMapper以启用流式传输。
+====
+
+[NOTE]
+====
+通常，在通过Anypoint Connector将数据发送到SaaS提供商（如Salesforce）时，您可能不会使用批量流式传输，因为SaaS提供商通常在接受流式输入方面有限制。而是在写入诸如CSV，JSON或XML之类的文件时使用流式批处理。
+====
+
+=== 批量提交元素
+
+在*Batch Commit*元素的*Properties Editor*中，点击复选框启用*Streaming*。
+
+image:batch_commit_stream.png[batch_commit_stream]
+
+[source, xml, linenums]
+----
+<batch:commit streaming="true" doc:name="Batch Commit">
+----
+
+===  DataMapper元素
+
+在*DataMapper*元素的*Mapping Editor*中，点击地图图标，然后选择*Configuration*。
+
+[source, xml, linenums]
+----
+<data-mapper:transform config-ref="listcontact_to_csv" doc:name="List<Contact> To CSV" stream="true"/>
+----
+
+image:configuration.png[组态]
+
+在配置属性编辑器中，点击复选框启用*Streaming*。 +
+
+image:streaming_DM.png[streaming_DM]
+
+[IMPORTANT]
+====
+批量处理流式数据会影响应用程序的性能，从而降低处理事务的速度。虽然性能降低，但是能够批量处理流式数据的权衡可能需要在实施中使用。
+====
+
+== 订购批处理作业执行
+
+要说明不同批处理作业可能竞争资源的情况，可以调整批处理*Scheduling Strategy*的配置。例如，如果一个批处理作业实例依赖于另一个批处理作业实例的完成，则可以将该计划策略设置为按照它们创建的顺序依次处理批作业实例。在批处理作业的非顺序处理可能导致数据一致性问题的情况下，请务必设置调度策略以顺序处理它们。
+
+以下各节介绍此属性的配置如何指示Mule如何将批处理作业实例提交到目标资源。
+
+=== 有序顺序属性
+
+调度策略属性的值：
+
+`ORDERED_SEQUENTIAL _(Default)_ `
+
+Mule根据Mule创建它们的顺序依次执行批处理作业实例。
+
+如果Mule在12:00:00创建一个作业实例，然后在12:00:01创建另一个作业实例，则Mule不会执行第二个实例，直到第一个实例离开可执行状态。
+
+*Note*：由于此值是默认值，因此XML配置不会显式显示配置。
+
+image:ordered_seq.png[ordered_seq]
+
+[source, xml, linenums]
+----
+<batch:job name="testBatch1" >
+----
+
+=== 循环属性
+
+调度策略属性的值：
+
+`ROUND_ROBIN`
+
+Mule根据随机循环模式执行批处理作业实例。一个|
+image:round_robin.png[ROUND_ROBIN]
+
+[source, xml, linenums]
+----
+<batch:job name="testBatch1" scheduling-strategy="ROUND_ROBIN">
+----
+
+[NOTE]
+如果您的应用程序使用多个批处理作业，则必须单独定义每个作业的计划策略。 Mule在批处理作业级别配置调度策略，这意味着ROUND_ROBIN或ORDERED_SEQUENTIAL配置仅适用于同一批作业的实例。
+
+== 提示
+
+{0}} *Streaming from SaaS providers:*通常，在通过Anypoint Connector将数据发送到SaaS提供商（如Salesforce）时，您可能不会使用批量流式处理，因为SaaS提供商通常在接受流式输入方面有限制。而是在写入诸如CSV，JSON或XML之类的文件时使用流式批处理。
+
+*  *Batch streaming and performance:*批量处理流数据确实会影响应用程序的性能，从而降低处理事务的速度。虽然性能下降，但能够批量处理流式数据的权衡可能需要在您的实施中使用。
+
+*  *Batch streaming and access to items:*使用批量串流的最大缺点是您对输出中的项目的访问权限有限。换句话说，使用_fixed-size commit_，您会得到一个不可修改的列表，从而允许您访问并迭代处理其项目;通过_streaming commit_，你可以得到一个只读，只向前迭代器。
+
+*  *Setting multiple scheduling strategies:*将所有应用程序的批处理作业的调度策略设置为ORDERED_SEQUENTIAL _不确保在一个批处理作业中创建的作业实例遵循在单独批处理作业中创建作业实例的顺序。设置调度策略只强制执行Mule处理同一作业实例的顺序。
+
+== 完整的代码示例
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:sfdc_to_scv_streaming.png[sfdc_to_scv_streaming]
+....
+[tab,title="XML Editor or Standalone"]
+....
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns:context="http://www.springframework.org/schema/context" xmlns:file="http://www.mulesoft.org/schema/mule/file"
+ 
+    xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+ 
+    xmlns:spring="http://www.springframework.org/schema/beans" 
+ 
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ 
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+ 
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+ 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ 
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+ 
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+ 
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+ 
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd">
+     
+    <sfdc:config name="Salesforce56" username="${sfdc.username}" password="${sfdc.password}" securityToken="${sfdc.securityToken}" url="${sfdc.url}" doc:name="Salesforce">
+        <sfdc:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+    </sfdc:config>
+    <data-mapper:config name="listcontact_to_csv" transformationGraphPath="list&lt;contact&gt;_to_csv.grf" doc:name="listcontact_to_csv"/>
+    <context:property-placeholder location="mule-app.properties"/>
+ 
+     <batch:job name="sf-to-csv-sync" max-failed-records="-1" >
+        <batch:threading-profile poolExhaustedAction="WAIT" />
+ 
+        <batch:input>
+            <poll doc:name="Poll">
+                <fixed-frequency-scheduler frequency="10" startDelay="20" timeUnit="MINUTES"/>
+                <watermark variable="nextSync" default-expression="2014-01-01T00:00:00.000Z"
+                           doc:name="Get Next Sync Time" selector="MAX" selector-expression="#[payload.LastModifiedDate]"/>
+                    <sfdc:query config-ref="Salesforce56" query="dsql:SELECT Email,FirstName,Id,LastModifiedDate,LastName FROM Contact WHERE CreatedDate &gt;= #[flowVars['nextSync']] ORDER BY LastModifiedDate ASC" doc:name="Get Updated Contacts"/>
+            </poll>
+        </batch:input>
+ 
+        <batch:process-records>
+            <batch:step name="toCSV">
+                <batch:commit streaming="true" doc:name="Batch Commit">
+                    <data-mapper:transform config-ref="listcontact_to_csv" stream="true" doc:name="List&lt;Contact&gt; To CSV"/>
+                    <file:outbound-endpoint outputPattern="contacts.csv" path="/Users/marianogonzalez/Desktop" responseTimeout="10000" doc:name="File" />
+                </batch:commit>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger level="WARN" message="Total Records Loaded: #[message.payload.getLoadedRecords()], Failed Records: #[message.payload.getFailedRecords()], Processing time: #[message.payload.getElapsedTimeInMillis()]" doc:name="Logger"/>
+        </batch:on-complete>
+    </batch:job>
+</mule>
+----
+....
+------
+
+== 另请参阅
+
+* 访问最新的通用版本Mule的 link:/mule-user-guide/v/3.9/batch-processing[完整的批处理文档]。
+* 有关DataSense和DataMapper的最佳设计时实践的更多信息，请参阅 link:/anypoint-studio/v/6/datasense[DataSense文档]。

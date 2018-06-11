@@ -1,0 +1,238 @@
+= 多级元数据
+
+想象一下，您的最终用户将使用调用服务提供的操作的操作。要知道动作需要的元数据作为参数或返回的元数据，您需要区分服务和要执行的动作。您可以使用元数据键ID进行此操作。对于这些情况，元数据键ID不需要是单个`String`。它可以包含捆绑在复杂参数中的多个部分，该参数包含解析元数据所需的信息。
+
+== 实现多级元数据密钥
+
+有必要设置从`1`开始指定元数据密钥参数的顺序。回到上面的例子，最终用户将首先指定服务字段，然后指定要调用的操作。所以，服务参数需要设置`order = 1`和动作参数`order = 2`。
+
+表示`MetadataKeyId`的POJO的所有参数都必须使用为其设置`order`值的`@MetadataKeyPart`注释进行注释。这些带注释的字段必须是`String`类型。
+
+这是一个元数据键ID类的例子：
+
+[source, java, linenums]
+----
+public class ActionIdentifier{
+
+  @Parameter
+  @MetadataKeyPart(order = 1) // <1>
+  private String service;
+
+  @Parameter
+  @MetadataKeyPart(order = 2) // <1>
+  private String action;
+
+  @Override
+  public String getService() {
+    return service;
+  }
+
+  @Override
+  public String getAction() {
+    return action;
+  }
+
+  @Override
+  public void setService(String service) {
+    this.service = service;
+  }
+
+  @Override
+  public void setAction(String action) {
+    this.action = action;
+  }
+}
+----
+
+下一个示例显示使用复杂类型的`MetadataKeyId`的操作：
+
+[source, java, linenums]
+----
+@OutputResolver(output = OutputOperationTypeResolver.class)
+public Object invoke( @ParameterGroup(name = "Operation") @MetadataKeyId(OperationTypeKeysResolver.class) ActionIdentifier identifier,
+                      @TypeResolver(InputOperationTypeResolver.class) Map<String, Object> args){
+  return invokeAction(identifier.getService(), identifier.getAction(), args);
+}
+----
+
+接下来是返回每个可用`MetadataKey`的{​​{0}}的示例：
+
+[source, java, linenums]
+----
+public class OperationTypeKeysResolver implements TypeKeysResolver {
+
+  @Override
+  public Set<MetadataKey> getKeys(MetadataContext context) throws MetadataResolvingException, ConnectionException {
+    Set<MetadataKey> keys = new HashSet<>();
+    for(String service : getServices()){
+      MetadataKeyBuilder key = MetadataKeyBuilder.newKey(service);
+      for(String action : getActions(service)){
+        key.withChild(MetadataKeyBuilder.newKey(action).build());
+      }
+      keys.add(key.build());
+    }
+    return keys;
+  }
+}
+----
+
+[source, java, linenums]
+----
+public class OutputOperationTypeResolver implements OutputTypeResolver<ActionIdentifier>{
+
+  @Override
+  public MetadataType getOutputType(MetadataContext context, ActionIdentifier key)
+     throws MetadataResolvingException, ConnectionException {
+     // Resolve the output metadata using the ActionIdentifier
+  }
+}
+----
+
+[source, java, linenums]
+----
+public class InputOperationTypeResolver implements {
+
+  @Override
+  public MetadataType getInputMetadata(MetadataContext context, ActionIdentifier key)
+    throws MetadataResolvingException, ConnectionException {
+    // Resolve the input metadata using the ActionIdentifier
+  }
+
+}
+----
+
+== 部分提取
+
+*Available since version 1.1*
+
+获得每个`MetadataKey`的过程可能非常耗时。在获取每项服务的所有可能服务和操作的示例中，您提取的信息可能位于另一台服务器上。
+
+部分提取使您可以一次解析一个`MetadataKey`树的级别。
+
+`TypeKeysResolver`中的`getKeys`方法将仅返回每棵树的第一层，而不是每个`MetadataKey`的完整树。
+
+所以，所需的信息量大大减少，因为您只需要获得可能的服务。选择服务后，您需要提供`MetadataKey`树的下一级别。
+
+为了实现这一点，您的关键解析器必须实现`PartialTypeKeysResolver`，例如：
+
+[source, java, linenums]
+----
+public class OperationTypeKeysResolver implements PartialTypeKeysResolver<ActionIdentifier> {
+
+  @Override
+  public Set<MetadataKey> getKeys(MetadataContext context) throws MetadataResolvingException, ConnectionException {
+    Set<MetadataKey> keys = new HashSet<>();
+    for(String service : getServices()){ // <1>
+      MetadataKeyBuilder key = MetadataKeyBuilder.newKey(service);
+      keys.add(key.build());
+    }
+    return keys;
+  }
+
+  @Override
+  public MetadataKey resolveChilds(MetadataContext metadataContext, ServiceOperation key)
+      throws MetadataResolvingException, ConnectionException {
+
+    if(key.getService() == null){
+      throw new MetadataResolvingException("Missing Service name. Cannot resolve Actions without a service",
+                                         FailureCode.INVALID_METADATA_KEY);
+    }
+
+    MetadataKeyBuilder key = MetadataKeyBuilder.newKey(key.getService()); // <2>
+    for(String action : getActions(key.getService())){
+      key.withChild(MetadataKeyBuilder.newKey(action).build()); // <3>
+    }
+    return key;
+  }
+
+}
+----
+
+<1>仅检索服务。服务的操作将根据需要进行检索。
+<2>使用新的完整级别的元数据构建单个`MetadataKey`树，在这种情况下为动作级别。
+<3>将该服务的操作添加为子项。
+
+== 将用户输入用作部分级别
+
+*Available since version 1.1*
+
+在某些情况下，您可能无法向最终用户提供有关MetadataKey部分的提示。例如，选项范围可能太大（类路径中所有类的下拉没有意义），或者当ID的起点是空闲输入（例如查询）时。
+
+想象一下`MetadataKeyId`的一部分是代表Java类的`String`。检索所有类可能非常耗时，并且用户在下拉菜单上有这么多选项是很复杂的。
+
+因此，您可以表示解码器不会提供`MetadataKeyPart`，并且必须由用户插入。您可以通过将`MetadataKeyPart`注释中的`providedByKeyResolver`设置为`false`来完成此操作。
+
+这里是一个示例，其中表示`MetadataKeyId`的POJO代表Java
+方法：
+
+[source, java, linenums]
+----
+public class MethodIdentifier{
+
+  @Parameter
+  @Alias("class")
+  @MetadataKeyPart(order = 1, providedByKeyResolver = false) // <1>
+  private String clazz;
+
+  @Parameter
+  @Alias("method")
+  @MetadataKeyPart(order = 2)
+  private String methodId;
+
+  @Override
+  public String getClazz() {
+    return clazz;
+  }
+
+  @Override
+  public String getMethodId() {
+    return methodId;
+  }
+
+  @Override
+  public void setClazz(String clazz) {
+    this.clazz = clazz;
+  }
+
+  @Override
+  public void setMethodId(String methodId) {
+    this.methodId = methodId;
+  }
+}
+----
+
+<1> `clazz`字段必须由最终用户插入，无需提示。
+
+在这种情况下，这也意味着`getKeys`方法不能返回所有可能的类：
+
+[source, java, linenums]
+----
+public class MethodTypeKeysResolver implements PartialTypeKeysResolver<MethodIdentifier> {
+
+  @Override
+  public Set<MetadataKey> getKeys(MetadataContext context) throws MetadataResolvingException, ConnectionException {
+    return emptySet(); // <1>
+  }
+
+  @Override
+  public MetadataKey resolveChilds(MetadataContext metadataContext, MethodIdentifier key)
+      throws MetadataResolvingException, ConnectionException {
+
+    if(key.getClazz() == null){
+      throw new MetadataResolvingException("Missing Class name. Cannot resolve Methods without a target Class",
+                                         FailureCode.INVALID_METADATA_KEY);
+    }
+
+    MetadataKeyBuilder key = MetadataKeyBuilder.newKey(key.getClazz()); // <2>
+    for(String methodId : getMethodIds(key.getClazz())){
+      key.withChild(MetadataKeyBuilder.newKey(methodId).build()); // <3>
+    }
+    return key;
+  }
+
+}
+----
+
+<1>返回一组空`MetadataKey`，因为最终用户将提供此信息。
+<2>使用新的完整级别的元数据（本例中为`methodIds`级别）构建单个`MetadataKey`树。
+<3>将该类的`methodIds`添加为子项。

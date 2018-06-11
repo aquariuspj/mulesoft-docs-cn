@@ -1,0 +1,94 @@
+=  Mule Runtime 4.x策略参考
+
+在Mule 4下运行的速率有限的API可以使用以下标志，在早期版本下运行的API不能：
+
+*  Clusterizable
+* 公开标题
+
+== 可集群标志
+
+在配置为群集的2.x API网关运行时或Mule Runtime 3.x中，策略自动以分布式模式运行。在Mule Runtime 4.x中尽管运行时配置为群集，但您可以选择分布式模式或独立模式。如果模式是独立的，可聚集标志不会改变任何行为。
+
+== 公开标题标志
+
+该标志从响应中删除了x-rate-limit标头。
+
+== 令牌验证响应示例
+
+以下示例显示作为标记验证响应返回的HTTP消息标头。
+
+----
+HTTP/1.1 200 OK
+Cache-Control: no-cache, no-store
+Date: Mon, 09 Mar 2015 19:08:07 GMT
+Accept-Ranges: bytes
+Server: Restlet-Framework/2.1.1
+Vary: Accept-Charset, Accept-Encoding, Accept-Language, Accept
+Content-Type: application/json;charset=UTF-8
+Transfer-Encoding: chunked
+{"uid":"john.doe","mail":"john.doe@example.com","scope":["uid","mail","cn","givenName"],"grant_type":"password","cn":"John Doe Full","realm":"/","token_type":"Bearer","expires_in":580,"givenName":"John","access_token":"fa017a0e-1bd5-214c-b19d-03efe9f9847e"}
+----
+
+此令牌验证响应可能会有所不同，并且如果启用了“公开标题”，则代理会将收到的所有标头发送给后端实施，但以下情况除外：
+
+*  `scope`
+*  `expires_in nodes`
+
+其他Mule Runtime 4.x功能。== 
+
+影响政策的其他功能包括：
+
+* 政策排序
++
+请参阅<<About Policy Ordering>>。
++
+*  DataWeave
++
+MEL表达式被DataWeave取代。
++
+* 可选的客户端密钥
++
+您可以选择仅检查SLA策略中的客户端ID。将此策略与联合策略相结合时，此功能特别有用。
++
+* 与联盟政策的兼容性
++
+联盟策略（OpenAM，PingFederate和OpenID Connect OAuth令牌访问）与SLA策略完全兼容。您可以订购除CORS以外的所有策略，并且不需要客户端机密。 OAuth策略可以将令牌交换为客户端ID，并将客户端ID提供给SLA策略。
+
+== 关于政策订购
+
+在API Gateway Runtime 2.x和Mule Runtime 3.x中，除了始终首先运行的CORS之外，速率限制和限制策略首先在链中运行。
+
+在Mule运行时4.x中，首先运行的策略完全可配置，但CORS除外。
+
+API策略只有一个订单，它们适用于`<http-policy:source />`和`<http-policy:operation />`。
+
+假设有两个API策略p1和p2按此顺序应用于API实现AI，例如API代理。
+
+两种政策都定义了`<http-policy:source />`和`<http-policy:operation />`。
+
+对于AI中的`<http:listener />`，调用顺序为：
+
+. 客户端（发送HTTP请求）
+.  p1：源（进程请求）
+.  p2：源（进程请求）
+.  AI（接收HTTP请求并发送HTTP响应）
+.  p2：源（进程响应）
+.  p1：源（进程响应）
+. 客户端（接收HTTP响应）
+
+对于从AI到HTTP端点EP的`<http:request />`，顺序是：
+
+.  AI（发送HTTP请求）
+.  p1：操作（进程请求）
+.  p2：操作（进程请求）
+.  EP（接收HTTP请求并发送HTTP响应）
+.  p2：操作（处理响应）
+.  p1：操作（处理响应）
+.  AI（接收HTTP响应）
+
+== 另请参阅
+
+*  link:/api-manager/v/2.x/rate-limiting-and-throttling[限制和速率限制策略参考]
+*  link:/api-manager/v/2.x/tutorial-manage-an-api[应用资源级策略和SLA层]
+*  link:/api-manager/v/2.x/delete-sla-tier-task[删除SLA层]
+

@@ -1,0 +1,955 @@
+=  DataWeave选择器
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+对象和数组的结构可以使用选择器表达式进行导航。每个选择器表达式都会返回一个对象，一个数组或一个简单类型。
+
+选择器总是在给定的上下文中运行，它可以是对变量，对象文本，数组文本或函数调用的引用。当DataWeave处理选择器时，会为其他选择器设置新的上下文，因此您可以使用选择器链来浏览数组和对象的复杂结构，而选择器的深度仅受当前上下文深度的限制。
+
+[%header,cols="30,30,40"]
+|===
+|选择器类型 |语法 |返回类型
+
+|单值选择器 |  `.<key-name>`  |键的值：值对
+|多值选择器 |  `.*<key-name>`  |具有键值对的值的数组
+|后代选择器 |  `..<key-name>`  | 具有键值对的数组
+|键值对选择符|  `.&<key-name>` | 包含键值对的对象
+|索引选择器|  `[<index>]`  |在选定数组索引处的值
+|范围选择器|  `[<index> to <index>]` | 包含选定索引值的数组
+| XML属性选择器|  `.@<key-name>`  |所选属性的值
+|所有XML属性|  `.@`  |以属性作为关键字的对象：值对
+|名称空间选择器|  `.#`  |当前键使用的名称空间的字符串|
+|===
+
+请注意，这些选择器返回与表达式匹配的键值对：
+
+* 单级显式选择器
+* 后代选择器
+* 索引选择器
+
+`?`运算符：更改返回布尔值`true`或`false`的选择器表达式，以指示该键是否存在。
+
+
+== 单值选择器
+
+值选择器可以应用于`Object`或`Array`。
+
+=== 在对象之上
+
+此选择器返回键匹配表达式的第一个值，即*payload.name*，该键返回键匹配*name*的值。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  address: payload.people.person.address
+}
+----
+
+
+
+。输入
+[source, json,linenums]
+----
+{
+  "people": {
+    "size" : 1,
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+.OUTPUT
+[source, xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<address>
+  <street>
+    <name>Italia</name>
+    <number>2164</number>
+  </street>
+  <area>
+    <zone>San Isidro</zone>
+    <name>Martinez</name>
+  </area>
+</address>
+----
+
+
+
+=== 超出数组
+
+此选择器应用于数组中`Object`类型的每个元素，并返回一个包含所有选定值的数组
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+payload.people.person.address.street
+----
+
+
+
+。输入
+[source,DataWeave, linenums]
+----
+{
+  "people": [ # //<1>
+    {
+      "person": {
+        "name": "Nial",
+        "address": {
+          "street": {
+            "name": "Italia",
+            "number": 2164
+          },
+          "area": {
+            "zone": "San Isidro",
+            "name": "Martinez"
+          }
+        }
+      }
+    },
+    {
+      "person": {
+        "name": "Coty",
+        "address": {
+          "street": {
+            "name": "Monroe",
+            "number": 323
+          },
+          "area": {
+            "zone": "BA",
+            "name": "Belgrano"
+          }
+        }
+      }
+    }
+  ]
+}
+----
+<1>由于'people'是一个数组，因此它设置了在'person'元素上搜索的上下文。这个选择的结果总是一个数组。
+
+.OUTPUT
+[source, json,linenums]
+----
+[ # <1>
+  {
+    "name": "Italia",
+    "number": 2164
+  },
+  {
+    "name": "Monroe",
+    "number": 323
+  }
+]
+----
+
+<1>输出总是一个数组。即使只有一个匹配值，也会返回一个数组。
+
+
+
+
+
+== 多值选择器
+
+多值选择器可以应用于`Object`或`Array`。
+
+=== 在对象之上
+
+这个选择器返回一个数组，其中的键值与表达式相匹配。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  users: payload.users.*user
+}
+----
+
+
+
+。输入
+[source, xml, linenums]
+----
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+</users>
+----
+
+.OUTPUT
+[source, json, linenums]
+----
+{
+  "users": [
+    "Mariano",
+    "Martin",
+    "Leandro"
+  ]
+}
+----
+
+
+
+=== 超出数组
+
+选择器应用于数组中`Object`类型的每个元素，并返回一个包含所有选定值的数组。
+
+
+== 后代选择器
+
+此选择器使用格式*..<field-name>*应用于上下文，并检索当前上下文中子树中所有匹配的键：值对的值。无论这些字段是按照层次结构组织的，它们都被放置在输出中的同一级别。
+
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  names: payload.people..name <1>
+}
+----
+
+
+
+。输入
+[source, json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "names": [
+    "Nial",
+    "Italia",
+    "Martinez"
+  ]
+}
+----
+<1>在此示例中，所有与键"name"匹配的字段都放在名为"names"的列表中，而不管它们在输入数据树中的基数。
+
+
+
+== 键值对选择器
+
+
+该选择器检索当前上下文中的所有匹配键对的键和值。这些作为一个对象返回，包含这些检索到的键和值。
+
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  users: payload.users.&user
+}
+----
+
+
+。输入
+[source, xml, linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+  <admin>Admin</admin>
+  <admin>org_owner</admin>
+</users>
+----
+
+.OUTPUT
+[source, xml, linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+</users>
+----
+
+请注意，与多值选择器不同，此选择器的输出是一个对象，其中也提取了每个值的原始键。
+
+=== 选择所有后代键值对
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  names: payload.people..&name
+}
+----
+
+。输入
+[source, json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+.OUTPUT
+----
+{
+  names: [
+    {
+      name: "Nial"
+    },
+    {
+      name: "Italia"
+    },
+    {
+      name: "Martinez"
+    }
+  ]
+}
+----
+
+==== 将对象数组转换为对象对象
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/xml
+---
+{
+  names: (payload.people..&name) reduce (value, aggregator) -> aggregator ++ value
+  //Alternative methods
+  //names: payload.people..&name reduce ($$ ++ $)
+  //names: {(payload.people..&name)}
+}
+----
+
+。输入
+[source, json,linenums]
+----
+{
+  "people": {
+    "person": {
+      "name": "Nial",
+      "address": {
+        "street": {
+          "name": "Italia",
+          "number": 2164
+        },
+        "area": {
+          "zone": "San Isidro",
+          "name": "Martinez"
+        }
+      }
+    }
+  }
+}
+----
+
+.OUTPUT
+[source, xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<names>
+  <name>Nial</name>
+  <name>Italia</name>
+  <name>Martinez</name>
+</names>
+----
+
+
+== 索引选择器
+
+索引选择器返回指定位置的元素，它可以应用于`Array`，`Object`或`String`
+
+=== 超出数组
+
+该选择器可以应用于字符串文字，数组和对象。在对象的情况下，返回在索引处找到的key：value对的值。在数组的情况下，元素的值被返回。该指数是从零开始的。
+
+. 如果索引大于或等于0，则从头开始计数。
+. 如果索引是负数，则从-1开始计数的最后一个元素开始计数。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+payload.people[1]
+----
+
+
+。输入
+[source, json,linenums]
+----
+{
+  "people": [
+        {
+          "nameFirst": "Nial",
+          "nameLast": "Martinez"
+        },
+        {
+          "nameFirst": "Coty",
+          "nameLast": "Belgrano"
+        }
+    ]
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "nameFirst": "Coty",
+  "nameLast": "Belgrano"
+}
+----
+
+
+
+当使用带字符串的索引选择器时，字符串被分解为一个数组，其中每个字符都是一个索引。
+
+。转变
+[source,DataWeave, linenums]
+--------------------------------------------------------
+output application/json
+---
+{
+  name: "MuleSoft"[0]
+}
+--------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "M"
+}
+--------------------------------------------------------
+
+=== 通过字符串
+
+选择器在给定位置拾取字符，将字符串视为字符数组。
+
+. 如果索引大于或等于0，则从头开始计数。
+. 如果索引是负数，则从末尾开始计算。
+
+。转变
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 2.0
+output application/json
+---
+{
+  name: "Emiliano"[0]
+}
+--------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "E"
+}
+--------------------------------------------------------
+
+=== 在对象之上
+
+选择器返回指定位置的key：value对的值。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+payload[1]
+----
+
+。输入
+[source, json,linenums]
+----
+{
+  "nameFirst": "Mark",
+  "nameLast": "Nguyen"
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+"Nguyen"
+----
+
+
+== 范围选择器
+
+=== 超出数组
+
+范围选择器将输出限制为仅限特定顺序范围指定的元素。这个选择器允许你切割一个数组，甚至将其反转。
+
+。转变
+[source,DataWeave, linenums]
+------------------------------------------------------------
+%dw 2.0
+output application/json
+---
+{
+  slice: [0,1,2][0 to 1],
+  last: [0,1,2][-1 to 0]
+}
+------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "slice": [
+    0,
+    1
+  ],
+  "last": [
+    2,
+    1,
+    0
+  ]
+}
+----
+
+=== 通过字符串
+
+范围选择器将输出限制为仅由特定顺序范围指定的元素，将字符串视为字符数组。这个选择器允许你切割一个字符串或者甚至将其反转。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  slice: "DataWeave"[0 to 1],
+  last: "DataWeave"[-1 to 0]
+}
+----
+
+.OUTPUT
+
+[source,json,linenums]
+----
+{
+  "slice": "Da",
+  "last": "evaeWataD"
+}
+----
+
+
+==  XML属性选择器
+
+为了查询XML元素上的属性，使用语法*.@<key-name>*。如果您只是使用*.@*（不带<key-name>），它会返回一个包含所有属性的对象作为键：值对。
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  item: {
+    type : payload.product.@type,
+    name : payload.product.brand,
+    attributes: payload.product.@
+  }
+}
+----
+
+
+
+
+。输入
+[source, xml,linenums]
+----
+<product id="1" type="tv">
+  <brand>Samsung</brand>
+</product>
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "item": {
+    "type": "tv",
+    "name": "Samsung",
+    "attributes": { <1>
+      "id": 1,
+      "type": "tv"
+    }
+  }
+}
+----
+
+<1>此输出中的第三个元素检索一个包含所有属性的对象，在本例中为id和类型。
+
+
+
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  item: {
+    attributes : payload.product.@,
+    name : payload.product.brand
+  }
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "item": {
+    "attributes": {
+      "id": 1,
+      "type": "tv"
+    },
+    "name": "Samsung"
+  }
+}
+----
+
+=== 选择键值对
+
+由于选择器只返回key：value对的值，为了同时获得键和值，可以使用对象的类型转换。
+
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/xml
+---
+user: payload.nameFirst as Object <1>
+----
+
+<1>使用*as Object*将值转换为包含键和值的对象。如果没有对此对象的转换，则返回的XML正文将仅为<user> Mariano </user>。
+
+
+
+
+。输入
+[source, json,linenums]
+----
+{
+  "nameFirst": "Mariano",
+  "nameLast" : "Doe"
+}
+----
+
+.OUTPUT
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<user>
+  <nameFirst>Mariano</nameFirst>
+</user>
+----
+
+
+== 命名空间选择器
+
+Namespace选择器返回查询当前键的名称空间。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+payload.order.#
+----
+
+。输入
+[source, xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<ns0:order xmlns:ns0=http://orders.company.com>
+  <name>Mark</name>
+  <items>42</items>
+  <orderdate>2017-01-04</orderdate>
+</ns0:order>
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+"http://orders.company.com"
+----
+
+
+== 选择器修饰符
+
+有两个选择器修饰符：？和！
+
+* 问号是否在结构中存在键时返回true或false。
+* 感叹号会评估选择，如果有任何键不存在，将会失败。
+
+=== 密钥存在
+
+如果指定的键存在于对象中，则返回true。
+
+
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 2.0
+output application/xml
+---
+present: payload.name?
+--------------------------------------------------------
+
+
+
+。输入
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "Annie"
+}
+--------------------------------------------------------
+
+。输出：
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<present>true</present>
+--------------------------------------------------------
+
+
+
+在上例中，如果输入中存在“名称”键，则返回*true*。
+
+该操作也适用于XML属性：
+
+
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  item: {
+    typePresent : payload.product.@type?
+  }
+}
+----
+
+
+
+。输入
+[source, xml,linenums]
+----
+<product id="1" type="tv">
+  <brand>Samsung</brand>
+</product>
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "item": {
+    "typePresent": true
+  }
+}
+----
+
+
+
+您也可以将此验证操作用作过滤器的一部分：
+
+
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 2.0
+output application/xml
+---
+users: payload.users.*name[?($ == "Mariano")]
+--------------------------------------------------------
+
+
+
+。输入
+[source,xml,linenums]
+--------------------------------------------------------
+<users>
+  <name>Mariano</name>
+  <name>Luis</name>
+  <name>Mariano</name>
+</users>
+--------------------------------------------------------
+
+.OUTPUT
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<users>
+  <name>Mariano</name>
+  <name>Mariano</name>
+</users>
+--------------------------------------------------------
+
+
+
+上面的示例选择值为"Mariano" => {名称：Mariano，名称：Mariano}的键值对
+
+=== 断言存在
+
+如果找不到任何指定的键，则返回异常。
+
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 2.0
+output application/xml
+---
+present: payload.lastName!<1>
+--------------------------------------------------------
+<1>抛出异常"There is no key named 'lastName'"。
+
+
+
+。输入
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "name": "Annie"
+}
+--------------------------------------------------------
+
+例外："There is no key named 'lastName'"
+
+////
+=== 选择器
+
+选择器允许导航和查询数据结构的多个层次以引用特定值或一组值。请参阅 link:dataweave-selectors[DataWeave选择器]以获取完整参考。
+
+。转变
+[source, dataweave, linenums]
+----
+%dw 2.0
+output application/json
+---
+{
+  users: payload.users.*user
+}
+----
+
+
+。输入
+[source, xml,linenums]
+----
+<users>
+  <user>Mariano</user>
+  <user>Martin</user>
+  <user>Leandro</user>
+</users>
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "users": [
+    "Mariano",
+    "Martin",
+    "Leandro"
+  ]
+}
+----
+
+
+////
+
+
+
+== 另请参阅
+
+*  link:dataweave-cookbook-extract-data[Dataweave Cookbook：提取数据]
+*  link:dataweave-language-introduction[DataWeave语言介绍]
+// * link:dw-functions-core[DataWeave核心功能]

@@ -1,0 +1,143 @@
+= 基本身份验证：LDAP（Mule 4）
+
+轻量级目录访问协议（LDAP）身份验证策略为您为企业设置的Open LDAP或Active Directory LDAP建立配置详细信息。此策略仅适用于您在Mule 4或更高版本中管理的API。
+
+您可以遵循应用策略的一般说明，包括将策略应用于资源和方法的说明。
+
+以下属性配置用于连接到LDAP或Active Directory的LDAP策略。
+
+*  LDAP服务器URL
++
+您的LDAP服务器的URL，包括端口号。
++
+*  LDAP用户DN
++
+有权访问的用户或用户组的名称，并列出LDAP的用户。
++
+*  LDAP用户密码
++
+用户或用户组的密码。
++
+*  LDAP搜索库
++
+在目录树中搜索的起点。
++
+*  LDAP搜索过滤器
++
+Active Directory或OpenLDAP模型的筛选条件，如下面的示例所示。
+
+各个领域都需要。这些文字字符串值支持属性占位符。将密码输入为安全值，该值是指定的值不可见或可检索的值。
+
+==  Active Directory的示例配置
+
+[%header,cols="3*a"]
+|===
+|字段 |示例字符串值 |示例安全属性占位符
+| LDAP服务器URL
+| LDAP：//174.19.33.17：389 /
+| $ {} ldap.server.url
+| LDAP服务器用户DN
+| CN =管理员，CN =用户，DC =我的公司，DC = COM
+| $ {} ldap.user.dn
+| LDAP用户密码
+| somePassword
+| $ {} ldap.password
+| LDAP搜索库
+| CN =用户，DC =我的公司，DC = com的
+| $ {} ldap.search.base
+| LDAP搜索过滤器
+（sAMAccountName赋= {0}）
+| $ {} ldap.search.filter
+|===
+
+上面给出的搜索过滤器字符串特定于Active Directory应用程序。
+
+==  OpenLDAP的示例配置
+
+[%header,cols="3*a"]
+|===
+|字段
+|示例文字字符串值
+|示例安全属性占位符
+| LDAP服务器URL
+| LDAPS：//my-company-ldap.cloudhub.io：1010 /
+| $ {} ldap.server.url
+| LDAP服务器用户DN
+| CN =经理，DC =我的公司，DC = COM
+| $ {} ldap.user.dn
+| LDAP用户密码
+| somePassword
+| $ {} ldap.password
+| LDAP搜索库
+| OU =人，DC =我的公司，DC = COM
+| $ {} ldap.search.base
+| LDAP搜索过滤器
+|（UID = {0}）
+| $ {} ldap.search.filter
+|===
+
+*Note:*上面给出的搜索过滤器字符串特定于OpenLDAP应用程序。
+
+如果在配置LDAP策略时使用安全属性占位符，请在命令行或Mule Runtime wrapper.conf文件中将占位符的值指定为系统变量。
+
+例如：
+----
+# OpenLDAP properties definitions
+wrapper.java.additional.7=-Dldap.password=<password here>
+wrapper.java.additional.8=-Dldap.user.dn=cn=Manager,dc=my-company,dc=com
+wrapper.java.additional.9=-Dldap.search.base=ou=people,dc=my-company,dc=com
+wrapper.java.additional.10=-Dldap.search.filter=(uid={0})
+wrapper.java.additional.11=-Dldap.server.url=ldaps://my-company-ldap.cloudhub.io:1010/
+----
+
+== 搜索范围
+
+搜索范围选项因策略版本而异：
+
+*  1.0.0只有一个级别的搜索范围可用。
+*  1.1.0提供了两个搜索范围。您可以使用'在子树中搜索LDAP'复选框来选择“一级”和“子树”搜索范围。
+
+*One Level search scope*
+
+通过使用此选项，过滤器仅影响从属于基础对象的对象，但不包含基础对象本身。此政策的1.0.0版本仅具有此搜索范围。
+
+在以下示例中，第一级有四个条目：两个用户和两个组。这些是任何搜索的唯一条目。
+
+image::search-scope.png[]
+
+如果您将搜索过滤器设置为`(uid={0})`，则只会找到Jane和Paul。小组条目不予考虑，其他级别也不考虑。
+
+*Subtree search scope*
+
+通过使用此选项，策略将检查基础DN下方的子树，并且还包含基础DN级别。注意性能会受到这种行为的影响。
+
+继续前面的例子，我们可以看到分析区域覆盖整个组织。组织和用户条目在组织的任何级别被考虑。
+
+image::search-scope2.png[]
+
+== 请求要求
+
+将基本身份验证：LDAP策略应用于API之后，对该API的请求必须包含以下头文件：
+
+----
+Authorization: Basic <username:password>
+----
+
+其中username：password是base64编码的字符串。在Mac OS X或Linux中，例如：
+
+`echo '<Client Id>:<Client Secret>' | base64`
+
+Mule Runtime分离标题的凭证，并通过搜索过滤器将请求发送到LDAP服务器。
+
+从`username`和搜索过滤器，LDAP找到注册用户并验证凭证。最后，将有效结果发送到Mule运行系统，如下图所示。
+
+image::ldap-verification.png[高度= 358，宽度= 488]
+
+下图显示无效请求的过程：
+
+image::ldap-verification-invalid.png[高度= 245，宽度= 484]
+
+该策略将引发HTTP 401状态码，以指示授权标头格式错误，未提供或无效。
+
+
+

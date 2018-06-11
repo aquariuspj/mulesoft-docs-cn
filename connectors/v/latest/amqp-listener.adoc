@@ -1,0 +1,95 @@
+= 收听新消息
+:keywords: amqp, connector, consume, message, source, listener
+：TOC：
+：TOC标题：
+
+AMQP连接器中的Listener源提供了消息到达AMQP队列时的功能。
+
+== 收听新邮件
+侦听来自Queue的新消息的语法是：
+
+[source, xml, linenums]
+----
+<amqp:listener config-ref="config" queueName="targetQueue"/>
+----
+
+上面的源代码将监听由`queueName`参数标识的队列中的新消息，并在队列中每次有可用AMQP消息时返回`AmqpMessage`。
+
+_AmqpMessage_将具有：
+
+* 邮件的内容为有效内容。
+* 消息的消息属性中的元数据。
+
+默认情况下，只有在接收消息的流的执行成功完成时才会确认消息消息。
+相反，如果在执行流程期间发生错误，则会话将被恢复，并且消息将根据recoverStrategy被重新递送。
+
+有关消息确认的更多信息，请参阅 link:amqp-ack[如何处理消息确认]。
+
+
+== 配置消息吞吐量
+
+当需要额外的处理能力时，AMQP监听器允许您配置给定监听器将用来同时使用消息的`numberOfConsumers`。
+默认情况下，每个侦听器将使用四个消费者，它们将同时产生消息，每个消费者使用一个单独的通道。由于每个消费者都会等待消息被处理，这意味着您最多可以同时在飞行中拥有四条消息。
+如果您需要增加并发消息处理，只需增加监听器中的`numberOfConsumers`。每个消费者将使用不同的渠道。
+
+==  MIME类型和编码
+
+AMQP连接器尽最大努力根据消息的`contentType`属性自动确定消息的MIME类型（`contentType`）。但是，有些情况下最好的猜测还不够，而且您需要第一手了解Message的内容。
+
+在这种情况下，您可以使用`contentType`参数将该内容类型强制为特定值。
+
+相同的过程适用于编码。默认情况下，如果没有提供其他信息，连接器将假定运行时的默认编码与Message中的编码相匹配。您可以使用`inboundEncoding`参数进行设置。
+
+== 在AMQP监听器中声明一个队列
+
+默认情况下，如果定义的队列不存在`AMQP:QUEUE_NOT_FOUND`错误，则`consume`操作将失败。
+
+对于必须声明队列的情况，应该引用或定义内联的定义，以便声明队列。
+
+[source, xml, linenums]
+----
+<amqp:listener config-ref="Amqp_Config" queueName="testQueue">
+	<amqp:fallback-queue-definition removalStrategy="SHUTDOWN" exchangeToBind="echangeToBind" />
+</amqp:listener>
+----
+
+请注意，在队列的定义中，可以使用参数`exchangeToBind`创建绑定。
+
+队列也可以定义为高级元素：
+
+[source, xml, linenums]
+----
+<amqp:queue-definition name="targetQueueDefinition" exchangeToBind="testExchange" />
+
+<amqp:listener config-ref="Amqp_Config" queueName="testQueue" fallbackQueueDefinition="targetQueueDefinition">
+----
+
+== 如何避免更改AMQP地形
+
+您可以设置`createFallbackQueue`全局配置以防止由于回退队列的定义而导致对AMQP拓扑结构的更改，请参阅 link:amqp-topography[如何避免更改AMQP地形]。
+
+== 回复传入消息
+
+当传入的AMQP消息声明REPLY_TO属性时，AMQP侦听器将自动生成响应*when the Message is processed successfully*，这意味着流执行过程中不会发生错误。
+在这种情况下，当流程完成时，响应将发布到已处理的Message属性中指定的交换。如果出现错误，将应用恢复策略，并且在成功处理消息之前，不会将响应发送到REPLY_TO属性。
+
+== 错误情况下的恢复策略
+
+如果发生错误，则会应用`recoverStrategy`。
+默认情况下，`recoverStrategy`被设置为`REQUEUE`，这意味着该消息将被发送到消费的`queue`，其他AMQP消费者可能会检索该消息。
+如果`NO_REQUEUE`被设置，例如：
+
+[source, xml, linenums]
+----
+<amqp:listener config-ref="Amqp_Config" queueName="testQueue" recoverStrategy="NO_REQUEUE">
+	<amqp:fallback-queue-definition removalStrategy="SHUTDOWN" exchangeToBind="exchangeToBindToQueue" />
+</amqp:listener>
+----
+
+该消息将直接发送给回复它的同一个消费者。
+`NONE`与定义的`recoverStrategy`不会执行任何操作。
+
+
+== 另请参阅
+
+*  link:amqp-consume[消费消息]

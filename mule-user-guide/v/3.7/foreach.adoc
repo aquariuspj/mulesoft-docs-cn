@@ -1,0 +1,245 @@
+= 针对每个范围
+:keywords: flow control, for each, foreach, arrays, collections, series
+
+*For Each*作用域将集合拆分为元素，并通过嵌入在作用域中的处理器迭代地处理它们，然后将原始消息返回给流。
+
+*<<Complete Example Code>>*
+
+== 使用For Each与Splitter和Aggregator Pairs
+
+通常，要创建一个处理包含元素集合的消息的流，您必须使用一个流控制将集合拆分为单独的元素（迭代地处理流），然后您必须使用另一个流控制将元素重新聚合为新收集，以便他们可以流出流程。几个Mule ESB的 link:/mule-user-guide/v/3.7/routers[流量控制]支持这种分割和重新聚合，但它们无法匹配For Each范围的便利性。
+
+分离器和聚合器对的使用也存在几个潜在的限制：
+
+* 在某些情况下，将消息集合拆分成块可能会导致某些重要的XML元素（例如页眉或页脚中的元数据）从重新聚合的XML中删除。
+* 例如，当您将某些集合类型（例如Java）分割成多个部分进行处理时，集合可能会重新聚合为不同的集合类型 -  *MuleMessageCollection*。 （因此，您可能需要添加额外的流程步骤以将处理后的消息集合转换回其原始集合类型。）
+* 在分割，处理或聚合消息集合时，必须在多个分离器和聚合器类型中进行选择。有时，很难确定哪种分配器/聚合器组合最适合您的消息处理需求。
+
+For Each与split-aggregator对相比具有以下优点：
+
+*  For Each将集合拆分为元素，然后迭代地处理它们，而不丢失任何消息payload_。
+在For Each之后，* 将消息集合拆分并处理各个元素，但不会将这些单独元素重新聚合为MuleMessageCollection;相反，它会返回原始消息。 （这导致"Java in, Java out"而不是"Java in, MuleMessageCollection out."）
+*  For Each范围是多功能的;它可以迭代地处理来自任何类型集合的元素，包括地图，列表，数组和MuleMessageCollections。
+*  For Each作用域可以拆分并处理不属于消息有效内容的元素集合。例如，For Each可以处理来自消息头的消息属性集合（元数据）。
+
+[TIP]
+====
+如果元素是*mutable objects*（例如，其中具有不同字段的bean），并且For Each范围中嵌入的任何消息处理器会修改原始对象的值（例如，其中一个字段），那么一旦For Each将原始消息返回给流，字段的更改将会持续。
+
+换句话说，For Each在处理消息时以及在将原始消息返回给流时都不会生成数据的深层副本。
+====
+
+== 为每个配置
+
+[tabs]
+------
+[tab,title="STUDIO Visual Editor"]
+....
+. Add a For Each scope in your flow at the point where you want to initiate the For Each scope processing. +
+  image:for+each.png[for+each]
+
+. Insert one or more message processors inside the For Each scope area to define how Mule should process each element within the message collection. The For Each scope can contain any number of message processors as well as references to child flows.
++
+[TIP]
+====
+The only type of message processor you _cannot_ drag into a For Each scope is an *inbound connector*.
+
+If you drag a two-way connector into a For Each scope, Mule automatically converts it to an outbound-only connector.
+====
+
++
+image:foreach.png[foreach]
++
+
+[%header,cols="4*"]
+|===
+|Field |Default Value |Description |XML
+|*Display Name* |For Each |Customize to display a unique name for the scope in your application. a|
+
+[source,xml, linenums]
+----
+doc:name="For Each"
+----
+
+|*Collection* |  |(Optional) Enter an expression that tells For Each where to find the data it must split and process. For example, enter an expression that instructs For Each to split and process a collection from the header section – rather than the payload. Unless this field specifies otherwise, For Each assumes that the message payload is the collection. a|
+
+[source,xml, linenums]
+----
+collection="#[payload.topic]"
+----
+
+|*Counter Variable Name* |counter |(Optional) Enter a name in this field to label the variable that For Each uses to record the number of the elements it has processed. If your collection already uses the label `counter` for another variable, this field will be blank and you will need to enter a different label for the *Counter Variable Name*, such as `index`. a|
+
+[source,xml, linenums]
+----
+counterVariableName="counter"
+----
+
+|*Batch Size* |1 |(Optional) Enter an integer to indicate the number of elements in each batch that For Each processes. Potentially, these batches promote quicker processing. If greater than one, each batch is treated as a separate Mule message. For example, if a collection has 200 elements and you set the batch size to 50, For Each will iteratively process 4 batches of 50 elements, each as a separate Mule message. a|
+
+[source,xml, linenums]
+----
+batchSize="50"
+----
+
+|*Root Message Variable Name* |rootMessage |(Optional) Enter a name in this field to label the variable that For Each uses to reference the complete, unsplit message collection. If your collection already uses the label `rootMessage` for another variable, this field will be blank and you will need to enter a different label for the *Root Message Variable Name*. a|
+
+[source,xml, linenums]
+----
+rootMessageVariableName="rootMessage"
+----
+
+|===
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+. Add a For Each element to your flow at the point where you want to initiate a For Each processing block. Refer to the code sample below.
++
+[%header%autowidth.spread]
+|===
+|Element |Description
+|*For Each* |Use to create a block of message processors that iteratively process elements within a collection.
+|===
+. Configure the scope according to the table below.
++
+[%header,cols="34,33,33"]
+|===
+|Element Attribute |Default Value |Description
+|*doc:name* |For Each a|
+Customize to display a unique name for the async scope in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+
+|*collection* |Payload |(Optional) Enter an expression that tells For Each where to find the data it must split and process. For example, enter an expression that instructs For Each to split and process a collection from the header section – rather than the payload. Unless this attribute specifies otherwise, For Each assumes that the message payload is the collection.
+|*counterVariableName* |counter |(Optional) Specify to label the variable that For Each uses to record the number of the elements it has processed. If your collection already uses the label `counter` for another variable, you will need to select a unique name.
+|*batchSize* |1 |(Optional) Specify an integer to indicate the number of elements in each batch that For Each processes. Potentially, these batches promote quicker processing. For example, if a collection has 200 elements and you set the batch size to 50, For Each will iteratively process 4 batches of 50 elements.
+|*rootMessageVariableName* |rootMessage |(Optional) Specify to label the variable that For Each uses to reference the complete, unsplit message collection. If your collection already uses the label `rootMessage` for another variable, you will need to select a unique name.
+|===
+. Add nested elements beneath your `foreach` element to define how Mule should process each element within the message collection. The For Each scope can contain any number of message processors as well as references to child flows.
++
+[source,xml, linenums]
+----
+<foreach collection="#[payload.name]" doc:name="For Each" counterVariableName="counter" rootMessageVariableName="rootMessage" batchSize="5">
+    <some-nested-element/>
+    <some-other-nested-element/>
+</foreach>
+----
+....
+------
+
+== 为每个错误处理
+
+为您的流定义的异常策略处理For Each范围内引发的所有异常。 （如果您尚未明确定义流程的异常策略，则Mule将隐式应用 link:/mule-user-guide/v/3.7/error-handling[默认的例外策略]来处理异常。）如果集合中的消息引发异常，则For Each会停止处理该集合并调用异常策略。
+
+例如，只要有两个条件成立，Foreach就会抛出`IllegalArgumentException`：
+
+* 它收到一个不是集合的消息有效载荷
+* 您尚未在邮件有效内容之外标识邮件集合（通过在Studio Visual Editor的*Collection*字段中输入表达式或在XML配置中包括`collection`属性来定义）。
+
+== 持久数据时的注意事项
+
+如果For Each范围内的消息持续存在，则不仅集合中的项目将被序列化，而且所有与当前消息相关的变量也将被序列化。与消息关联的`rootMessage`变量包含可能包含数千个项目的完整非分离消息集合的引用。因此，当这个集合足够大时，`rootMessage`变量的序列化/反序列化会显着影响内存消耗。
+
+为避免此问题，您必须先在消息中删除`rootMessage`变量，然后再保留它。为此，您可以像这样使用`<remove-variable>`元素：
+
+[source,xml, linenums]
+----
+<remove-variable variableName="rootMessage" doc:name="Variable"/>
+----
+
+在Studio中，您可以拖动范围内的变量消息处理器并将其设置为"Remove Variable"。
+
+== 示例
+
+以下示例演示了使用For Each将信息添加到集合中每条消息的流程。
+
+HTTP连接器接收来自客户端的请求，然后查询JDBC数据库，其中表格指示各种汽车的型号名称和型号年份。 For Each将集合（表格）拆分为元素（行）列表，其中每个元素包含有关各个元素（地图）`model:'ford sierra'`，model_year = 1982}}的信息。 For Each通过其范围内的消息处理器发送每个元素。
+
+该流程为每个元素的地图添加一个新条目;如果模型年份小于2001年，Mule会添加`type='20th century car'`，然后将该元素发送到*JMS*连接器;否则，Mule添加`type='21st century car'`并将该元素发送到*File*连接器。 For Each将在流程结束时返回一个集合并将其发送给变换器。
+
+此特定示例将使用利用*Set Payload*和*HTTP Response Builder*构造块的自定义*Catch Exception Strategy*替换主流的默认异常策略。
+
+image:for+each+example.png[对于每个+ +示例]
+
+== 完整的示例代码
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:jdbc-ee="http://www.mulesoft.org/schema/mule/ee/jdbc" xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:jdbc="http://www.mulesoft.org/schema/mule/jdbc"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:core="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/current/mule-jdbc-ee.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+
+    <jms:activemq-connector name="JMSConnector" doc:name="Active MQ"></jms:activemq-connector>
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="9091" doc:name="HTTP Listener Configuration"/>
+    <db:derby-config name="Derby_Configuration" url="jdbc:derby:${app.home}/muleEmbeddedDB;create=true"   doc:name="Derby Configuration"/>
+
+    <flow name="process" >
+        <http:listener config-ref="HTTP_Listener_Configuration" path="process" doc:name="HTTP">
+            <http:error-response-builder statusCode="500" reasonPhrase="You need to populate the Database first"/>
+        </http:listener>
+        <db:select config-ref="Derby_Configuration" doc:name="Database">
+            <db:parameterized-query><![CDATA[SELECT * FROM cars]]></db:parameterized-query>
+        </db:select>
+        <foreach doc:name="Foreach">
+            <choice doc:name="Choice">
+                <when expression="payload.'MODEL_YEAR' &#38;lt; 2001">
+                    <processor-chain doc:name="Processor Chain">
+                        <expression-component doc:name="Set payload type"><![CDATA[payload.'TYPE' = '20th century car']]></expression-component>
+                        <jms:outbound-endpoint connector-ref="JMSConnector" queue="in" doc:name="JMS"></jms:outbound-endpoint>
+                    </processor-chain>
+                </when>
+                <otherwise>
+                    <processor-chain doc:name="Processor Chain">
+                        <expression-component doc:name="Set payload type">payload.'TYPE'='21st century car'</expression-component>
+                        <file:outbound-endpoint path="/tmp" responseTimeout="10000" doc:name="File"></file:outbound-endpoint>
+                    </processor-chain>
+                </otherwise>
+            </choice>
+        </foreach>
+        <set-payload value="#[payload.size()] cars where processed: #[payload]" doc:name="Set response"></set-payload>
+        <parse-template location="foreach_info.html" doc:name="Parse Template"/>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <parse-template location="foreach_error.html" doc:name="Parse Template"/>
+        </catch-exception-strategy>
+    </flow>
+    <flow name="populate" >
+         <http:listener config-ref="HTTP_Listener_Configuration" path="populate" doc:name="HTTP">
+            <http:error-response-builder statusCode="500" reasonPhrase="DB already populated"/>
+        </http:listener>
+
+        <scripting:component doc:name="Script to populate DB">
+            <scripting:script engine="Groovy">
+                <scripting:text><![CDATA[jdbcConnector = muleContext.getRegistry().lookupConnector("JDBCConnector");
+qr = jdbcConnector.getQueryRunner();
+conn = jdbcConnector.getConnection();
+qr.update(conn, "CREATE TABLE cars (model varchar(256), model_year integer)");
+qr.update(conn, "INSERT INTO cars values('Ford Sierra', 1982)");
+qr.update(conn, "INSERT INTO cars values('Opel Astra', 2001)");]]></scripting:text>
+
+            </scripting:script>
+        </scripting:component>
+        <set-payload value="Successfully populated the database" doc:name="Set Payload"></set-payload>
+        <parse-template location="foreach_info.html" doc:name="Parse Template"/>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <parse-template location="foreach_error.html" doc:name="Parse Template"/>
+        </catch-exception-strategy>
+    </flow>
+</mule>
+----

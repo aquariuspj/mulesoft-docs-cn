@@ -1,0 +1,83 @@
+= 利用云端数据丰富本地数据
+
+数据存储在多个位置是非常常见的，您需要将它们连接在一起形成一个有凝聚力的整体。本示例将向您展示如何获取在Spring中声明的本地对象，并将其与来自SalesForce云连接器的数据一起加入，以获取有关某位置用户的所有信息。
+
+在我们的例子中，我们有一个用户对象的本地数据库，我们有名字和电子邮件。在salesforce中，我们有电话号码和公司名称。我们将根据用户电子邮件加入数据。我们的用户对象如下所示：
+
+[source, java, linenums]
+----
+public class User {    private String name;    private String email;        public String getName() {  return name; }    public void setName(String name) {  this.name = name; }    public String getEmail() { return email;  }    public void setEmail(String email) { this.email = email; }}
+----
+
+我们有一个带有getUsers方法的UserManager对象：
+
+[source, java, linenums]
+----
+public class UserManager {    // a Map of Users keyed by their email    private Map<String,User> users = new HashMap<String,User>();            public Collection<User> getUsers() {        return users.values();    }….
+----
+
+它在我们的Mule配置中被声明为一个弹簧对象：
+
+[source, xml, linenums]
+----
+<spring:bean name="userManager" class="com.mulesoft.mql.example.UserManager"/>
+----
+
+接下来，我们需要通过为云连接器添加配置来配置Mule与Salesforce交谈：
+
+[source, xml, linenums]
+----
+<salesforce:config name="salesforce"                    username="${salesforce.username}"                    password="${salesforce.password}"                     securityToken="${salesforce.securityToken}"/>
+----
+
+您的Salesforce securityToken可以通过下面描述的流程获得。
+
+接下来，让我们创建一个查询，它将来自Salesforce的数据与本地UserManager结合在一起。为了举例说明，假设您已经在本地获得了名称和电子邮件，并且您试图从Salesforce加入关于用户电话号码和公司的信息。这个查询只会查询本地UserManager：
+
+[source, code, linenums]
+----
+from userManager.users as user  select new {    name = user.name,    email = user.email}
+----
+
+SalesForce连接器有一个查询方法，我们可以使用它来传入Salesforce选择查询。由于我们在上面声明了名称为"salesforce"的配置对象，所以我们可以在MQL中将其引用为"salesforce"。然后，我们可以简单地将query（）作为join语句的一部分，如下所示：
+
+[source, code, linenums]
+----
+join salesforce.query('SELECT Id, Company, MobilePhone FROM Lead WHERE Email = \'' + user.email + '\'', 100) as sfuser
+----
+
+最后，我们可以将它们放在一起来创建一个RESTful服务，该服务在URL上侦听并将此查询的结果作为JSON返回：
+
+[source, xml, linenums]
+----
+<mql:query-service name="JoinCompanyAndPhone"  address="{{0}}.?Company,               mobile = sfuser[0].?MobilePhone          }"/>
+----
+
+现在，如果您针对此URL运行查询，您将收到带有连接数据的JSON响应。
+
+[source, code, linenums]
+----
+$ curl http://localhost:9002/users[{"email":"joe@schmoe.com","company":"Schmoe Co","name":"Joe Schmoe","mobile":"(555)555-5555"}]
+----
+
+== 运行示例
+
+接下来，我们将配置并启动示例应用程序：
+
+*  http://www.mulesoft.org/download-mule-esb-community-edition[下载骡子]并提取分配
+*  link:/mule-user-guide/v/3.2/mql-download[下载MQL]并提取分配
+* 将examples / mql-examples-0.9.1.zip文件从MQL分发版复制到MULE_HOME / apps
+* 检索您的Salesforce安全令牌。如果您没有Salesforce安全令牌，请登录到Salesforce，单击右上角的您的名称，然后单击“设置”。点击个人信息旁边的箭头，然后点击"Reset Security Token."最后，点击"Rest Security Token"按钮，并从收件箱中检索令牌。
+* 用您的OAuth令牌启动Mule：
+
+[source, code, linenums]
+----
+ $ cd mule-standalone-3.1.2/bin$ ./mule -M-Dsalesforce.username=YOUR_SALESFORCE_USERNAME -M-Dsalesforce.password=YOUR_SALESFORCE_PASSWORD \-M-Dsalesforce.securityToken=YOUR_SALESFORCE_SECURITY_TOKEN
+----
+
+* 运行查询：
+
+[source, code, linenums]
+----
+ $ curl http://localhost:9002/users[{"email":"joe@schmoe.com","company":"Schmoe Co","name":"Joe Schmoe","mobile":"(555)555-5555"}]
+----

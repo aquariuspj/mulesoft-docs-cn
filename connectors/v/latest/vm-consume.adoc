@@ -1,0 +1,46 @@
+= 示例：通过VM连接器发布和收听消息
+:keywords: VM, queues, connector, publish, listen
+：TOC：
+：TOC标题：
+
+TOC :: []
+
+此过程显示如何发布以不同流程接收的消息。
+
+. 定义一个包含`<vm:listener>`的流作为消息源，例如：
++
+[source, xml, linenums]
+----
+<vm:config name="vm">
+    <vm:queues>
+        <vm:queue queueName="myQueue" queueType="PERSISTENT" />
+    </vm:queues>
+</vm:config>
+
+<flow name="listener">
+   <vm:listener queueName="myQueue" config-ref="vm" />
+   <flow-ref name="yourIntegrationLogic"/>
+</flow>
+----
++
+. 将消息馈送到新创建的队列中。
++
+例如，假设流由具有JSON负载的HTTP请求触发，并且您想提取该JSON对象的`body`属性并将其发布到队列中：
++
+[source, xml, linenums]
+----
+    <flow name="publish">
+        <http:listener path="/json-here" allowedMethods="POST" config-ref="httpListener" />
+        <vm:publish queueName="myQueue">
+            <vm:content>#[payload.body]</vm:content>
+        </vm:publish>
+        <logger/>
+    </flow>
+----
++
+在这个例子中，你可以看到：
++
+*  `publish`操作引用在`config`中创建的队列。
+*  `content`参数允许您使用DataWeave构建要发送的值（不会对消息产生副作用）。请注意，如果您不指定`content`，则会发送整个有效内容。
+*  `publish`操作是单向的。一旦消息被发布到队列中，流程将继续。侦听端的处理异步发生。您没有收到有关其结果的通知。
+*  `publish`操作中指定的`queueName`必须具有指向同一队列的匹配`<vm:listener>`元素。如果您尝试发布到不存在侦听器的队列，则会引发错误。此行为可防止将邮件发送到无人监听的队列中导致的邮件丢失。

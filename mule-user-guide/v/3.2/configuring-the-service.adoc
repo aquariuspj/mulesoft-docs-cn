@@ -1,0 +1,147 @@
+= 配置服务
+
+您可以使用`<model>`元素中的`<service>`元素来配置服务。每个`<service>`元素表示和配置一个Mule ESB服务，提供一个唯一的名称来标识它，并且可以选择一个初始状态来确定当Mule启动时服务和端点是否启动（支持的值是启动，停止还是暂停）。
+
+[source, xml, linenums]
+----
+<mule>
+  <model>
+    <service name="GreeterUMO">
+      ...
+    </service>
+
+    <service name="GreeterUMO2" initialState="stopped" >
+      ...
+    </service>
+  </model>
+</mule>
+----
+
+每个服务都可以使用以下可选元素进行配置：
+
+*  `<description>`：描述服务
+*  `<inbound>`：配置入站路由器，它们的端点和入站转换器
+*  `component`：配置服务组件
+*  `<outbound>`：配置出站路由器，它们的端点和出站转换器
+*  `<async-reply>`：配置用于异步请求 - 响应消息传递的异步回复路由器
+*  `<exception-strategy>`：配置服务的异常策略
+
+如果您配置了多个这些元素，请注意您必须按照上面所示的顺序进行配置。有关`<service>`元素和属性的详细信息，请参阅 link:/mule-user-guide/v/3.2/service-configuration-reference[服务配置参考]。
+
+以下是显示这些元素的示例服务配置：
+
+[source, xml, linenums]
+----
+<service name="GreeterUMO">
+  <description>Adds some text to the string before passing it on</description>
+  <inbound>
+    <stdio:inbound-endpoint system="IN">
+        <transformer ref="StdinToNameString"/>
+    </stdio:inbound-endpoint>
+  </inbound>
+  <component class="org.mule.example.hello.Greeter" />
+  <outbound>
+    <filtering-router>
+      <vm:outbound-endpoint path="chitchatter" />
+      <payload-type-filter expectedType="org.mule.example.hello.NameString" />
+    </filtering-router>
+  </outbound>
+  <default-service-exception-strategy>
+    <vm:outbound-endpoint path="systemErrorHandler" />
+  </default-service-exception-strategy>
+</service>
+----
+
+以下各节将更详细地介绍这些元素。
+
+== 入站
+
+此元素用于配置入站端点和入站路由器。端点用于接收传入消息，而入站路由器确定这些消息如何路由。入站端点和路由器在<inbound>元素内单独配置。
+
+=== 入站端点
+
+入站端点用于接收传入消息。端点只是一组指令，指示接收消息的传输和路径/地址，以及接收消息时应应用的任何变换器，过滤器或安全性。您可以配置多个入站端点，每个端点接收来自不同传输的消息。有关更多信息，请参阅 link:/mule-user-guide/v/3.2/configuring-endpoints[配置端点]和 link:/mule-user-guide/v/3.2/transports-reference[传输参考]。
+
+=== 入站路由器
+
+`<inbound>`元素配置入站路由器。入站路由器在将服务传递给服务组件之前控制和处理由服务接收的消息。通常情况下，入站路由器用于过滤收到的消息，汇总一组传入的消息，或在收到消息时重新排序消息。入站路由器也用于注册一个服务的多个入站端点。您可以将入站路由器链接在一起，以便在将消息传递到组件之前，必须匹配每个路由器。如果没有路由器接受当前消息，您还可以配置被调用的 link:/mule-user-guide/v/3.2/catch-all-strategies[全面战略]。
+
+有关更多信息，请参阅 link:/mule-user-guide/v/3.2/inbound-routers[入站路由器]。
+
+== 元器件
+
+`<component>`元素配置将在入站路由器处理入站消息后调用的服务组件。如果未配置任何组件，则该服务将充当桥接，并将消息传递到出站路由器。
+
+您可以使用几种标准组件，例如`<log-component>`，它记录组件调用，将接收到的消息作为字符串输出，`<echo-component>`扩展日志组件以记录和回显传入消息。通常，您将创建自己的组件作为普通的旧Java对象（PO​​JO）并使用`<component>`元素进行配置。
+
+有关组件类型及其配置的更多信息，请参阅 link:/mule-user-guide/v/3.2/configuring-components[配置组件]。您还可以在Mule模块中实现新的组件类型，并在您的配置中使用它们。在Mule 2.0中，现在更容易实现并使用新的非Java组件类型，并使用它们自己的自定义组件元素来配置它们。
+
+== 外向
+
+`<outbound>`元素配置出站路由器及其端点。由于出站路由器用于确定在组件完成处理后分派消息时使用哪些端点，因此出站端点在出站路由器上配置，而不是直接在`<outbound>`元素上配置。出站路由器允许开发人员为任何给定的消息定义多个路由约束。如果没有路由器接受当前消息，则可以指定要调用的 link:/mule-user-guide/v/3.2/catch-all-strategies[全面战略]。有关更多信息，请参阅 link:/mule-user-guide/v/3.2/outbound-routers[出站路由器]。
+
+== 异步回复路由器
+
+`<async-reply>`元素用于配置将用于在异步请求响应方案中接收响应的端点和路由器，您必须在当前服务通过其入站端点响应之前合并来自远程端点的响应。这种方法的典型例子是请求被执行，然后多个任务并行执行。每个任务必须完成执行，并在将响应发送回请求者之前处理结果。有关异步请求 - 响应的说明，请单击 link:/mule-user-guide/v/3.2/service-messaging-styles[这里]。有关更多信息，请参阅 link:/mule-user-guide/v/3.2/asynchronous-reply-routers[异步回复路由器]和 link:/mule-user-guide/v/3.2/configuring-endpoints[配置端点]。
+
+== 例外策略
+
+在处理消息期间发生错误时，异常策略用于处理异常情况。您可以配置服务的异常策略。如果没有配置异常策略，则使用DefaultServiceExceptionStrategy。
+
+有关例外策略的更多信息，请参阅 link:/mule-user-guide/v/3.2/error-handling[错误处理]。
+
+== 服务桥
+
+服务组件配置在Mule 2.x中是可选的。使用的默认和隐含组件是 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/component/simple/PassThroughComponent.html[PassThroughComponent]。该组件自动将入站消息桥接到出站阶段，并简单地将消息传递到出站路由器。如果您想要将消息从一个传输器传递到另一个传输器，则此方法对桥接端点很有用。
+
+[TIP]
+从Mule 2.0开始，你不再需要配置一个显式的BridgeComponent。
+
+以下示例演示如何读取文件并将其内容发送到JMS主题。
+
+[source, xml, linenums]
+----
+<service name="FileToJmsBridge">
+  <inbound>
+    <file:inbound-endpoint path="/data/in">
+      <file:filename-wildcard-filter pattern="*.txt"/>
+    </inbound-endpoint>
+  </inbound>
+
+    <!-- No need to configure a component here -->
+
+  <outbound>
+    <pass-through-router">
+      <jms:outbound-endpoint topic="receivedFiles"/>
+    </pass-through-router>
+  </outbound>
+</service>
+----
+
+如果要将响应发回给入站端点，请使用链接路由器，而不是出站端点中的传递路由器。入站端点必须是同步的。
+
+[source, xml, linenums]
+----
+<service name="HttpProxyService">
+  <inbound>
+    <inbound-endpoint address="http://localhost:8888" synchronous="true"/>
+  </inbound>
+  <outbound>
+    <chaining-router>
+      <outbound-endpoint address="{{0}}" synchronous="true"/>
+    </chaining-router>
+  </outbound>
+</service>
+----
+
+== 服务模型
+
+默认情况下，Mule使用分阶段事件驱动架构（SEDA）模型。 SEDA是一个体系结构模型，其中应用程序由通过显式队列连接的事件驱动阶段组成。这种架构可以让服务有条件地加载，防止资源在需求超过服务容量时被过度使用。因此，SEDA提供了一种高效的基于事件的排队模型，可最大限度地提高性能和吞吐量。
+
+有关替代模型的更多信息以及有关如何实现自己的信息，请参阅 link:/mule-user-guide/v/3.2/models[楷模]。
+
+== 服务消息传递样式
+
+消息传递风格确定要在入站和出站端点上使用的消息交换模式，并允许将端点配置为同步请求/响应或异步in-only以及其他模式。
+
+消息传送风格在端点上配置，允许多个样式与同一服务一起使用。有关更多信息，请参阅 link:/mule-user-guide/v/3.2/service-messaging-styles[服务消息样式]。

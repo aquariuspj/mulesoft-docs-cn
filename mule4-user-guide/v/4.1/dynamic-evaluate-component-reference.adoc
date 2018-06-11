@@ -1,0 +1,65 @@
+= 动态评估组件
+:keywords: mule, ee, esb, studio, dynamic, evaluate, expression
+
+*Available since 4.1*
+
+该组件评估应该导致另一个脚本的表达式，然后评估该脚本以获得最终结果。这种行为允许您动态选择脚本，而不是通过 link:transform-component-about[变换组件]对其进行硬编码。
+
+该脚本可以使用任何常用的 link:dataweave-variables-context[上下文变量]，例如`message`，`payload`，`vars`或`attributes`，但您也可以通过提供自定义的一组键值对。
+
+以下示例通过`userId`查询参数从数据库中选择一个脚本，并将该脚本存储在`userScript`变量中。然后，`dynamic-evaluate`组件访问变量以调用脚本，以便可以从`userName`查询参数添加`name`变量。
+
+。示例：流程的XML配置
+[source,xml,linenums]
+----
+<flow name="raise-error-example-flow">
+  <http:listener config-ref="HTTP_Listener_Configuration" path="/"/>
+  <db:select config-ref="dbConfig" target="userScript">
+    <db:sql>#["SELECT script FROM SCRIPTS WHERE ID = $(attributes.queryParams.userId)"]</db:sql>
+  </db:select>
+  <ee:dynamic-evaluate expression="#[vars.userScript]">
+    <ee:parameters>#[{name: attributes.queryParams.userName}]</ee:parameters>
+  </ee:dynamic-evaluate>
+</flow>
+----
+
+想象一下存储在数据库中的以下脚本中的条目`lsalander`和
+`mblomkvist`，分别为：
+
+。示例：lsalander脚本
+----
+output application/json
+---
+{
+  message: "Order " ++ attributes.queryParams.orderId ++ " has been received from " ++ name,
+  items: payload.items
+}
+----
+
+。示例：mblomkvist脚本
+----
+output application/x-www-form-urlencoded
+---
+{
+  message: "Order " ++ attributes.queryParams.orderId ++ " has been received from " ++ name,
+  items: payload.items
+}
+----
+
+发送`lsalander`作为`userId`会导致JSON响应
+实质上，发送`mblomkvist`将导致`x-www-form-urlencoded`响应
+允许每个用户参数化响应类型。事实上，整个回应可能
+按照每个用户的需求进行参数化。
+
+== 动态评估配置
+
+[%header,cols="1,1,2,2"]
+|===
+|  {字段{1}}值 | 说明 | 示例
+
+| 表达式 |  DataWeave表达式 | 指定要在最终脚本中评估的表达式。 |
+`expression="#[vars.generateOrderScript]"`
+| 参数 |  DataWeave表达式 | 指定应被绑定以评估最终脚本的键值对。 |
+`#[{joiner: ' and ', id: payload.user.id}]`
+
+|===

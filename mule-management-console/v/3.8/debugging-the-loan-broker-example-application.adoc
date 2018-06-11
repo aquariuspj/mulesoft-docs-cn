@@ -1,0 +1,102 @@
+= 调试贷款代理示例应用程序
+
+此页面使用Flow Analyzer屏幕引导您完成调试会话，以追踪简单贷款代理示例应用程序中的逻辑错误。
+
+[WARNING]
+*[Mule 3.2]*流分析不适用于群集。它主要是一个开发时间工具。但是，您可以在运行您计划部署到群集的应用程序的独立服务器上使用它。
+
+作为应用程序开发人员，您怀疑该计划未返回提供最低费率报价的银行。为了追踪这一点，您需要关注贷款经纪人同步流程，因为您知道它会收集来自不同银行的报价并使用一些Java代码来确定报价最低的银行。您对简单贷款代理中的以下程序逻辑特别感兴趣：
+
+* 贷款代理同步流执行大部分工作，接收来自浏览器的客户贷款利率请求，转换请求并将请求传递给适当的消息处理器。
+
+* 客户获得信贷审批后，贷款经纪同步流程会将请求传递给适当的银行并收取汇率报价。
+
+* 使用`LowestQuoteProcessor`进行汇率比较，贷款代理同步从列表中选择最低的报价并返回银行并报价给浏览器。
+
+您强烈怀疑该错误位于`LowestQuoteProcess.java`模块中。为了验证您的怀疑，您可以部署并运行简单贷款代理应用程序，并通过流量分析器进行处理。
+
+只要部署简单贷款代理应用程序，就可以使用“流”选项卡检查应用程序是否正常运行。然后，您设置流量分析器审计参数。既然您知道问题不在于信用代理服务，您不会将其包括在审计线索中。
+
+接下来，您开始测试并通过浏览器窗口提交贷款利率请求，价格为3,675,000美元，回归结果表明银行2的最佳利率约为7.179。
+
+image:rate-result-bad.png[率对结果坏]
+
+您进入控制台流量分析器屏幕，看到“消息列表”窗格显示贷款利率请求的消息流。您验证贷款代理同步流程的第一次调用是否已收到您输入的请求数量。
+
+image:loan-broker-sync1.png[贷款经纪人SYNC1]
+
+您可以在消息列表中看到针对费率请求的消息已发送到两个银行：bank1和bank2。您现在检查贷款经纪同步流量从银行1和银行2中获得的金额。您在bank1之后立即单击贷款经纪人同步流程，然后在“消息流”窗格中单击出站消息处理器。 Before Payload窗格显示Bank 1返回的费率大约为3.308。 （您还可以通过单击消息列表中的bank1流程，然后单击消息流程窗格中的组件消息处理器来查看由Bank 1返回的速率。在After Pay窗格中看到相同的3.308速率。）
+
+image:loan-broker-sync2.png[贷款经纪人SYNC2]
+
+马上，这看起来不正确，因为应用程序从Bank 2返回了更高的费率。使用Flow Analyzer屏幕，您单击bank2流程，然后单击组件消息处理器，检查Bank 2实际返回的比率。 After Payload窗格显示银行2的利率确实是7.179。
+
+image:loan-broker-sync3.png[贷款经纪人SYNC3]
+
+最后，您在bank2流之后立即单击loan-broker-sync流，然后检查`LowestQuoteProcessor`及其消息有效负载。看起来`LowestQuoteProcessor`处理器有错误。
+
+image:loan-broker-sync4.png[贷款经纪人SYNC4]
+
+既然您确信错误发生在`LowestQuoteProcessor`中，您就可以将源代码放入IDE并仔细阅读代码。
+
+[source, java, linenums]
+----
+public class LowestQuoteProcessor implements MessageProcessor
+{
+    public MuleEvent process(MuleEvent event) throws TransformerException
+    {
+        Object payload = event.getMessage().getPayload();
+        LoanQuote lowestQuote = null;
+        if (payload instanceof LoanQuote)
+        {
+            lowestQuote = (LoanQuote) payload;
+        }
+        else
+        {
+            @SuppressWarnings("unchecked")
+            List<LoanQuote> loanQuotes = (List<LoanQuote>) payload;
+            for (LoanQuote loanQuote : loanQuotes)
+            {
+                if (lowestQuote == null)
+                {
+                    lowestQuote = loanQuote;
+                }
+                else
+                {
+                    if (loanQuote.getInterestRate() > lowestQuote.getInterestRate())
+                    {
+                        lowestQuote = loanQuote;
+                    }
+                }
+            }
+        }
+        return new DefaultMuleEvent(new DefaultMuleMessage(lowestQuote, event.getMuleContext()), event);
+    }
+}
+----
+
+当然，你会发现你在下面一行中有一个不正确的比较运算符（你使用了大于运算符而不是小于运算符）：
+
+[source, code, linenums]
+----
+if (loanQuote.getInterestRate() > lowestQuote.getInterestRate())
+----
+
+你纠正这一行，改变代码如下：
+
+[source, code, linenums]
+----
+if (loanQuote.getInterestRate() < lowestQuote.getInterestRate())
+----
+
+现在您需要验证您是否正确地进行了必要的修复。您重新部署已更改的简单贷款经纪人应用程序并提交报价请求。这一次，您从银行1得到4.14的利率。
+
+image:rate-result-good.png[率对结果良好] +
+
+使用流量分析器屏幕，验证贷款申请金额是否已正确收到，然后检查处理费率报价的两家银行的消息有效负载，以查看每家银行计算的结果。这一次，你会发现银行1的利率4.14远低于银行2的利率8.10。
+
+image:loan-broker-sync5.png[贷款经纪人sync5]
+
+您已验证贷款同步代理正确返回了较低的汇率报价。
+
+在应用程序依赖大量消息处理器的环境中，审计流程和获取有关消息处理和消息负载的详细信息对调试非常有用。流量分析仪屏幕可以在这方面提供巨大的帮助。

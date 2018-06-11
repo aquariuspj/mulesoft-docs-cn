@@ -1,0 +1,86 @@
+= 使用Web服务包装器
+
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/soap/axis/component/WebServiceWrapperComponent.html[WebServiceWrapperComponent]类允许您将Web服务调用的结果发送到另一个端点。 Web服务调用在`WebServiceWrapperComponent`内执行，具有以下优点：
+
+* 您可以在入站和出站设置任何类型的路由器。
+* 与链接路由器不同，它可以一次发送多个HTTP请求
+* 可以在运行时通过发送带有消息的URL来更改Web服务调用的URL
+
+== 配置Web服务包装器
+
+要使用Web服务包装器，请指定`<wrapper-component>`配置元素。下表介绍了您可以为此元素设置的属性。这些属性在下面的例子中有更详细的描述。
+
+[%header%autowidth.spread]
+|===
+| {属性{1}}说明 |必需？
+|地址 |指定要调用 |的Web服务的URL是，除非将`addressFromMessage`设置为true
+| addressFromMessage（默认为false） |指定Web服务的URL将从消息本身获取 |如果设置了`address`，则不需要
+| wrapperProperties  | SOAP文档样式，表示为包含两个属性`style`的映射，可以设置为`RPC`（默认），`Document` ，`Message`或`Wrapped`和`use`，可以是`Encoded`或`Literal`。 |否
+| `<soap-method>`  |要调用的SOAP方法（请参阅下面的配置SOAP方法） |否
+|===
+
+Web服务包装是通用的，可以与Mule支持的任何类型的Web服务堆栈一起使用，包括Axis和CXF。以下示例显示了同步用例，但Web服务包装器也可以支持异步用例，如 link:/mule-user-guide/v/3.2/loan-broker-example[贷款经纪人的例子]。
+
+=== 使用CXF传输的示例配置
+
+考虑下面的例子。 Web服务包装器配置为Mule组件，接受来自VM端点的消息。必须对URL `cxf:http://localhost:65081/services/TestUMO?method=onReceive`上的Web服务进行调用，并且必须将结果发送到出站端点`vm://testout`。
+
+入站和出站端点按照通常的方式进行配置。该地址在组件上设置为属性，指定要调用的Web服务URL。
+
+[source, xml, linenums]
+----
+<cxf:connector name="cxf" defaultFrontend="simple" />
+<model name="Sample">
+   <service name="WebServiceSample">
+      <inbound>
+         <vm:inbound-endpoint path="testin" />
+      </inbound>
+      <cxf:wrapper-component address="http://localhost:65081/services/TestUMO?method=onReceive"/>
+      <outbound>
+         <pass-through-router>
+            <outbound-endpoint address="vm://testout"/>
+         </pass-through-router>
+      </outbound>
+   </service>
+----
+
+=== 使用addressFromMessage属性进行配置的示例
+
+在配置时知道Web服务的Web服务URL时，"address"属性非常理想。但是，如果此URL未知，或者需要在运行时更改，则可以省略"address"属性，并且可以将"adddressFromMessage"属性设置为true。以下示例显示了此配置：
+
+[source, xml, linenums]
+----
+<service name = "WebServiceSample2">
+   <inbound>
+      <vm:inbound-endpoint path = "testin2"/>
+   </inbound>
+   <cxf:wrapper-component addressFromMessage = "true"/>
+</service>
+----
+
+必须在属性名称为"ws.service.url"的邮件中设置URL。 +
+
+=== 配置SOAP方法
+
+CXF端点相当容易配置，而Axis需要进一步的配置来设置SOAP方法。您可以使用`<soap-method>`元素设置SOAP方法，如下所示：
+
+[source, xml, linenums]
+----
+<service name = "WebServiceSample3">
+   <inbound>
+      <vm:inbound-endpoint path = "queue.in" connector-ref = "VMQueue"/>
+   </inbound>
+   <axis:wrapper-component address = "http://localhost:62088/axis/Calculator?method=add" style = "WRAPPED" use = "LITERAL">
+      <axis:soap-method method = "qname{add:http://muleumo.org/Calc}">
+         <axis:soap-parameter parameter = "Number1" type = "int" mode = "IN"/>
+         <axis:soap-parameter parameter = "Number2" type = "int" mode = "IN"/>
+         <axis:soap-return type = "int"/>
+      </axis:soap-method>
+   </axis:wrapper-component>
+   <outbound>
+      <pass-through-router>
+         <vm:outbound-endpoint path = "queue.out" connector-ref = "VMQueue"/>
+      </pass-through-router>
+   </outbound>
+</service>  
+----

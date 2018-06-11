@@ -1,0 +1,293 @@
+= 跟踪和查询商业活动
+
+Mule服务器为处理业务事务的流和消息处理器生成默认事件，跟踪处理时间和错误等信息。另外，您可能已经设置了自定义事件来捕获特定的有效负载信息。所有事件，无论是自定义的还是默认的，都被存储起来供以后检索和分析。使用Business Events选项卡，您可以让控制台检索事务和事件信息，并且可以审计事件。审计事件对服务器性能的开销很低。
+
+本页说明如何使用事务和事件查询和过滤功能。它还解释了如何将自己的自定义代码添加到应用程序以增强默认事件跟踪。
+
+在继续之前，了解一些术语是很重要的。
+
+* 事务是相关事件的逻辑分组，并且通常对应于系统的业务视图。
+* 事件是事务的底层细节。事件映射到消息处理器和端点。事件也可以是例外和自定义事件。除自定义事件外，所有事件都被视为默认事件。
+
+== 跟踪默认事件
+
+事件跟踪需要一些处理和网络开销来聚合和存储Mule服务器生成的事件。自定义事件一旦被配置就会被跟踪。但是，您也可以启用跟踪默认事件。为此，您需要显式配置跟踪默认事件的范围。您可以配置范围：
+
+* 在流量级别
+* 在消息处理器或端点级别
+
+消息处理器或端点级别配置优先于流级别配置。
+
+以下是一些启用默认事件跟踪的示例：
+
+为特定流启用所有默认事件：
+
+[source, xml, linenums]
+----
+<flow id="flow" tracking:enable-default-events="true">
+  ...
+</flow>
+----
+
+为特定的消息处理器（在本例中为记录器）启用默认事件：
+
+[source, xml, linenums]
+----
+<flow id="flow">
+  <logger tracking:enable-default-events="true"/>
+</flow>
+----
+
+为特定流启用所有默认事件，但不为特定的消息处理器（在本例中为记录器）启用：
+
+[source, xml, linenums]
+----
+<flow id="flow" tracking:enable-default-events="true">
+  <logger tracking:enable-default-events="false" />
+</flow>
+----
+== 跟踪自定义事件
+
+如前所述，您可以使用“商业活动”选项卡来跟踪自定义事件。另外，您可以为自定义事件定义一些属性，这些属性将与事件的记录数据一起显示。通过这种方式，您可以使用事件捕获特定的有效负载信息。
+
+要跟踪自定义事件，您必须在应用程序的配置文件中添加一些代码。首先，您需要将跟踪`namespace`定义添加到配置文件。以下示例说明了您需要添加到`schema/mule/core`部分的代码。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	...
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
+	xsi:schemaLocation="
+        ...
+        http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/3.2/mule-tracking-ee.xsd">
+    ...
+</mule>
+----
+
+接下来，您定义一个自定义事件。您可以在定义元属性的任何位置定义自定义事件。定义自定义事件时，您还可以添加额外的元数据。例如：
+
+[source, xml, linenums]
+----
+<flow name="flow">
+  <tracking:custom-event event-name="event">
+    <tracking:meta-data key="price" value="700" />
+  </tracking:custom-event>
+</flow>
+----
+
+在为自定义事件设置的元数据中，您可以使用细化的 link:/mule-user-guide/v/3.2/expressions-configuration-reference[表达语言]，如下所示。
+
+[source, xml, linenums]
+----
+<flow name="flow">
+    <tracking:custom-event event-name="price_discount">
+      <tracking:meta-data key="price-after-discount" value="#[groovy:payload.price]" />
+    </tracking:custom-event>
+</flow>
+----
+
+您甚至可以将文本添加到表达式语言中，如以下示例所示：
+
+[source, xml, linenums]
+----
+<flow name="flow">
+    <tracking:custom-event event-name="price_discount">
+      <tracking:meta-data key="price-after-discount"
+       value="The price for the item is:#[groovy:payload.price]" />
+    </tracking:custom-event>
+</flow>
+----
+
+另外，元数据可以在事件之间共享，如下所示：
+
+[source, xml, linenums]
+----
+<tracking:custom-event-template name="template">
+  <tracking:meta-data key="tier-level" value="platinum" />
+  <tracking:meta-data key="price-after-discount" value="#[groovy:payload.price]" />
+</tracking:custom-event-template>
+
+<flow name="flow">
+  <tracking:custom-event event-name="event1" inherits="template" />
+  <tracking:custom-event event-name="event2" inherits="template" />
+</flow>
+----
+
+你可以定义如何激发条件自定义事件。下面的代码显示了如何执行此操作：
+
+[source, xml, linenums]
+----
+<choice>
+  <when expression="INVOCATION:debugflag = on" evaluator="header">
+    <tracking:custom-event event-name="success" />
+  </when>
+  <otherwise>
+    <tracking:custom-event event-name="failure" />
+  </otherwise>
+</choice>
+----
+
+在前面的示例中，如果调用消息处理器时调试标志打开，则会触发事件名称为"success"的自定义事件。否则，会触发事件名称为"failure"的自定义事件。
+
+== 查询和过滤业务事务和事件
+
+您可以从主要“商业活动”屏幕设置交易查询，该屏幕将在您单击“商业活动”选项卡时打开。如果您想跟踪默认事件，请确保为您的应用程序启用默认事件生成和跟踪，如<<Tracking Default Events>>中所述。
+
+要查询事务和事件：
+
+* 从搜索下拉列表中选择一个关键字来限制选择。例如，您可以指定`customId`或`event: type`作为键。
+* 从下拉列表中选择一个运算符（即，用于选择与该键匹配的值的条件）。您可以选择诸如等于，大于，小于等运算符。下拉列表中的可用操作符取决于您选择的键。例如，如果您选择`event:timestamp`作为键，您可以从算术运算符列表中进行选择：等于，大于，大于或等于，小于或小于或等于。如果选择一个事件属性作为键，如`event: exceptionDetails`，则可以选择操作符等于，含有起始，结束，空或非空。
+* 输入密钥的值。搜索根据选定的运营商选择其关键字段与此值匹配的事件或事务。
+
+还要注意，您可以指定要检索的匹配事务的数量。缺省值是50个交易（在下图中突出显示）。输入一个新号码以更改此默认值。
+
+下图显示了您可以如何指定基于一个密钥的事务的简单搜索。
+
+image:event-search.png[事件搜索]
+
+您还可以通过输入多个关键字段来设置更复杂的查询。点击关键字段选项右侧的绿色加号图标（如上图所示）以输入其他关键字。
+
+选择键和运算符，并按照与单个搜索条件相同的方式为任何其他选择条件输入值。单击标准右侧的红色X图标将其从列表中删除。点击绿色加号图标以添加更多选择键。
+
+当您使用多个选择条件时，您可以进一步指定搜索必须匹配所有指定的规则（这是默认条件），或者搜索可以匹配任何指定的规则。使用选择规则上方的下拉列表进行选择。
+
+除了只允许您为键选择字段选择合适的运算符外，控制台还可帮助您输入正确的值。在下图中，如果某个关键字段需要日期值，请点击值框中的日历图标以打开日历，您可以从中选择日期。控制台然后以正确的格式输入日期值。默认情况下显示当天的交易。
+
+image:event-search-mult-keys.png[事件搜索的MULT键]
+
+指定所有搜索规则后，单击搜索按钮以启动搜索和数据检索。屏幕的下半部分显示一个表，其中包含符合指定标准的事务或事件。例如，下图显示了搜索结果。
+
+image:search-results.png[搜索结果]
+
+您可以使用过滤器框来过滤显示的数据。可以在事件或事务ID，服务器和状态字段上进行筛选。
+
+image:filtered-search-results.png[经过滤搜索结果]
+
+请记住，这些可搜索字段是预先填充的并始终可用。此功能可将处理开销降至最低。
+
+== 自定义交易ID
+
+请注意，为交易返回的数据在Id列中包含相当长的ID。您可以使用表达式语言简化和定制ID，如下所示：
+
+[source, xml, linenums]
+----
+<flow name="flow">
+  <tracking:transaction id="#[expression]" />
+</flow>
+----
+
+通过这种方式，您可以为交易提供更有意义的识别。您只需在应用程序中定制一次事务ID。
+
+自定义ID是一种很好的做法，这样该ID对于每个事务都是唯一的。以下示例根据唯一订单ID设置唯一ID：
+
+[source, xml, linenums]
+----
+<flow name="flow">
+  <tracking:transaction id="#[groovy:payload.orderId]" />
+</flow>
+----
+
+== 查看交易的所有事件
+
+您可以查看单个交易的所有事件的详细信息。
+
+选择一组交易后，从交易显示窗格中单击交易ID。详细的事件窗格打开并在单个列表中显示该事务内的所有事件。
+
+image:details.png[细节]
+
+使用控制台筛选器框，可以按特定属性值筛选事件。由于控制台不需要与服务器通信以显示过滤的事件详细信息列表，因此不会影响服务器性能。
+
+image:filtered-events.png[过滤事件]
+
+点击一个事件以显示为该事件定义的属性。
+
+例如，假设应用程序启用并定义了一个自定义事件，如下所示：
+
+[source, xml, linenums]
+----
+<tracking:custom-event-template name="orderDetails">
+     <tracking:meta-data key="Order Id" value="#[ognl:orderId]" />
+     <tracking:meta-data key="Customer Name" value="#[ognl:customer.firstName]
+      #[ognl:customer.lastName]" />
+     <tracking:meta-data key="Location" value="#[ognl:customer.city], #[ognl:customer.state]" />
+     <tracking:meta-data key="Product Name" value="#[ognl:items[0].name]" />
+     <tracking:meta-data key="Product Id" value="#[ognl:items[0].productId]" />
+     <tracking:meta-data key="Quantity" value="#[ognl:items[0].quantity]" />
+     <tracking:meta-data key="List Price" value="#[ognl:items[0].listPrice]" />
+ </tracking:custom-event-template>
+
+<flow name="order_management" doc:name="Order Processing" tracking:enable-default-events="true">
+
+<cxf:jaxws-service serviceClass="com.mulesoft.demo.orderprocessing.ProcessOrderImpl"
+ doc:name="Process SOAP Order request"/>
+
+<processor-chain>
+    <tracking:custom-event event-name="Order Details" inherits="orderDetails"/>
+     ...
+    </processor-chain>
+</flow>
+----
+
+点击名为"Order Details"的事件显示为该事件定义的属性，如下所示。
+
+image:event-properties.png[事件性质]
+
+或者，如果启用默认跟踪，则可以单击异常事件以获取详细信息。
+
+image:exception-details.png[异常详细信息]
+
+== 自定义流程或事件名称
+
+除非您标识要显示流和事件的特定名称，否则Mule会在“业务事件”选项卡的详细信息窗格中显示默认流和事件名称。但是，您可以通过`doc:name`属性自定义为流或事件显示的名称。这使您可以灵活地命名流程或事件。例如，您可以在名称中包含空格（如果您在流的`name`属性或自定义事件的`event-name`属性中指定了名称，则无法执行此操作）。您可以为流或任何消息处理器指定`doc:name`属性。 `doc:name`属性的名称空间如下所示：
+
+[source, xml, linenums]
+----
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+----
+
+下面是一个示例，指定在列出与该流程相关的事件时要在“流程名称”列中显示的名称`Main Hello Flow`：
+
+[source, xml, linenums]
+----
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+...
+<flow doc:name="Main Hello Flow" name="Hello World" tracking:enable-default-events="true">
+----
+
+请注意，它是在`doc:name`属性（`Main Hello Flow`）中指定的名称，它将显示在详细信息窗格中，而不是`name`属性中指定的名称（{{3} }）。如果同时指定了两者，则在`doc:name`属性中指定的名称优先于在`name`属性中指定的名称。
+
+以下是一个示例，指定为特定入站端点生成的事件显示的名称`Http Endpoint`：
+
+[source, xml, linenums]
+----
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+...
+<inbound-endpoint doc:name="Http Endpoint"
+  address="http://localhost:8888" transformer-refs="HttpRequestToNameString" exchange-pattern="request-response">
+----
+
+以下是一个示例，指定要为特定组件生成的事件显示的名称`Greeter component`：
+
+[source, xml, linenums]
+----
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+...
+<component doc:name="Greeter component" class="org.mule.example.hello.Greeter"/>
+----
+
+== 最佳实践
+
+有许多与商业活动相关的推荐做法。这些包括：
+
+* 自定义事务ID，以便为事务显示有意义的ID（如订单号）。自定义ID是一种很好的做法，这样该ID对于每个事务都是唯一的。
+* 为具有特定业务价值的流程启用默认事件，即您想要从业务角度跟踪的业务事务中的阶段。
+* 使用自定义事件来跟踪关键流程指标，例如"Total Order Amount"或"Tracking Number"。
+* 使用`doc:name`属性为流或事件分配有意义的显示名称，例如"Processor Order"。
+* 正确调整将用于存储事件的数据库的大小。 Mule将事件相关数据存储在默认数据库中，该数据库保留了数据。但是，您也可以选择将数据保存在Oracle数据库中。这可以让您控制要存储多少数据。它还可以提供比默认数据存储更好的可伸缩性和性能。有关详细信息，请参阅 link:/mule-management-console/v/3.2/configuring-a-database-for-business-event-data-persistence[为业务事件数据持久性配置数据库]。
+* 微调清理脚本。管理控制台在“管理”选项卡中提供了一个清理脚本，作为管理外壳的一部分。该脚本定期清理跟踪数据库中的旧数据。默认情况下，脚本每天运行一次，并清除数据库中超过一周的所有数据。您可以自定义清理脚本，以便它专门满足您的要求。
+
+link:/mule-management-console/v/3.2/analyzing-business-events[<<上一页：*分析商业活动*]
+
+link:/mule-management-console/v/3.2/business-events-use-cases[下一页：*商业活动用例* >>]

@@ -1,0 +1,256 @@
+= 安全配置属性
+
+安全属性可以加密属性并将加密文本存储在安全属性文件中。
+
+== 添加安全配置属性模块
+Studio 7附带安全配置属性模块。
+
+您可以通过安全配置属性模块（`<secure-properties:config>`）配置安全属性文件，例如：
+
+。示例：使用默认值保护配置属性
+[source,xml, linenums]
+----
+<secure-properties:config key="${runtime.property}"
+  file="file1.yaml" name="test">
+    <secure-properties:encrypt/> <!--1-->
+</secure-properties:config>
+
+<global-property name="prop" value="my-${secure::property.key1}"/> <!--2-->
+----
+<1>即使使用默认值，也需要`<secure-properties:encrypt>`标签。
+<2>加载密钥需要前缀`secure::`。
+
+在上面的例子中：
+
+* 解密密钥在部署时作为系统环境变量`runtime.property`传递到Mule运行时。该属性必须是用于加密存储在`file1.yaml`文件中的值的确切密钥。
+* 使用默认的加密算法和模式。
+* 如果属性`property.key1`的实际（解密）值为`"property"`，则属性`prop`的值将为`"my-property"`。
+
+您还可以通过设置`<secure-properties:encrypt>`标签的其他属性来更改加密算法和加密模式，例如：
+
+。示例：使用自定义值保护配置属性
+[source,xml, linenums]
+----
+<secure-properties:config key="${runtime.property}"
+  file="file1.properties" name="test">
+    <secure-properties:encrypt algorithm="AES" mode="CBC"/> <!--1-->
+</secure-properties:config>
+----
+<1>这使用带有`CBC`模式的`AES`算法。
+
+== 属性
+
+[cols="1,3", options="header"]
+|===
+| 安全配置属性属性 |
+
+| 名称
+| 全局安全配置属性的唯一名称。
+
+| 关键
+| 根据您在此字段中定义的系统属性来解锁属性值的单词或短语。例如，`${production.myproperty}`指示Mule运行时在运行时要求密钥。
+
+| 文件
+| 密钥解锁的文件位置。请参阅<<supported_files>>。
+|===
+
+[cols="1,3", options="header"]
+|===
+| 安全配置属性加密属性 |
+
+| 算法
+| 用于加密属性内容的算法类型。请参阅<<supported_algorithms>>以获取完整列表。
+
+| 模式
+| 允许Mule运行时重复使用单个密钥的分组密码的过程。请参阅<<supported_modes>>以获取完整列表。
+|===
+
+[[supported_files]]
+== 支持的文件
+
+安全配置属性模块支持YAML配置文件和Spring格式的属性文件，如上例所示。推荐的方法是使用YAML配置文件，因为它允许添加类型验证和自动完成。
+
+=== 配置文件内容
+
+加密和非加密值都可以在Mule应用程序的任何地方使用。应该在序列`![value]`之间定义加密值，如下例所示。 `file1.yaml`文件也可以包含非加密值，例如：
+
+。示例：file1.yaml
+----
+encrypted:
+    key: "![nHWo5JhNAYM+TzxqeHdRDXx15Q5R56YVGiQgXCoBJew=]"
+
+testPropertyA: "testValueA"
+testPropertyB: "testValueB"
+----
+
+[Note]
+加密值必须用引号括起来，以便它被读为String。
+
+这里是使用Spring格式的属性文件与上面相同的配置：
+
+。示例：file1.properties
+----
+encrypted.key=![nHWo5JhNAYM+TzxqeHdRDXx15Q5R56YVGiQgXCoBJew=]
+
+testPropertyA=testValueA
+testPropertyB=testValueB
+----
+
+== 用法
+
+以下是使用加密的`encrypted.key`值设置有效负载的流程：
+
+。示例：使用安全属性
+[source,xml, linenums]
+----
+<flow name="main">
+    <set-payload value="${secure::encrypted.key}"/>
+</flow>
+----
+在运行时，解密算法用于将`encrypted.key`的解密值存储到内存中。
+
+以下是使用来自同一安全属性文件的非加密值的流程：
+
+。示例：使用未加密的属性
+[source,xml, linenums]
+----
+<flow name="mainNonEncrypted">
+    <set-payload value="${secure::testPropertyA}"/>
+</flow>
+----
+
+请注意，即使值未经加密，您也必须使用`secure::`前缀来访问安全属性文件中的所有值。此行为允许您在不更改整个配置的情况下在文件（或环境）之间切换。
+
+
+=== 使用多个配置文件
+
+您可以定义多个安全配置属性文件以从中读取属性。为此，只需为要加载的每个文件定义一个`<secure-properties:config />`标签。每个安全配置属性文件都独立配置加密算法，密码模式和加密/解密密钥。安全配置属性文件之间的这些设置都不需要相同。
+
+使用多个配置文件
+[source,xml, linenums]
+----
+<secure-properties:config key="${runtime.property}" file="file1.yaml" name="test">
+    <secure-properties:encrypt algorithm="AES" mode="CBC"/>
+</secure-properties:config>
+
+<secure-properties:config key="${runtime.property}" file="file2.yaml" name="otherConfig">
+    <secure-properties:encrypt algorithm="AES" mode="CBC"/>
+</secure-properties:config>
+----
+
+[[qanda]]
+=== 常见问题
+
+*What if a property is defined in multiple files?*
+
+在这种情况下，实际属性的值将是首先定义的值。
+
+*What if I want to define a secure property to depend on a previously defined secure property?*
+
+可以使用相同的语法来定义一个属性以依赖先前定义的属性：`property=My dependent ${secure::dependent.property} value`。
+
+请注意，安全配置属性可以依赖于其他安全配置属性，但不依赖于由 link:configuring-properties[配置属性组件]定义的配置属性。
+
+== 警告
+
+使用加密属性时，对**secure access to the operating system**尤其重要。任何可以运行`ps`命令或查看Java控制台的人都可以看到存储在Mule应用程序内存中的解密值。
+
+
+[[supported_crypto]]
+== 支持的算法和模式
+
+[[supported_algorithms]]
+=== 支持的算法
+
+*  AES（默认）
+* 河豚
+*  DES
+*  DESede
+* 山茶
+*  CAST5
+*  CAST6
+*  Noekeon
+* 的Rijndael
+*  SEED
+* 蛇
+* 鲣
+*  TEA
+*  Twofish的
+*  XTEA
+*  RC2
+*  RC5
+*  RC6
+*  RCA
+
+[[supported_modes]]
+=== 支持的模式
+
+*  CBC（默认）
+*  CFB
+*  ECB
+*  OFB
+
+== 在Anypoint Studio 7中使用扩展
+
+你可以通过在你的Mule应用程序中添加它作为依赖项来使用这个扩展。
+
+=== 安装扩展
+
+1.在Anypoint Studio中打开您的Mule项目。
+  将扩展添加为`pom.xml`文件中的依赖项：
+
+。对Mule App pom.xml的依赖
+[source,xml, linenums]
+----
+<dependency>
+  <groupId>com.mulesoft.modules</groupId>
+  <artifactId>mule-secure-configuration-property-module</artifactId>
+  <classifier>mule-plugin</classifier>
+  <version>1.0.0</version>
+</dependency>
+----
+
+=== 将安全配置属性添加到您的应用程序
+
+1.转到您的Mule应用程序配置文件。
+
+2.选择`Global Elements`选项卡。
+
+3.点击`Create`按钮。
+
+4.从搜索栏中选择`Secure Properties Config`。
+
+5.使用`File`位置`Key`，`Algorithm`和`Mode`配置全局元素：
+
+image:secure-configuration-properties-studio.png[配置扩展]
+
+== 安全属性工具
+
+您可以为此工具 link:_attachments/secure-properties-tool.jar[下载JAR文件]，以便您可以加密或解密单个值，并完成文件（包括YAML和属性文件）。你可以像这样在命令行中运行它：
+
+。使用安全属性工具
+----
+java -jar secure-properties-tool.jar string <encrypt|decrypt> <algorithm> <mode> <key> <value>
+or
+java -jar secure-properties-tool.jar file <encrypt|decrypt> <algorithm> <mode> <key> <input file> <output file>
+----
+
+在使用`file`模式的情况下，输出是具有相同属性的文件，但其值已加密。例如，假设这是输入文件：
+
+.example_in.yaml
+----
+properties:
+  example1:
+    value: "Muleman is here"
+  example2: "Max the mule"
+----
+
+如果您运行`java -jar secure-properties-tool.jar file encrypt Blowfish CBC mulesoft example_in.yaml example_out.yaml`，则输出文件将为：
+
+.example_out.yaml
+----
+properties:
+  example1:
+    value: "![qCReIPK3jcqD7WR84ISSIQ==]"
+  example2: "![En8lII21ZHrdIaINw0+mSA==]"
+----

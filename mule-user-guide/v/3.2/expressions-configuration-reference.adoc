@@ -1,0 +1,773 @@
+= 表达式配置参考
+
+== 概述
+
+Mule最强大的功能之一就是它的表达语言。 Mule表达式是Mule在执行流程时评估的动态表达式，它提供用于处理当前消息的信息。每个表达式使用一个或多个评估者。评估者是知道如何评估字符串并返回Java对象的Java类。 Mule带有大量评估人员，但与Mule中的几乎所有内容一样，您可以添加自己的。
+
+Mule提供的评估人员可以从各种来源中提取信息：
+
+* 当前消息的有效载荷
+* 当前消息的标题
+*  Mule注册表
+*  Java进程
+
+而且，由于您可以添加自定义评估程序，因此对表达式可以提供的信息没有限制。
+
+== 在配置中使用Mule表达式
+
+Mule表达式可以出现在Mule配置中的许多地方。一般来说，有两种方式来指定它们：
+
+. 分别指定评估者和表达式。
+. 指定一个包含任意数量的评估程序/表达式对的字符串
+
+这里有一个例子1：
+
+[source, xml, linenums]
+----
+<choice>
+  <when expression="totalValue < 1000" evaluator="ognl">
+    <vm:outbound-endpoint path="orders.small.queue"/>
+   </when>
+   <when expression="totalValue < 10000" evaluator="ognl">
+    <vm:outbound-endpoint path="orders.medium.queue"/>
+   </when>
+   <otherwise>
+      <vm:outbound-endpoint path="orders.large.queue"/>
+   </otherwise>
+</choice>
+----
+
+根据消息有效负载的总值，将消息写入队列中以排列小型，中型或大型订单。请注意，不需要特殊语法，只需评估者的名称和评估的表达式（在本例中为数字比较）即可。
+
+下面是一个2的例子，它演示了如何在动态端点中使用表达式：
+
+[source, code, linenums]
+----
+ <jms:outbound-endpoint path="#[variable:queueName]" />
+----
+
+这指定了一个JMS端点，其队列由变量queueName的当前值决定。这允许您通过使用消息属性转换器动态路由消息，以将此流变量的值设置为应接收它的队列的名称。 +
+注意当Mule表达式被指定为单个字符串时使用的语法：
+
+* 表达式以＃[（一个符号后跟一个左方括号）
+* 表达式以]（右方括号）结尾
+* 评估者名称和表达式由（冒号）分隔：
+
+当字符串中出现多个表达式时，每个表达式分别使用此语法，例如：
+
+[source, xml, linenums]
+----
+<jms:outbound-endpoint
+         path="#[variable:queueNamePrefix]Orders#[variable:queueNameSuffix]" />
+----
+
+如果变量*queueNamePrefix*的值为“new”且*queueNameSuffix*的值为“East”，则生成的队列名称将为*newOrdersEast*。
+
+在案例2中，您可以将尽可能多的表达式与尽可能简单的文本结合在一起。表达式可以使用相同的评估者或不同的评估者。
+
+==  Mule表达式与Spring属性占位符
+
+Mule表达式在某些方面类似于Spring属性占位符，但它们实际上完全不同。
+
+他们是相似的
+
+*  Mule表达式和Spring属性占位符都可以出现在Mule配置中
+* 两者都被评估为产生实际使用的值
+
+它们的区别在于
+
+* 评估它们时：
+** 当Mule应用程序初始化时，Spring属性占位符被评估，并且在应用程序运行时保持相同的值。
+**  Mule表达式在每次使用时都会重新评估。
+* 其价值来自何处
+** 属性文件中指定的Spring属性占位符返回值。默认情况下，这是mule-app.propertiies，尽管可以配置Spring从别处读取它们。请参阅 link:/mule-user-guide/v/3.2/using-parameters-in-your-configuration-files[在配置文件中使用参数]。
+**  Mule表达式可以返回其评估者可以检索或计算的任何信息。
+* 它们使用的语法
+**  Spring属性占位符总是使用语法$ \ {propertyName}
+** 当单独指定评估者名称时，Mule属性不使用特殊语法。当他们使用特殊的语法时，它看起来像＃[evaluateator：expression]。
+* 可以在哪里使用
+** 因为在处理Mule配置时会自动评估它们，Spring属性占位符几乎可以在配置的任何位置使用。例如，使用属性占位符来配置入站或出站端点是完全合法的：
+
+[source, xml, linenums]
+----
+<http:inbound-endpoint name="receiveUserRequest"
+              host="localhost"
+              port="${inbound.port}"
+              path="/service/orders" />
+----
+
+* 可以在哪里使用（续）
+**  Mule表达式只能在消息处理过程中使用，以及配置明确支持它们的地方。例如，它们不能用于上面的入站端点，因为Mule正在等待接收本地消息时正在处理Mule消息。
+
+=== 示例
+
+==== 静态配置端点
+
+如果端点需要在不同的安装上进行不同的配置，但这个配置在Mule应用程序运行时不会改变，请使用Spring属性占位符。有关如何执行此操作的示例，请参阅 link:/mule-user-guide/v/3.2/using-parameters-in-your-configuration-files[在配置文件中使用参数]。
+
+==== 动态出站端点
+
+如果消息将根据其内容发送到不同的位置，请在动态出站端点中使用Mule表达式。有关示例，请参阅 link:/mule-user-guide/v/3.2/configuring-endpoints[配置动态端点]。
+
+==== 基于邮件内容的路由
+
+[source, xml, linenums]
+----
+<choice>
+   <when expression=’payload.state.code = "DC" evaluator="bean">
+     <vm:outbound-endpoint path="federal"/>
+    </when>
+    <otherwise>
+       <vm:outbound-endpoint path="orders"/>
+    </otherwise>
+ </choice>
+----
+
+when表达式使用groovy评估器来检查消息是否来自华盛顿特区，如果是，则将其发送到联邦订单的队列中。否则，它将被路由到正常的队列中进行订单。
+
+有许多评估者可以用于消息内容。一般来说，
+
+*  bean评估器对于提取可能的嵌套属性是最简单的
+*  xpath和xpath-node用于从XML有效载荷中提取数据
+*  json和json-node用于从JSON负载中提取数据
+*  OGNL和groovy是最灵活和最强大的评估者。你可以使用你最喜欢的那些。
+
+==== 记录邮件内容
+
+[source, xml, linenums]
+----
+<logger message="message #payload:java.lang.String] received from #[function:hostname] (#function:ip])"/>
+----
+
+这会记录当前消息的有效负载，并将其转换为字符串，以及从其接收的主机和IP地址。
+
+（注意：以下示例可以从现有页面 link:/mule-user-guide/v/3.2/using-expressions[使用表达式]中复制）
+
+==== 使用表达式创建消息负载
+
+表达式转换器在当前消息上执行一个或多个表达式，其中表达式的结果将成为当前消息的有效载荷。
+
+例如，假设您有一个具有消息签名的服务组件，它接受三个参数：
+
+[source, java, linenums]
+----
+public class ShippingService
+{
+    public ShippingConfirmation makeShippingRequest(Customer customer, Item[] items, DataHandler supportingDocumentation)
+    {
+        //do stuff
+    }
+}
+----
+
+传递给你的消息组件如下所示：
+
+[source, java, linenums]
+----
+public interface ShippingRequestMessage
+{
+    public Customer getCustomer();
+    public Item[] getShippingItems();
+   //etc
+}
+----
+
+`<expression-transformer>`可用于从`ShippingRequestMessage`中提取字段以调用`ShippingService`。请注意，我们只能从`ShippingRequestMessage`中获取两个参数：`Customer`和`Item[]`。支持文档可能类似于Microsoft Word或Excel文档，它是`ShippingRequestMessage`的附件。附件可以与Mule中的任何消息相关联。
+
+[source, xml, linenums]
+----
+<expression-transformer>
+    <return-argument evaluator="bean" expression="customer"/>
+    <return-argument evaluator="bean" expression="shippingItems"/>
+    <return-argument evaluator="attachment" expression="supportingDocs" required="false"/>
+</expression-transformer>
+----
+
+这里我们执行三个单独的表达式来获取调用`ShippingService.makeShippingRequest()`方法所需的三个参数。前两个表达式使用`bean`评估器从消息中提取对象。最后一个参数使用`attachment`评估器来获取单个附件。请注意，`supportDocuments`可以为null，因此我们在返回参数上设置`required="false"`。
+
+==== 使用表达式创建消息标题
+
+`<message-properties-transformer>`允许您在当前消息上动态或静态地添加，删除或重命名属性。例如：
+
+[source, xml, linenums]
+----
+<message-properties-transformer>
+    <add-message-property key="GUID" value="#[string:#[xpath:/msg/header/ID]-#[xpath:/msg/body/@ref]]"/>
+</message-properties-transformer>
+----
+
+以上表达式提取`<body>`元素上的`<ID>`元素值和`ref`属性，并将结果设置为名为`GUID`的消息属性。
+
+==== 使用表达式过滤邮件
+
+可以在基于内容的路由中使用表达式过滤器来断言当前消息的语句并相应地路由消息。表达式过滤器的工作方式与其他类型的Mule过滤器相同，并具有与上面列出的相同的表达式属性。过滤器上的表达式必须评估为true或false。例如：
+
+[source, xml, linenums]
+----
+<expression-filter evaluator="header" expression="my-header!=null"/>
+----
+
+像往常一样，您可以使用AND，OR和NOT过滤器来组合表达式。
+
+[source, xml, linenums]
+----
+<and-filter>
+    <expression-filter evaluator="header" expression="origin-country=USA"/>
+    <expression-filter evaluator="groovy" expression="payload.purchase.amount > 10000"/>
+</and-filter>
+----
+
+请注意，表达式过滤器支持所有表达式评估器的子集，因为过滤器应仅针对当前消息进行评估。例如，在过滤器上使用`function`表达式毫无意义。支持的表达式评估器是：bean，自定义，异常类型，groovy，头，jxpath，ognl，有效载荷类型，正则表达式，通配符和xpath。
+
+有关过滤器的更多信息，请参阅 link:/mule-user-guide/v/3.2/using-filters[使用过滤器]。
+
+== 评估者参考
+
+Mule提供了一组丰富的评估人员，如下表所示：
+
+[%header,cols="10,20,40,10,10,10"]
+|===
+|名称 |描述 |示例 |备注 |与表达式过滤器一起使用 |仅与表达式过滤器一起使用
+|附件 |返回给定名称的入站附件 |＃[attachment：productPhoto]  |  |  |
+|附件 |返回包含入站附件子集的地图 |＃[附件：*]  |  |  |
+|附件列表 |返回包含入站附件子集的列表 |＃[atttachments-list：productPhoto，productVideo]  |  |  {{ 5}}
+| bean  |使用类似XPath的语法从当前消息的负载 |中返回Java Bean属性的值{[bean：item.value]  |  { {5}} image:check.png[查]  |
+|自定义 |用户编写的评估人员。 |  |  |  |
+|端点 |返回全局端点的地址 |＃[endpoint：orderService.address]  |  |  |
+|异常类型 |返回“true”是当前消息有指定类型的异常 |＃[异常类型：java.lang.RuntimeException异常类型：java。 lang.RuntimeException]  |  | image:check.png[查]  | image:check.png[查]
+|函数 |返回关于当前Mule实例 |＃[function：hostname]  |  |  |
+的各种信息
+| groovy  |返回运行groovy脚本的结果 |＃[groovy：payload.items.value]  |  | image:check.png[查] { {6}}
+|标题 |返回当前消息 |的标题＃[header：INBOUND：clientId]  |范围默认为OUTBOUND，但最好明确指定它。  | image:check.png[查]  |
+|标题 |返回包含当前消息标题子集的映射 |＃[headers：INBOUND：clientId，OUTBOUND：targetURL]  |范围默认为OUTBOUND，但最好明确指定。 |  |
+| headers-list  |返回包含当前消息头部子集的列表 |＃[headers-list：INBOUND：clientId，OUTBOUND：targetURL]  |范围默认为OUTBOUND，但最好明确指定。 |  |
+| jxpath  |使用类似XPath的语法来导航Java对象。 |  |已弃用。使用bean评估程序或OGNL或Groovy查看更复杂的表达式。 | image:check.png[查]  |
+| json  |返回根据当前消息的内容评估给定的JSON表达式的结果 |＃[json：person.favoriteColour = red]  |  {{4 }} |
+| json-node  |与json类似，但返回JsonNode对象而不是字符串 |＃[json-node：person]  |  |  {{5} }
+| map-payload  |返回包含来自当前消息有效载荷（必须是Map）的信息子集的映射。 |＃[map-payload：name，customerId，discount？ ]  |  |  |
+|消息 |返回当前消息 |＃[message：encoding]  |  |  |
+的属性
+| mule  |其他评估人的包装。 |已弃用。 |  |  |
+| ognl  |使用ognl来消除当前消息有效载荷上的表达式 |＃[ognl：item.equals（42）]  |  | {{0 }}  |
+|有效载荷 |返回转换为指定类型 |的有效载荷＃[有效载荷：字节[]]  |  |  |
+| payload-type  |如果当前消息的有效载荷是指定的类型 |，则返回“true”＃[payload-type：java.lang.String]  |  { {6}} image:check.png[查]  | image:check.png[查]
+| process  |返回运行全局消息处理器的结果 |＃[process：toXmlTransformer：attachment：invoice]  |  |  |
+| regex  |如果当前消息匹配指定的正则表达式 |＃[regex：prefix。* suffix}  |  | {{0} }  |
+| registry  |从注册表中返回一个对象，或者从该对象的属性中选择一个 |＃[registry：myTransformer]
+  |  | image:check.png[查]  | image:check.png[查]
+| string  |允许多个表达式组合 |＃[string：Mule从＃[function：hostname]  | 中的＃[context：homeDir] 4}} |
+|变量 |返回流变量的值 |＃[variable：userId]  |  | image:check.png[查]  |
+|通配符 |如果当前有效内容匹配通配符表达式 |＃[[通配符：A * B]  |  | image:check.png[查]，则返回“ }  | image:check.png[查]
+| xpath  |根据当前消息负载返回运行XPath表达式的结果 |＃[xpath：/ order / items / item / value]  |  {{5 }} image:check.png[查]  |
+| xpath-node  |与xpath类似，但返回Xml节点而不是字符串 |＃[xpath：/ order / items / item / value]  |  {{4} } |
+|===
+
+== 评估者示例
+
+=== 一般规则
+
+如上所述，指定Mule表达式有两种基本方法：
+
+==== 将评估程序和表达式指定为单独的属性时
+
+在这种情况下，不使用特殊的元语法：相反，评估者名称和表达式值以简单文本的形式给出。这里有两种情况。使用内置评估器时，看起来像这样
+
+[source, xml, linenums]
+----
+<when expression="com.mycompany.NewOrder" evaluator="payload-type">
+----
+
+使用自定义（即用户编写的评估程序）时，看起来像
+
+[source, xml, linenums]
+----
+<when expression="com.mycompany.NewOrder" evaluator="custom" custom-evaluator="myCustomEvaluator">
+----
+
+==== 将评估程序和表达式指定为单个字符串时
+
+在这种情况下，语法是
+
+[source, code, linenums]
+----
+#[evaluator:expression]
+----
+
+请注意，内置和自定义评估程序之间没有区别。通过指定评估者的名字来使用它们。
+
+对于表达式是可选的评估者，评估者后面的冒号仍然是必需的。
+
+=== 附件评估者
+
+有几个评估者以不同的方式返回入站附件的值。返回多个附件的评估人员采用以下两种方式之一进行工作：
+
+* 如果表达式包含通配符标记 image:star_yellow.png[star_yellow]，则它们将返回附件与通配符表达式匹配的所有标头。
+
+* 否则，表达式包含逗号分隔的标题附件列表。对于附件不存在是错误的，除非该名称后面跟着一个问号 image:help_16.png[help_16]，该问号将其标记为可选。
+
+例子：
+
+* 评估人= "attachment"表达式= "itemPhoto"
+* ＃[附件：itemPhoto]
+
+返回名为“itemPhoto”的入站附件的值
+
+* 评估者=“附件”表达=“itemPhoto，itemVideo？”
+* ＃[itemPhoto，itemVideo？”]
+
+返回包含两个指定附件的键值对的映射。由于itemPhoto不是可选的，因此如果此附件不存在，则会发生错误。密钥是标题的名称（"itemPhoto"和："itemVideo"）。
+
+* 评估人= "attachments-list"表达式= "itemPhoto,itemVideo?"
+* ＃[itemPhoto，itemVideo？”]
+
+像上面的例子一样，只是它返回附件列表而不是地图。
+
+* 评估人= "attachments"表达式= "OUTBOUND:a*z"
+* ＃[头：出站：A * Z]
+
+返回名称以“a”开头并以“z”结尾的所有入站附件的地图。
+
+===  Bean评估者
+
+Bean评估器可以评估当前消息有效负载的bean属性（可能是嵌套的）。
+
+例子：
+
+* 评估者=“bean”表达式=“vendor.location.city”
+* ＃[豆：vendor.location.city]
+
+返回有效负载的供应商属性的位置属性的城市属性。如果这些属性中的任何一个不存在，这是一个错误。
+
+=== 端点评估程序
+
+端点评估器返回全局端点的地址。
+
+例子：
+
+*评估者= "endpoint"表达式= "inboundOrders.address"
+
+* ＃[端点：inboundOrders.address]
+
+返回名为inboundOrders的全局端点的地址。如果端点不存在，则是错误的。
+
+=== 异常类型评估程序
+
+异常类型评估程序只能与<expression-filter>过滤器一起使用。如果返回true
+
+* 当前消息有一个异常有效载荷，并且
+* 异常有效负载中的异常是指定的类型
+
+例
+
+[source, xml, linenums]
+----
+<exception-filter evaluator="exception-type" expression="org.mule.api.MessagingException">
+----
+
+如果异常有效载荷中的异常是MessagingException，则接受该消息。
+
+=== 功能评估程序
+
+这将返回有关正在运行的Mule实例的各种信息，具体取决于所提供的表达式：
+
+*  "count"
+
+返回从0开始的应用程序范围计数，每次计算该表达式时都会增加计数
+
+*  "date"
+
+返回包含当前时间和日期的java.util.Date对象
+
+*  "datestamp"
+
+返回包含当前时间和日期的字符串。或者，可以指定“datestamp.format”，其中“format”是用于格式化字符串的SimpleDataFormat。
+
+*  "hostname"
+
+返回Mule正在运行的机器的名称。
+
+*  "ip"
+
+返回运行Mule的机器的IP地址。"count"
+
+*  "payloadClass"
+
+返回当前消息有效负载的完整类名
+
+*  "shortPayloadClass"
+
+返回当前消息有效负载的简单类名
+
+* “SYSTIME”
+
+从System.currentTimeMillis（）返回值
+
+* “的uuid”
+
+返回一个新生成的UUID
+
+Groovy评估者=== 
+
+返回运行提供的groovy表达式的值。
+
+例：
+
+* 评估人= "groovy"表达式= "payload.items[0].value"
+* ＃[常规：payload.items.value]
+
+返回当前消息有效载荷的项目数组中第一个项目的值。
+
+=== 标题评估程序
+
+有几个评估者以不同的方式返回消息头的值。它们都具有相同的表达基本格式，即表头的名称（可选），可选地，前面跟着消息范围的名称，后跟冒号。 （如果未提供范围，则范围默认为OUTBOUND。）范围名称和标头名称不区分大小写，但约定是将范围名称放在大写字母中，而标题名称放在小写字母中。
+返回多个头文件的评估程序有两种工作方式：
+
+* 如果表达式包含通配符标记 image:star_yellow.png[star_yellow]，则它们将返回名称与通配符表达式匹配的所有标头。
+
+* 否则，表达式包含一个以逗号分隔的标题名称列表。 Iit是标题不存在的错误，除非该名称后面跟着一个问号 image:help_16.png[help_16]，标记为可选。
+
+例子：
+
+* 评估人= "header"表达式= "OUTBOUND:encoding"
+* ＃[报头：出站：编码]
+
+返回出站报头“编码”的值。如果此标题未设置，则会发生错误。
+
+* 评估人= "headers"表达式= "OUTBOUND:encoding,INVOCATION:userId?"
+* ＃[头：出站：编码，调用：用户id？]
+
+返回包含两个指定标题的键值对的映射。由于OUTBOUND：编码不是可选的，因此如果此标题不存在，则会发生错误。密钥是标题"encoding"和"userId"的简单名称。
+
+*  evaluateator =“headers-list”expression =“OUTBOUND：encoding，INVOCATION：userId？”
+* ＃[头：出站：编码，调用：用户id？]
+
+像上面的例子一样，只是它返回了一个标题值列表而不是地图。
+
+* 评估人= "headers"表达式= "OUTBOUND:a*z"
+* ＃[头：出站：A * Z]
+
+返回名称以“a”开头并以“z”结尾的所有出站报头的地图
+
+===  JSON评估者
+
+有两个评估器评估当前有效负载的JSON值的表达式。它可以选择比较两个表达式是否相等以返回布尔值。 json评估器总是返回简单的Java对象，而json-node评估器将在适当时返回JsonNode对象：
+
+[%header,cols="3*",width=10%]
+|===
+| JSON类型 | json评估者 | json-node评估者
+|数据值 |字符串 |字符串
+| {对象{1}}字符串 | JsonNode
+|数组 |列出<Object>  |列出<JsonNode>
+|===
+
+例子
+
+假设当前有效载荷为“\ {”user“：\ {”name“：”Tom“，registered：false}}
+
+* 评估人= "json"表达式= "[/user/name"
+* ＃[JSON：/用户/名称]
+
+返回“Tom”。如果评估者是json节点，情况也是如此。
+
+* 评估人= "json"表达式= "/user/registered = true"
+* ＃[json：/ user / registered = true]
+
+返回false。如果评估者是json节点，情况也是如此。
+
+* 评估人= "json"表达式= "/user"
+* ＃[JSON：/用户]
+
+返回字符串“user”：\ {“name”：“Tom”，注册：false}。如果评估者是json-node，它将返回与此信息相对应的JsonNode对象。
+
+=== 地图负载评估程序
+
+此评估程序假定当前消息的有效内容是一张地图，并返回该地图中条目的子集。表达式是逗号分隔的字符串列表，用作有效负载的键，返回值是包含与这些键相对应的条目的映射。如果有效载荷中不存在任何这些密钥，则会出错，除非该密钥以问号 image:help_16.png[help_16]结尾标记为选项。
+
+例
+
+* 评估者=“地图负载”表达式=“客户，折扣？”
+* ＃[图净荷：顾客，折扣“？]
+
+返回包含两个指定键的条目的映射。由于客户未被标记为可选项，因此如果此项不存在，则会发生错误。
+
+=== 消息评估器
+
+返回有关当前消息的各种信息，具体取决于所提供的表达式：
+
+* 这些适用于消息已被拆分为更小的消息，称为“关联组”
+*  correlationGroupSize
+** 分割产生的消息数量
+* 的correlationID
+** 标识所有分割结果消息的唯一标识
+*  correlationSequence
+** 关联组中消息的索引
+
+* 这些通常适用
+* 编码
+** 消息使用的编码（例如“UTF-8”）
+* 例外
+** 如果当前消息有一个异常有效载荷，它的异常。否则，为空。
+* 有效载荷
+** 消息的有效载荷
+* 的replyTo
+** 应该发送此消息的回复的地址（如果有的话）。
+
+OGNL评估人员=== 
+
+这使用OGNL（对象图生成语言）从当前消息的有效载荷中提取信息。 OGNL是一种功能非常强大的语言，描述为 http://commons.apache.org/ognl/language-guide.html[这里]。只有一小部分能力将作为例子给出。
+
+例子
+
+*  evaluateator =“ognl”expression =“item”
+＃[OGNL：项目]
+
+返回有效载荷的“item”属性。
+
+*  evaluateator =“ognl”expression =“item [0] .color”
+* ＃[OGNL：item.color]
+
+返回有效载荷中第一个项目的“color”属性。
+
+* 评估者= "ognl"表达式='item [0] .color == "red"'
+* ＃[ognl：item.color == "red"]
+
+如果有效载荷中第一项的颜色为红色，则返回true。
+
+=== 有效负载评估程序
+
+这将返回当前消息的有效负载，可选地转换为不同的类型。
+
+例子：
+
+* 评估者=“有效载荷”表达=“”
+* ＃[有效载荷：]
+
+返回消息负载。
+
+* 评估者=“有效载荷”表达=“byte []”
+* ＃[有效载荷：字节[]]
+
+返回消息有效载荷，转换为字节数组
+
+*  evaluateator =“payload”expression =“java.lang.String”
+*＃[有效载荷：java.lang.String中]
+
+返回转换为字符串的消息负载。
+
+=== 有效负载类型评估程序
+
+有效载荷类型评估程序只能与<expression-filter>过滤器一起使用。如果返回true
+当前消息的有效负载是指定的类型
+
+例
+
+[source, code, linenums]
+----
+ <exception-filter evaluator="payload-type" expression="java.lang.InputStream">
+----
+
+如果其有效负载是InputStream，则接受该消息。
+
+=== 过程评估程序
+
+这将运行一个全局的，名为消息处理器并返回结果。默认情况下，消息处理器的输入是当前消息，但可以指定替代消息进行处理。
+
+例子
+
+*  evaluateator =“process”expression =“myTransformer”
+* ＃[过程：myTransformer]
+
+返回在当前消息上运行名为“myTransformer”的全局消息处理器的结果
+
+*  evaluateator =“process”expression =“myTransformer：ognl：items]
+* ＃[过程：myTransformer]
+
+返回在当前消息有效负载的items属性上运行名为“myTransformer”的全局消息处理器的结果
+
+=== 正则表达式评估者
+
+这取决于当前消息的有效负载是否与指定的正则表达式匹配，返回true或false。这只能用于ExpressionFilter。
+
+例：
+
+[source, code, linenums]
+----
+ <exception-filter evaluator="regex" expression="a.*z"/>
+----
+
+如果其有效负载以“a”开头并以“z”结尾，则接受消息。
+
+=== 注册表评估者
+
+该评估器只能与表达式过滤器一起使用。它从Mule注册表或可选的其中一个属性返回一个对象的布尔值。有几个选项适用：
+
+* 默认情况下，如果对象不在注册表中，则会发生错误，但如果名称后面跟着星号 image:star_yellow.png[star_yellow]，则该对象被视为可选对象，因此返回null。
+
+* 如果名称后面跟着句点（。），则返回对象的（可能嵌套的）属性，就像由Bean评估程序一样。
+
+例：
+
+[source, xml, linenums]
+----
+<exception-filter evaluator="registry" expression="allowRepeatRequests">
+----
+
+如果注册表对象allowRepeatRequests的布尔值为true，则接受消息。
+
+[source, xml, linenums]
+----
+<exception-filter evaluator="registry" expression="allowRepeatRequests*" nullReturnsTrue="true">
+----
+
+如果注册表对象allowRepeatRequests的布尔值为true或不存在，则接受消息。
+
+[source, xml, linenums]
+----
+<exception-filter evaluator="registry" expression="allowRequests.repeat">
+----
+
+如果注册表对象allowRequests的重复属性的布尔值为true，则接受消息。
+
+=== 字符串评估程序
+
+字符串评估程序允许您使用多个其他评估程序并将其结果粘贴在一起，可能还包含一些纯文本。实际上，字符串评估器为您提供了在使用不需要特定评估程序的结构中使用表达式时所使用的多个评估程序的相同自由（例如，动态端点）。出于这个原因，在这些上下文中使用字符串评估器是没有必要的。
+
+例子
+
+*  evaluateator =“string”expression =“在＃[function：date]收到的顺序中有＃[ognl：items.size（）]项目”
+
+格式化描述当前消息的字符串。
+
+=== 变量评估器
+
+变量评估器返回流变量的值。例子：
+
+* 评估者=“变量”表达式=“userId”
+* ＃[变量：用户id”]
+
+返回流变量“userId”的值。如果此变量未设置，则会发生错误。
+
+=== 通配符评估程序
+
+根据当前消息的有效负载是否与指定的通配符表达式匹配，这将返回true或false。这只能用于ExpressionFilter。
+
+例：
+
+[source, xml, linenums]
+----
+<exception-filter evaluator="wildcard" expression="a*z">
+----
+
+如果其有效负载以“a”开头并以“z”结尾，则接受消息。
+
+===  XPath评估者
+
+有两个评估者针对当前消息执行XPath表达式。 xpath评估器总是返回简单的Java类型（Double，Boolean，String）和xpath-node评估器，它也可以返回Node对象。
+
+例子：
+
+*  evaluateator =“xpath”expression =“count（// items / item /）”
+* ＃[xpath的：计数（//物品/产品/）]
+
+返回当前消息中的项目总数
+
+*  <evaluator=”xpath-node” expression=”//items/item”>
+* ＃[xpath的：//物品/产品]
+
+从当前消息返回第二个“item”节点
+
+== 创建自定义评估程序
+
+自定义评估程序只是一个实现org.mule.api.expression.ExpressionEvaluator接口的Java类。这包含三种方法：
+
+*  getName（），它返回评估者的名字
+*  setName（），可用于重命名评估程序。这通常是没有操作的。
+评估表达式的* 评估（）
+
+将这个评估器添加到Mule中包含以下步骤：
+
+* 创建评估程序类
+* 创建注册表引导程序文件，将其添加到Mule注册表中，如 link:/mule-user-guide/v/3.2/bootstrapping-the-registry[引导注册表]中所述。
+* 将这两个项目添加到您的应用程序并将其部署到Mule
+
+评估者以两种方式之一引用：
+
+* 分别指定评估者时，将其设置为“custom”并将“custom-evaluator”设置为评估者的名称。
+* 将评估程序指定为表达式的一部分时，请像使用内置评估程序一样使用其名称，例如， ＃[myCustomEvaluator]：
+
+下面是一个简单的例子，它是一个评估器，它返回当前消息的有效载荷，并将其转换为具有指定编码的字符串。首先，评估者类：
+
+[source, java, linenums]
+----
+package com.mycompany;
+import org.mule.api.MuleMessage;
+import org.mule.api.expression.ExpressionEvaluator;
+
+public class EncodedPayloadEvaluator implements ExpressionEvaluator
+{
+  @Override
+  public String getName()
+  {
+    return "encodedPayload";
+  }
+
+  @Override
+  public void setName(String name)
+  {
+  }
+
+  @Override
+  public Object evaluate(String encoding, MuleMessage message)
+  {
+    try
+    {
+      return message.getPayloadAsString(encoding);
+    }
+    catch (Exception e)
+    {
+      throw new RuntimeException(e);
+    }
+  }
+}
+----
+
+和注册表引导文件：
+
+[source, code, linenums]
+----
+encodedPayloadEvaluator=com.mycompany.EncodedPayloadEvaluator
+----
+
+评估者现在可以用这两种方式来使用：
+
+*  evaluateator =“custom”custom-evaluator =“encodedPayload”expression =“UTF-8”
+* ＃[encodedPayload：UTF-8]
+
+== 浓缩商
+
+在评估者是用于检索数据的对象（通常来自消息）中，丰富者是用于在消息中设置数据的对象。它们被用作消息富集器中的目标（请参阅 link:/mule-user-guide/v/3.2/message-enricher[消息Enricher]。目前，Mule支持其中两个。
+
+* 变量浓缩器设置流量变量的值。
+* 头丰富器设置消息头的值
+
+两者的语法都与相应的评估者非常相似，但具有相反的效果（设置值而不是检索它）。
+
+例子
+
+[source, xml, linenums]
+----
+<enricher source="#[string:active]" target="#[variable:state]">
+    <outbound-endpoint ref="stateLookup"/>
+</enricher>
+----
+
+这将流量变量“状态”的值设置为“激活”。
+
+[source, xml, linenums]
+----
+<enricher source="#[bean:id]" target="#[header:OUTBOUND:customerId]">
+    <outbound-endpoint ref="stateLookup"/>
+</enricher>
+----
+
+这将出站报头“customerId”的值设置为当前消息有效负载的“id”属性。

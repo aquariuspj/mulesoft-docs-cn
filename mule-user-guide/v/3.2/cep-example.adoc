@@ -1,0 +1,125 @@
+=  CEP示例
+
+这是Stock Tick示例的一种改进，它与Drools捆绑在一起，并与Mule集成。它说明了以下主题：
+
+* 使用Mule消息作为Drools工作内存的输入
+* 使用Drools规则集来生成Mule消息
+* 使用 link:/mule-user-guide/v/3.2/quartz-transport-reference[石英]生成周期性输入信号
+* 使用 link:/mule-user-guide/v/3.2/ajax-transport-reference[AJAX传输]从Mule更新网页
+
+== 说明
+
+该应用程序是股票报价器突然变化的警报机制。它使用 http://www.jboss.org/drools/drools-fusion.html[Drools的CEP功能]来实现。定义了一组要监控的公司，然后将每家公司的当前股价作为Drools工作记忆中的一个事实。定期股票报价器用作事件流，并且定义Drools的规则集，使得大于预定义阈值的百分比增量触发警报作为Mule消息发送。事件流和警报都通过AJAX路由到网页，以便用户可以监视处理。
+
+== 运行示例
+
+. 确保您已符合先决条件并根据[说明]安装了Mule。
+. 在命令行中，导航到您的Mule主目录下的`examples/cep`目录。
+. 将预构建的示例zip复制到应用程序文件夹（`$MULE_HOME/apps`），并在Mule尚未启动时启动它。
+. 在浏览器中打开以下URI：http：// localhost：8087 / services / cepExample
+. 在示例运行时，您应该可以看到通过AJAX定期更新页面。
+
+=== 构建示例
+
+从示例源文件夹运行`mvn`。这将编译示例类，生成应用程序zip文件并将其复制到`$MULE_HOME/apps`。
+
+== 穿过Mule配置
+
+*Initial Facts*
+
+[source,xml]
+----
+<spring:bean name="companies" class="org.mule.example.cep.CompanyRegistry" factory-method="getCompanies" />
+----
+
+Spring Factory Bean提供了一个Collection对象，该对象将用作初始事实以在启动时声明Drools的工作内存。
+
+*Declare Drools as the Rules Engine*
+
+[source,xml]
+----
+<bpm:drools />
+----
+
+我们宣布Drools为规则引擎实现，以获取更多信息。对此，请参阅 link:/mule-user-guide/v/3.2/drools-module-reference[Drools模块参考]。
+
+*AJAX Connector*
+
+[source,xml]
+----
+<ajax:connector name="ajaxServer" serverUrl="http://0.0.0.0:8087/services/cepExample"         resourceBase="${app.home}/docroot" disableReplyTo="true" />
+----
+
+
+声明将用于更新Web UI的 link:/mule-user-guide/v/3.2/ajax-transport-reference[AJAX连接器]。
+
+*In-memory Queues*
+
+[source,xml]
+----
+<vm:endpoint name="stockTick" path="stock.tick" /><vm:endpoint name="alerts" path="stock.alerts" />
+----
+
+
+为了简化示例，我们定义了 link:/mule-user-guide/v/3.2/vm-transport-reference[内存中（“VM”）队列]来传输消息。如果这是一个真正的应用程序，传入的股票报价可能会通过网络服务收到，并且即将离任的报警可能会传送到 link:/mule-user-guide/v/3.2/jms-transport-reference[JMS队列]或通过 link:/mule-user-guide/v/3.2/xmpp-transport-reference[IM] / SMS / link:/mule-user-guide/v/3.2/email-transport-reference[电子邮件]传送。
+
+*Generate stock tick*
+
+[source,xml]
+----
+<flow name="generateStockTicks">    <quartz:inbound-endpoint jobName="eventTimer" repeatInterval="2000">        <quartz:event-generator-job>            <quartz:payload>tick-tock</quartz:payload>        </quartz:event-generator-job>    </quartz:inbound-endpoint>    <component>        <singleton-object class="org.mule.example.cep.TickFeed" />    </component>    <outbound-endpoint ref="stockTick" /></flow>
+----
+
+
+在此流程中，我们使用 link:/mule-user-guide/v/3.2/quartz-transport-reference[石英]生成触发我们的`TickFeed`组件的周期性信号。 `TickFeed`组件通过从文本文件中读取一行并将其放在`stockTick`队列中来模拟新的股票价格。
+
+*Process stock tick*
+
+[source,xml]
+----
+<flow name="processStockTicks">    <inbound-endpoint ref="stockTick" />    <all>        <ajax:outbound-endpoint channel="/services/cepExample/stockTick" />        <bpm:rules rulesDefinition="broker.drl" cepMode="true" entryPoint="StockTick stream" initialFacts-ref="companies" />    </all></flow>
+----
+
+
+在这里，我们收到传入的股票报价并同时将它们发送到两个不同的地方：1. Web UI（通过AJAX）2.规则引擎+
+欲了解更多信息。有关规则引擎的配置，请参阅 link:/mule-user-guide/v/3.2/drools-module-reference[Drools模块参考]。
+
+*Process stock tick*
+
+[source,xml]
+----
+<flow name="sendAlerts">    <inbound-endpoint ref="alerts" />    <ajax:outbound-endpoint channel="/services/cepExample/alerts" /></flow>
+----
+
+
+我们在Drools中定义的规则（请参阅以下部分）将在警报队列中生成警报。该流程仅接收这些警报，并通过AJAX将它们发送到Web UI。
+
+== 遍历规则定义
+
+文件`broker.drl`包含Drools的规则定义。我将指出与Mule集成的这个文件的一部分，但这个例子的范围超出了所有在那里定义的规则。有关如何创建规则定义文件的更多信息，请参阅 http://www.jboss.org/drools/documentation.html[Drools文档]。
+
+*Declare Mule callback inside Drools*
+
+[source,java]
+----
+global org.mule.module.bpm.MessageService mule;
+----
+
+
+在这里我们定义一个回调到Mule作为我们的规则定义文件中的全局变量。然后我们可以使用这个全局回调从我们的规则中生成Mule消息。
+
+*Generate alert message*
+
+[source,java]
+----
+rule "sudden drop"when    ...cut...then    ...cut...    mule.generateMessage("alerts", msg, null, MessageExchangePattern.ONE_WAY);end
+----
+
+在这里，我们使用上面定义的全局变量来生成Mule消息并将其发送到`alerts`端点（在上面的Mule配置中定义）。
+
+== 参考
+
+*  link:/mule-user-guide/v/3.2/drools-module-reference[Drools模块参考]
+*  http://www.jboss.org/drools/documentation.html[Drools文档]
+*  link:/mule-user-guide/v/3.2/ajax-transport-reference[AJAX传输参考]
+*  link:/mule-user-guide/v/3.2/quartz-transport-reference[石英运输参考]

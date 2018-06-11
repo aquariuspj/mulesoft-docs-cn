@@ -1,0 +1,365 @@
+= 启动和停止Mule
+:keywords: mule, esb, deploy, launch, run, terminate
+
+本文档涉及部署到Mule运行时的独立实例。要充分利用管理和监视功能，您可以通过 link:/runtime-manager[运行时管理器]部署到相同的Mule运行时。请参阅 link:/runtime-manager/deployment-strategies[部署策略]以深入了解该平台提供的不同部署方案。
+
+Mule使用 link:http://wrapper.tanukisoftware.org/[Java服务包装器]从您的本机操作系统控制Java虚拟机（JVM）。包装提供了许多选项和功能，包括将Mule作为Unix守护程序运行或将Mule安装或删除为Windows服务的能力。包装器可以处理系统信号和启动参数，并且总体上提供了JVM和底层操作系统之间更好的交互。
+
+有关Java服务包装器的更多信息，请参阅 link:http://wrapper.tanukisoftware.com/doc/english/introduction.html[在线文档]。
+
+
+== 启动和关闭脚本
+
+包装由`$MULE_HOME/bin`中的脚本调用。
+
+*Unix*：`$MULE_HOME/bin/mule`
+
+*Windows*：`$MULE_HOME\bin\mule.bat`
+
+*Note:*当Windows重新启动时，Mule服务停止与使用`mule stop`命令相同的方式。
+唯一的情况是，如果Windows由于超时而终止进程，这可能会有所不同。
+
+下表列出了脚本接受的所有参数。
+
+[%header,cols="30a,70a"]
+|===
+| {参数{1}}说明
+|  `start`  |在终端后台启动Mule服务器。
+|  `stop`  |停止Mule服务器。停止过程停止入站端点以处理正在传送的消息。然而，由于超时持续时间的原因，不能确保在发生最终关闭之前处理所有消息。
+|  `restart`  |重新启动Mule服务器。
+|  `status`  |  *(Unix only.)*显示Mule服务器（`running`或`not running`）的状态以及进程PID（如果正在运行）。
+|  `dump`  |  *(Unix only.)*将Mule包装的核心转储到`$MULE_HOME/log/mule_ee.log`。
+|  `console`  |在终端前台启动Mule（控制台模式）。与运行不带参数的`mule`相同。
+|  `install`  |  *(Windows only.)*将Mule安装为Windows服务。
+|  `remove`  |  *(Windows only.)*从您的Windows服务中删除Mule。
+|===
+
+== 通过命令行启动和停止Mule
+
+=== 从后台开始
+
+. 使用`cd`命令导航到`$MULE_HOME/bin`目录。
+. 根据以下选项运行启动脚本。
+
+*  *Unix:* `./mule start`
+*  *Windows:* `mule.bat start`
+
+或者，不要使用`cd`命令，而要键入脚本的完整路径，例如`/opt/mule/mule-ee-3.8.0/bin/mule start`。
+
+要停止Mule，请使用`stop`参数运行脚本。
+
+=== 从前台开始
+
+. 使用`cd`命令导航到`$MULE_HOME/bin`目录。
+. 根据以下选项运行启动脚本。
+
+*  *Unix:* `./mule`
+*  *Windows:* `mule`
+
+或者，不要使用`cd`命令，而要键入脚本的完整路径，例如`/opt/mule/mule-ee-3.8.0/bin/mule`。
+
+在前台模式下运行时，启动脚本会显示有关终端标准输出的信息。只要Mule正在运行，您就不能在终端上发出进一步的命令。
+
+要停止Mule，请在运行脚本的终端中按`CTRL-C`。
+
+== 在启动时将参数传递给Mule
+
+=== 配置文件
+
+默认情况下，Java Service Wrapper会从文件`mule-config.xml`加载配置选项。该文件默认为空;它包含在`$MULE_HOME/apps/default`目录中。
+
+`-config`参数允许您将配置文件作为参数传递给启动脚本。
+
+[source, code]
+----
+./mule start -config <file1>[,<file2>,<file3>...]
+----
+
+要指定多个配置文件，请将文件包含在逗号分隔列表中。
+
+=== 通过启动命令将参数传递给JVM
+
+包含您的参数作为脚本参数（如果在后台运行，在`start`参数之后），如下所示。如果有多个参数，请用空格分隔参数。
+
+[source, code]
+----
+./mule start -M-Dmule.mmc.bind.port=7783-7883
+----
+
+=== 通过Wrapper配置文件将参数传递给JVM
+
+将您的参数包含在配置文件`$MULE_HOME/conf/wrapper.conf`中。该发行版包含带有评论的此文件（请参阅下面的片段）。您可以根据需要编辑或添加该文件。有关`wrapper.conf`文件的更多信息，请查阅该文件的Java Service Wrapper link:http://wrapper.tanukisoftware.com/doc/english/properties.html[在线文档]。
+
+[source, code, linenums]
+----
+      ...
+# Name of the service
+wrapper.ntservice.name=%MULE_APP%
+ 
+# Display name of the service
+wrapper.ntservice.displayname=%MULE_APP_LONG%
+ 
+# Description of the service
+wrapper.ntservice.description=%MULE_APP_LONG%
+ 
+# Service dependencies.  Add dependencies as needed starting from 1
+wrapper.ntservice.dependency.1=
+ 
+# Mode in which the service is installed.  AUTO_START or DEMAND_START
+wrapper.ntservice.starttype=AUTO_START
+ 
+# Allow the service to interact with the desktop.
+wrapper.ntservice.interactive=false
+ 
+# Do not edit lines below!
+wrapper.license.type=DEV
+wrapper.license.id=201010160006
+wrapper.license.licensee=mulesoft.com
+wrapper.license.dev_application=Mule Enterprise Edition
+wrapper.license.features=64bit
+    ...
+----
+
+=== 在Anypoint Studio中设置JVM参数
+
+您可以为从Anypoint Studio运行的Mule应用程序设置JVM参数。 *Run*> *Run Configurations*> *Arguments*选项卡，在"VM arguments"窗格中输入参数。
+
+。例
+----
+-Dorg.mule.xml.validate=false -Djava.mail.debug=true
+----
+
+
+==== 设置Mule独立服务器内存
+
+输入`$MULE_HOME/conf/wrapper.conf`配置文件并搜索`maxheap`参数：
+`＃最大Java堆大小（以MB为单位）
+wrapper.java.maxmemory = 1024 `. The memory allowed must be specified in MB. To set the memory to 2GB, replace ` {1024 {1}} 2048`。
+
+==== 设置Mule编码
+
+例如，要设置Mule的编码，您可以将`wrapper.java.additional.1=-Dmule.encoding=ISO-8859-1`添加到Wrapper配置文件，或者您可以在命令行中将`-M-Dmule.encoding=ISO-8859-1`添加到Mule脚本。请注意，如果将wrapper.java.additional.n条目添加到配置文件中，则必须将n的每个实例更改为连续数字，否则Java不会正确分析这些属性。
+
+==== 将其他参数传递给包装器
+
+要从命令行控制Wrapper的行为，请在启动Mule时使用-W开关。
+
+例如，要设置Wrapper使用的日志文件，您可以将`wrapper.logfile=/my/log/file.log`添加到Wrapper配置文件，或者您可以在命令行中将`-Wwrapper.logfile=/my/log/file.log`添加到Mule脚本。
+
+[[unix_daemon]]
+== 将Mule作为Unix守护进程运行
+
+要将Mule作为Unix守护进程运行，需要为Mule启动脚本编写一个简单的包装脚本。将包装脚本放在系统的相应目录（如`/etc/init.d`）中，并使用系统的初始脚本体系结构工具来确保您的包装脚本在您希望的运行级别中调用。
+
+以下是红帽企业版Linux的`init.d`脚本示例：
+
+[source, code, linenums]
+----
+#!/bin/bash
+# RHEL Mule Init Script
+#
+# chkconfig: 2345 65 64
+# description: Mule ESB service
+
+. /etc/init.d/functions
+#
+if [ -f /etc/sysconfig/mule ]; then
+   . /etc/sysconfig/mule
+fi
+
+# Set JDK related environment
+JAVA_HOME=/usr/java/default
+PATH=$PATH:$JAVA_HOME/bin
+
+# Set Mule related environment
+MULE_HOME=/opt/mule
+MULE_LIB=$MULE_HOME/lib
+PATH=$PATH:$MULE_HOME/bin
+RUN_AS_USER=mule
+MULE_ENV=production
+
+# Export environment variables
+export JAVA_HOME MULE_HOME MULE_LIB PATH MULE_ENV RUN_AS_USER
+
+case "$1" in
+   start)
+      echo "Start service mule"
+      $MULE_HOME/bin/mule start -M-Dspring.profiles.active=$MULE_ENV -M-DMULE_ENV=$MULE_ENV
+      ;;
+   stop)
+      echo "Stop service mule"
+      $MULE_HOME/bin/mule stop
+      ;;
+   restart)
+      echo "Restart service mule"
+      $MULE_HOME/bin/mule restart -M-Dspring.profiles.active=$MULE_ENV -M-DMULE_ENV=$MULE_ENV
+      ;;
+   *)
+      echo "Usage: $0 {start|stop|restart}"
+      exit 1
+      ;;
+esac
+----
+
+你的包装脚本需要设置Mule所需的环境;下面提供了一个示例脚本。
+
+[source, code, linenums]
+----
+#!/bin/bash
+ 
+# Set JDK related environment
+JAVA_HOME=<path to JDK>
+PATH=$PATH:$JAVA_HOME/bin
+ 
+# Set Mule related environment
+MULE_HOME=<path to Mule>
+MULE_LIB=<path to application specific libraries>
+PATH=$PATH:$MULE_HOME/bin
+ 
+# Export environment variables
+export JAVA_HOME MULE_HOME MULE_LIB PATH
+ 
+# Invoke Mule
+$MULE_HOME/bin/mule $1 -config <path to mule-conf.xml>
+----
+
+在某些系统上，您可以设置启动脚本以用于`service`实用程序（System V）。有关详细信息，请参阅操作系统的文档。
+
+=== 对于CentOS 7和RHEL 7
+
+在<<unix_daemon, Running Mule As a Unix Daemon>>中描述的步骤之后，您可能会意识到，每次执行`service mule start`时，新进程会替换当前正在运行的进程。为了避免这种行为，您可以按照下面的说明操作：
+
+* 使用以下内容创建文件/etc/systemd/system/<name of the wrapper script>.service：
+
+[source, code, linenums]
+----
+[Service]
+Type=forking
+ExecStart=/etc/init.d/<name of the wrapper script> start
+User=mule
+----
+
+* 运行该命令重新加载服务配置：
+
+[source, code]
+----
+systemctl daemon-reload
+----
+
+
+== 将Mule作为Windows服务运行
+
+在Mule 3.8.0中，Tanuki包装器升级为新版本，意味着对包装器签名的证书进行了更改。有关解决兼容性问题的详细信息，请参阅 link:/release-notes/mule-3.8.0-release-notes#enterprise-edition-library-changes[关于Tanuki Wrapper升级的Mule 3.8.0发行说明]。
+
+要将Mule安装为Windows服务，请转至`$MULE_HOME/bin/`目录，然后发出以下命令。
+
+[source, code]
+----
+mule install
+----
+
+要从Windows服务中删除Mule，请转到`$MULE_HOME/bin/`目录，然后运行：
+
+[source, code]
+----
+mule remove
+----
+
+一旦Mule作为服务安装，您可以使用以下命令来控制它：
+
+[source, code]
+----
+mule start|restart|stop
+----
+
+要使用其他配置启动Mule，请执行以下操作：
+
+[source, code]
+----
+mule start -config <your-config-file.xml>
+----
+
+一旦Mule作为服务安装，您也可以使用Windows `net`实用程序启动或停止它：
+
+[source, code]
+----
+net start|stop mule
+----
+
+== 共同参数
+
+下表列出了Mule常用的一些参数，这些参数未在`wrapper.conf`配置文件中进行说明。
+
+[%header,cols="2*a"]
+|===
+| {参数{1}}说明
+在默认情况下启用管理控制台代理（无论是否启用），启动Mule。
+|
+
+[source, code]
+----
+-M-Dmule.mmc.bind.port
+----
+
+|指定管理控制台绑定到的Mule代理侦听器的端口或端口范围。要指定端口范围，请使用`<port>-<port>`，例如`3000-3010`。
+|===
+
+`$MULE_HOME/conf/wrapper.conf`配置文件包含更多参数，其中一些默认已注释掉，但在注释中进行了记录。
+
+////
+DOCS-1704部分如下：
+////
+
+== 关闭Mule
+
+您可以使用从`MULE_HOME/bin`目录运行的`mule stop`命令关闭Mule。当骡子停下来时，
+入站端点关闭，并且直到在`wrapper.conf`设置中配置的`shutdown.timeout`过去并且发生最终关闭之前，空中Mule消息才会继续处理。
+
+您可以设置超时值以启用当前流程。但是，没有内置的方法或实用程序
+检查哪些消息正在飞行中。您可以连接一个分析器并查看活动线程（或者仅仅是一个线程转储），这应该为您提供关于在JVM级别发生的事情的概述。
+
+为确保处理所有机上消息，您可以分两步关闭mule：
+
+. 手动停止流（这将阻止新消息传入）
+. 停止骡子
+
+=== 超时来自wrapper.conf
+
+您可以使用值为`wrapper.shutdown.timeout`的语句在`wrapper.conf`中设置超时值（以毫秒为单位）
+秒，例如：
+
+[source]
+wrapper.shutdown.timeout = "30000"
+
+有关更多信息，请参阅
+link:http://wrapper.tanukisoftware.com/doc/english/prop-ping-timeout.html[Tanuki wrapper.shutdown.timeout]页面。
+
+=== 从流中关闭超时
+
+或者，您可以将`shutdownTimeout`设置为流量的毫秒值;但是，这不是
+一个全球价值。
+
+测试目的示例：
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" 
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+      xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/current/mule-test.xsd
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <configuration shutdownTimeout="10000"/>
+
+    <flow name="TestService">
+        <test:component/>
+    </flow>
+
+</mule>
+----
+
+== 另请参阅
+
+*  *NEXT STEP:*以 link:/mule-user-guide/v/3.9/mule-application-architecture[Mule应用程序架构]开头。

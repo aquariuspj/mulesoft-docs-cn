@@ -1,0 +1,83 @@
+// sme：Ana，作者：sduke？
+=  Mule 4：错误处理程序介绍
+
+在Mule 4中，错误处理不再局限于Java异常处理过程，它需要您检查源代码或强制执行错误以了解发生的情况。尽管Java `Throwable`错误和异常仍然可用，但Mule 4引入了一个更易于使用的正式Error错误概念。现在，每个组件都会声明它可能抛出的错误类型，因此您可以在设计时识别潜在的错误。
+
+==  Mule错误
+执行失败表示为具有以下组件的Mule错误：
+
+* 对问题的描述。
+* 用于表征问题的类型。
+* 原因，导致失败的基础Java `Throwable`。
+* 一个可选的错误消息，用于包含有关该问题的正确的Mule消息。
+
+例如，当HTTP请求因401状态码失败时，Mule错误会提供以下信息：
+
+-----
+Description: HTTP GET on resource ‘http://localhost:36682/testPath’ failed: unauthorized (401)
+Type: HTTP:UNAUTHORIZED
+Cause: a ResponseValidatorTypedException instance
+Error Message:  { "message" : "Could not authorize the user." }
+-----
+
+== 错误类型
+在上面的例子中，错误类型是HTTP：UNAUTHORIZED，而不仅仅是UNAUTHORIZED。错误类型由名称空间和标识符组成，允许您根据其域来区分类型（例如，HTTP：NOT_FOUND和FILE：NOT_FOUND）。虽然连接器定义了自己的名称空间，但核心运行时错误有一个隐含的错误：MULE：EXPRESSION和EXPRESSION被解释为一个。
+
+错误类型的另一个重要特征是它们可能具有父类型。例如，HTTP：UNAUTHORIZED将MULE：CLIENT_SECURITY作为父项，而后者将MULE：SECURITY作为父项。这将错误类型建立为更全局的错误类型：HTTP未授权错误是一种客户端安全错误，这是一种更广泛的安全问题。
+
+这些层次结构意味着路由可能更通用，因为例如，MULE：SECURITY的处理程序将捕获HTTP未经授权的错误以及OAuth错误。您可以在下面看到核心运行时层次结构的外观：
+
+image::error-hierarchy.png[错误层次结构]
+
+所有的错误都是一般的或严重的，后者是如此严重以至于无法处理。在一般层次结构的顶部是ANY，它允许匹配它下面的所有类型。
+
+注意UNKNOWN类型是非常重要的，当未找到明确的故障原因时使用该类型。只有通过ANY类型才能处理此错误，以允许指定未来不明确的错误，而不会更改现有应用程序的行为。
+
+说到连接器，每个连接器都会根据核心运行时定义错误类型层次结构，但CONNECTIVITY和RETRY_EXHAUSTED类型总是存在，因为它们对所有连接器都是通用的。
+
+== 错误处理程序
+
+Mule 4通过引入`error-handler`组件重新设计了错误处理，该组件可以包含任意数量的内部处理程序，并且可以将错误路由到与其匹配的第一个错误处理程序。这样的处理程序是`on-error-continue`和`on-error-propagate`，它们都支持通过错误类型（或错误类型组）匹配或通过表达式（用于高级用例）进行匹配。这些与Mule 3选择（`choice-exception-strategy`），catch（`catch-exception-strategy`）和回滚（`rollback-exception-strategy`）策略非常相似。但是，它们更简单，更一致。
+
+如果在Mule 4中发生错误，则会执行一个错误处理程序并将错误发送到第一个匹配的处理程序。此时，错误可用于检查，因此处理程序可以相对于使用它们的组件（Flow或Try范围）执行相应的操作：
+
+*  `on-error-continue`将执行并使用执行结果作为其所有者的结果（就好像所有者实际上已成功完成执行一样）。在这一点上的任何交易也将被承诺。
+*  `on-error-propagate`将回滚所有交易，执行并使用该结果重新抛出现有错误，这意味着其所有者将被视为“失败”。
+
+考虑以下应用程序，其中HTTP侦听器将流引用触发到执行HTTP请求的另一个流。如果在收到消息（下面的1）时一切正常，则触发参考（2），并执行请求（3），这导致成功响应（4）。
+
+image::error-handling-example-1.png[错误处理示例1]
+
+如果由于`inner-flow`的错误处理程序设置，HTTP请求由于找不到错误而失败（请参见上面的3），则错误将被传播（4），并且流引用将失败（2）。但是，由于`primary-flow`使用`on-error-continue`处理，所以将执行（5），并返回成功的响应（6）。
+
+image::error-handling-example-2.png[错误处理示例1]
+
+如果请求失败并返回未经授权的错误（3），则`inner-flow`将通过从文件（4）中检索静态内容来处理`on-error-continue`。然后，流程参考也会成功（2），并返回成功的响应（5）。
+
+image::error-handling-example-3.png[错误处理示例3]
+
+但是如果HTTP请求中发生了另一个错误呢？虽然流中只有NOT_FOUND和UNAUTHORIZED错误的处理程序，但错误仍会默认传播。这意味着如果没有处理程序匹配所引发的错误，那么它将被重新抛出。例如，如果请求失败且方法不允许错误（3），则它将被传播，导致流引用失败（2），并且该传播将导致失败响应（4）。
+
+image::error-handling-example-4.png[错误处理示例4]
+
+上面的场景可以通过使最后一个处理程序与ANY匹配来避免，而不仅仅是HTTP：UNAUTHORIZED。请注意，下面是如何建议HTTP请求的所有可能的错误：
+
+image::error-handling-any.png[错误处理任何]
+
+您还可以使用表达式匹配错误。例如，由于错误处理过程中可以使用Mule错误，因此我们可以使用它来将所有错误与HTTP命名空间进行匹配：
+
+image::error-handling-expression.png[错误处理表达式]
+
+== 尝试范围
+大多数情况下，Mule 3只允许在流级别进行错误处理，从而迫使您将逻辑提取到流程以解决错误。在Mule 4中，我们引入了一个Try范围，您可以在流中使用它来对内部组件进行错误处理。范围也支持事务，它取代了旧的事务范围。
+
+image::error-handling-try.png[尝试范围]
+
+错误处理程序的行为如前所述。在上例中，传播任何数据库连接错误，导致`try`失败并执行流的错误处理程序。在这种情况下，将处理任何其他错误，并且Try范围将被视为成功，这意味着流中的下一个处理器（即HTTP请求）将继续执行。
+
+== 错误映射
+Mule 4现在还允许将默认错误映射到自定义错误。 Try范围很有用，但是如果你有几个相同的组件并且想区分每个组件的错误，那么使用Try可以让你的应用程序变得混乱。相反，您可以向每个组件添加错误映射，这意味着从组件流出的所有或某些类型的错误将映射到您选择的另一个错误。例如，如果您使用每个HTTP请求组件为2个API汇总结果，则可能需要区分API 1和API 2的错误，因为默认情况下，它们的错误将是相同的。
+
+通过将来自第一个请求的错误映射到API_2中的自定义API_1错误和第二个请求中的错误，您可以将这些错误路由到不同的处理程序。下一个示例映射HTTP：INTERNAL_SERVER_ERROR，这样如果API停机（在第一个API中传播错误并在第二个API中处理该错误），可以应用不同的处理策略。
+
+image::error-handling-mappings.png[错误处理映射]

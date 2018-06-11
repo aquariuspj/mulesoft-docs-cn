@@ -1,0 +1,155 @@
+=  Web服务使用者示例
+
+*_Enterprise, CloudHub_*
+
+此应用程序说明如何使用现有的Web服务。应用程序在两个单独的流程中执行两种操作：一个流程发布T恤购买订单，另一个请求库存清单。
+
+==  Web服务使用者
+
+image:consumeAPI.png[consumeAPI] link:/mule-user-guide/v/3.5/web-service-consumer[Web服务使用者]是一个连接器，它封装了与使用Web服务相关的所有功能，极大地简化了其实现。通过使用服务WSDL中包含的信息，该连接器使您能够配置一些细节，以便建立从Mule应用程序中使用服务所需的连接。
+
+== 先决条件
+
+本文档假定您熟悉Mule ESB和 link:/anypoint-studio/v/5/basic-studio-tutorial[Anypoint Studio界面]。要提高您对Studio的熟悉度，请考虑完成一个或多个 link:/anypoint-studio/v/5/basic-studio-tutorial[Anypoint Studio教程]。此外，本例假定您熟悉XML编码，并且您对 link:/mule-user-guide/v/3.5/mule-application-architecture[骡流]，SOAP作为Web服务范例以及WSDL优先Web服务开发的实践有基本的了解。
+
+本文档描述了实施例的细节Anypoint Studio中，骡ESB的图形用户界面（GUI）的范围内，并且包括用于两个视觉和XML编辑器配置细节。
+
+== 示例用例
+
+此示例应用程序模拟消费属于T恤零售商的Web服务。通过HTTP请求，客户可以检查产品的可用性并下订单。当消费者应用程序接收到一个订单请求时，它将JSON输入转换为XML，添加一个APIKey变量，然后对Web服务执行请求，将响应转换为JSON并构建最终响应以发送回请求者。 +
+
+当消费者应用程序收到列表清单请求时，它将请求转发给Web服务，将响应转换为JSON并为请求者构建最终响应。
+
+== 设置并运行示例
+
+完成以下过程来创建，然后在您自己的Anypoint Studio实例中运行此示例。您可以在Anypoint Studio中直接创建模板应用程序，并调整配置以创建自己的自定义应用程序。
+
+如果您想通过屏幕截图和代码片段简单检查此示例，请跳过 link:/mule-user-guide/v/3.5/xml-only-soap-web-service-example[仅限XML的SOAP Web服务示例]。
+
+.  link:/mule-user-guide/v/3.5/mule-examples[创建，然后运行] Anypoint Studio中的示例应用程序。
+. 通过浏览器扩展程序（例如Postman（适用于Google Chrome））或 http://curl.haxx.se/[卷曲]命令行实用程序向您的应用程序发送信息。 +
+* 将您的请求发送到地址`http://localhost:8081/orders`
+* 向其添加以下JSON代码：
+
+[source, code, linenums]
+----
+{
+  "email":"info@mulesoft.com",
+  "address1":"Corrientes 316",
+  "address2":"EP",
+  "city":"Buenos Aires",
+  "country":"Argentina",
+  "name":"MuleSoft Argentina",
+  "postalCode":"C1043AAQ",
+  "size":"L",
+  "stateOrProvince":"CABA"
+}
+----
+
+== 它是如何工作的
+
+客户端T恤API示例使用基于SOAP的Web服务，该服务接受两种不同的请求，每种请求都以不同的流处理，并通过不同的HTTP路径访问。
+
+
+===  orderTshirt流
+
+orderTshirt流接受指向其地址的HTTP请求，然后使用DataMapper将JSON有效内容转换为XML。由于所使用的Web服务需要在每个请求中都传递一个APIKey，因此流将创建一个带有硬编码值的APIKey变量，然后使用DataMapper将此变量传递给XML标头。通过构建XML信封，流程将通过Web服务使用者联系Web服务。此流程还负责向调用方返回响应以确认订单已处理，因此它首先将生成的响应转换为JSON，然后使用HTTP响应生成器将内容类型设置为`application/json`以使它在浏览器上可读。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:orderTshirt.png[orderTshirt]
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<flow doc:name="orderTshirt" name="orderTshirt">
+        <http:inbound-endpoint doc:name="HTTP" exchange-pattern="request-response" host="localhost" path="orders" port="8001"/>
+        <data-mapper:transform config-ref="json_to_xml_ordertshirt_" doc:name="JSON To Xml&lt;OrderTshirt>"/>
+        <set-variable doc:name="Set API Key" value="#['abc12345']" variableName="apiKey"/>
+        <data-mapper:transform config-ref="string_to_xml_authenticationheader_" doc:name="String To Xml&lt;AuthenticationHeader>" input-ref="#[flowVars[&quot;apiKey&quot;]]" target="#[message.outboundProperties[&quot;soap.header&quot;]]"/>
+        <ws:consumer config-ref="Web_Service_Consumer" doc:name="Order Tshirt" operation="OrderTshirt"/>
+        <data-mapper:transform config-ref="xml_ordertshirtresponse__to_json" doc:name="Xml&lt;OrderTshirtResponse> To JSON" returnClass="java.lang.String"/>
+        <http:response-builder contentType="application/json" doc:name="HTTP Response Builder" status="200"/>
+    </flow>
+----
+....
+------
+
+===  listInventory流
+
+当发出一个"list inventory"请求时，流通过Web服务使用者将其指向Web服务，然后它的响应由DataMapper转换为JSON，然后HTTP Response Builder将消息的内容类型设置为{{1 }}使其在浏览器中可读。最后，HTTP连接器将响应返回给请求者。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:listInventory.png[listInventory]
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<flow doc:name="listInventory" name="listInventory">
+        <http:inbound-endpoint doc:name="HTTP" exchange-pattern="request-response" host="localhost" path="inventory" port="8001"/>
+        <ws:consumer config-ref="Web_Service_Consumer" doc:name="List Inventory" operation="ListInventory"/>
+        <data-mapper:transform config-ref="xml_listinventoryresponse__to_json" doc:name="Xml&lt;ListInventoryResponse> To JSON" returnClass="java.lang.String"/>
+        <http:response-builder contentType="application/json" doc:name="HTTP Response Builder" status="200"/>
+    </flow>
+----
+....
+------
+
+=== 完整代码
+
+[tabs]
+------
+[tab,title="Visual Studio Editor"]
+....
+image:full+flow.png[full+flow]
+....
+[tab,title="XML Editor"]
+....
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule version="EE-3.5.0" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:ws="http://www.mulesoft.org/schema/mule/ws" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.5/mule.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/3.5/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.5/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/3.5/mule-data-mapper.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/3.5/mule-tracking-ee.xsd">
+    <ws:consumer-config doc:name="Web Service Consumer" name="Web_Service_Consumer" port="TshirtServicePort" service="TshirtService" serviceAddress="http://tshirt-service.cloudhub.io" wsdlLocation="C:\Users\studio\AnypointStudio\workspace-clean-2\tshirt-service-consumer\src\main\resources\tshirt.wsdl.xml"/>
+    <data-mapper:config doc:name="xml_listinventoryresponse__to_json" name="xml_listinventoryresponse__to_json" transformationGraphPath="xml_listinventoryresponse__to_json.grf"/>
+    <data-mapper:config doc:name="json_to_xml_ordertshirt_" name="json_to_xml_ordertshirt_" transformationGraphPath="json_to_xml_ordertshirt_.grf"/>
+    <data-mapper:config doc:name="xml_ordertshirtresponse__to_json" name="xml_ordertshirtresponse__to_json" transformationGraphPath="xml_ordertshirtresponse__to_json.grf"/>
+    <data-mapper:config doc:name="string_to_xml_authenticationheader_" name="string_to_xml_authenticationheader_" transformationGraphPath="string_to_xml_authenticationheader_.grf"/>
+ 
+    <flow doc:name="orderTshirt" name="orderTshirt">
+        <http:inbound-endpoint doc:name="HTTP" exchange-pattern="request-response" host="localhost" path="orders" port="8001"/>
+        <data-mapper:transform config-ref="json_to_xml_ordertshirt_" doc:name="JSON To Xml&lt;OrderTshirt>"/>
+        <set-variable doc:name="Set API Key" value="#['abc12345']" variableName="apiKey"/>
+        <data-mapper:transform config-ref="string_to_xml_authenticationheader_" doc:name="String To Xml&lt;AuthenticationHeader>" input-ref="#[flowVars[&quot;apiKey&quot;]]" target="#[message.outboundProperties[&quot;soap.header&quot;]]"/>
+        <ws:consumer config-ref="Web_Service_Consumer" doc:name="Order Tshirt" operation="OrderTshirt"/>
+        <data-mapper:transform config-ref="xml_ordertshirtresponse__to_json" doc:name="Xml&lt;OrderTshirtResponse> To JSON" returnClass="java.lang.String"/>
+        <http:response-builder contentType="application/json" doc:name="HTTP Response Builder" status="200"/>
+    </flow>
+    <flow doc:name="listInventory" name="listInventory">
+        <http:inbound-endpoint doc:name="HTTP" exchange-pattern="request-response" host="localhost" path="inventory" port="8001"/>
+        <ws:consumer config-ref="Web_Service_Consumer" doc:name="List Inventory" operation="ListInventory"/>
+        <data-mapper:transform config-ref="xml_listinventoryresponse__to_json" doc:name="Xml&lt;ListInventoryResponse> To JSON" returnClass="java.lang.String"/>
+        <http:response-builder contentType="application/json" doc:name="HTTP Response Builder" status="200"/>
+    </flow>
+</mule>
+----
+....
+------
+
+== 另请参阅
+
+* 详细了解 link:/mule-user-guide/v/3.5/web-service-consumer[Web服务使用者]。
+* 详细了解 link:/mule-user-guide/v/3.5/http-response-builder[HTTP响应生成器]。
+* 请参阅 link:/anypoint-studio/v/6/datamapper-user-guide-and-reference[Anypoint DataMapper用户指南和参考]。
+* 详细了解 link:/api-manager[API管理器]如何帮助您组织组织的服务。

@@ -1,0 +1,99 @@
+= 为Acegi设置LDAP提供程序
+
+[CAUTION]
+====
+已弃用的模块
+
+Acegi模块已弃用。请将 link:/mule-user-guide/v/3.2/upgrading-from-acegi-to-spring-security[升级]改为 link:/mule-user-guide/v/3.2/configuring-the-spring-security-manager[Spring Security模块]，这是一种直接替换。从Mule 3.2开始，Acegi模块从分配中移除。
+====
+
+本页介绍如何配置Acegi LDAP提供程序，它可以是：
+
+*  Mule作为AcegiProviderAdapter的安全提供者使用
+*  Acegi / Spring使用 link:/mule-user-guide/v/3.2/component-authorization-using-acegi[组件授权]
+
+有关配置内存中DAO提供程序的信息，请参阅 link:/mule-user-guide/v/3.2/configuring-security[配置安全性]。
+
+== 声明豆
+
+您必须在Spring中设置两个bean，一个 http://www.acegisecurity.org/acegi-security/apidocs/org/acegisecurity/ldap/InitialDirContextFactory.html[InitialDirContextFactory]和一个 http://www.acegisecurity.org/acegi-security/apidocs/org/acegisecurity/providers/ldap/LdapAuthenticationProvider.html[LdapAuthenticationProvider可疑]。 `InitialDirContextFactory`是用于获取LDAP上下文的接入点，`LdapAuthenticationProvider`提供了与LDAP服务器的集成。例如：
+
+[source, xml, linenums]
+----
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:mule="http://www.mulesource.org/schema/mule/core"
+       xmlns:acegi="http://www.mulesource.org/schema/mule/acegi"
+       ...cut...
+
+  <bean id="initialDirContextFactory" class="org.acegisecurity.ldap.DefaultInitialDirContextFactory">
+	<constructor-arg value="ldap://localhost:389/dc=com,dc=foobar" />
+	<property name="managerDn">
+		<value>cn=root,dc=com,dc=foobar</value>
+	</property>
+	<property name="managerPassword">
+		<value>secret</value>
+	</property>
+  </bean>
+
+  <bean id="authenticationProvider" class="org.acegisecurity.providers.ldap.LdapAuthenticationProvider">
+	<constructor-arg>
+		<bean class="org.acegisecurity.providers.ldap.authenticator.BindAuthenticator">
+			<constructor-arg>
+				<ref local="initialDirContextFactory" />
+			</constructor-arg>
+			<property name="userDnPatterns">
+				<list>
+					<value>uid={0},ou=people</value>
+				</list>
+			</property>
+		</bean>
+	</constructor-arg>
+	<constructor-arg>
+		<bean class="org.acegisecurity.providers.ldap.populator.DefaultLdapAuthoritiesPopulator">
+			<constructor-arg>
+				<ref local="initialDirContextFactory" />
+			</constructor-arg>
+			<constructor-arg>
+				<value>ou=groups</value>
+			</constructor-arg>
+			<property name="groupRoleAttribute">
+				<value>cn</value>
+			</property>
+			<property name="searchSubtree">
+				<value>true</value>
+			</property>
+			<property name="rolePrefix">
+				<value>ROLE_</value>
+			</property>
+			<property name="convertToUpperCase">
+				<value>true</value>
+			</property>
+		</bean>
+	</constructor-arg>
+  </bean>
+----
+
+== 配置Mule安全提供程序
+
+`AcegiProviderAdapter`委派给`AuthenticationProvider`，例如`LdapAuthenticationProvider`。
+
+[source, xml, linenums]
+----
+<acegi:security-manager>
+    <acegi:delegate-security-provider name="acegi-ldap" delegate-ref="authenticationProvider"/>
+</acegi:security-manager>
+----
+
+通过上述配置，您可以在需要一个或多个安全提供程序的Mule中实现端点级安全性和其他安全性功能。
+
+== 配置MethodSecurityInterceptor
+
+组件授权的配置与 link:/mule-user-guide/v/3.2/component-authorization-using-acegi[使用Acegi的组件授权]中所述的配置类似。配置的关键点是`ObjectDefinitionSource`：
+
+[source, xml, linenums]
+----
+<property name="objectDefinitionSource" value="org.mule.api.lifecycle.Callable.onCall=ROLE_MANAGERS"/>
+----
+
+角色由您在前面章节中配置的`DefaultLdapAuthoritiesPopulator`查找。默认情况下，角色的前缀为`ROLE_`，其值从`groupRoleAttribute`定义的LDAP属性中提取（并转换为大写）。

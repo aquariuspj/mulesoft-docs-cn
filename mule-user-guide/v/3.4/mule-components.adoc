@@ -1,0 +1,210 @@
+=  Mule组件
+
+image:component.png[零件]组件是对消息执行 link:http://en.wikipedia.org/wiki/Business_logic[商业逻辑]的消息处理器。它们使您能够执行特定的操作，而无需编写任何Mule特定的代码。您可以将一个组件（一个POJO，Spring bean，Java bean或脚本）拖放到一个流中，以执行Mule应用程序中几乎任何定制的任务。例如，您可以使用组件来验证发票上的项目是否在仓库中有货，或使用客户的订单历史更新数据库。
+
+
+== 脚本组件
+
+Mule包含几个可用于流程的*scripting components*，以执行自定义业务逻辑。这些组件使您能够将一大块自定义编写的逻辑放入流中，以根据消息执行操作。
+
+image:scripting_components.png[scripting_components]
+
+下面的例子说明了Groovy脚本组件的使用。该脚本使用`state`的值来确定要分配潜在客户的四个销售区域中的哪一个。
+
+==  Web服务组件
+
+还包括两个组件以促进*exposing, consuming and proxying Web services.* SOAP组件利用Mule用于支持SOAP Web服务的CXF框架; REST组件与Jersey协同工作以支持RESTful Web服务;两者都绑定到HTTP。
+
+image:rest_soap.png[rest_soap]
+
+[TIP]
+*APIkit*为构建REST API提供了一种新的改进方式。访问APIkit文档以了解如何在几小时或几天内构建REST API。
+
+==  HTTP组件
+
+此外，Mule提供了两个*HTTP components*以方便通过HTTP进行调用。使用*HTTP Response Builder*将消息转换为与HTTP响应一致的格式;使用*HTTP Static Resource Handler*可以在调用时轻松地提供静态内容。
+
+image:http_components.png[http_components]
+
+== 其他组件
+
+最后，Mule还包括几个其他组件，旨在满足相当特殊的需求。
+
+image:misc_components.png[misc_components]
+
+* 使用*Logger component*记录流中的活动。
+* 使用*Expression component*来评估流中消息的特定表达式。
+* 使用*Echo component*将消息的有效内容作为呼叫响应返回。
+* 使用*Flow Ref component*从流中访问另一个流。
+
+== 示例
+
+===  Groovy脚本组件
+
+[source, xml, linenums]
+----
+<mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+...
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd">
+ 
+...
+ 
+    <flow name="LookUpSalesRegionFlow" doc:name="LookUpSalesRegionFlow" doc:description="The script uses data in the state field to add a region to the payload according to location.">
+        <scripting:component doc:name="Groovy">
+            <scripting:script engine="Groovy">def region = "UNKNOWN"
+def state = payload['state']
+if (state != null) {
+ state = state.toUpperCase()
+}
+println "State to lookup is: " + state
+switch (state) {
+        case ["CT","ME","MA","NH","VT","RI","NY","NJ","DE","DC","MD","NH"]:
+            region = "North East"
+            break
+        case ["AL","AR","FL", "GA","LA" ,"SC","NC","TN","TX"]:
+            region = "South East"
+            break
+        case ["ID","IL", "IA","KS","MT", "WY","ND","SD","OH" ]:
+            region = "Mid West"
+            break
+        case ["AZ","CO","OK","NM", "NV"]:
+            region = "South West"
+            break
+        case ["CA","HI","WA","OR", "AK"]:
+            region = "West Coast"
+            break
+    }
+return ["region":region]</scripting:script>
+        </scripting:component>
+        <logger message="Region is : #[payload.region]" level="INFO" doc:name="Logger"/>
+    </flow>
+ 
+</mule>
+----
+
+===  Web服务组件
+
+[tabs]
+------
+[tab,title="SOAP"]
+....
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns:doc="http://www.mulesoft.org/schema/mule"
+    xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+ 
+    <flow name="HelloWorldFlow1" doc:name="HelloWorldFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response"
+            host="localhost" port="8081" doc:name="HTTP"
+            doc:description="This endpoint receives an HTTP message." path="example2"/>
+        <set-payload value="#['Welcome to our world.']" doc:name="Set Payload"
+            doc:description="This processor sets the payload of the message to the string 'Hello World'." />
+    </flow>
+ 
+</mule>
+----
+....
+[tab,title="REST"]
+....
+[source, xml, linenums]
+----
+<mule xmlns:jersey="http://www.mulesoft.org/schema/mule/jersey" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/jersey http://www.mulesoft.org/schema/mule/jersey/current/mule-jersey.xsd">
+ 
+    <flow name="rest_exampleFlow1" doc:name="rest_exampleFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+        <jersey:resources doc:name="REST">
+            <component class="example.RestExampleResource"/>
+        </jersey:resources>
+    </flow>
+</mule>
+----
+
+[%header%autowidth.spread]
+|===
+^|*example.RestExampleResource*
+a|
+[source, code, linenums]
+----
+package example;
+ 
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+ 
+ 
+@Path("/example1")
+public class RestExampleResource {
+ 
+    @GET
+    @Produces("text/plain")
+ 
+    public String getExampleMsg(){
+        return "REST and be well.";
+        //return Response.status(Status.OK).entity("Rest and be well.").build();
+ 
+    }
+ 
+} 
+----
+|===
+....
+------
+
+===  HTTP组件
+[tabs]
+------
+[tab,title="HTTP Response Builder"]
+....
+[source, xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+ 
+    <flow name="response-Builder2Flow1" doc:name="response-Builder2Flow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="builder" doc:name="HTTP"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[payload == 'kittens']">
+                <echo-component doc:name="Echo"/>
+            </when>
+            <otherwise>
+                <http:response-builder status="400" contentType="text/plain" doc:name="HTTP Response Builder"/>
+            </otherwise>
+        </choice>
+    </flow>
+ 
+</mule>
+----
+....
+[tab,title="HTTP Static Resource Handler"]
+....
+[source, xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+ 
+    <flow name="static-handlerFlow1" doc:name="statice-handlerFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="response" doc:name="HTTP"/>
+        <http:static-resource-handler resourceBase="src/main/resources/index.html" doc:name="HTTP Static Resource Handler"/>
+    </flow>
+ 
+</mule>
+----
+....
+------
+
+== 另请参阅
+
+*  *NEXT STEP*：请阅读大约 link:/mule-user-guide/v/3.4/mule-transformers[变形金刚]。
+* 向前浏览以了解 link:/mule-user-guide/v/3.4/mule-message-structure[骡信息]的结构。

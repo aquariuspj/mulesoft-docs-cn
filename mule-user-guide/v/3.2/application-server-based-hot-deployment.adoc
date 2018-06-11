@@ -1,0 +1,85 @@
+应用服务器中Mule的= 部署模型
+
+如果您在应用程序服务器中运行Mule，则可以选择将Mule配置为容器的服务，从而允许您维护单个Mule实例，但可以更新配置文件和/或变换器，过滤器或组件实现无需重新启动Mule。当您热部署一个Mule应用程序时，只有该应用程序将停止/启动，并且任何其他部署的Mule应用程序将像以前一样继续运行。这与您在运行Mule独立时获得的效果相同。
+
+部署目前已经通过Mule ESB 2.2.5或更高版本以及以下应用程序服务器进行测试和支持：
+
+*  JBoss 4.2.x（目前不支持JBoss 5.x）
+*  Geronimo 2.1.x
+*  Tomcat 6.0.x
+*  MuleSoft Tcat服务器6
+
+== 它是如何工作的
+
+Mule应用程序是一个或多个配置文件，与Mule尚未提供的任何依赖项打包在一起。在部署场景中，每个Mule应用程序共享一个运行在应用程序服务器或Web容器中的_single Mule instance_。要热部署Mule应用程序，请执行以下操作：
+
+* 将Mule配置为在容器中作为服务运行（请参阅下面的说明）
+* 将您的Mule应用程序打包为WAR文件，以便您可以将它们部署为Web应用程序
+
+在部署WAR文件时，Mule将读取Mule配置文件，并创建并启动所有必需的对象，就像运行Mule独立时一样。当您取消部署Mule应用程序时，只有为该Mule应用程序创建和启动的对象才会停止并处理，而不会影响共享相同Mule实例的任何其他应用程序。通过这种方式，多个Mule应用程序可以独立部署，取消部署和重新部署，而不需要任何其他服务的停机时间。
+
+使用作为容器服务器运行的单个共享Mule实例的两个关键优势是：
+
+* 使用多个Mule实例的内存占用大大减少。
+* 跨应用程序共享对象的功能。例如，您可以使用一个Web应用程序来定义其他Web应用程序随后使用的连接器，过滤器和变换器。 +
+*Note*：如果您跨应用程序共享对象，请确保首先部署创建共享对象的Web应用程序，然后部署使用这些对象的其余Web应用程序。
+
+下面是一张表格，列出了Mule ESB支持的两个webapp部署模型的主要区别：
+
+[%header,cols="3*"]
+|===
+|   |自包含的Web应用程序 |容器服务
+|内存占用 |较大 |较小
+|应用程序隔离 |更多 |更少
+|共享资源管理 |无 |可能
+|热部署 |整个Mule应用程序已部署/未部署 |仅部署/取消部署应用程序所需的资源
+|===
+
+== 准备配置文件
+
+在定义应用程序及其配置的范围时，请记住以下几点：
+
+* 每个Mule应用程序都使用一个已经启动的Mule实例。因此，您的应用程序无法修改`<configuration>`元素中的任何内容，包括需要在Mule启动前配置的属性和子元素。如果您需要修改这些设置，则必须在Mule实例上修改它们并重新启动它们。
+* 如果您未明确定义端点应使用的连接器，并且已部署的另一个Web应用程序定义了支持相同协议的连接器，则将使用已定义的现有连接器。
+
+== 部署Mule作为服务
+
+要将Mule作为Tomcat或Tcat服务器的服务部署，请参阅 link:/mule-user-guide/v/3.2/deploying-mule-as-a-service-to-tomcat[将Mule作为服务部署到Tomcat]。
+
+== 打包Mule应用程序
+
+您为热部署设置的每个Mule应用程序都由一个或多个配置文件和支持的自定义类组成，全部打包为标准Web应用程序（WAR部署归档文件）。您可以使用您最喜爱的IDE或构建工具来创建WAR，就像创建任何标准Web应用程序一样。
+
+注意：如果这些说明描述的是WAR包装，那么您也可以将其作为EAR部署到JEE环境。
+
+要使Mule能够找到并加载您的配置，您必须包含指向您的配置文件和可部署侦听器的`web.xml`文件，如下所示：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE web-app PUBLIC "-//Sun Microsystems, Inc.//DTD Web Application 2.3//EN" "http://java.sun.com/dtd/web-app_2_3.dtd">
+<web-app>
+
+    <display-name>MuleEchoExample</display-name>
+    <description>Mule Echo Example</description>
+
+    <context-param>
+        <param-name>org.mule.config</param-name>
+        <param-value>echo-cxf-config.xml</param-value>
+    </context-param>
+
+    <!--
+        To use a Mule XML configuration file use this context listener
+    -->
+    <listener>
+        <listener-class>org.mule.config.builders.DeployableMuleXmlContextListener</listener-class>
+    </listener>
+
+</web-app>
+----
+
+== 部署Mule应用程序
+
+您可以使用与您正在使用的应用程序服务器或Web容器上部署任何Web应用程序完全相同的方式部署您的Mule应用程序WAR文件。也就是说，您可以使用Web管理控制台，命令行部署工具，Maven或IDE。例如，如果要部署到Tomcat，只需将WAR复制到Tomcat `webapps`目录或使用Tcat控制台上载并将其部署到您的服务器。有关更多信息，请参阅应用程序服务器或Web容器的文档。
+
+如果您的Mule应用程序共享对象，请确保首先部署创建这些对象的应用程序，然后部署使用它们的应用程序。

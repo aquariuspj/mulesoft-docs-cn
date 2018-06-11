@@ -1,0 +1,160 @@
+=  Marketo连接器
+：imagesdir：./_images
+
+_选择_
+
+Marketo的Anypoint Connector是一个闭源连接器，它提供了Mule和Marketo REST API之间的连接。该连接器实现了所有受支持的v1.0 Marketo API端点并提供了Mule 4 DataWeave功能。
+
+== 先决条件
+
+本文档假定您熟悉Marketo，Mule，Anypoint连接器，Anypoint Studio，Mule概念，Mule流中的元素以及全局元素。
+
+您需要登录凭据来测试您的目标资源连接。
+
+针对硬件和软件要求以及兼容性
+信息，请参阅连接器发行说明。
+
+要在Maven中使用此连接器，请查看中的pom.xml依赖关系信息
+任意点Exchange中的依赖项片段。
+
+== 此连接器的新增功能
+
+First Mule 4版本。
+
+== 在Studio中安装连接器
+
+. 在Anypoint Studio中，点击Studio任务栏中的Exchange图标。
+. 点击Anypoint Exchange中的登录。
+. 搜索此连接器并单击安装。
+. 按照提示安装此连接器。
+
+当Studio有更新时，右下角会显示一条消息，
+您可以单击该按钮来安装更新。
+
+== 在Studio中进行配置
+
+. 将连接器拖放到Studio画布。
+. 点击绿色加号按钮来配置连接器
+. 出现一个窗口，以便您可以配置以下字段：
+
+image:marketo-studio-config.png[Studio配置选项]
+
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+|基本路径| Marketo基本路径，例如`/`（正斜杠）。
+|客户端ID |您的Marketo客户端ID。
+|客户端秘密|您的Marketo客户端秘密。
+|主持人|您的Marketo实例托管的域。
+|端口| Marketo实例的端口。
+|协议|用于数据传输的协议，例如HTTPS。
+|访问令牌URL |用于实现授权令牌的URL。
+|===
+
+== 用例：在Studio 7中创建一个程序
+
+image:marketo-studio-use.png[Studio流监听器，Marketo和变换]
+
+== 用例：XML
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os" 
+xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+xmlns:marketo-rest-api="http://www.mulesoft.org/schema/mule/marketo-rest-api"
+xmlns:http="http://www.mulesoft.org/schema/mule/http" 
+xmlns="http://www.mulesoft.org/schema/mule/core" 
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core 
+http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http 
+http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/marketo-rest-api 
+http://www.mulesoft.org/schema/mule/marketo-rest-api/current/mule-marketo-rest-api.xsd
+http://www.mulesoft.org/schema/mule/ee/core 
+http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/os 
+http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	<configuration-properties file="mule-app.properties" 
+	doc:name="Configuration properties"/>
+	<http:listener-config name="HTTP_Listener_config" 
+	doc:name="HTTP Listener config">
+		<http:listener-connection host="localhost" port="8081" />
+	</http:listener-config>
+	<marketo-rest-api:config name="Marketo_Rest_API_Config" doc:name="Marketo Rest API Config" property_basePath="/" 
+	property_clientId="${clientId}" 
+	property_clientSecret="${clientSecret}" 
+	property_host="${host}" 
+	property_accessTokenUrl="${accessTokenUrl}" 
+	property_port="${port}" 
+	property_protocol="${protocol}"/>
+	<os:object-store name="Object_store" doc:name="Object store"  config-ref="ObjectStore_Config"/>
+	<os:config name="ObjectStore_Config" doc:name="ObjectStore Config"  />
+	<flow name="Create_Form" >
+		<http:listener doc:name="HTTP"  config-ref="HTTP_Listener_config" path="/createForm" />
+		<ee:transform doc:name="Transform Message">
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"description": "FormDemo",
+	"folder":"22498",
+	"name": "MarketoDemoForm_01"
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<marketo-rest-api:create-form doc:name="Create form" config-ref="Marketo_Rest_API_Config"/>
+		<ee:transform doc:name="Object to JSON">
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<os:store doc:name="Store form id" key="formId" objectStore="Object_store">
+			<os:value ><![CDATA[#[payload.result[0].id]]]></os:value>
+		</os:store>
+		<set-variable 
+		value="#[payload.result[0].id]" 
+		doc:name="Set Variable" 
+		variableName="id"/>
+		<set-variable 
+		value="#[payload.result[0].name]" 
+		doc:name="Set Variable" 
+		variableName="name" />
+		<logger level="INFO" doc:name="Logger" 
+		message="Created form named: #[vars.name] with id: #[vars.id]" />
+	</flow>
+</mule>
+----
+
+== 在Design Center中进行连接
+
+. 在Design Center中，选择一个触发器，例如HTTP侦听器或计划程序。
+. 选择加号以添加组件。
+. 选择连接器作为组件。
+. 配置这些字段：
+
+image:marketo-dc-rest-config.png[Design Center REST API配置]
+
+[%header%autowidth.spread]
+|===
+| {字段{1}}说明
+|基本路径| Marketo基本路径，例如`/`（正斜杠）。
+|客户端ID |您的Marketo客户端ID。
+|客户端秘密|您的Marketo客户端秘密。
+|主持人|您的Marketo实例托管的域。
+|端口| Marketo实例的端口。
+|协议|用于数据传输的协议，例如HTTPS。
+|访问令牌URL |用于实现授权令牌的URL。
+|===
+
+== 另请参阅
+
+*  https://forums.mulesoft.com [MuleSoft论坛]。
+*  https://support.mulesoft.com [联系MuleSoft支持]。

@@ -1,0 +1,71 @@
+= 如何避免更改AMQP地形
+:keywords: amqp, connector, exchange, queue
+：TOC：
+：TOC标题：
+
+您可以设置`createFallbackExchange`和`createFallbackQueue`全局配置属性，以便禁用AMQP交换和队列的声明。这些参数已添加到那些必须保证不会尝试更改AMQP拓扑的场景中。在这些情况下，先前不存在的队列声明和交换声明都会导致`AMQP:CREATION_NOT_ALLOWED`错误。
+
+以下面的流程为例：
+
+[source, xml, linenums]
+----
+<amqp:config name="Amqp_Config" createFallbackExchange="false" >
+	<amqp:connection host="localhost" username="guest" password="guest" />
+</amqp:config>
+
+
+<flow name="mule-no-create-fallback-queue">
+	<http:listener doc:name="Listener"config-ref="HTTP_Listener_config" path="/"/>
+	<amqp:publish doc:name="Publish" config-ref="Amqp_Config" exchangeName="newExchange">
+		<amqp:fallback-exchange-definition />
+	</amqp:publish>
+</flow>
+----
+
+如果`newExchange`交换不存在，并且createFallbackExchange设置为false，则对发布操作的调用将导致`AMQP:CREATION_NOT_ALLOWED`错误。
+请注意，可以在操作级别重写`createFallbackExchange`，并可以将表达式作为值。例如：
+
+----
+<flow name="mule-no-create-fallback-queue">
+	<http:listener doc:name="Listener"config-ref="HTTP_Listener_config" path="/"/>
+	<amqp:publish doc:name="Publish" config-ref="Amqp_Config" exchangeName="newExchange" createFallbackExchange="false">
+		<amqp:fallback-exchange-definition />
+	</amqp:publish>
+</flow>
+----
+
+在消费操作中使用`createFallbackQueue`参数是类似的：
+
+[source, xml, linenums]
+----
+<amqp:config name="Amqp_Config" createFallbackQueue="false" >
+	<amqp:connection host="localhost" username="guest" password="guest" />
+</amqp:config>
+
+
+<flow name="mule-no-create-fallback-queue">
+	<http:listener doc:name="Listener"config-ref="HTTP_Listener_config" path="/"/>
+	<amqp:consume config-ref="Amqp_Config" queueName="testQueue">
+		<amqp:fallback-queue-definition removalStrategy="SHUTDOWN" exchangeToBind="exchangeToBindToQueue" />
+	</amqp:consume>
+</flow>
+----
+
+您也可以在侦听器中使用此参数：
+
+[source, xml, linenums]
+----
+<amqp:config name="Amqp_Config" createFallbackQueue="false" >
+	<amqp:connection host="localhost" username="guest" password="guest" />
+</amqp:config>
+
+
+<flow name="mule-no-create-fallback-queue">
+	<amqp:listener config-ref="Amqp_Config" queueName="testQueue">
+		<amqp:fallback-queue-definition removalStrategy="SHUTDOWN" exchangeToBind="exchangeToBindToQueue" />
+	</amqp:listener>
+	<amqp:consume config-ref="Amqp_Config" queueName="testQueue">
+		<amqp:fallback-queue-definition removalStrategy="SHUTDOWN" exchangeToBind="exchangeToBindToQueue" />
+	</amqp:consume>
+</flow>
+----

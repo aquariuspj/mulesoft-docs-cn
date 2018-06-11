@@ -1,0 +1,223 @@
+=  Studio自定义策略编辑器（测试版）
+
+Studio 6.1（及更新版本）授予您创建*policy project*的能力，您可以在其中将*custom API policies*分组并将其应用于本地Studio部署。 +
+通过这种方式，您可以使用完全支持和验证自定义API策略设计的编辑器，在Studio中编写，调试和测试自定义API策略。
+
+[WARNING]
+--
+自定义策略编辑器仍处于测试阶段，仅适用于 link:/release-notes/anypoint-studio-6.1-with-3.8.1-runtime-release-notes[Anypoint Studio 6.1]及更新版本的Enterprise Edition用户。
+--
+
+== 假设
+
+本文假定您熟悉Anypoint Platform中的 link:/api-manager/using-policies[使用政策]，并且您可以 link:/api-manager/creating-a-policy-walkthrough[创建]和 link:/api-manager/applying-custom-policies[应用]个自定义策略。 +
+它还假定您熟悉 link:/anypoint-studio/v/6.5/#the-visual-editor[Studio的可视化编辑器]。
+
+== 用法
+
+[NOTE]
+--
+对于此功能的测试版，Studio仅支持通过XML进行策略创建和编辑。
+--
+
+为了创建一个自定义策略项目：
+
+. 右键点击您的*Package explorer*，然后选择*New*和*API Custom Policy Project (beta)*。
+. 为您的政策项目指定一个名称，并确保同意测试版许可证：
++
+image::studio-policy-editor-a01e0.png[]
++
+. 首次创建自定义策略项目时，默认示例加载包含：
+** 样本 link:/api-manager/creating-a-policy-walkthrough#create-the-policy-configuration-file[策略配置文件]：
++
+[source,XML,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<policy xmlns="http://www.mulesoft.org/schema/mule/policy"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:spring="http://www.springframework.org/schema/beans"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:mule-ss="http://www.mulesoft.org/schema/mule/spring-security"
+        xmlns:ss="http://www.springframework.org/schema/security"
+        xmlns:api-platform-gw="http://www.mulesoft.org/schema/mule/api-platform-gw"
+        xsi:schemaLocation="http://www.mulesoft.org/schema/mule/policy http://www.mulesoft.org/schema/mule/policy/current/mule-policy.xsd
+              http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+              http://www.mulesoft.org/schema/mule/spring-security http://www.mulesoft.org/schema/mule/spring-security/current/mule-spring-security.xsd
+              http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-current.xsd
+              http://www.mulesoft.org/schema/mule/api-platform-gw http://www.mulesoft.org/schema/mule/api-platform-gw/current/mule-api-platform-gw.xsd
+              http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <pointcut>
+        <api-platform-gw:api-pointcut apiName="{{ apiName }}" apiVersion="{{ apiVersionName }}"/>
+    </pointcut>
+
+    <before>
+        <mule:set-variable variableName="evaluated" value="{{ query }}" />
+
+        <mule:message-filter onUnaccepted="policyViolation">
+            <mule:expression-filter expression="#[!evaluated]" />
+        </mule:message-filter>
+    </before>
+
+    <after>
+        <mule:set-property propertyName="Custom-Header" value="Example Policy" />
+    </after>
+
+    <mule:processor-chain name="policyViolation">
+        <mule:logger message="The custom policy filtered the message #[message.getId()] based on a MEL query" level="DEBUG" />
+        <mule:set-property propertyName="http.status" value="403"/>
+        <mule:set-property propertyName="Content-Type" value="application/json"/>
+        <mule:set-payload value='{ "error" : "Custom Policy: {{ denied-message }}"}'/>
+    </mule:processor-chain>
+</policy>
+----
++
+[NOTE]
+--
+在Studio中设计自定义API时，`<before>`和`<after>`标签不能留空。 +
+如果您的设计不需要后标签，请不要声明它。
+--
++
+** 样本 link:/api-manager/creating-a-policy-walkthrough#create-the-custom-policy-definition[策略定义文件]：
++
+[source,YAML,linenums]
+----
+name: Custom Policy Example
+description: Specifies an MEL *query* expression which when evaluated against incoming messages and returning true, rejects the incoming message.
+category: Security
+standalone: true
+providedCharacteristics: [Message protection]
+requiredCharacteristics: []
+
+configuration:
+  - propertyName: query
+    name: MEL query
+    description: MEL query expression to filter incoming requests
+    type: expression
+    optional: false
+    defaultValue: "#[message.inboundProperties['http.method'] == 'POST']"
+  - propertyName: denied-message
+    name: Rejection message
+    description: A message to display when an incoming message is filtered
+    type: string
+    defaultValue: Access denied
+    optional: false
+----
+
+此示例自定义策略基本上阻止了所有发送到您的端点的POST请求。 +
+它声明MEL表达式：`#[message.inboundProperties['http.method'] == 'POST']`针对收到的消息。如果有匹配，它会阻止该操作并返回`Access denied`消息。
+
+[NOTE]
+--
+在同一个项目中可以有多个配置和定义文件。但是，您一次只能申请一对。
+您的自定义政策项目包含一个`mule-policy.xml`文件，您可以在其中定义要应用的`.xml`和`.yaml`。
+
+image::studio-policy-editor-f4c04.png[]
+--
+
+
+
+== 在您的本地部署中应用自定义策略
+
+自定义策略独立于您要应用它们的API。 +
+您可以通过 link:/api-manager/applying-custom-policies#customizing-a-pointcut[定制切入点条件]将一个自定义策略指向一个或多个API，以便：
+
+* 使用`{{ apiName }}`和`{{ apiVersionName }}` link:/api-manager/applying-custom-policies#referencing-properties[参考属性]指出策略。
+* 设置一个正则表达式来匹配已定义的端点和资源。
+
+但是，在Studio中设计自定义API时，您需要至少有一个本地Mule项目来部署和应用策略。 +
+为了测试应用于API时策略的行为方式，我们使用 link:/api-manager/applying-custom-policies[应用自定义策略]页面中使用的Leagues API示例的变体创建了一个简单的Mule项目：
+
+. 下载 link:_attachments/LeagueAPIexample.raml[这个RAML API定义]并将其导入Studio，以便APIKit Studio插件可以自动为您的Mule应用程序生成流。
+. 转到"Global Elements"标签，并_创建一个新的API自动搜索元素。指定一个API名称，版本并选择包含您的APIKit路由器组件的流作为主流参考。
++
+[NOTE]
+--
+如果您想在.yaml定义文件中保留`apiName`和`apiVersionName`占位符属性，则API Autodiscovery元素是必需的。您还可以在策略的配置文件中替换API名称和版本。
+--
+//当前错误：
+//手动添加API Autodiscovery命名空间：
+// http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+// http://www.mulesoft.org/schema/mule/api-platform-gw http://www.mulesoft.org/schema/mule/api-platform-gw/current/mule-api-platform-gw的.xsd
++
+
+您也可以将此策略应用于Package Explorer中的现有Mule项目，但请确保配置正确的*API Autodiscovery*元素，或手动将自定义策略切入点指向特定的API。
+
+既然您有一个Project应用了这个新创建的策略，现在是时候将所有内容部署在一起。 +
+为了做到这一点：
+
+. 右键单击您的政策项目，然后选择*Run as*和*Run Configurations...*
+. 显示自定义策略的运行配置屏幕：
++
+image::studio-policy-editor-8a38d.png[]
++
+. 选择一个API自定义策略项目并启动一个Mule域或项目
++
+[NOTE]
+--
+如果您为项目配置了API Autodiscovery元素，则当您选择Mule Project时，apiName和apiVersionName属性会自动更新。
+--
++
+. 点击*Apply*，然后点击*Run*
+
+如果您检查控制台日志，根据您的日志记录设置，您可能会注意到一条INFO消息，通知您该策略已正确应用：
+
+---
+com.mulesoft.module.policies.lifecyle.PolicyRegistryLifecycleManager：策略policy.xml已正确应用
+---
+
+[NOTE]
+--
+运行策略项目之前，您可以选择`Show generated API policy file`。这会使Studio使用定义文件中定义的属性显示从配置文件生成的结果策略XML文件。
+--
+
+为了测试是否应用该策略，请打开POSTMAN（或任何其他类似的应用程序发送请求）并尝试将任何内容发布到`0.0.0.0:8081/api/teams`，响应应与您配置的策略对齐：
+
+[source,json,linenums]
+----
+{
+  "error": "Custom Policy: Access denied"
+}
+----
+
+== 了解限制
+
+作为测试版，Studio的自定义策略编辑器有一些限制。在设计和测试自定义策略时请记住以下几点：
+
+=== 配置文件的限制
+
+* 不支持在策略配置文件（例如`{{#isWsdlEndpoint}} {{/isWsdlEndpoint}}`）内对节进行XML验证。使用如下例所示的部分配置的策略将运行，但编辑器在运行之前不会对其进行验证。
++
+[source,XML,linenums]
+----
+<mule:processor-chain name="{{policyId}}-build-response">
+       <mule:set-property propertyName="http.status" value="403"/>
+       {{#isWsdlEndpoint}}
+         <mule:set-property propertyName="Content-Type" value="text/xml"/>
+         <mule:set-payload value="#[soapFault('client', _invalidClientMessage)]"/>
+       {{/isWsdlEndpoint}}
+
+       {{^isWsdlEndpoint}}
+         <mule:set-property propertyName="Content-Type" value="application/json"/>
+         <mule:set-payload value="#[_invalidClientMessage]"/>
+       {{/isWsdlEndpoint}}
+   </mule:processor-chain>
+----
+
+=== 定义文件的限制
+
+* 策略定义文件唯一支持的YAML类型为：`String`，`Boolean`，`Int`，`Expression`和`IpAddress`。
+* 目前不支持用于定义此自定义策略具有用于访问其他API的凭据的`hasContract`布尔值。
+*  Studio不会验证`gatewayCompatibility`属性
+*  `requiredCharacteristics`和`providedCharacteristics`字段未经Studio验证
+*  YAML文件中的`{{order}}`属性不受支持。该政策的顺序被*Run Configurations*屏幕中的另一组覆盖。
+
+Studio的限制=== 
+
+* 不支持从API平台导入和导出自定义策略
+* 不支持从Exchange导入自定义策略
+* 如前所述，此功能目前是针对本地测试。目前无法在API Manager中针对您的API运行自定义策略，并在那里验证它们。
+* 您只能在运行配置中配置一个`ApiName`和`ApiVersion`属性。
+* 可视调试器不支持自定义策略的调试。
+* 没有MUnit支持
+* 不支持自定义策略的Maven支持

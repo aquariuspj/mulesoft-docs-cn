@@ -1,0 +1,118 @@
+=  CloudHub自定义日志附加程序
+:keywords: cloudhub, logging, enhanced log management
+
+image:logo-cloud-active.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-disabled.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-disabled.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+通过选择禁用CloudHub日志，客户可以提供他们自己的log4j配置
+与他们自己的日志系统集成。
+
+== 创建您的Log4j配置
+[IMPORTANT]
+====
+*Important:*
+
+* 此功能仅在请求时可用。如果您无法访问此功能，则可以通过支持门户请求。
+* 由于您自己的log4j appender配置错误，MuleSoft不负责丢失日志数据。
+*  MuleSoft也不负责导致性能下降的错误配置，
+磁盘空间不足或其他副作用。
+* 要将日志配置为流向日志系统和CloudHub，请阅读下面的说明。请注意，用户界面将继续
+警告您CloudHub中的日志不可用。
+* 当您禁用默认CloudHub应用程序日志时，则只有系统日志可用。对于应用程序工作日志，请检查您自己的应用程序的日志记录系统在这种情况下下载日志不是一种选择。
+* 只能使用异步日志appender，不应使用同步appender。
+====
+
+要启用自己的log4j appender，您需要首先使用日志设置创建log4j2.xml配置。在Anypoint Studio中，该文件必须位于src / main / resources目录中。有关详情
+关于创建自己的log4j配置，请参阅
+link:https://logging.apache.org/log4j/2.x/manual/configuration.html[Log4j文档]。
+
+如果您希望将日志传输到您自己的日志记录系统，并且可以在CloudHub中查看，那么您
+必须配置CloudHub log4j appender。 MuleSoft建议将此作为您的基础配置
+日志配置。它将日志数据发送到CloudHub，并在需要时提供本地日志文件
+远程调试MuleSoft员工的目的。
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="INFO" name="cloudhub" packages="com.mulesoft.ch.logging.appender">
+    <Appenders>
+        <RollingFile name="FILE"
+                     fileName="/opt/mule/mule-CURRENT/logs/mule-${sys:domain}.log"
+                     filePattern="/opt/mule/mule-CURRENT/logs/mule-${sys:domain}-%i.log">
+
+            <PatternLayout pattern="[%d{MM-dd HH:mm:ss.SSS}] %-5p %c{1} [%t]: %m%n"/>
+            <DefaultRolloverStrategy max="10"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="10 MB" />
+            </Policies>
+        </RollingFile>
+        <Log4J2CloudhubLogAppender name="CLOUDHUB"
+                                   addressProvider="com.mulesoft.ch.logging.DefaultAggregatorAddressProvider"
+                                   applicationContext="com.mulesoft.ch.logging.DefaultApplicationContext"
+                                   appendRetryIntervalMs="${sys:logging.appendRetryInterval}"
+                                   appendMaxAttempts="${sys:logging.appendMaxAttempts}"
+                                   batchSendIntervalMs="${sys:logging.batchSendInterval}"
+                                   batchMaxRecords="${sys:logging.batchMaxRecords}"
+                                   memBufferMaxSize="${sys:logging.memBufferMaxSize}"
+                                   journalMaxWriteBatchSize="${sys:logging.journalMaxBatchSize}"
+                                   journalMaxFileSize="${sys:logging.journalMaxFileSize}"
+                                   clientMaxPacketSize="${sys:logging.clientMaxPacketSize}"
+                                   clientConnectTimeoutMs="${sys:logging.clientConnectTimeout}"
+                                   clientSocketTimeoutMs="${sys:logging.clientSocketTimeout}"
+                                   serverAddressPollIntervalMs="${sys:logging.serverAddressPollInterval}"
+                                   serverHeartbeatSendIntervalMs="${sys:logging.serverHeartbeatSendIntervalMs}"
+                                   statisticsPrintIntervalMs="${sys:logging.statisticsPrintIntervalMs}">
+
+            <PatternLayout pattern="[%d{MM-dd HH:mm:ss}] %-5p %c{1} [%t]: %m%n"/>
+        </Log4J2CloudhubLogAppender>
+    </Appenders>
+    <Loggers>
+        <Root level="INFO">
+            <AppenderRef ref="FILE"/>
+            <AppenderRef ref="CLOUDHUB"/>
+        </Root>
+        <Logger name="com.gigaspaces" level="ERROR"/>
+        <Logger name="com.j_spaces" level="ERROR"/>
+        <Logger name="com.sun.jini" level="ERROR"/>
+        <Logger name="net.jini" level="ERROR"/>
+        <Logger name="org.apache" level="WARN"/>
+        <Logger name="org.apache.cxf" level="WARN"/>
+        <Logger name="org.springframework.beans.factory" level="WARN"/>
+        <Logger name="org.mule" level="INFO"/>
+        <Logger name="com.mulesoft" level="INFO"/>
+        <Logger name="org.jetel" level="WARN"/>
+        <Logger name="Tracking" level="WARN"/>
+    </Loggers>
+</Configuration>
+----
+
+== 在CloudHub中启用自定义Log4j配置
+
+配置完log4j appender之后，您需要将此应用程序部署到CloudHub
+并告诉CloudHub您正在提供您自己的log4j配置：
+
+. 登录 link:https://anypoint.mulesoft.com/#/signin[Anypoint平台]并点击*CloudHub*。
+. 点击应用程序展开详情视图：
++
+image:CHApps.png[CHApps]
++
+. 点击*Settings*> *Disable CloudHub Logs*。
++
+image:DisableCHLogs.png[DisableCHLogs]
++
+出现验证提示：
++
+image:DisableCHLogsVerification.png[DisableCHLogsVerification]
++
+. 点击*Apply Changes*。
+. 查看您的应用程序设置以确保它们是正确的。
+. 然后点击应用更改重新启动您的应用程序。
+
+一旦你的应用程序启动，日志应该开始流向你的自定义log4j appender，并且将会
+可在您的目标系统中查看。
+
+如果您没有使用上面指定的CloudHub log4j appender，则只有系统日志可用。
+系统日志会告诉你工作人员部署的状态，如果你的应用程序启动正确，
+但不会提供任何应用程序日志。

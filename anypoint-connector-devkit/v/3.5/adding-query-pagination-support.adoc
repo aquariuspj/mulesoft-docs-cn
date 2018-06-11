@@ -1,0 +1,123 @@
+= 添加查询分页支持
+:keywords: devkit, pagination, @Paged, @Processor
+
+在处理大量记录时，查询分页成为一种需求。主要优点是性能，因为Mule运行时一次部分处理记录块，而不是尝试同时处理内存中的所有记录。
+
+[NOTE]
+要在连接器中实现分页，请确保您要连接的*service's API* *provides pagination*功能。
+
+[NOTE]
+请注意，在连接器上启用分页可能会破坏与旧版Mule版本（Mule Runtime 3.5.x之前版本）的向后兼容性，因为它可能会更改处理器的返回类型。
+
+== 启用分页
+
+在连接器中启用分页非常简单。您的`@Processor`方法必须满足三个必要条件：
+
+. 用`@Paged`注释该方法
+. 必须接收类型为`org.mule.api.streaming.PagingConfiguration`的参数
+. 返回类型必须是`ProviderAwarePagingDelegate`
+
+[source,java, linenums]
+----
+@Paged
+@Processor
+    public ProviderAwarePagingDelegate query(String query, final PagingConfiguration pagingConfiguration) throws Exception
+{
+    return new CustomPagingDelegate(query,pagingConfiguration);
+}
+
+public QueryResult executeQuery(String query, String nextItem) throws Exception {
+        myServiceClient.query(query,nextItem);
+}
+----
+
+*Note*：`@Processor`方法与操作`executeQuery`之间的区别。处理器返回`PagingDelegate`，稍后（当检索页面时）接收已连接的连接器实例并相应地执行`executeQuery`。
+
+== 创建一个CustomPagingDelegate
+
+`ProviderAwarePagingDelegate`是分页发生的地方。看看`ProviderAwarePagingDelegate`抽象类，它需要两个类型参数（在本例中为T和P）。在下面的类定义中，T代表要返回的数据，P代表数据提供者，即Anypoint连接器。
+
+[source,java, linenums]
+----
+public abstract class ProviderAwarePagingDelegate<T, P> implements Closeable
+
+{
+    /**
+     * Returns the next page of items. If the return value is
+     * <code>null</code> or an empty list, then it means
+     * no more items are available
+     *
+     * @param provider The provider to be used to do the query.
+     * You can assume this provider is already properly initialised
+     * @return a populated list of elements. <code>null</code>
+     * or an empty list, then it means no more items are available
+     * @throws Exception
+     */
+    public abstract List<T> getPage(P provider) throws Exception;
+
+    /**
+     * Returns the total amount of items in the non-paged result set.
+     * In some scenarios, it might not be possible or
+     * convenient to actually retrieve this value. -1 is
+     * returned in such a case.
+     *
+     * @param provider The provider to be used to do the query.
+     * You can assume this provider is already properly initialised.
+     */
+    public abstract int getTotalResults(P provider) throws Exception;
+
+    /**
+     * Close whatever external resource you might use
+     */
+    @Override
+    public void close() throws MuleException;
+
+}
+----
+
+再次注意，在执行方法`getPage(P provider)`和`getTotalResults(P provider)`时，Anypoint Connector DevKit会从连接池中选择正确的连接器实例。
+
+[source,java, linenums]
+----
+/**
+ * Example of Paging Delegate implementation
+ */
+public class CustomPagingDelegate extends ProviderAwarePagingDelegate<Item,CustomConnector> {
+    List<Item> cachedPage;
+    String query;
+    String nextItem;
+    int totalItems = -1;
+
+    public CustomPagingDelegate(String query, PagingConfiguration pagingConfiguration) {
+        this.query = query;
+    }
+
+    @Override
+    public List<Item> getPage(CustomConnector provider) throws Exception {
+        if (cachedPage != null) return cachedPage;
+        QueryResult queryResult = provider.executeQuery(query,nextItem);
+        nextItem = queryResult.nextItem();
+        return queryResult.items();
+    }
+    @Override
+    public int getTotalResults(CustomConnector provider) throws Exception {
+        if (totalItems != -1) return totalItems;
+        QueryResult queryResult = provider.executeQuery(query,nextItem);
+        nextItem = queryResult.nextItem();
+        totalItems = queryResult.totalItemsCount();
+        cachedPage = queryResult.items();
+        return totalItems;
+    }
+    @Override
+    public void close() throws MuleException {
+        //Close whatever external resource you might use
+    }
+}
+----
+
+要创建您自己的`ProviderAwarePagingDelegate`版本，您必须扩展它。下面是这个类的简单扩展的例子：
+
+== 另请参阅
+
+*  *NEXT*：了解如何将 link:/anypoint-connector-devkit/v/3.6/developing-devkit-connector-tests[测试]添加到连接器。
+* 生成 link:/anypoint-connector-devkit/v/3.6/connector-reference-documentation[参考文档]。

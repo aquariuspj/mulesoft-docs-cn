@@ -1,0 +1,129 @@
+= 脚本模块参考
+
+脚本模块为在Mule中使用脚本语言提供了便利。任何支持 http://www.jcp.org/en/jsr/detail?id=223[JSR-223]的脚本语言都可以在Mule中使用。脚本可以用作组件或变换器的实现。此外，脚本可用于表达式评估，这意味着可以使用当前消息的脚本评估来控制消息路由。你甚至可以从脚本配置Mule实例。
+
+xslt：访问样式源时出错。
+
+以下示例演示如何使用内嵌脚本配置Groovy脚本组件：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:script="http://www.mulesoft.org/schema/mule/scripting"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.3/mule.xsd
+       http://www.mulesoft.org/schema/mule/scripting
+       http://www.mulesoft.org/schema/mule/scripting/3.3/mule-scripting.xsd
+       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.3/mule-vm.xsd">
+ 
+    <vm:connector name="vmConnector"/>
+ 
+    <script:script name="myScript" engine="groovy">
+        return "$payload Received"
+    </script:script>
+ 
+        <flow name="inlineScript">
+            <vm:inbound-endpoint path="vm:in1"/>
+            <script:component>
+                <script:script engine="groovy">
+                    return "$payload Received"
+                </script:script>
+            </script:component>
+            <vm:outbound-endpoint path="out1"/>
+        </flow>
+...
+----
+
+以下示例演示如何使用绑定编排消息流。该示例调用两个不同的服务并将结果传递给出站路由器。
+
+[source, xml, linenums]
+----
+<flow name="scriptWithBindings">
+            <inbound>
+                <inbound-endpoint ref="client_request"/>
+            </inbound>
+            <script:component>
+                <script:script engine="groovy">
+                    msg = CalloutService.doSomething(payload)
+                    return CalloutService.doSomethingElse(msg)
+                </script:script>
+                <script:java-interface-binding interface="org.mule.components.script.CalloutService" method="doSomething">
+                    <outbound-endpoint ref="callout_1" synchronous="true"/>
+                </script:java-interface-binding>
+                <script:java-interface-binding interface="org.mule.components.script.CalloutService" method="doSomethingElse">
+                    <outbound-endpoint ref="callout_2" synchronous="true"/>
+                </script:java-interface-binding>
+            </script:component>
+            <outbound>
+                <pass-through-router>
+                    <outbound-endpoint ref="client_response"/>
+                </pass-through-router>
+            </outbound>
+        </flow>
+ 
+        <flow name="Callout1">
+            <inbound>
+                <inbound-endpoint ref="callout_1"/>
+            </inbound>
+            <test:component appendString=" Received by #[mule:context.serviceName]"/>
+        </flow>
+ 
+        <flow name="Callout2">
+            <inbound>
+                <inbound-endpoint ref="callout_2"/>
+            </inbound>
+            <test:component appendString=" Received by #[mule:context.serviceName]"/>
+        </flow>
+----
+
+xslt：访问样式源时出错。
+
+== 脚本上下文绑定
+
+在Mule中运行时，脚本在脚本上下文中有许多可用的对象：
+
+[%header,cols="2*"]
+|===
+| {名称{1}}说明
+| `log`  |可用于写入Mule日志文件的记录器。
+| `muleContext`  |对MuleContext对象的引用。
+| `registry`  | Mule注册表的简便快捷方式（否则可通过`muleContext.registry`获取）。
+| `eventContext`  |对事件上下文的引用。这使您可以从脚本程序中派发事件。
+| `message`  |当前消息。
+| `originalPayload`  |在进行任何转换之前，当前消息的有效载荷。
+| `payload`  |如果在流上配置了变换器，则转换当前消息的有效载荷。否则，这与`originalPayload`的值相同。
+| `src`  |与`payload`相同，保持向后兼容。
+| `flowConstruct`  |对当前流对象的引用。
+| `id`  |当前消息ID。
+| `result` a |
+可以写入脚本结果的占位符对象。通常最好从脚本中返回一个值，除非脚本方法没有返回值。
+
+[WARNING]
+如果您的脚本需要返回null，则必须设置result = null，而不是简单地返回null
+|消息属性
+
+|消息属性 |任何消息属性都可以用作脚本的变量。
+|===
+
+xslt：访问样式源时出错。
+
+以Groovy为例，以下变换器配置将逗号分隔的一串值转换为`java.util.List`。
+
+[source, xml, linenums]
+----
+<script:transformer name="stringReplaceWithParams">
+        <script:script engine="groovy">
+            <property key="oldStr" value="l"/>
+            <property key="newStr" value="x"/>
+            <script:text>
+                return payload.toString().replaceAll("$oldStr", "$newStr")
+            </script:text>
+        </script:script>
+    </script:transformer>
+----
+
+xslt：访问样式源时出错。
+
+xslt：访问样式源时出错。

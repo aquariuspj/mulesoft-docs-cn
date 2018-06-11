@@ -1,0 +1,376 @@
+= 添加DataSense
+:keywords: devkit, datasense, connectors, metadata, annotations, pojo
+
+Mule DataSense显示服务中实体的元数据。尽管此功能是可选的，但Mule强烈建议您在连接器中使用DataSense，以便使用户更容易实施它。
+
+image:devkit-steps-operations.png[的devkit步骤的操作]
+
+== 先决条件
+
+本文档假定您熟悉 link:/anypoint-connector-devkit/v/3.6/[Anypoint连接器DevKit]中提供的连接器体系结构，并且您从最终用户的角度熟悉 link:/mule-user-guide/v/3.6/datasense[DataSense]。
+
+带有DataSense的== 连接器
+
+集成开发人员通常会花费大量时间来简单地确定要传递给Web服务或由Web服务返回的数据的参数和类型。不得不使用每个API的文档来找出这些参数是一个低效率，易犯错，并且往往令人沮丧的体验。感谢DataSense，这些信息可以在设计时随时在Anypoint Studio中使用。
+
+DataSense为Studio提供实体及其内部结构，然后将这些信息呈现给使用该连接器的用户。 DataSense还可与其他Anypoint Studio功能配合使用：
+
+* 访问连接器的元数据，以便在上下文正确时，Studio智能地为连接器返回的字段中的期望值提供建议。
+* 使用DataMapper自动推断映射内的输入或输出数据的能力（与启用DataSense的连接器一起使用时）。
+
+[NOTE]
+ 详细了解 link:/mule-user-guide/v/3.6/datasense[DataSense]。
+
+DataSense的基本优势是能够通过连接器从应用程序公开的数据模型中提取元数据。实施DataSense的两个关键步骤：
+
+.  *Configure metadata retrieval*  - 从服务获取元数据并提供连接器的实现以提供此信息。
+.  *Configure metadata awareness*  - 定义如何对操作进行注释，以便Anypoint Studio了解DataSense实施并向连接器的最终用户提供有关它的信息。
+
+== 静态数据模型
+
+当连接器将其实体作为POJO公开时，它被认为具有静态数据模型（也称为"strongly typed"数据模型）。例如，如果您使用具有一组特定类的SDK，则会在编译时解析并知道这些类。
+
+在这种情况下，元数据检索非常简单：POJO实体类定义可以被引用，并且它们可以提供Java中所需的所有元数据，这些元数据可以使用自省。处理器中的强类型参数已经意识到了这种意识。
+
+[NOTE]
+查看GitHub中的 link:https://github.com/mulesoft/twitter-connector/tree/develop[Twitter连接器]以查找示例。
+
+== 动态数据模型
+
+当连接器具有动态数据模型（也称为"weakly typed"）时，特定类型的元数据不可立即使用，某个`MetaDataKey`表示在设计或运行时解析的元数据。要为具有动态数据模型的连接器支持DataSense功能，您必须实现其他功能，以根据应用程序提供的数据创建元数据。
+
+=== 元数据检索
+
+动态元数据检索要求您在由连接器引用的`MetaDataCategory`中包含两个注释元数据相关方法，该连接器为动态模式生成DataSense元数据。
+
+*  `@MetaDataKeyRetriever`从连接的服务中检索所有实体类型名称的列表。
++
+[source, java, linenums]
+----
+@MetaDataKeyRetriever
+public List<MetaDataKey> getMetadataKeys() {  }
+----
++
+*  `@MetaDataRetriever`使用元数据键列表（由`@MetaDataKeyRetriever`检索）来检索每个实体类型的实体组合。
++
+[source, java, linenums]
+----
+@MetaDataRetriever
+public MetaData getMetadata(MetaDataKey key) {  }
+----
+
+=== 元数据意识
+
+这一步使捕获的元数据可以被消息处理器访问。实施时，Studio中连接器属性编辑器中的下拉菜单显示`@MetaDataKeyRetriever`返回的所有实体;其中每个都与`@MetaDataRetriever`返回的属性相结合。
+
+image:DSimage.png[DSimage]
+
+为此，消息处理器必须包含一个方法，该方法接收实体类型作为用`@MetaDataKeyParam`注释的参数。此方法还必须接收实体数据（由`@MetaDataRetriever`返回）上注释为`@Payload`或`@Default ("#[payload]")`的参数。
+
+根据元数据是*static*还是*dynamic*，此方法预期和生成的数据类型会有所不同。
+
+如果您的元数据是*static*，那么实体数据是`Object`：
+
+[source, java, linenums]
+----
+public Object create(@MetaDataKeyParam String entityType, @Default("#[payload]") Object entityData) {
+    }
+----
+
+如果您的元数据为*dynamic*，则实体数据为`Map<String,Object>`：
+
+[source, java, linenums]
+----
+public Map<String,Object> create(@MetaDataKeyParam String entityType, @Default("#[payload]") Map<String,Object> entityData) {
+    }
+----
+
+如果您的元数据是*dynamic objects*的{​​{0}}，则实体数据是`List<Map<String,Object>>`：
+
+[source, java, linenums]
+----
+public List<Map<String,Object>> getList(@MetaDataKeyParam String entityType, @Default("#[payload]") List<Map<String,Object>> entityData) {
+    }
+----
+
+== 为连接器添加DataSense支持以实现动态数据模型
+
+要在连接器中实现DataSense，请先使用`@MetaDataScope`创建一个`@MetaDataCategory`并将其绑定到连接器。
+
+元数据类别=== 
+
+为了将DataSense解析器分组，DevKit提供了可应用于Java类的注释`@MetaDataCategory`。在此Java类中，将元数据检索机制（即用`@MetaDataKeyRetriever`和`@MetaDataRetriever`注释的方法）定义为`MetaDataScope`。
+
+例如，假设您希望提供一个常规消息处理器，另外还有一个特殊消息处理器，用于提供对名为"books"的作者实体上的秘密字段的访问，该实体代表作者的书面书籍。您可以使用元数据类别将几个不同的消息处理器捆绑到一个连接器中，并在每个连接器中显示不同的实体组。
+
+下面的示例显示了一个包含两种方法的`@MetaDataCategory`类，并驻留在单独的Java文件中。然后我们深入到注释的方法。您可以在此类和连接器模块之间建立链接。这样做的最常见方法是在连接器类中使用`@Inject`，如下所示。
+
+. 创建`MetaDataCategory`类：
++
+[source, java, linenums]
+----
+import org.mule.common.metadata.*;
+import org.mule.common.metadata.builder.DefaultMetaDataBuilder;
+import org.mule.common.metadata.builder.DynamicObjectBuilder;
+import org.mule.common.metadata.datatype.DataType;
+
+import org.mule.api.annotations.components.MetaDataCategory;
+import org.mule.api.annotations.MetaDataKeyRetriever;
+import org.mule.api.annotations.MetaDataRetriever;
+
+@MetaDataCategory
+public class DefaultCategory {
+
+    @Inject
+    private MyConnector myconnector;
+
+    @MetaDataKeyRetriever
+    public List<MetaDataKey> getEntities() throws Exception {
+        //Here we generate the keys
+    }
+
+    @MetaDataRetriever
+    public MetaData describeEntity(MetaDataKey entityKey) throws Exception {
+        //Here we describe the entity depending on the entity key
+    }
+}
+----
++
+. 检查导入：
++
+*  `org.mule.common.metadata.*`类包含用于表示和管理元数据的Mule类。
+*  `org.mule.common.metadata.builder`类构造元数据表示（可能非常复杂的一组对象）。
+*  `org.mule.common.metadata.datatype.DataType`类表示不同的对象字段数据类型及其属性。
++
+. 使用`@MetaDataScope`将此类别绑定到`@Connector`或`@Processor`：
++
+[source, java, linenums]
+----
+/**
+ * DataSense enabled Connector with multiple Categories
+ *
+ * @author MuleSoft, inc.
+ */
+@MetaDataScope(DefaultCategory.class)
+@Connector(name = "my-connector", minMuleVersion = "3.6")
+public class MyConnector {
+...
+
+  @MetaDataScope(AdvancedCategory.class)
+    @Processor
+    public Map<String,Object> advancedOperation(@MetaDataKeyParam String entityType, @Default("#[payload]") Map<String,Object> entityData) {
+       //Here you can use the books field in authors//
+    }
+}
+----
+
+具有静态元数据的=== 示例
+
+以下部分演示如何构建一个连接器，该连接器使用静态数据模型从Web服务中绘制数据。
+
+[NOTE]
+从 link:https://github.com/mulesoft-labs/example-connector/tree/master/static-metadata-example[GitHub上]下载此静态元数据连接器的完整示例。
+
+在本例中，连接器连接的Web服务是一个库Web服务。 Web服务包含两种类型的元素：*book*和*author*。
+
+*book*元素包含以下字段：
+
+* 标题
+* 概要
+* 作者
+
+*author*元素包含以下字段：
+
+* 的firstName
+*  lastName的
+
+==== 静态元数据检索
+
+要检索静态元数据：
+
+. 从连接器获取元数据。由于元数据是静态的，因此您无需拨打电话即可获取Web服务，只需对连接器中的信息进行硬编码即可。在连接器类中，添加一个用`@MetaDataKeyRetriever`注释的新方法：
++
+[source, java, linenums]
+----
+@MetaDataKeyRetriever
+    public List<MetaDataKey> getEntities() throws Exception {
+        List<MetaDataKey> entities = new ArrayList<MetaDataKey>();
+        entities.add(new DefaultMetaDataKey("Book_id","Book"));
+        entities.add(new DefaultMetaDataKey("Author_id","Author"));
+        entities.add(new DefaultMetaDataKey("BookList_id","BookList"));
+        return entities;
+    }
+----
++
+此方法返回实体名称的列表。在这种情况下，它使用三个键检索一个列表：Book，Author和BookList。
+. 实现`@MetaDataRetriever`方法，该方法获取前一个方法返回的每个实体的描述。此Java方法的返回类型_必须为__元数据，并且__仅接收一个`MetaDataKey`参数。在这个例子中，假设服务的实体类在本地存在。在描述它们时，可以在代码中直接引用`Book.class`和`Author.class`。您可以调用DevKit提供的接口`DefaultMetaDataBuilder`来轻松构建POJO。
++
+[source,java, linenums]
+----
+@MetaDataRetriever
+public MetaData describeEntity(MetaDataKey entityKey) throws Exception {
+    //Here we describe the entity depending on the entity key
+    if ("Author_id".equals(entityKey.getId())) {
+        MetaDataModel authorModel =  new DefaultMetaDataBuilder().createPojo(Author.class).build();
+        return new DefaultMetaData(authorModel);
+    }
+    if ("Book_id".equals(entityKey.getId())) {
+        MetaDataModel bookModel =  new DefaultMetaDataBuilder().createPojo(Book.class).build();
+        return new DefaultMetaData(bookModel);
+    }
+    if ("BookList_id".equals(entityKey.getId())) {
+        MetaDataModel bookListModel =  new DefaultMetaDataBuilder().createList().ofPojo(Book.class).build();
+        return new DefaultMetaData(bookListModel);
+    }
+    throw new RuntimeException(String.format("This entity %s is not supported",entityKey.getId()));
+}
+----
++
+此方法自动描述Book，BookList和Author以及由它们公开的所有公共字段。
+
+[NOTE]
+====
+我们在获得实体时使用两种不同的操作，而另一种获得描述的原因是，通过单一方法描述所有实体可能会导致API调用数量过多（您可能需要每个实体一次API调用）。
+
+使用两种不同的操作非常适合从外部服务检索元数据。
+====
+
+==== 静态元数据意识
+
+到目前为止，我们已经实现了我们旨在连接的服务中的所有实体的描述机制。现在，让消息处理器可以访问这些信息。
+
+该方法接收操作的类型作为用`@MetaDataKeyParam`注释的参数。该方法还会接收由`@MetaDataRetriever`在注释为`@Default("#[payload]")`的参数上返回的实体数据。
+
+[source, java, linenums]
+----
+@Processor
+public Object create(@MetaDataKeyParam(affects = MetaDataKeyParamAffectsType.BOTH) String entityType, @Default("#[payload]") Object entityData) {
+    if (entityData instanceof Book) {
+        return createBook((Book) entityData));
+    }
+    if (entityData instanceof Author) {
+        return createAuthor((Author) entityData));
+    }
+    throw new RuntimeException("Entity not recognized");
+}
+private Object createAuthor(Author entityData) {
+    //CODE FOR CREATING NEW AUTHOR GOES HERE
+    return null;
+}
+private Object createBook(Book entityData) {
+    //CODE FOR CREATING A NEW BOOK GOES HERE
+    return null;
+}
+----
+
+输出元数据根据Studio中选择的实体类型而变化。当与DataMapper转换器结合使用时，这特别有用。由于此方法，`@MetaDataRetriever`返回的所有实体均显示在Studio的下拉菜单中。
+
+image:DSimage.png[DSimage]
+
+此外，关于实体的元数据可以传递给其他Mule元素，如DataMapper。
+
+image:image2.png[图像2]
+
+具有动态元数据的=== 示例
+
+以下部分演示如何构建一个连接器，该连接器使用动态数据模型从Web服务中绘制数据。实现元数据的最实用方式始终是动态的。这样做，如果连接的服务中的实体属性随时间而变化，则连接器可以毫不费力地适应这些更改。
+
+[NOTE]
+从 link:https://github.com/mulesoft-labs/example-connector/tree/master/dynamic-metadata-example[GitHub上]下载此动态元数据连接器的完整示例。
+
+在此示例中，如上面的示例所示，连接器将书籍数据库连接到的Web服务。它包含两种类型的元素：书籍和作者，它们都包含与前面示例中相同的字段。
+
+==== 动态元数据检索
+
+在这个例子中，因为你没有直接访问带有类型结构的POJO，所以你必须从Web服务本身获得这个结构。使用`Map<String,Object>`来表示动态实体。
+
+[NOTE]
+如果通过API调用动态获取元数据，则在`@MetaDataKeyRetriever`方法之前执行`@Connect`方法。这意味着最终用户必须先解决任何连接问题，然后才能访问元数据。
+
+. 在连接器类中，添加一个用`@MetaDataKeyRetriever.`注释的新方法（此方法与用静态元数据实现的方法没有区别。）
++
+[source, java, linenums]
+----
+@MetaDataKeyRetriever
+    public List<MetaDataKey> getEntities() throws Exception {
+        List<MetaDataKey> entities = new ArrayList<MetaDataKey>();
+        entities.add(new DefaultMetaDataKey("Book_id","Book"));
+        entities.add(new DefaultMetaDataKey("Author_id","Author"));
+        entities.add(new DefaultMetaDataKey("BookList_id","BookList"));
+        return entities;
+    }
+----
++
+. 实施`@MetaDataRetriever`方法。这获得了前面方法返回的每个实体的描述。如前例所示，此方法使用接口`DefaultMetaDataBuilder`，但这次调用它来构建动态对象而不是POJO。
++
+[source, java, linenums]
+----
+@MetaDataRetriever
+public MetaData describeEntity(MetaDataKey entityKey) throws Exception {
+    //Here we describe the entity depending on the entity key
+    if ("Author_id".equals(entityKey.getId())) {
+        MetaDataModel authorModel =  new DefaultMetaDataBuilder().createDynamicObject("Author")
+                .addSimpleField("firstName", DataType.STRING)
+                .addSimpleField("lastName", DataType.STRING)
+                .build();
+        return new DefaultMetaData(authorModel);
+    }
+    if ("Book_id".equals(entityKey.getId())) {
+        MetaDataModel bookModel =  new   DefaultMetaDataBuilder().createDynamicObject("Book")
+                .addSimpleField("title",DataType.STRING)
+                .addSimpleField("synopsis",DataType.STRING)
+                .addDynamicObjectField("author")
+                .addSimpleField("firstName",DataType.STRING)
+                .addSimpleField("lastName",DataType.STRING)
+                .endDynamicObject()
+                .build();
+        return new DefaultMetaData(bookModel);
+    }
+    if ("BookList_id".equals(entityKey.getId())) {
+        MetaDataModel bookListModel =  new DefaultMetaDataBuilder().createList().ofDynamicObject("book").build();
+        return new DefaultMetaData(bookListModel);
+    }
+    throw new RuntimeException(String.format("This entity %s is not supported",entityKey.getId()));
+}
+----
+
+==== 动态元数据意识
+
+到目前为止，您已经为您要连接的服务中的所有实体实现了描述机制。现在您必须使消息处理器可以访问这些信息。
+
+消息处理器必须接收操作的类型作为用`@MetaDataKeyParam`注释的参数。 （Studio以`@MetaDataRetriever`返回的所有实体在下拉列表中显示操作。）消息处理器还必须以`Map<String,Object>`参数的形式接收实体数据（由`@MetaDataRetriever`返回），注释为`@Default("#[payload]")`。
+
+[source, java, linenums]
+----
+@Processor
+public Map<String,Object> create(@MetaDataKeyParam String entityType, @Default("#[payload]") Map<String,Object> entityData) {
+    if ("Book_id".equals(entityType)) {
+        return createBook(entityData);
+    }
+    if ("Author_id".equals(entityType)) {
+        return createAuthor(entityData);
+    }
+    throw new RuntimeException("Entity not recognized");
+}
+private Map<String, Object> createAuthor(Map<String, Object> entityData) {
+    //CODE TO CREATE BOOK GOES HERE
+    return entityData;
+}
+private Map<String, Object> createBook(Map<String, Object> entityData) {
+    //CODE TO CREATE AUTHOR GOES HERE
+    return entityData;
+}
+----
+
+在此方法中，Studio将`@MetaDataRetriever`返回的所有实体显示为下拉字段中的项目。
+
+image:image3.png[图像3]
+
+此外，关于实体的元数据可以传递给其他Mule元素，如DataMapper。
+
+image:image4.png[图像4]
+
+== 另请参阅
+
+*  link:/anypoint-connector-devkit/v/3.6/adding-query-pagination-support[添加查询分页支持]
+*  link:/anypoint-connector-devkit/v/3.6/adding-datasense-query-language[添加DataSense查询语言]

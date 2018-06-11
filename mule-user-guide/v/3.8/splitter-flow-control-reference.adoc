@@ -1,0 +1,447 @@
+= 分流器流量控制参考
+:keywords: anypoint studio, splitter, flow control, fragment, collection, array, parsing
+
+分离器流量控制将消息分成单独的片段，然后将这些片段一次一个地发送到流中的下一个消息处理器。段基于表达式参数进行标识，通常用 link:/mule-user-guide/v/3.8/mule-expression-language-mel[骡子表达语言（MEL）]编写，但也可以采用其他格式。然后，您可以使用*Collection Aggregator*流控制来重新组合原始消息的各个部分。您还可以包含一个*Resequencer*流控制，以便将零件放回到原始序列中，以防乱序混乱。
+
+当您打算处理运行在不同服务器上的异步流程中的拆分部分时，拆分和聚合消息特别有用。分离器和聚合器流量控制一起允许您在多个服务器之间共享工作负载，并且仍然能够在处理完消息后重新组合。
+
+== 分配器配置
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+image:Splitter.png[Splitter]
+
+[%header,cols="20a,80a"]
+|===
+|Field |Description
+|*Display Name* |Customize to display a unique name for the splitter in your application. Default is `Splitter` +
+*Example*: `doc:name="Splitter"`
+|*Enable Correlation* |Specifies whether Mule should give outgoing messages a correlation ID. Options are:
+
+* `IF_NOT_SET`(existing correlation IDs are maintained)
+* `ALWAYS` (existing correlation IDs are overridden)
+* `NEVER` (no action)
+
+Default is `IF_NOT_SET` +
+*Example*: `enableCorrelation="IF_NOT_SET"`
+|*Message Info Mapping* |Optional. If this child element is not configured, `MuleMessage.getCorrelationId()` is used, which is optimal for most use cases. Maps attributes from incoming data to construct Correlation ID and Message ID on outgoing messages. No default value. +
+
+*Example*:
+
+[source,xml,linenums]
+----
+<expression-message-info-mapping
+  messageIdExpression="#[java.util.UUID.randomUUID().toString()]"
+  correlationIdExpression="#[xpath3('//order/@id')]"/>
+----
+
+|*Expression* |Expression to define how to split the message. This is a required field. No default value. +
+*Example*: `expression="#[xpath3('//item')]" `
+|===
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+=== Simple Splitter
+
+[source,xml,linenums]
+----
+<splitter expression="#[xpath3('//item')]" doc:name="Splitter" enableCorrelation="IF_NOT_SET"/>
+----
+
+[%header,cols="30a,70a"]
+|===
+|Element |Description
+|*splitter* |Splits a message into separate fragments, then sends these fragments one at a time to the next message processor in the flow.
+|===
+
+[%header,cols="20a,80a"]
+|===
+|Attribute |Description
+|*doc:name* |Customize to display a unique name for the splitter in your application.
+
+*Note*: Attribute not required in Mule Standalone configuration.
+
+|*expression* |Expression to define how to split the message. This is a required field.
+|*enableCorrelation* |Specifies whether Mule should give outgoing messages a correlation ID. Options are:
+
+* `IF_NOT_SET `(Default. Existing correlation IDs are maintained)
+* `ALWAYS `(Existing correlation IDs are overridden)
+* `NEVER `(No action)
+
+|===
+
+=== Advanced Splitter Including a Child Element
+
+[WARNING]
+Note that this example includes the optional child element, `expression-message-info-mapping`. Use this child element only if your aggregation (later in your flow) is extremely customized and the standard correlation id set by Mule does not meet your needs.
+
+[source,xml, linenums]
+----
+<splitter expression="#[xpath3('//item')]" doc:name="Splitter" enableCorrelation="IF_NOT_SET">
+   <expression-message-info-mapping messageIdExpression="#[java.util.UUID.randomUUID().toString()]" correlationIdExpression="#[xpath3('//order/@id')]"/>
+</splitter>
+----
+
+[%header,cols="30a,70a"]
+|===
+|Child Element |Description
+|*expression-message-info-mapping* |Optional. If this child element is not configured, `MuleMessage.getCorrelationId()` is used, which is optimal for most use cases. Maps attributes from incoming data to construct Correlation ID and Message ID on outgoing messages, according to the expressions in the attributes listed below.
+|===
+
+[%header,cols="30a,70a"]
+|===
+|Attribute |Description
+|*messageIdExpression* |An expression that sets a custom message ID for each of the split messages. Must result in unique message Ids.
+|*correlationIdExpression* |An expression that sets a custom correlation ID for the split messages.
+|===
+
+....
+------
+
+== 基本分离器示例
+
+在这个简单的例子中，Mule将XML负载分成几个项目。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Create a new Anypoint Studio project and drag a link:/mule-user-guide/v/3.8/file-connector[File Connector] onto an empty canvas.
+. Set the *Path* field to `./src/main/resources/`.
+. Add a new *Connector Configuration*, uncheck the `Auto Delete` Setting and click *OK*.
+.. Set the *Polling Frequency* to `15000`.
+.. Set the *File Name Regex Filter* with the expression: `file:filename-regex-filter caseSensitive=true, pattern=vip.xml`
++
+image::splitter-flow-control-reference-ed1f8.png[]
++
+. Drag a *Splitter Flow Control* into the flow.
+. Configure the Splitter as shown. In the *Expression* parameter, provide the link:/mule-user-guide/v/3.8/xpath[XPath expression] `//*:actor/text()',payload,'NODESET'`, wrapped inside a MEL expression. The splitter uses the xpath expression to select every XML element named `actor`, and makes each of these (together with its children) into a new message.
++
+. Add a *Logger* after the Splitter and set its message to `#[payload]` so that it logs the entire payload of each message that it receives.
++
+image:splitter_example.png[splitter_example]
++
+[%header,cols="30a,70a"]
+|===
+|Parameter |Value
+|*Display Name* |`Splitter`
+|*Enable Correlation* |`IF_NOT_SET`
+|*Expression* |`#[xpath3('//*:actor/text()',payload,'NODESET')]`
+|===
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+. Add an File Connector to the flow and configure it as follows:
++
+[source,xml,linenums]
+----
+<file:inbound-endpoint path="./src/main/resources/" connector-ref="File" pollingFrequency="5000" responseTimeout="10000" doc:name="File">
+  <file:filename-regex-filter pattern="vip.xml" caseSensitive="true"/>
+</file:inbound-endpoint>
+----
++
+. For this element to work, you must include a *connector-ref*. The attribute in the connector named *config-ref* references this connector configuration element.
++
+[source,xml]
+----
+<file:connector name="File" autoDelete="false" streaming="true" validateConnections="true" doc:name="File"/>
+----
++
+[%header,cols="30a,70a"]
+|===
+|Attribute |Value
+|`name` | `File`
+|`autoDelete` |`false`
+|`streaming` |`true`
+|`doc:name` |`File`
+|===
++
+. Add a Splitter below, to receive messages File connector. In the *Expression* parameter provide the link:http://www.freeformatter.com/xpath-tester.html#ad-output[XPath] expression `//*:actor/text()`, wrapped inside a MEL expression. This XPath expression selects every XML element named 'actor'. The splitter makes each of these (together with its children) into a new message.
++
+[source,xml]
+----
+<splitter expression="#[xpath3('//*:actor/text()',payload,'NODESET')]" doc:name="Splitter"/>
+----
++
+[%header,cols="30a,70a"]
+|===
+|Attribute |Value
+|`expression` |`#[xpath3('//*:actor/text()',payload,'NODESET')]`
+|`doc:name` |`Splitter`
+|`enableCorrelation` |`IF_NOT_SET`
+|===
++
+. Include a logger after the splitter to log the entire payload of each message received.
++
+[source,xml]
+----
+<logger message="#[message.payload]" level="INFO" doc:name="Logger"/>
+----
++
+[%header,cols="30a,70a"]
+|===
+|Attribute |Value
+|`message` |`#[message.payload]`
+|`level` |`INFO`
+|`doc:name` |`Logger`
+|===
++
+. The finished flow should look like this:
++
+[source,xml, linenums]
+----
+<flow name="SplitterExampleFlow1" >
+  <file:inbound-endpoint path="./src/main/resources/" connector-ref="File" pollingFrequency="5000" responseTimeout="10000" doc:name="File">
+      <file:filename-regex-filter pattern="vip.xml" caseSensitive="true"/>
+  </file:inbound-endpoint>
+  <splitter expression="#[xpath3('//*:actor/text()',payload,'NODESET')]" doc:name="Splitter"/>
+  <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+</flow>
+----
+....
+------
+
+=== 完整示例代码
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+		xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+	http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+	http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+	http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+	http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+	http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+	http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+	http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+
+	    <file:connector name="File" autoDelete="false" streaming="true" validateConnections="true" doc:name="File"/>
+
+	    <flow name="SplitterExampleFlow1" >
+	        <file:inbound-endpoint path="./src/main/resources/" connector-ref="File" pollingFrequency="5000" responseTimeout="10000" doc:name="File">
+	            <file:filename-regex-filter pattern="vip.xml" caseSensitive="true"/>
+	        </file:inbound-endpoint>
+	        <splitter expression="#[xpath3('//*:actor/text()',payload,'NODESET')]" doc:name="Splitter"/>
+	        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+	    </flow>
+</mule>
+----
+
+
+
+==== 测试分割器示例
+
+导航到您项目中的`/src/main/resources`目录，并使用以下内容创建一个`vip.xml`文件：
+
+[source,xml, linenums]
+----
+<root>
+    <actors>
+        <actor id="1">Christian Bale</actor>
+        <actor id="2">Liam Neeson</actor>
+        <actor id="3">Will Ferrell</actor>
+    </actors>
+    <singers>
+        <singer id="4">Dave Grohl</singer>
+        <singer id="5">B.B. King</singer>
+        <singer id="6">Weird Al</singer>
+    </singers>
+</root>
+----
+
+运行该应用程序，并注意每15秒钟，您的文件连接器将XML推送到分离器，并且所有`actor`元素都分为三个不同的消息：
+
+[source,source,linenums]
+----
+INFO  YYYY-DD-MM HH:MM:SS,SSS [] org.mule.api.processor.LoggerMessageProcessor: [#text: Christian Bale]
+INFO  YYYY-DD-MM HH:MM:SS,SSS [] org.mule.api.processor.LoggerMessageProcessor: [#text: Liam Neeson]
+INFO  YYYY-DD-MM HH:MM:SS,SSS [] org.mule.api.processor.LoggerMessageProcessor: [#text: Will Ferrell]
+----
+
+每次发送请求时，响应中每个元素的顺序都可能发生变化。这是因为
+
+== 汇总有效负载
+
+当拆分器拆分消息时，它会在每个输出片段中添加三个新的*outbound variables*。这三个变量稍后将由*Aggregator*用于重新组装消息：
+
+*  MULE_CORRELATION_GROUP_SIZE：原始邮件被分割到的片段数量。
+*  MULE_CORRELATION_SEQUENCE：组内片段的位置。
+*  MULE_CORRELATION_ID：整个组的单个ID（相同原始消息的所有输出片段共享相同的值）。
++
+image:variables+diagramv2.png[变量+ diagramv2]
++
+您可以通过在分离器之后放置一个断点并使用 link:/anypoint-studio/v/6/studio-visual-debugger[可视化调试器]运行流程来查看这些出站变量的值：
+
+image:variables.png[变量]
+
+得益于这些变量，当一个聚合器收到一个单独的片段时，它知道要将它放入哪个组以及该组应该是多大。一旦所有的片段都到达，它将作为单个消息传递完整的组。
+
+image:diagram+ag+2.png[图+ AG + 2]
+
+=== 聚合器配置
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+image:collection_agg.png[collection_agg]
+
+[%header,cols="20a,80a"]
+|===
+|Field |Description
+|*Display Name* |Customize to display a unique name for the splitter in your application. Default value is`Collection Aggregator` +
+*Example*: `doc:name="Collection Aggregator"`
+|*Timeout* |Defines a timeout in milliseconds to wait for events to be aggregated. By default, the aggregator throws an exception if it is waiting for a correlation group and a timeout occurs before it receives all group entities. +
+*Example*: `timeout="60000"`
+|*Fail On Timeout* |If set, your app fails if the aggregator times out. Default is false +
+*Example*: `failOnTimeout="true"`
+|*Message Info Mapping* |Optional. If this child element is not configured, `MuleMessage.getCorrelationId()` is used, which is optimal for most use cases. Defines where to obtain Correlation ID and Message ID in incoming messages. +
+
+*Example*:
+
+[source,xml]
+----
+<expression-message-info-mapping messageIdExpression="#[java.util.UUID.randomUUID().toString()]" correlationIdExpression="#[xpath3('//order/@id')]"/>
+----
+|*Store Prefix* |Defines the prefix of the ObjectStore names +  *Example*: `storePrefix="split_"`
+|===
+
+....
+[tab,title="XML View"]
+....
+
+=== Simple Collection Aggregator
+
+[source,xml]
+----
+<collection-aggregator failOnTimeout="true" doc:name="Collection Aggregator" storePrefix="split_" timeout="60000"/>
+----
+
+[%header,cols="30a,70a"]
+|===
+|Element |Description
+|*collection-aggregator* |Reassembles a message from separate fragments. Once all fragments have arrived it sends the full message to the next message processor in the flow.
+|===
+
+[%header,cols="30a,70a"]
+|===
+|Attribute |Description
+|*doc:name* |
+Customize to display a unique name for the splitter in your application.
+
+Note: Attribute not required in Mule Standalone configuration.
+
+|*Timeout* |Defines a timeout in milliseconds to wait for events to be aggregated. By default the aggregator throws an exception if it is waiting for a correlation group and a timeout occurs before it receives all group entities.
+
+|*Fail On Timeout* |If set, your app fails if the aggregator times out.
+|*Message Info Mapping* |Optional. If this child element is not configured, `MuleMessage.getCorrelationId()` is used, which is optimal for most use cases. Defines where to obtain Correlation ID and Message ID in incoming messages.
+|Prefix |Defines the prefix of the ObjectStore names
+| *event-groups-object-store-ref* | The object store where event groups are stored as a buffer. A default object store is used if none specified.
+| *processed-groups-object-store-ref* | The object store where processed groups are stored as a buffer. A default object store is used if none specified. It is recommended that if you assign a custom object store, that it has a max capacity and an expiration interval.
+|===
+
+=== Advanced Collection Aggregator Including a Child Element
+
+[WARNING]
+Note that this example includes the optional child element, `expression-message-info-mapping`. Use this child element only if your aggregation (later in your flow) is extremely customized and the standard correlation ID set by Mule does not meet your needs.
+
+[source,xml, linenums]
+----
+<collection-aggregator failOnTimeout="true" doc:name="Collection Aggregator" storePrefix="split_" timeout="60000">
+<expression-message-info-mapping messageIdExpression="#[java.util.UUID.randomUUID().toString()]" correlationIdExpression="#[xpath3('//order/@id')]"/>
+</collection-aggregator>
+----
+
+[%header,cols="30a,70a"]
+|====
+|Child Element |Description
+|*expression-message-info-mapping* |Optional. If this child element is not configured, `MuleMessage.getCorrelationId()` is used, which is optimal for most use cases. Maps attributes of the arriving messages to messageIdExpression and correlationIdExpression.
+|====
+
+[%header,cols="30a,70a"]
+|===
+|Attribute |Description
+|*messageIdExpression* |An expression that maps attributes of the arriving messages to messageIdExpression. Must result in unique message IDs.
+|*correlationIdExpression* |An expression that maps attributes of the arriving messages to correlationIdExpression. Must result in unique message IDs.
+|===
+....
+------
+
+== 简单聚合器示例
+
+继之前的Splitter示例之后，以下步骤将指导您再次聚合一个消息中的`actor`元素：
+
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Drag from the canvas a `Collection Aggregator` after the last `Logger` component in the `SplitterExampleFlow1` flow.
+. In order to see the results, add another logger to the end of the flow and set its message to `#[payload]`.
++
+image::splitter-flow-control-reference-06595.png[]
+....
+[tab,title="XML or Standalone Editor"]
+....
+. Add a `Collection Aggregator` and another `Logger` component at the end of your Flow:
++
+[source,xml,linenums]
+----
+<collection-aggregator failOnTimeout="true" doc:name="Collection Aggregator"/>
+<logger message="#[payload]" level="INFO" doc:name="Logger"/>
+----
+....
+------
+
+=== 完整示例代码
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+		xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+
+  <file:connector name="File" autoDelete="false" streaming="true" validateConnections="true" doc:name="File"/>
+  <flow name="SplitterExampleFlow1" >
+    <file:inbound-endpoint path="./src/main/resources/" connector-ref="File" pollingFrequency="5000" responseTimeout="10000" doc:name="File">
+      <file:filename-regex-filter pattern="vip.xml" caseSensitive="true"/>
+    </file:inbound-endpoint>
+    <splitter expression="#[xpath3('//*:actor/text()',payload,'NODESET')]" doc:name="Splitter"/>
+    <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    <collection-aggregator failOnTimeout="true" doc:name="Collection Aggregator"/>
+    <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+  </flow>
+</mule>
+----
+
+再次运行您的代码后，请注意第二个记录器会收集包含所有名称的消息：
+
+[source,source,linenums]
+----
+INFO  YYYY-DD-MM HH:MM:SS,SSS [] org.mule.api.processor.LoggerMessageProcessor: [#text: Christian Bale]
+INFO  YYYY-DD-MM HH:MM:SS,SSS [] org.mule.api.processor.LoggerMessageProcessor: [#text: Liam Neeson]
+INFO  YYYY-DD-MM HH:MM:SS,SSS [] org.mule.api.processor.LoggerMessageProcessor: [#text: Will Ferrell]
+INFO  YYYY-DD-MM HH:MM:SS,SSS [] org.mule.api.processor.LoggerMessageProcessor: [[#text: Liam Neeson], [#text: Will Ferrell], [#text: Christian Bale]]
+----
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.8/splitter-flow-control-examples[分配器的例子]

@@ -1,0 +1,610 @@
+= 持久性交易数据
+
+== 概述
+
+默认情况下，Mule使用 link:/mule-user-guide/v/3.3/business-events[商业活动]存储交易数据。在此配置中，数据存储在本地H2数据库中。但是，对于业务级部署，建议将事务数据存储在外部数据库上，以提高性能并帮助进行灾难恢复。
+
+[NOTE]
+不要将Business Events与持久性MMC状态信息混淆。它们是两个独立的系统，彼此不相关。
+
+[TIP]
+也可以使用外部数据库来存储持久性MMC状态信息。点击 link:/mule-management-console/v/3.3/persisting-environment-data[这里]了解详情。
+
+在外部数据库中存储关于Mule当前操作状态的信息可以促进两种不同类型的情况下的灾难恢复：
+
+*  Mule _transaction-level_ failures：未完成单个消息的消息处理事件的必需序列。
+*  Mule _system-level_ failures：整个Mule系统失败。
+
+本文档涵盖配置数据库Mule ESB可用于保留事务和相应事件的基本方法。支持两个数据库服务器： link:/mule-management-console/v/3.3/persisting-transaction-data[神谕]和 link:/mule-management-console/v/3.3/persisting-transaction-data[PostgreSQL的]。
+
+== 的Oracle
+
+以下示例使用Oracle Database Express Edition 11. * ..安装大纲是基本的：数据库服务器安装在本地计算机上，并在默认端口上列出，并且安全性已停用（对数据库的不安全连接）。
+
+=== 工具
+
+*  SQL Developer 3.0.04：
+** 下载最新版本 http://www.oracle.com/technetwork/developer-tools/sql-developer/downloads/index.html[这里]
+** 请参阅适用于Linux和Windows的安装指南 http://docs.oracle.com/cd/E25259_01/doc.31/e26419/toc.htm[这里]
+*  Oracle Database Expression Edition 11.x：
+** 下载最新版本 http://www.oracle.com/technetwork/products/express-edition/downloads/index.html[这里]
+** 请参阅适用于Linux和Windows的安装指南 http://docs.oracle.com/cd/E17781_01/index.htm[这里]
+** 完整的文档库是 http://www.oracle.com/pls/db112/homepage[这里]
+
+[IMPORTANT]
+====
+*Important*
+
+不要尝试使用JDK 1.7运行SQL Developer .. *Even though the SQL installation guide lists “JDK 1.6.11 or later” as suitable for installation, attempting to run SQL Developer with JDK 1.7.*会导致SQL Developer发出警告消息和格式错误的SQL代码。
+====
+
+=== 安装SQL Developer
+
+按照上面列出的文档提供的简单说明解压缩安装程序并运行SQL Developer的可执行文件。
+
+=== 安装Oracle Express
+
+Oracle Express为Windows提供了一个简单的图形化安装程序，或者为Linux提供了一个`.rpm`包。只需按照上面列出的文档提供的说明进行操作。
+
+[NOTE]
+Windows和Linux都要求您具有管理员权限才能安装Oracle Express。
+
+=== 配置文件
+
+安装期间会自动生成文件`listener.ora`和`tnsnames.ora`。
+
+对于Linux，这些文件通常驻留在：`/u01/app/oracle/product/11.2.0/xe/network/admin`
+
+在Windows上，`listener.ora`和`tnsnames.ora`通常驻留在：`C:\oraclexe\app\oracle\product\11.2.0\server\network\admin`
+
+。`listener.ora`列表
+
+[source, code, linenums]
+----
+# listener.ora Network Configuration File:
+SID_LIST_LISTENER =
+    (SID_LIST =
+        (SID_DESC =
+             (SID_NAME = PLSExtProc)
+             (ORACLE_HOME = /u01/app/oracle/product/11.2.0/xe)
+             (PROGRAM = extproc)
+         )
+    (SID_DESC =
+        (SID_NAME = CLRExtProc)
+        (ORACLE_HOME = /u01/app/oracle/product/11.2.0/xe)
+        (PROGRAM = extproc)
+    )
+    (SID_DESC =
+        (SID_NAME = XE)
+        (ORACLE_HOME = /u01/app/oracle/product/11.2.0/xe)
+    )
+)
+ 
+LISTENER =
+    (DESCRIPTION_LIST =
+        (DESCRIPTION =
+            (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1))
+            (ADDRESS = (PROTOCOL = TCP)(HOST = 0.0.0.0)(PORT = 1521))
+        )
+    )
+ 
+DEFAULT_SERVICE_LISTENER = (XE)
+----
+
+.listing或`tnsnames.ora`
+
+[source, code, linenums]
+----
+# tnsnames.ora Network Configuration File:
+ 
+XE =
+    (DESCRIPTION =
+        (ADDRESS = (PROTOCOL = TCP)(HOST = 0.0.0.0)(PORT = 1521))
+        (CONNECT_DATA =
+            (SERVER = DEDICATED)
+            (SERVICE_NAME = XE)
+        )
+    )
+ 
+EXTPROC_CONNECTION_DATA =
+    (DESCRIPTION =
+        (ADDRESS_LIST =
+            (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1))
+        )
+    (CONNECT_DATA =
+        (SID = PLSExtProc)
+        (PRESENTATION = RO)
+    )
+)
+ 
+ORACLR_CONNECTION_DATA =
+    (DESCRIPTION =
+        (ADDRESS_LIST =
+           (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1))
+     )
+    (CONNECT_DATA =
+        (SID = CLRExtProc)
+        (PRESENTATION = RO)
+    )
+)
+----
+
+[NOTE]
+对于`HOST`值，MuleSoft建议使用静态IP地址（例如`192.168.1.10`）或0.0.0.0地址。 MuleSoft进一步建议不要使用`localhost`或`HOST`的主机名。
+
+[IMPORTANT]
+请注意，如果文件`slqnet.ora`存在（通常在`/app/oracle/product/11.2.0/xe/network/admin`中），则可能包含一些已知会导致问题的选项。例如，除非您正在微调数据库，否则应该禁用与`SQLNET.AUTHENTICATION_SERVICES = (NONE)`的NFS安全集成。
+
+=== 创建数据库用户
+
+要使用SQL Developer GUI创建数据库用户，请完成以下任务：
+
+==== 启动SQL Developer
+
+. 转到`<sqldeveloper install>/sqldeveloper`
++
+* 在Linux和Mac OS X上，运行`sqldeveloper.sh` shell脚本
+* 在Windows上，启动`sqldeveloper.exe`
++
+如果SQL开发人员要求提供完整的Java路径，请输入完整路径（如果使用GUI，请导航到该路径）。典型的Java路径是：
++
+**  Linux：`/usr/java/jdk1.6.0_31/bin/java`
+**  Windows：` C:\Program Files\Java\jdk1.6.0_06\bin\java.exe`
+
+==== 创建新的数据库连接
+
+.. 点击左侧窗格中的*Connections*标签，右键点击*Connections*，然后选择*New Connection*以显示`New / Select Database connection`对话框。
+.. 在连接*Name*字段中输入：`mmc_persistency_tracking`
+.. 在*Username*字段中输入：`SYSTEM`
+.. 在*Password*字段中，输入在Oracle Express安装过程中发布的`SYSTEM`密码。
+.. 在*Hostname*字段中，确保主机名是正确的。 （如果Oracle安装在本地机器上，它将是本地主机。）
+.. 在*SID*字段中输入`xe`
+
+==== 验证并保存连接
+
+. 点击*Test*验证连接。测试完成后，确认在对话框底部附近出现`Status : Success`。
+. 点击*Save*保存您指定的连接设置。
+
+==== 配置连接
+
+. 点击*Connect*，然后点击*Connections*标签上的连接名称旁边的*+*以展开连接元素菜单。
+. 右键单击*Other Users*，然后选择*Create User*以显示*New/Edit User*对话框。
+. 填写所需信息。以下提供样本指导：
++
+* 用户名：`TRACKER`
+* 新密码：`tracker`
+* 默认表空间：`USERS`
+* 临时表空间：`TEMP`
+* 角色选项卡：`RESOURCE, CONNECT`
+* 系统权限选项卡：`CREATE ANY CONTEXT, CREATE ANY TABLE, CREATE ANY SEQUENCE`
+
+. 点击*Apply*，然后点击*Close*。
+
+=== 确定数据库配额
+
+数据库的大小当然会根据使用情况而有很大的不同，并且应该在考虑环境的实际使用的情况下确定数据库的配额。一种方法是通过执行负载测试并将结果外推到一段时间的实际使用情况。
+
+要确定数据库的实际大小，请启动Oracle的`sqlplus`实用程序（请参阅 link:/mule-management-console/v/3.3/persisting-transaction-data[下面]）并运行以下命令：
+
+[source, code, linenums]
+----
+select sum(bytes) from user_segments;
+----
+
+[TIP]
+====
+*details on using the `sqlplus` utility to run commands*
+
+. 根据您的操作系统，通过完成以下步骤之一访问Oracle Express菜单：
++
+* 在Windows上：从Windows开始菜单：要打开`*sqlplus*`命令提示符，请导航至*Programs (or All Programs) > Oracle Database Express 11g Edition > , Run SQL Command Line*。
+* 在Linux上：打开适当的菜单（Gnome中的A *pplications*或KDE中的*K*菜单），然后选择*Oracle Database 11g Express Edition*，然后选择*Run SQL Command Line*。
+. 打开`sqlplus`命令提示符后，键入：connect `TRACKER/tracker@XE`（在本例中，`TRACKER`是用户，`tracker`是密码）
+. 从用户段运行select sum（bytes）命令;
+. 要退出`sqlplus`，请键入：`exit`
+====
+
+[NOTE]
+有关`sqlplus`命令的详细信息，请查阅 http://docs.oracle.com/cd/E11882_01/server.112/e16604/qstart.htm#SQPUG002[SQL * Plus参考指南]。
+
+输出应该类似于以下内容：
+
+[source, code, linenums]
+----
+SQL> connect TRACKER/tracker@XE
+Connected.
+SQL> select sum(bytes) from user_segments;
+ 
+SUM(BYTES)
+----------
+   5832704
+ 
+SQL>
+----
+
+This indicates that the current database size is 5.83 MB.
+
+=== Sample Test Results for Database Quota
+
+*Test configuration*: Agent running on Mule ESB 3.3, on Red Hat Enterprise Linux 6.1 64 bits. For this test, the `Echo` app in Mule was deployed on the same server.
+
+Database tests were performed using http://jmeter.apache.org/[JMeter], an Open Source Java desktop application to perform server load testing, developed by the Apache Software Foundation. JMeter can be downloaded http://jmeter.apache.org/download_jmeter.cgi[here]. Be sure to check the User Manual http://jmeter.apache.org/usermanual/index.html[here].
+
+On these tests, JMeter was used to generate calls to Mule's Echo app, which is provided as part of Mule's example applications bundle. Each call to the Echo app generates eight events: two fixed events, two custom events, and two message processors with two events each.
+
+JMeter was configured to simulate 20 connections with a ramp-up of five seconds in an infinite loop, running for a specific time.
+
+After a single call, the total storage added to the database was 1.625 MB (including database metadata). The following table lists number of transactions and database size at different time marks:
+
+[%header,cols="20,26,26,27"]
+|===
+|Load testing time |Cumulative Total Size |JMeter transactions |Cumalitive JMeter transactions
+|1 h |701.25MB |2,302,691 |2,302,692
+|2 hs |2351.25 MB |4,710,680 |7,013,372
+|3 hs |4577.25 MB |5,960,692 |12,974,064
+|===
+
+=== Configuring the Console
+
+==== Install the Database Driver
+
+The driver is `ojdbc5.jar`. You can download it http://www.oracle.com/technetwork/database/features/jdbc/index-091264.html[here] or from our http://corp.wiki.mulesource.com/display/MULEDEV/Drivers[internal Drivers page].
+
+Copy `ojdbc5.jar` to the folder `<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/lib/`
+
+==== Database Specific Configuration
+
+Go to one of the following directories:
+
+If running MMC on Tomcat: `webapps/mmc/WEB-INF/classes/META-INF/`
+
+If running MMC on Mule ESB: `<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/classes/META-INF/`
+
+Locate the file `persistence.xml`. Open it with a text editor, and find the following line:
+
+[source, xml, linenums]
+----
+<property name="openjpa.jdbc.DBDictionary" value="batchLimit=-1" />
+----
+
+Replace the line with the following:
+
+[source, xml, linenums]
+----
+<property name="openjpa.jdbc.DBDictionary" value="oracle(DriverVendor=oracle)}" />
+----
+
+Locate the file `applicationContext-tracking.xml` and open it with a text editor. Redefine the beans `dataSource`, `jpavendorAdapter` and `entityManagerFactory`, as listed below:
+
+[source, xml, linenums]
+----
+<bean id="dataSource" class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+    <property name="driverClassName" value="oracle.jdbc.driver.OracleDriver" />
+    <property name="url" value="jdbc:oracle:thin:@127.0.0.1:1521:xe" />
+    <property name="username" value="TRACKER" />
+    <property name="password" value="tracker" />
+</bean>
+ 
+<tx:annotation-driven transaction-manager="transactionManager" />
+ 
+<bean id="transactionManager" class="org.springframework.orm.jpa.JpaTransactionManager">
+    <property name="entityManagerFactory" ref="entityManagerFactory" />
+</bean>
+ 
+<bean id="entityManagerFactory" class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
+    <property name="dataSource" ref="dataSource" />
+    <property name="persistenceUnitName" value="persistence-unit" />
+ 
+    <property name="jpaVendorAdapter">
+        <bean id="jpaAdapter" class="org.springframework.orm.jpa.vendor.OpenJpaVendorAdapter" >
+            <property name="database" value="ORACLE"/>
+            <property name="showSql" value="true"/>
+        </bean>
+    </property>
+ 
+    <property name="loadTimeWeaver">
+        <bean class="com.mulesoft.mmc.tracking.repository.jpa.OpenJPALoadTimeWeaver" />
+    </property>
+</bean>
+----
+
+In the output above, notice that the configuration specifies a database listening on localhost (IP `127.0.0.1`), on the default port for Oracle (1521). This is defined in the line `<property name="url" value="jdbc:oracle:thin:@127.0.0.1:1521:xe" />`
+
+Also, the specified SID (`TRACKER`) and password (`tracker`) are the same as those specified on the first part of this document.
+
+==== Known Limitations
+
+On `persistence.xml` the following property is set:
+
+[source, xml, linenums]
+----
+<property name="openjpa.jdbc.SynchronizeMappings" value="buildSchema(SchemaAction=add)" />
+----
+
+This specifies that new tables will be added as needed, but if an essential change is done, the older tables will not be removed, which may be cause for conflicts.
+
+Using `SchemaAction=refresh` instead of `SchemaAction=add` in the above line will solve this problem, but will produce `ORA-01031` Not enough privileges exceptions. This is caused by the system trying to drop everything that it does not directly use, including sequences on the XDB and SYS schemas, which are reserved by Oracle.
+
+==== Troubleshooting Tips
+
+Error message: `ORA-12519, TNS:no appropriate service handler found`
+
+If you get this error message, you will need to run the SQL command provided below, then restart the TNS listener.
+
+As user SYS, run:
+
+[source, code, linenums]
+----
+ALTER SYSTEM SET PROCESSES=150 SCOPE=SPFILE;
+----
+
+To run the SQL command, you can use the `sqlplus` utility, as explained above.
+
+To restart your TNS listener:
+
+On Windows:
+
+. Log in as the user who installed Oracle Database Express and open a DOS terminal.
+. To check the status of the TNS Listener, run the following command: `LSNRCTL STATUS`
+. To stop the TNS Listener, run `LSNRCTL STOP`
+. To start the TNS Listener, run `LSNRCTL START`
+
+On Unix/Linux:
+
+. Log in to the oracle system user, for example by running the command `su - oracle`.
+. Set the appropriate environment variables:
+.. Navigate to the bin directory of the Oracle installation (typically, /`u01/app/oracle/product/11.2.0/xe/bin`
+.. Run the command source `oracle_env.sh`
+. After setting environment variables, check the TNS listener status by running `lsnrctl` status
+. To stop the TNS listener, run `lsnrctl stop`
+. To start the TNS listener, run `lsnrctl start`
+
+== PostgreSQL
+
+The following tutorial covers a simple setup for MMC to work with a Postgres database. The Postgres installation outlined here is basic: the database is installed on the local machine on the default port, with security deactivated (unsecured connection to the database, user with full admin rights).
+
+=== Tools
+
+* PostgreSQL 9.1.3 (download it here)
+* pgAdmin III (select it when installing Postgres)
+* Postgres JDBC driver: postgresql-9.1-901.jdbc4.jar. Select it at installation time or download it from our internal Drivers page
+
+=== Installing the Database
+
+The easiest way to install the database is by using the Enterprise One-Click installer, which you can download here.
+
+[NOTE]
+You need administrator privileges on your machine for the installation to proceed.
+
+[TIP]
+Quick Postgres tutorials for Linux, Mac OS X and Windows can be found here.
+
+Version 9.1 installs with the following default values:
+
+* Default port: `5432`
+* Default admin user: `postgres`
+
+Mule recommends installing one of Postgres’s GUI administration utilities, such as phpPdAdmin (Web-based) or pgAdmin III. These can be selected for installation during the Postgres installation process. In this document, we will use pgAdmin III.
+
+==== Setting Up the Database Listener
+
+Locate the file postgresql.conf, which is in the data directory of the Postgres installation, for example: /opt/PostgreSQL/9.1/data/postgresql.conf
+
+In the postgresql.conf file, go to the "Connections and Authentication" section. Locate the line that begins with: Listen_addresses =. If the line reads: listen_addresses = 'localhost', then modify it to read as follows:
+
+[source, code, linenums]
+----
+listen_addresses = '*'
+----
+
+This ill make PostgreSQL listen on all of the available interfaces.
+
+Locate the file pg_hba.conf, which is also in the data directory of the Postgres installation. In this file, find the line that begins with: host all. It will probably look similar to the following:
+
+[source, code, linenums]
+----
+host    all             all             127.0.0.1/32            md5
+----
+
+Change it to:
+
+[source, code, linenums]
+----
+host    all             all             0.0.0.0/0       trust
+----
+
+This ensures that Postgres accepts all attempts to connect from any host, without asking for an encrypted password.
+
+For a detailed description of the `pg_hba.conf` file, click http://developer.postgresql.org/pgdocs/postgres/auth-pg-hba-conf.html[here].
+
+After setting up the listener, the database must be restarted. To do this, open a terminal window (Unix terminal or DOS prompt) and use the `pg_ctl` command.
+
+To verify the state of the PostgreSQL server, run `pg_ctl status`
+
+To restart the PostgreSQL server, run `pg_ctl restart`
+
+Click for instructions on running pg_ctl on Unix or Linux systems
+////
+On a Unix/Linux system, you must run pg_ctl as the postgres system user. Use the sudo or su commands to login as postgres before running pg_ctl. For example: su - postgres
+
+Postgres's default installation directory is not usually included in users' PATH environment variable, causing the shell to return a command not found error when attempting to run the pg_ctl command.
+
+There are several ways to proceed:
+
+* Run the pg_ctl command by specifying the full path: <postgres install dir>/9.1/bin/pg_ctl
+* Set the PATH environment variable to include the <postgres install dir>/bin directory by running export PATH=$PATH:<postgres install dir>/bin
+* Navigate to the directory where pg_ctl resides (with cd <postgres install dir>/9.1/bin/) and run the command as ./pg_ctl
+* Postgres includes a handy shell script to automatically set helpful environment variables such as PATH. The script is at <postgres install dir>/9.1/pg_env.sh. To set environment variables with the values defined in the script, issue source <postgres install dir>/9.1/pg_env.sh
+////
+
+When running pg_ctl status, it is possible that you may get the following output:
+
+[source, code, linenums]
+----
+pg_ctl: no database directory specified and environment variable PGDATA unset
+Try "pg_ctl --help" for more information.
+----
+
+In that case, issue the command with the following options `pg_ctl status -D <Postgres data directory>`
+
+For example:
+
+[source, code, linenums]
+----
+pg_ctl status -D /opt/PostgreSQL/9.1/data
+----
+
+The same is valid for the `restart` option of the `pg_ctl` command. For example, to restart the PostgreSQL server:
+
+[source, code, linenums]
+----
+pg_ctl restart -D /opt/PostgreSQL/9.1/data
+----
+
+==== Creating the Database User
+
+We will create user with the the following parameters:
+
+* Role name: TRACKER
+* Password: tracker
+* Permissions:
+** Can login
+** Inherit rights from parent roles
+** Can create database objects
+
+To create the user with pgAdmin III, complete the following steps:
+
+. Launch pgAdmin III and login to the database server as user postgres by using pgAdmin III’s object browser (located on the right-hand pane) to right-click server PostgreSQL on localhost, then select Connect.
+. On the Object Browser, right-click Login Roles, then select New Login Role.
+. At the New Login Role dialog box, type TRACKER in the Role name field.
+. Go to the Definition tab in the dialog box, and type the password tracker in both Password fields.
+. In the Role Privileges tab, select all the checkboxes.
+. Click OK to close the New Login Role dialog box.
+
+=== Creating a New Database
+
+We will create a database called `mmc_persistency_tracking`, owned by user `TRACKER`
+
+===== Using pgAdmin III:
+
+Complete the following steps:
+
+. Using the Object Browser, navigate to Databases > New Database.
+. In the dialog box, type mmc_persistency_tracking in the Name field.
+. In the Owner field, select TRACKER
+. In the Definition tab, ensure that Encoding is set to UTF8
+. Click OK to close the New Database dialog box.
+
+=== Verifying the New Database
+
+Use PostgreSQL’s psql command-line utility to log in to database mmc_persistency_tracking as user TRACKER. To do this, open a terminal and run:
+
+[source, code, linenums]
+----
+psql postgres –UTRACKER
+----
+
+Click to view how to run the psql command
+////
+By default, the psql command can be run by any user on the system. However, Postgres's default installation directory is not usually included in users' PATH environment variable, causing the shell to return a command not found error when attempting to run the psql command.
+
+There are several ways to proceed:
+
+. Run the psql command by specifying the full path: <postgres install dir>/9.1/bin/psql
+. Set the PATH environment variable to include the <postgres install dir>/bin directory by running export PATH=$PATH:<postgres install dir>/bin
+. Navigate to the directory where psql resides (with cd <postgres install dir>/9.1/bin/) and run the command as ./psql
+. Postgres includes a handy shell script to automatically set helpful environment variables such as PATH. The script is at <postgres install dir>/9.1/pg_env.sh. To set environment variables with the values defined in the script, issue source <postgres install dir>/9.1/pg_env.sh
+////
+
+When you run this command, psql should prompt for the user’s password. After typing it, you should get a prompt similar to the following:
+
+[source, code, linenums]
+----
+mmc_persistency_tracking=#
+----
+
+This indicates that you have successfully connected to the mmc_persistency_tracking database as user TRACKER.
+
+An example of the full login command and output:
+
+[source, code, linenums]
+----
+mitra:/opt/PostgreSQL/9.1/bin$ ./psql mmc_persistency_tracking -UTRACKER
+Password for user TRACKER:
+psql.bin (9.1.3)
+Type "help" for help.
+mmc_persistency_tracking=#
+----
+
+To exit psql, type \q the press Enter
+
+=== Configure the Console
+
+==== Installing the Database Driver
+
+===== Mule Driver
+
+Copy the Postgres jdbc driver, `postgresql-9.1-901.jdbc3.jar`, to the following directory: `<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/lib`
+
+Or make it generally available by copying it to: `<Mule install path>/lib/user`
+
+===== Web Container Driver
+
+Copy the Postgres jdbc driver, `postgresql-9.1-901.jdbc3.jar`, to the following directory: `<Mule install path>/mmc/webapps/mmc/WEB-INF/lib`
+
+===== Database-specific Configuration
+
+Go to one of the following directories:
+
+If running MMC on Tomcat: `webapps/mmc/WEB-INF/classes/META-INF/`
+
+If running MMC on Mule ESB: `<Mule install path>/apps/mmc/webapps/mmc/WEB-INF/classes/META-INF/`
+
+Locate the file `persistence.xml`. Open it with a text editor, and find the following line:
+
+[source, xml, linenums]
+----
+<property name="openjpa.jdbc.DBDictionary" value="batchLimit=-1" />
+----
+
+Replace the line with the following:
+
+[source, xml, linenums]
+----
+<property name="openjpa.jdbc.DBDictionary" value="*postgres*" />
+----
+
+Locate the file applicationContext-tracking.xml and open it with a text editor. Redefine the beans dataSource and jpaAdapter as listed below:
+
+[source, xml, linenums]
+----
+<bean id="dataSource"  class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+    <property name="driverClassName" value="org.postgresql.Driver" />
+    <property name="url" value="jdbc:postgresql://172.16.20.78:5432/persistency" />
+    <property name="username" value="TRACKER"/>
+    <property name="password" value="tracker"/>
+</bean>
+
+[...]
+
+<bean id="jpaAdapter" >
+    <property name="database" value="POSTGRESQL"/>
+    <property name="showSql" value="true"/>
+</bean>
+----
+
+=== Troubleshooting Tips
+
+If you have installed the database on a remote host and experience problems, ensure that network connectivity to the database is working. Open a terminal (Unix or DOS) and run: telnet <host> <port>
+
+Output should be similar to the following:
+
+[source, code, linenums]
+----
+mitra:~$ telnet dbserver 5432
+Trying ::1...
+Connected to dbserver.
+Escape character is '^]'.
+----
+
+The above output indicates a successful connection to host dbserver on port 5432. A “connection refused” error indicates that nothing is listening on the specified host and port. Any other output often indicates a connectivity problem, such as a firewall blocking requests to the specified port.

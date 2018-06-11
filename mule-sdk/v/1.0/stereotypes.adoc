@@ -1,0 +1,201 @@
+= 定型
+
+:keywords: stereotype, mule, sdk, types
+
+刻板印象是分类组件的松散方式。通过给组件分配一个构造型，你并不是暗示它有任何特定的返回类型或结构。相反，您指出它与相同刻板印象中的其他组件具有共同点。您可以分配一个原型以使参数属于原型。
+
+== 刻板标注
+
+要将构造型分配给组件，您必须使用`@Stereotype`注释以及`StereotypeDefinition`类。
+
+您可以在这些级别使用`@Stereotype`注释：
+
+* 在影响特定操作的方法级别。
+* 在类级别将原型赋值给该类中定义的所有操作。
+
+一个组件只能属于一个刻板印象。这意味着如果在组件上使用`@Stereotype`注释，则其他注释都不能为其分配构造型。
+
+例如，用于指示操作不会更改消息并仅执行某种验证的`@Validator`注释将自动为操作分配一个原型。
+
+此示例在操作上使用`@Stereotype`：
+
+[source, Java, linenums]
+----
+@Stereotype(JenkinsStereotypeDefinition.class)
+public final class CommonJenkinsOperations {
+
+
+  public void triggerBuild(String name, Map<String,String> arguments)
+      throws Exception {
+      // ...
+  }
+
+  public void createJobs(String name, Map<String,String> arguments)
+      throws Exception {
+      // ...
+  }
+
+  public Result<JenkinsInformation , JenkinsAttributes> ActiveJobs()
+      throws Exception {
+      // ...
+  }
+}
+
+----
+
+// TODO：可以"belong to"替换"be of"？
+在这种情况下，`CommonJenkinsOperations`类中的所有操作都将在`JenkinsStereotypeDefinition`中定义的原型。
+
+==  StereotypeDefinition
+
+该接口提供了构造型名称，名称空间和父级。默认情况下，命名空间被分配给扩展名的命名空间。
+
+刻板印象有层次结构。默认情况下，除非另有说明，否则它们不会从其他原型扩展。
+
+这个例子展示了如何定义一个`StereotypeDefinition`：
+
+[source, Java, linenums]
+----
+public final class JenkinsStereotypeDefinition extends MuleStereotypeDefinition { // <1>
+
+  @Override
+  public String getName() {
+    return "JENKINS_OPERATION";
+  }
+
+  @Override
+  public Optional<StereotypeDefinition> getParent() {
+    return Optional.of(PROCESSOR_DEFINITION); <2>
+  }
+
+}
+----
+
+<1> `JenkinsStereotypeDefinition`类从知道一个以上的`StereotypeDefinition`开始
+`StereotypeDefinition`，例如`PROCESSOR_DEFINITION`。
+<2>选择`PROCESSOR_DEFINITION`是`MuleStereotypeDefinition`中定义的`StereotypeDefinition`作为此`StereotypeDefinition`的父项。
+
+== 允许在参数上设置注解
+
+此注释标识每个参数所接受的`StereotypeDefinition`。此注释的值是单个值或`StereotypeDefinition`的数组。它只能应用于`Chain`或`Route`类型的参数。
+
+这个例子强制某个原型作为参数：
+
+[source, Java, linenums]
+----
+public class JenkinsScope {
+
+  private static final Logger logger = getLogger(JenkinsScope.class);
+
+  public void jenkinsGroupExecution(@AllowedStereotypes(JenkinsStereotypeDefinition.class) Chain operations,
+                  CompletionCallback<Void, Void> callback)
+      throws Exception {
+
+    LOGGER.debug("Invoking Jenkins Operations.")
+    operations.process(
+      result -> {
+        // Log information about the execution of the operations
+        callback.success(result);
+      },
+      (error, previous) -> {
+        LOGGER.error(error.getMessage());
+        callback.error(error);
+    });
+
+  }
+
+}
+----
+
+接收到的`Chain`只能包含具有在`JenkinsStereotypeDefinition`类中定义的构造型的操作。
+
+== 配置参考
+
+每个配置都有自动分配的独特构造型。这种刻板印象具有以下特征：
+
+* 名称和名称空间都是大写的，单词之间用下划线分隔。
+
+* 命名空间是扩展名的命名空间，例如HTTP连接器的"HTTP"或JMS连接器的"JMS"。
+
+* 名称是配置的名称。例如，"requestConfig"配置的构造型名称将为"REQUEST_CONFIG"。
+
+此默认原型可以使用`@Stereotype`注释来覆盖。
+
+您可以使用此构造型通过使用`@ConfigReference`注释将`String`参数限制为特定类型配置的名称。此注释需要配置原型的名称和命名空间。
+
+此功能的使用示例：
+
+开发一个使用HttpService的扩展，需要HttpRequesterConfig才能使用它。然后，通过使用扩展客户端，
+HttpService将使用实际的配置。
+
+例如，如果HTTP连接器声明了`HttpRequesterConfig`：
+
+[source, Java, linenums]
+----
+@Configuration(name = "requestConfig")
+@ConnectionProviders(HttpRequesterProvider.class)
+@Operations({HttpRequestOperations.class})
+public class HttpRequesterConfig {
+  // Parameters and getters for the Configuration
+}
+----
+
+Web服务使用者连接器是这样定义的：
+
+[source, Java, linenums]
+----
+@ErrorTypes(SoapErrors.class)
+@Operations(ConsumeOperation.class)
+@ConnectionProviders(SoapClientConnectionProvider.class) // <1>
+@SubTypeMapping(baseType = CustomTransportConfiguration.class, subTypes = CustomHttpTransportConfiguration.class)
+@Extension(name = "Web Service Consumer")
+@Xml(prefix = "wsc")
+public class WebServiceConsumer {
+}
+----
+<1>此ConnectionProvider包含使用`@ConfigReference`注释的参数。请注意，因为连接器没有声明任何配置，所以使用默认的`config`。
+
+这是ConnectionProvider声明的一部分：
+
+[source, Java, linenums]
+----
+public class SoapClientConnectionProvider implements CachedConnectionProvider<SoapClientWrapper> {
+  // ...
+  @Inject
+  private HttpService httpService;
+  // ...
+  @Placement(tab = "Transport")
+  @Parameter
+  @Optional
+  @Expression(NOT_SUPPORTED)
+  @DisplayName("Transport Configuration")
+  private CustomTransportConfiguration customTransportConfiguration;
+  // ...
+}
+----
+
+这里是使用`@ConfigReference`注释的地方：
+
+[source, Java, linenums]
+----
+@Alias("http-transport-configuration")
+public class CustomHttpTransportConfiguration implements CustomTransportConfiguration {
+
+  @ConfigReference(namespace = "HTTP", name = "REQUEST_CONFIG") // <1>
+  @Parameter
+  private String requesterConfig;
+
+  @Override
+  public MessageDispatcher buildDispatcher(ExtensionsClient client) {
+    return new HttpConfigBasedMessageDispatcher(requesterConfig, client); // <2>
+  }
+
+  @Override
+  public TransportResourceLocator resourceLocator(ExtensionsClient client) {
+    return new HttpResourceLocator(requesterConfig, client); // <2>
+  }
+}
+----
+
+<1>字符串参数`requesterConfig`必须采用`HttpRequesterConfig`的名称的值。
+<2>配置的名称与`ExtensionsClient`一起使用

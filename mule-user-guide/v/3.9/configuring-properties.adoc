@@ -1,0 +1,221 @@
+= 配置属性
+:keywords: anypoint, studio, on premises, on premise, properties, system properties, property placeholders
+
+此页面描述配置属性，如属性占位符和系统属性。
+
+== 属性占位符
+
+您可以在Mule配置中使用 link:http://ant.apache.org/[蚂蚁]样式的属性占位符。例如：
+
+[source,xml]
+----
+<smtp:outbound-endpoint user="${smtp.username}" password="${smtp.password}"/>
+----
+
+这些占位符的值可以通过各种方式提供，如后面各节所述。
+
+== 全局属性
+
+您可以使用`<global-property>`元素在您的Mule配置中设置占位符值，例如在另一个Mule配置文件中。不要使用全局属性语法来引用`.properties`文件中的值。要引用文件中的属性，请阅读属性文件部分。
+
+[source,xml, linenums]
+----
+<global-property name="smtp.host" value="smtp.mail.com"/>
+<global-property name="smtp.subject" value="Subject of Email"/>
+----
+
+== 属性文件
+
+[WARNING]
+====
+如果您通过 link:/mule-user-guide/v/3.9/shared-resources[共享资源]结构部署多个应用程序，请勿在属性文件中设置任何内容，因为共享域的各个应用程序之间可能存在冲突。相反，应在所部署的应用程序，其域以及该域下的其他应用程序的范围内设置环境变量。
+
+正如 link:/mule-user-guide/v/3.9/shared-resources[共享资源]中所解释的，在Studio中，您可以通过*Run Configurations menu*的*Environment tab*创建这些变量，并通过Play按钮旁边的下拉菜单访问这些变量。
+====
+
+在Anypoint Studio中，您可以将属性添加到项目文件夹中的默认属性文件。
+
+image:properties+file.png[性能+文件]
+
+要从自定义文件加载属性，可以将自定义属性文件放置在`src/main/resources`处，并使用标准的Spring元素+
+  `<context:property-placeholder>`：
+
+[source,xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:context="http://www.springframework.org/schema/context"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+          http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.1.xsd">
+ 
+<context:property-placeholder location="smtp.properties"/>
+
+<flow name="myProject_flow1">
+    <logger message="${propertyFromFile}" doc:name="System Property Set in Property File"/>
+</flow>
+----
+
+要加载多个属性文件，请用逗号分隔每个文件：
+
+[source,xml]
+----
+<context:property-placeholder location="email.properties,http.properties,system.properties"/>
+----
+
+这些文件必须位于您的Mule项目中的`src/main/resources`处。
+
+您还可以在location属性中传递HTTP URL，如下所示，以从集中位置引用属性：
+
+[source,xml]
+----
+<context:property-placeholder location="https://www.abccompany.com/property/http.properties"/>
+----
+
+由于来自文件，系统属性和环境变量的属性通过相同的语法引用，因此可以向属性占位符添加一个`system-properties-mode`参数，以确保覆盖以您所需的方式工作。这个参数的可接受值是ENVIRONMENT，NEVER，FALLBACK和OVERRIDE：
+
+[source,xml, linenums]
+----
+<context:property-placeholder location="app.properties" system-properties-mode="ENVIRONMENT"/>
+<flow name="myProject_flow1">
+    <logger message="${propertyFromFile}" doc:name="System Property Set in Property File"/>
+</flow>
+----
+
+== 消息属性
+
+您可以使用占位符在消息属性（如标题）上执行逻辑。例如，如果您想评估邮件标题的内容类型部分，您可以将其指定为`#[message.inboundProperties['Content-Type']]`。通常，您使用消息属性占位符的表达式。有关更多信息，请参阅 link:/mule-user-guide/v/3.9/mule-expression-language-mel[Mule表达语言MEL]。
+
+== 系统属性
+
+占位符值可以来自JDK系统属性。如果你从命令行启动Mule，你可以如下指定属性：
+
+[source,xml]
+----
+mule -M-Dsmtp.username=JSmith -M-Dsmtp.password=ChangeMe
+----
+
+如果您将Mule部署为Web应用程序，则还可以在`conf/wrapper.conf`中编辑系统属性。在容器中运行Mule时。
+
+您还可以在`web.xml`文件中指定服务器标识，如下所示：
+
+[source,xml, linenums]
+----
+<context-param>
+  <param-name>mule.serverId</param-name>
+  <param-value>MyServer</param-value>
+</context-param>
+----
+
+如果以编程方式启动Mule，则应在创建和启动Mule上下文之前指定属性，如下所示：
+
+[source,xml, linenums]
+----
+System.getProperties().put("smtp.username", "JSmith");
+System.getProperties().put("smtp.password", "ChangeMe");
+----
+
+还有几个启动后不可变的系统属性。要设置这些属性，请使用属性的set方法（如系统ID的`setId`）自定义`MuleConfiguration`，创建一个`MuleContextBuilder`，将配置加载到构建器，然后创建来自构建器的上下文。
+
+例如：
+
+[source,xml, linenums]
+----
+SpringXmlConfigurationBuilder configBuilder = new SpringXmlConfigurationBuilder("my-config.xml");
+DefaultMuleConfiguration muleConfig = new DefaultMuleConfiguration();
+muleConfig.setId("MY_SERVER_ID");
+MuleContextBuilder contextBuilder = new DefaultMuleContextBuilder();
+contextBuilder.setMuleConfiguration(muleConfig);
+MuleContextFactory contextFactory = new DefaultMuleContextFactory();
+MuleContext muleContext = contextFactory.createMuleContext(configBuilder, contextBuilder);
+muleContext.start();
+----
+
+有关可用于设置系统属性的设置方法的信息，请参阅：
+
+link:http://www.mulesoft.org/docs/site/3.8.0/apidocs/org/mule/config/DefaultMuleConfiguration.html[org.mule.config.DefaultMuleConfiguration]
+
+有关配置构建器的信息，请参阅 link:/mule-user-guide/v/3.9/about-configuration-builders[关于配置建造者]。
+
+=== 在Anypoint Studio中设置系统属性
+
+通过“运行配置”菜单，您还可以在Anypoint Studio上启动项目时添加属性：
+
+. 在Package Explorer中右键单击您的项目。
+. 点击*Run As*> *Run Configurations*。
+. 选择*Arguments*选项卡。
+. 将您的参数添加到*VM arguments*字段，属性名称前面带有*-D*
++
+image:Arguments+Tab.png[参数+ Tab键]
++
+您每次通过Studio部署应用程序时都可以使用您的属性。然后您可以使用以下语法引用它们：
++
+[source,xml]
+----
+<logger message="${propertyFromJVMArg}" doc:name="System Property Set in Studio through JVM args"/>
+----
+
+== 环境变量
+
+环境变量可以用各种不同的方式定义，还有几种方式可以从你的应用程序访问这些变量。无论如何定义环境变量，推荐的方式是通过以下语法来引用它：
+
+[source,xml]
+----
+${variableName}
+----
+
+来自操作系统的=== 环境变量
+
+要引用OS中定义的变量，可以简单地使用以下语法：
+
+[source,xml]
+----
+<logger message="${USER}" doc:name="Environment Property Set in OS" />
+----
+
+=== 在Anypoint Studio中设置环境变量
+
+您可以通过运行配置菜单在Studio中设置变量：
+
+. 在Package Explorer中右键单击您的项目。
+. 选择*Run As*> *Run Configurations*。
+. 选择环境选项卡。
+. 点击*New*按钮，为您的变量指定名称和值。
++
+image:Environment+Tab.png[环境+ Tab键]
+
+您每次通过Studio进行部署时都可以使用您的变量。您可以使用以下语法来引用它：
+
+[source,xml]
+----
+<logger message="${TEST_ENV_VAR}" doc:name="Environment Property Set in Studio"/>
+----
+
+注意：语法在OS引用变量和此处定义的变量之间没有区别。在名称重叠的情况下，创建这些变量时可以选择一个单选按钮，以便您可以定义这些变量是否覆盖原始操作系统的变量。
+
+image:Environment+Tab2.png[环境+ TAB2]
+
+== 在运行时管理器中设置属性值
+
+如果您将应用程序部署到 link:/runtime-manager/[运行时管理器]，则还可以通过Runtime Manager控制台设置属性。这些可以在 link:/runtime-manager/deploying-to-cloudhub[部署到CloudHub]或 link:/runtime-manager/managing-applications-on-cloudhub[已运行的应用程序]上定义。
+
+*Note:*如果您的应用程序中的`mule-app.properties`文件中也设置了相同的变量，则在您的应用程序部署时，您在控制台中设置的环境变量始终会覆盖'mule-app.properties'中的值。
+
+创建环境变量或应用程序属性：
+
+. 登录到您的Anypoint平台帐户。
+. 单击运行时管理器。
+. 点击*Deploy Application*部署新应用程序，或者选择正在运行的应用程序，然后点击*Manage Application*。
+. 选择*Settings*部分中的*Properties*标签。
+
+有关更多详细信息，请参阅 link:/runtime-manager/managing-applications-on-cloudhub[在CloudHub上管理应用程序]和 link:/runtime-manager/secure-application-properties[安全应用程序属性]。
+
+== 另请参阅
+
+* 在我们的 link:http://blogs.mulesoft.com/dev/anypoint-platform-dev/mule-school-the-mulemessage-property-scopes-and-variables/[骡子学校：MuleMessage，属性范围和变量]中详细了解mule邮件及其属性。
+*  link:/mule-user-guide/v/3.9/deploying-to-multiple-environments[部署到多个环境]
+
+
+
+

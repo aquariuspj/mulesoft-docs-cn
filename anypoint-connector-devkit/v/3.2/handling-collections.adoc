@@ -1,0 +1,145 @@
+= 处理集合
+
+DevKit提供了一种处理`java.util.Collection`和`java.util.Map`类型的非常简单的方法，无论它们是出现在`@Configurable`字段中还是作为`@Processor`或`@Source`方法的参数。另外，DevKit允许更复杂的场景，其中这些类型嵌套，例如`Map<String, List<String>>`或`List<Map<String, Object>>`。
+
+从Mule处理这些类型有两种方法：一种是明确声明元素，另一种是传递对它们的引用。
+
+_注意：_此页面上的所有示例和解释均对`@Module`和`@Connector`类都有效。
+
+== 示例
+
+让我们考虑下面的定制Mule模块：
+
+[source, java, linenums]
+----
+import org.mule.api.annotations.Configurable;
+import org.mule.api.annotations.Module;
+import org.mule.api.annotations.Processor;
+import org.mule.api.annotations.param.Optional;
+
+import java.util.List;
+import java.util.Map;
+
+@Module(name = "collection")
+public class CollectionModule {
+
+    @Configurable
+    @Optional
+    private List<String> strings;
+
+    @Configurable
+    @Optional
+    private Map<String, String> mapStrings;
+----
+
+而这些春豆：
+
+[source, xml, linenums]
+----
+<spring:bean id="objectA" class="java.lang.String">
+        <spring:constructor-arg value="ObjectA"/>
+    </spring:bean>
+
+    <spring:bean id="objectB" class="java.lang.String">
+        <spring:constructor-arg value="ObjectB"/>
+    </spring:bean>
+
+    <spring:bean id="list" class="org.springframework.beans.factory.config.ListFactoryBean">
+        <spring:property name="sourceList">
+            <spring:list>
+                <spring:ref bean="objectA"/>
+                <spring:ref bean="objectB"/>
+            </spring:list>
+        </spring:property>
+    </spring:bean>
+----
+
+然后可以通过以下任何方式配置模块：
+
+* 列表中的元素是明确声明的：
+
+[source, xml, linenums]
+----
+<collection:config>
+        <collection:strings>
+            <collection:string>MuleSoft</collection:string>
+            <collection:string>FTW</collection:string>
+        </collection:strings>
+    </collection:config>
+----
+
+* 地图的元素是明确声明的：
+
+[source, xml, linenums]
+----
+<collection:config>
+        <collection:map-strings>
+            <collection:map-string key="a">MuleSoft</collection:map-string>
+            <collection:map-string key="b">FTW</collection:map-string>
+        </collection:map-strings>
+    </collection:config>
+----
+
+* 等同于之前的地图：标签名称（`a`和`b`）用作地图的关键字：
+
+[source, xml, linenums]
+----
+<collection:count-map-of-strings config-ref="configC">
+            <collection:map-strings>
+                <collection:a>mulesoft</collection:a>
+                <collection:b>ftw</collection:b>
+            </collection:map-strings>
+        </collection:count-map-of-strings>
+----
+
+* 使用明确声明的一个元素，并为另一个元素使用一个引用：
+
+[source, xml, linenums]
+----
+<collection:config>
+        <collection:strings>
+            <collection:string>MuleSoft</collection:string>
+            <collection:string value-ref="objectA"/>
+        </collection:strings>
+    </collection:config>
+----
+
+* 不是声明列表的元素，而是传递一个相同类型的bean的引用：
+
+[source, xml, linenums]
+----
+<collection:config name="configA">
+        <collection:strings ref="list" />
+    </collection:config>
+----
+
+== 嵌套集合
+
+我们来考虑下面的`@Processor`方法：
+
+[source, java, linenums]
+----
+@Processor
+    public void mapOfLists(Map<String, List<String>> map) {
+----
+
+生成的消息处理器可以如下调用：
+
+[source, xml, linenums]
+----
+<collection:map-of-lists>
+            <collection:map>
+                <collection:map key="key1" value-ref="list" />
+                <collection:map key="key2" value-ref="#[map-payload:anotherList]" />
+            </collection:map>
+        </collection:map-of-lists>
+----
+
+或者，不要通过引用传递地图的值，地图本身可以作为参考：
+
+[source, xml, linenums]
+----
+<collection:map-of-lists>
+            <collection:map ref="#[map-payload:myMap]" />
+        </collection:map-of-lists>
+----

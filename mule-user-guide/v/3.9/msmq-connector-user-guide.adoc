@@ -1,0 +1,636 @@
+=  MSMQ连接器
+：imagesdir：./_images
+
+_选择_
+
+Microsoft消息队列（MSMQ）连接器使用具有两层的典型客户端 - 服务器体系结构，运行在Mule中的连接器或客户端以及运行在服务器端的Windows网关。后者公开了用于发送或接收MSMQ消息的HTTP Web API。
+
+重要提示：在安装和配置MSMQ之前先安装Windows网关服务。有关详细信息，请参阅本文档的另请参阅部分中的链接。
+
+以下是解决方案架构的高级图：
+
+image:msmq3-windows-gateway.png[Windows网关]
+
+== 无效的消息处理
+
+不可读的消息被移动到invalid-queue-name子队列中。您可以使用Windows网关服务配置文件更改此队列的名称。您也可以更改无效消息的超时时间，以使用不正确的格式化程序解析消息的有效内容。
+
+[source, xml, linenums]
+----
+<!-- The name of the invalid messages sub-queue -->
+<add key="invalid-queue-name" value="Invalid"/>
+
+<!-- Time in seconds for invalid messages before being sent to dead-letter queue -->
+<add key="invalid-message-timeout" value="86400"/>
+----
+
+=== 启用完全一次和有序支持
+
+要启用Exactly-Once和In-Order（EOIO）支持，您必须在Anypoint Studio中选择包含MSMQ连接器的流，并将默认操作Processing Strategy设置为同步。否则，连接器在Mule RUntime中收到它们时收到消息，并忽略队列中的原始顺序。
+
+image:msmq3-flow-configuration.png[FlowConfiguration]
+
+该设置在XML中显示为：
+
+[source, xml]
+----
+<flow name="myMSMQFlow" doc:name="myMSMQFlow" processingStrategy="synchronous">
+----
+
+有关更多信息，请参阅下面的消息传递部分。
+
+主要用例== 
+
+MSMQ连接器支持两种主要用例：
+
+* 向MSMQ发送（HTTP POST）单个消息。
+* 从MSMQ接收（HTTP GET）一条或多条消息。
+
+===  HTTP POST方案
+
+在POST方案中，Mule运行时使用连接器将当前流中Mule消息的原始表示使用HTTP发送到MSMQ，并将其发送到Windows网关。该消息作为HTTP POST发送。 HTTP请求的有效载荷是Mule消息的序列化有效载荷（二进制或文本）。 Web API在Windows网关上运行，并使用MSMQ将消息转发到队列。
+
+以下消息显示HTTP POST请求的结构。
+
+====  POST请求消息
+
+[source, code, linenums]
+----
+POST: https://localhost:9333/msmq
+Authorization: mule test-token
+Mule-Msmq-Queue-Name: .\private$\qout
+Mule-Api-Version: 1
+Body: THIS IS A SAMPLE MESSAGE
+----
+
+POST回应消息
+
+[source]
+----
+Http /1.1 201 Created
+----
+
+===  HTTP GET方案
+
+在GET方案中，Mule Runtime使用连接器从MSMQ接收一条或多条消息。这是作为Windows网关的HTTP GET完成的。 Web API在网关中运行，并返回MSMQ队列中的可用消息。消息使用MIME多部分/混合内容类型在单个HTTP响应中返回。
+
+以下消息说明了HTTP GET请求的结构。
+
+====  GET请求消息
+
+[source, code, linenums]
+----
+GET: https://localhost:9333/msmq?count=50
+Authorization: mule test-token
+Mule-Msmq-Queue-Name: .\private$\out
+Mule-Api-Version: 1
+----
+
+====  GET响应消息
+
+[source, code, linenums]
+----
+Transfer-Encoding: chunked
+Content-Type: multipart/mixed; boundary="47c7462b-f831-48f5-aed2-a561ef31dcc6"
+
+28
+--47c7462b-f831-48f5-aed2-a561ef31dcc6
+
+218
+Content-Type: application/octet-stream
+mule-msmq-acknowledgment-type: None
+mule-msmq-acknowledgment: None
+mule-msmq-attach-sender-id: True
+mule-msmq-body-type: 0
+mule-msmq-connector-type: 0
+mule-msmq-correlation-id: 00000000-0000-0000-0000-000000000000\0
+mule-msmq-id: 22af009e-3b1b-4173-ad7f-34b060a158fc\6145
+mule-msmq-label:
+mule-msmq-lookup-id: 288230376151717889
+mule-msmq-message-type: Normal
+mule-msmq-priority: Normal
+mule-msmq-source-machine: win-dt3v2pm5d7l
+mule-msmq-extension:
+mule-msmq-app-specific: 0
+
+11
+THIS IS A MESSAGE
+2C
+
+--47c7462b-f831-48f5-aed2-a561ef31dcc6--
+
+0
+----
+
+用于向网关服务发送消息和从网关服务接收消息的HTTP标头在本文后面会详细讨论。
+
+==  消息传递
+
+MSMQ连接器可以使用两阶段协议来确保与网关之间的零消息丢失通信，或者当您希望实现高吞吐量并且不需要确保接收每条消息时，可以将其设置为使用无确认协议至少一次。
+
+消息传递可以从两个不同的选项中选择。消息传递配置设置建立消息传递工作模式。下面介绍每种可用选项的详情。
+
+=== 不确认
+
+在传统方案中，在网关中读取消息后，将从队列中删除消息。如果Mule Runtime中存在连接故障或其他问题，导致消息无法读取，则该消息丢失（可通过在相应的配置设置中选择NoAcknowledgement值来设置此消息传送模式）。尽管如此，这种交付模式是最快的，如果你不需要每条消息至少交付一次，你应该选择它。
+
+=== 至少一次（默认）
+
+在使用两阶段提交协议的场景中，从主队列中读取的消息将保留在子队列中作为备份。连接器收到消息副本后，会向网关发送一个附加请求，以从子队列中删除该消息。当此提交操作未完成时，消息仍保留在子队列中。经过一段时间后，子队列中的消息（被视为孤儿）将被移回其父级队列，在那里它们将被重试。清楚的是，除非流在提交阶段完成之前中断（可以通过在相应的配置设置中选择AtLeastOnce值来设置此消息传递模式），否则此机制不应受流中发生的外部异常的影响。
+
+如上所述，消息传递模式取决于消息传递配置设置，如果要确保使用两个阶段提交协议，则该设置应设置为AtLeastOnce（默认）。如果您将此参数设置为NoAcknowledgement，则每封邮件都会发送给Mule，而不会确认邮件已收到。
+
+== 消息超时
+
+在不同的方法中，MSMQ消息提供了两个有助于授予信息可靠性的属性：
+
+*  timeToReachQueue。 MSMQ服务器在网关中收到消息后可以达到的最大秒数。默认是不超时（InfiniteTimeout）。
+*  timeToBeReceived。消息在为第三方应用程序出队之前可保留在队列中的秒数。默认是不超时（InfiniteTimeout）。
+
+image:msmq3-message-timeouts2.png[MSMQmessageTimeouts2]
+
+[NOTE]
+如果任何一个属性超时，则消息将移至死信队列。
+
+指定属性的值：
+
+[source, xml, linenums]
+----
+<msmq:send
+    config-ref="MSMQ"
+    messageFormatter="ActiveXMessageFormatter"
+    doc:name="MSMQ"
+    timeToBeReceived="0"
+    timeToReachQueue="0" />
+----
+
+这两个属性都可以在连接器配置中设置，并由Windows网关读取。如果指定值为零（0），则默认值为（InfiniteTimeout）。
+
+== 安全注意事项
+
+MSMQ连接器的身份验证由包含在HTTP授权标头中的安全令牌处理。使用Mule方案对网关的每个HTTP请求都包含此令牌：
+
+[source, code, linenums]
+----
+GET: https://localhost:9333/msmq?count=50
+Authorization: mule test-token
+Mule-Msmq-Queue-Name: .\private$\out
+Mule-Api-Version: 1
+----
+
+在连接器上以及在网关配置文件中配置令牌。下面显示如何通过_accessToken_参数值在连接器端配置令牌：
+
+[source, xml, linenums]
+----
+<msmq:config name="MSMQ" doc:name="MSMQ" accessToken="test-token" rootQueueName=".\private$\qout" serviceAddress="localhost:9333">
+ <msmq:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+ </msmq:config>
+----
+
+=== 用户身份验证
+
+代表连接器执行呼叫的用户通过两个自定义HTTP标头（mule-impersonate-username和mule-impersonate-password）进行身份验证。
+
+使用用户身份验证时，MSMQ中的队列也必须标记为需要身份验证。这两个标题代表正在运行Windows Gateway服务的Active Directory林中的现有用户的Windows凭据，或代表托管该服务的计算机上的本地帐户。当这些HTTP标头包含在HTTP请求中时，Windows网关服务会在对来自MSMQ的消息进行排队或出队前对其进行身份验证和模拟。这提供了使用Windows凭据在队列上配置正确的访问控制列表权限的功能。
+
+以下HTTP请求示例说明了如何将这两个头从连接器传递到网关：
+
+[source, code, linenums]
+----
+GET: https://localhost:9333/msmq?count=50
+Authorization: mule test-token
+Mule-Impersonate-Username: domain\myuser
+Mule-Impersonate-Password: password
+Mule-Msmq-Queue-Name: .\private$\out
+Mule-Api-Version: 1
+----
+
+注意：连接器和网关使用SSL来保护所有的HTTP通信。
+
+=== 队列权限
+
+要使用队列权限，请将队列标记为需要验证。另外，连接器必须发送HTTP请求消息中的Mule-Impersonate-Username和Mule-Impersonate-Password标头以模拟该呼叫;否则将使用模拟主机的帐户（如果网关位于IIS中，则用户模拟Windows服务或应用程序池）。
+
+注意：Windows用户在使用经过身份验证的队列之前必须至少第一次登录。当用户第一次登录时，Windows会创建一个用户配置文件，该用户配置文件必须存在供用户使用经过身份验证的队列。
+
+下表显示了从队列发送或接收消息所需的权限：
+
+[%header%autowidth.spread]
+|===
+| {操作{1}}权限
+|接收 |接收消息，查看消息
+|发送 |发送消息，查看消息，获取属性
+|===
+
+在这两种情况下，Peek Message仅用于测试连接。如果不需要测试连接，则可以删除此权限。
+
+注意：MSMQ安装在未加入Windows域的计算机上时，它可以工作组模式工作。在这种模式下，认证队列不受支持，因此也不能使用队列权限。
+
+== 消息序列化和格式化
+
+Windows网关服务不使用MSMQ格式化程序，除非它由连接器指定。因此，HTTP请求负载中发送的消息以原始形式存储在MSMQ消息的主体中。但是，通过在连接器中设置消息格式化程序可以覆盖此行为。开箱即用支持单个格式化程序：ActiveXMessageFormatter。
+
+以下示例说明如何在MSMQ连接器中设置格式器：
+
+[source, xml, linenums]
+----
+<msmq:receive config-ref="MSMQ" doc:name="MSMQ (Streaming)" pollingPeriod="3000" messageFormatter="ActiveXMessageFormatter" />
+----
+
+当在连接器上设置消息格式化程序时，会将另一个HTTP标头Mule-Msmq-Formatter发送到Windows网关。网关使用该格式化程序在消息从MSMQ入队或出队时序列化和反序列化消息。
+
+对于ActiveXMessageFormatter，网关还使用HTTP请求消息中由连接器设置的Content-Type：
+
+[%header%autowidth.spread]
+|===
+|的Content-Type  |说明
+|  plain / text   |连接器在当前Mule消息的有效载荷是字符串时设置它。设置时，网关将MSMQ消息的主体流设置为字符串。其他应用程序可以直接以字符串形式读取此消息。接收此消息的MSMQ连接器将Mule消息的有效载荷设置为字符串，以便不需要转换器。
+| application / octet-stream  |设置有效负载是字节数组的时间。该消息以字节流的形式存储。
+|===
+
+=== 配置msmq：receive元素
+
+主要场景中使用msmq：receive元素来接收来自网关的一条或多条消息。
+
+下表显示了此元素中的属性：
+
+[%header%autowidth.spread]
+|===
+|属性 |用法
+| queueName  | UNC路径或FormatName表示法中的队列名称。覆盖全局元素中设置的队列名称。可选的。
+| pollingPeriod  |连接器用于轮询MSMQ中已配置队列的时间间隔（以毫秒为单位）（等待只有在目标队列中没有消息需要检索时才会发生）。可选的。
+| messageCount  |在单个批次中检索的最大邮件数量。可选的。
+| userName  |从网关访问MSMQ时用于模拟呼叫的用户的名称。覆盖Global元素中设置的用户名。可选的。
+|密码 |用户从网关访问MSMQ时用于模拟呼叫的密码。覆盖Global元素中设置的密码。可选的。
+| messageFormatter  |要在MSMQ中用于序列化和反序列化消息的消息格式器。可选的。
+| messageDelivery  |消息传递工作模式。覆盖Global元素中设置的消息传递。可选的。有关如何工作的详细信息，请参阅上面的消息传递部分。
+|===
+
+=== 配置msmq：send元素
+
+主要场景中使用msmq：send元素将一条消息发送到网关。
+
+下表显示了此元素中的属性：
+
+[%header%autowidth.spread]
+|===
+|属性 |用法
+| queueName  | UNC路径或FormatName表示法中的队列名称。覆盖全局元素中设置的队列名称。可选的。
+| userName  |从网关访问MSMQ时用于模拟呼叫的用户的名称。覆盖Global元素中设置的用户名。可选的。
+|密码 |从网关访问MSMQ时用于模拟呼叫的用户的密码。覆盖Global元素中设置的密码。可选的。
+| messageFormatter  |要在MSMQ中用于序列化和反序列化消息的消息格式器。可选的。
+|有效载荷 |要发送到网关的消息有效载荷。可选的
+|===
+
+== 队列名称（公共，私有和群集）
+
+MSMQ连接器支持专用和公用队列。专用队列是不在Active Directory中发布的队列，仅在包含它们的本地计算机上显示。
+
+支持以下方案：
+
+* 路径名称：`ComputerName\private$\QueueName`
+* 本地计算机上的路径名称：`\private$\QueueName`
+* 直接格式名称：`DIRECT=ComputerAddress\PRIVATE$\PrivateQueueName`
+* 私有格式名称：`PRIVATE=ComputerGUID\QueueNumber`
+
+公用队列是在Active Directory中发布的队列。
+
+公共格式名称包含字符串`PUBLIC=`，后跟创建时分配给队列的标识符。此标识符是为Active Directory中的队列对象列出的GUID。
+
+以下是用于引用公用队列及其关联队列日志的一般格式：
+
+*  = PUBLIC QueueGUID
+*  = PUBLIC QueueGUID;中国
+
+该连接器还支持故障转移群集中承载的专用队列，也称为MSMQ群集。这些队列对于群集是私有的，并使用以下格式引用：
+
+集群名称\私人$ \ QUEUENAME
+
+连接器使用的MSMQ API要求您使用格式名称样式指定目标地址，主要是使用远程队列时，以及具有自定义配置选项的队列以及直接格式名称。
+
+直接格式名称用于在不访问目录服务的情况下引用公用或专用队列。执行以下操作时将使用直接格式名称：
+
+. 直接将消息发送到计算机。
+. 通过Internet向计算机发送消息。
+. 跨森林边界发送消息。
+. 在域，工作组或离线模式下发送消息到任何队列。
+. 在域，工作组或离线模式下阅读邮件。
+
+不需要通过消息队列进行路由，身份验证和加密时，应使用直接格式名称发送消息。
+
+当消息队列检测到远程公用队列或本地或远程专用队列的直接格式名称时，它不会联系目录服务。消息队列使用格式名称提供的信息将消息直接发送到目标。
+
+在queueName连接器的设置中以这种方式指定地址所需的格式遵循以下模式：
+`FormatName:Direct=[address_specification]\{private$\}[queue_name]`
+
+计算机的地址规格可以用三种形式指定：
+
+. 随着网络协议跟随目标计算机的网络地址。消息队列支持TCP，并且仅在Windows NT 4.0和Windows 2000上支持SPX。
+. 由底层操作系统本机支持的任何字符串来标识目标计算机（操作系统用作协议以指示计算机的本机协议应该用于解释计算机名称）。
+. 由于Internet传输协议（HTTP或HTTPS）后跟主机计算机的IP地址或完整DNS名称（或企业内的计算机名称），然后通过以斜杠分隔的虚拟目录名称MSMQ 3.0）。默认虚拟目录名称为msmq，但消息队列可由IIS配置以使用不同的虚拟目录。
+
+[%header%autowidth.spread]
+|===
+|协议|描述|网络地址
+| TCP |基于IP的面向连接的TCP。| Internet地址表示法（IP地址）。
+| SPX |基于IPX的面向连接的SPX。|网络号码和主机号码（由":"字符分隔）。
+|操作系统|使用本机计算机命名约定进行连接。|底层操作系统支持的任何计算机名称。对于Microsoft®WindowsNT®4.0版本，它是UNC或DNS名称（请参阅公共和专用队列的示例）。
+| HTTP | HTTP传输。| IP地址或完整的DNS名称（企业内的计算机名称），后跟用斜杠分隔的虚拟目录名称。
+| HTTPS |通过安全套接字层（SSL）连接保护HTTP传输。| IP地址或完整DNS名称（企业中的计算机名称），后跟虚拟目录名称，斜线。
+|===
+
+有关如何在连接器的目标队列中指定此示例的一些示例是：
+
+*  `FormatName:DIRECT=IPX: 00000012:00a0234f7500\PRIVATE$\MyQueue`
+*  `FormatName:DIRECT=TCP:157.18.3.1\PRIVATE$\MyQueue`
+*  `FormatName:DIRECT=OS:Mike01.msn.com\PRIVATE$\MyQueue`
+*  `FormatName:DIRECT=OS:Mike02\PRIVATE$\MyQueue`
+*  `FormatName:DIRECT=OS:.\PRIVATE$\MyQueue`
+
+有关如何解决MSMQ的详细信息，请参阅Microsoft中的Microsoft Direct Format Names
+另请参阅本文档的一节。
+
+== 支持的消息属性
+
+连接器允许传递或接收MSMQ消息的属性。这些属性在当前的Mule消息中设置，并作为自定义HTTP头传递给Windows网关。以下消息说明连接器如何为标签属性创建一个值为“CustomLabel”的新MSMQ消息：
+
+[source, code, linenums]
+----
+POST: https://localhost:9333/msmq
+Authorization: mule test-token
+Mule-Msmq-Queue-Name: .\private$\qout
+Mule-Api-Version: 1
+Mule-Msmq-Label: CustomLabel
+Body: THIS IS A SAMPLE MESSAGE
+----
+
+下表总结了接收操作的所有受支持属性以及HTTP标头的映射。
+
+[%header%autowidth.spread]
+|===
+|属性 | HTTP标题 |用法
+| msmq.acknowledgment.type  | msmq-acknowledgement-type  |设置确认消息的类型以返回到发送应用程序。
+| msmq.acknowledgment  | mule-msmq-acknowledgment  |设置接收消息队列生成的确认消息的队列。
+| msmq.attach.sender.id  | mule-msmq-attach-sender-id  |获取一个值，该值指示是否将发件人ID附加到邮件。
+| msmq.body.type  | mule-msmq-body-type  |获取消息正文包含的数据的类型。
+| msmq.connector.type  | mule-msmq-connector-type  |获取一个值，该值指示通常由消息队列设置的某些消息属性是由发送应用程序设置的。
+| msmq.correlation.id  | mule-msmq-correlation-id  |引用原始消息的消息标识符。此ID用于确认，报告和回复消息。支持的格式：<GUID> \ <Number> +
+例如：`66785f20-a2f3-42a3-bdcd-9ac5a937ac52\1`
+| msmq-id  | mule-msmq-id  |消息的唯一标识符，由消息队列生成。
+| msmq.label  | mule-msmq-label  |获取描述消息的应用程序定义的unicode字符串。
+| msmq.lookup.id  | mule-msmq-lookup-id  |其中一个System.Messaging.MessagePriority值，它表示非事务性消息的优先级。默认值是“正常”。
+| msmq.message.type  | mule-msmq-message-type  |获取从队列中检索的消息的类型，可以是Normal，Acknowledgement或Report。
+| msmq.priority  | mule-msmq-priority  |获取或设置消息优先级，指示将消息放入队列的位置。
+| msmq.extension  | mule-msmq-extension  |设置与消息关联的其他应用程序定义信息。将其编码为base64。
+| msmq.app.specific  | mule-msmq-app-specific  |设置其他特定于应用程序的信息。
+|===
+
+下表总结了发送操作的所有支持属性以及HTTP标头的映射。
+
+[%header%autowidth.spread]
+|===
+|属性 | HTTP标题 |用法
+| msmq.body.type  | mule-msmq-body-type  |设置邮件正文包含的数据的类型。
+| msmq.label  | mule-msmq-label  |设置描述消息的应用程序定义的unicode字符串。
+| msmq.acknowledgment.type  | msmq-acknowledgement-type a |
+设置要返回给发送应用程序的确认消息的类型。
+
+| msmq.attach.sender.id  | mule-msmq-attach-sender-id  |设置一个值，该值指示发件人ID是否应附加到邮件。
+| msmq.priority  | mule-msmq-priority  |获取或设置消息优先级，它确定消息放置在队列中的哪个位置。
+| msmq.connector.type  | mule-msmq-connector-type  |设置一个值，该值指示通常由消息队列设置的一些消息属性由发送应用程序设置。
+| msmq.correlation.id  | mule-msmq-correlation-id  |设置引用原始消息的消息标识符。用于确认，报告和回复消息。
+支持的格式：GUID \ Number +
+例如：`66785f20-a2f3-42a3-bdcd-9ac5a937ac52\1`
+| msmq.use.tracing  | mule-msmq-use-tracing  |设置一个值，该值指示在向目标队列移动时是否跟踪消息。
+| msmq.extension  | mule-msmq-extension  |设置与消息关联的其他应用程序定义的信息。编码为base64。
+| msmq.app.specific  | mule-msmq-app-specific  |设置其他特定于应用程序的信息。
+| msmq.queue.override.transactional  | mule-msmq-queue-override-transactional  |使用远程事务队列时，由于缺少权限，MSMQ API可能无法访问这些设置。此值用于向网关指示目标队列是事务性的，并且应该在事务范围内发送消息（否则它将在死信队列中结束）。
+| msmq.queue.override.authenticate  | mule-msmq-queue-override-authenticate  |使用远程已认证队列时，由于权限不足，MSMQ API可能无法访问这些设置。该值用于向网关指示目标队列要求发送已认证的消息。
+|===
+
+以下示例显示“set-payload”组件如何为MSMQ消息设置标签。
+
+[source, xml]
+----
+<set-property propertyName="msmq.label" value="message_from_mule" doc:name="Label"/>
+----
+ 
+以下示例指示目标队列的网关是事务性的（即，消息在事务范围内发送）。
+
+[source, xml]
+----
+<set-property propertyName="msmq.queue.override.transactional" value="true" doc:name="TxQueue"/>
+----
+
+==  MSMQ连接器疑难解答
+
+MSMQ连接器与Mule Runtime日志记录基础结构集成在一起，用于为用户记录错误和相关信息。
+
+下表列出了使用MSMQ连接器时可能发生的常见错误：
+
+[%header%autowidth.spread]
+|===
+| {错误{1}}原因
+|未经授权。代理身份验证失败。 |连接器上配置的安全令牌和网关上的安全令牌不匹配。验证在Mule和Windows网关服务配置文件中的MSMQ连接器上配置的令牌。
+|禁止。访问禁止在队列中写入[队列名称]  |具有在用户名和密码中指定的凭据的用户没有写入队列或读取队列的权限。验证队列访问权限。
+|不可接受。连接器和代理版本不匹配 |这不太可能发生。运行在Mule Runtime中的连接器的版本与Windows Gateway的版本不兼容。确保更新连接器或网关以使用相同的版本。
+未找到|。队列未找到[队列名称]  |无法找到连接器中配置的队列。
+未找到|。 |连接器中配置的网关地址和端口不正确。验证网关配置以确定正确的服务器名称和端口。
+|内部服务器错误 |网关出现意外错误。检查网关轨迹以确定此问题的原因。
+|===
+
+== 消息确认示例
+
+要求：
+
+管理框架3.0下的*  Windows PowerShell 3.0
+按照本指南中的说明安装MSMQ连接器的*  Anypoint Studio。
+
+
+=== 步骤1：打开MessageAcknowledgeSample.zip项目
+
+. 启动Anypoint Studio并打开现有的Mule项目。
+. 点击文件>导入> Anypoint Studio> Anypoint Studio生成的Deployable Archive（.zip）。
+. 在zip文件中，导航文件系统，然后单击MessageAcknowledgeSample.zip文件。另请参阅
+本文档的部分列出了Message Acknowledgement Sample zip文件的链接。
+. 单击完成。
+
+=== 第2步：运行安装程序脚本
+
+. 该脚本为样本创建消息队列并发送消息。
+. 打开命令窗口：Windows键+ R，键入PowerShell，右键单击该程序，然后单击以管理员身份运行。
+. 导航到示例目录，然后键入Set-ExecutionPolicy Unrestricted并按Enter键。默认情况下，执行策略值是受限制的，不允许您运行此示例。
+. 输入`.\1-setup.ps1`，然后按Enter键。
+. 控制台显示：
++
+[source, code, linenums]
+----
+Creating .\private$\sampleq
+Queue Creating .\private$\secondq
+Queue Creating .\private$\adminq
+Queue Sending Message 1 to .\private$\sampleq
+Sending Message 2 to .\private$\secondq
+Sending Message 3 to .\private$\sampleq
+Sending Message 4 to .\private$\sampleq
+----
++
+. 请勿关闭此控制台。
+
+=== 第3步：运行演示
+
+. 右键单击msmq-demo.xml并选择Run As Mule Application。
+. 检查控制台以查看应用程序何时启动：
++
+[source, code, linenums]
+----
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Started app 'msmq-demo-ack'                              + 
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+----
++
+. 检查这些行，这表明MSMQ连接器正在侦听两个队列，并在sampleq队列中收到1条消息，在adminq队列中收到6条消息。
++
+[source, code, linenums]
+----
+INFO  XXXX-XX-XX XX:XX:XX,XXX [Receiving Thread] org.mule.modules.msmq.MsmqConnector: Connecting to https://localhost:9333/msmq
+INFO  XXXX-XX-XX XX:XX:XX,XXX [Receiving Thread] org.mule.modules.msmq.MsmqConnector: Connecting to https://localhost:9333/msmq
+INFO  XXXX-XX-XX XX:XX:XX,XXX [Receiving Thread] org.mule.modules.msmq.MsmqConnector: Receiving 1 from .\private$\sampleq
+INFO  XXXX-XX-XX XX:XX:XX,XXX [Receiving Thread] org.mule.modules.msmq.MsmqConnector: Receiving 6 from .\private$\adminq
+----
++
+. 显示以下行（可能会更改顺序），这表示已读取一条消息，即消息1。根据上下文和消息，消息的主体和标签会显示几个不正确的ACK版本（记录为“INFO”）或NACK（记录为WARN）。有关更多信息，请参阅本文档的另请参阅部分中的确认枚举。
++
+[source, code, linenums]
+----
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-choice-flow.stage1.03] org.mule.api.processor.LoggerMessageProcessor: ACK Cause: ReachQueue | Correlation Id: xxxx  | Label: Message 2
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-choice-flow.stage1.07] org.mule.api.processor.LoggerMessageProcessor: ACK Cause: Receive | Correlation Id: xxxx  | Label: Message 1
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-normalFlow.stage1.02] org.mule.api.processor.LoggerMessageProcessor: Label: Message 1 | Body: <?xml version="1.0"?>
+<string>First Message</string>
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-choice-flow.stage1.04] org.mule.api.processor.LoggerMessageProcessor: ACK Cause: ReachQueue | Correlation Id: xxxx  | Label: Message 4
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-choice-flow.stage1.02] org.mule.api.processor.LoggerMessageProcessor: ACK Cause: ReachQueue | Correlation Id: xxxx  | Label: Message 1
+WARN  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-ReceiveTimeout.stage1.02] org.mule.api.processor.LoggerMessageProcessor: 'ReceiveTimeout NACK' Received | Correlation Id: xxxx | Label: Message 4
+WARN  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-NotTransactionalQueue.stage1.02] org.mule.api.processor.LoggerMessageProcessor: 'NotTransactionalQueue NACK' Received | Correlation Id: xxxx | Label: Message 3
+----
++
+. 双击msmq-choice-flow流下的选择流控制以查看其属性：
++
+image:msmq3-admin.png[MSMQAdmin]
++
+Choice流控制评估每个收到的消息的msmq.acknowledgment属性。这将消息路由到SubFlow（使用流量引用控制）。在adminq收到的消息仅用于确认目的。即使这六条消息具有msmq.id属性，也不重要，但与msmq.correlation.id相关的是msmq.correlation.id，它指向在管理队列中发送确认消息的消息的msmq.id。在示例中，消息4已在timeToBeReceived属性中设置为毫秒，这会产生ReceiveTimeout NACK。此外，消息6以事务性方式使用非事务性队列发送，这会导致NotTransactionalQueue NACK。
+
+==== 删除邮件
+
+. 打开消息队列管理控制台。
+. 按下Windows键+ E。
+. 右键单击“计算机”，然后单击“管理”。
++
+image:msmq3-manage.png[MSMQManage]
++
+. 在左侧的计算机管理控制台树中，打开“服务和应用程序”>“消息队列”>“专用队列”
+. 其余消息显示在secondq中，因为未配置为监听此队列的MSMQ连接器。
+. 删除消息：在左侧树中，打开专用队列> secondq>队列消息并右键单击队列消息>所有任务>清除：
++
+image:msmq3-purge.png[MSMQpurge]
++
+. 在弹出窗口中选择是。
+. 返回Anypoint Studio并在控制台中注意这些附加行，它们表示附加类型的NACK，并且始发消息未被读取并且已被清除：
++
+[source, code, linenums]
+----
+INFO  XXXX-XX-XX XX:XX:XX,XXX [Receiving Thread] org.mule.modules.msmq.MsmqConnector: Receiving 1 from .\private$\adminq
+WARN  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-QueuePurged.stage1.02] org.mule.api.processor.LoggerMessageProcessor: 'QueuePurged NACK' Received | Correlation Id: xxxx | Label: Message 2
+----
+
+=== 第4步：清理环境
+
+回到控制台并键入。\ 2-clean.ps1，此消息出现：
+
+[source, code, linenums]
+----
+Deleting .\private$\sampleq Queue
+Deleting .\private$\secondq Queue
+Deleting .\private$\adminq Queue
+----
+
+===  CloudHub集成示例
+
+此示例通过HTTP连接器接收传入请求，并通过MSMQ连接器（发送操作）将请求发送到远程MSMQ队列。然后它会从您的服务器接收MSMQ消息（Streaming Receive操作）并记录结果。
+
+. 从File> New> Mule Project创建一个新的Mule项目。您可以将名称设置为cloudhub-test。点击完成。
+. 转到配置XML选项卡并使用以下代码替换现有代码：
++
+[source, xml, linenums]
+----
+<mule xmlns:msmq="http://www.mulesoft.org/schema/mule/msmq" 
+xmlns:http="http://www.mulesoft.org/schema/mule/http" 
+xmlns="http://www.mulesoft.org/schema/mule/core" 
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+xmlns:spring="http://www.springframework.org/schema/beans" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xsi:schemaLocation="http://www.springframework.org/schema/beans 
+http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core 
+http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http 
+http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/msmq 
+http://www.mulesoft.org/schema/mule/msmq/current/mule-msmq.xsd">
+  <msmq:config name="MSMQ" serviceAddress="X.X.X.X:9333" accessToken="you_key"
+   rootQueueName=".\private$\test-cloudhub" ignoreSSLWarnings="true" doc:name="MSMQ"/>
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" 
+    port="9333" doc:name="HTTP Listener Configuration"/>
+    <flow name="msmq-cloudhub-test2Flow1" doc:name="msmq-cloudhub-test2Flow1">
+      <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <expression-filter expression="#[payload != '/favicon.ico']" doc:name="Expression"/>
+        <set-payload 
+        value="#['Hello, ' + payload + '. Today is ' + server.dateTime.format('dd/MM/yy') + '.' ]" 
+        doc:name="Set Payload"/>
+        <msmq:send config-ref="MSMQ" messageFormatter="ActiveXMessageFormatter" 
+        doc:name="MSMQ"/>
+    </flow>
+    <flow name="msmq-cloudhub-test2Flow2" doc:name="msmq-cloudhub-test2Flow2">
+        <msmq:receive config-ref="MSMQ" messageFormatter="ActiveXMessageFormatter"
+         doc:name="MSMQ (Streaming)"/>
+        <byte-array-to-string-transformer doc:name="Byte Array to String"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
++
+在MSMQ配置节点中：
++
+*  serviceAddress是您的VPN设备的IP和端口。仔细检查在防火墙设置和设备服务器中是否打开了端口9333（或在Windows网关设置期间设置的端口）。
+*   accessToken是在网关设置期间配置的令牌。
+*   rootQueueName是现有队列名称，根据正常安装的Mule示例向用户Everyone写入权限。您可以使用“测试连接”按钮验证与MSMQ的连接是否正常：
++
+image:msmq3-global-el-props.png[MSMQGlobalElProps]
++
+. 右键单击cloudhub-test Mule项目，选择“部署到Anypoint平台”>“云”。
+. 使用您在Anypoint Platform中创建帐户时使用的所提供帐户设置填写字段。
+. 选择环境，选择一个可用的域，然后单击完成。系统会提示您一个确认窗口。点击确定。然后你就可以使用集成项目。
++
+image:msmq3-ch-success.png[MSMQCHsuccess]
++
+. 将您的浏览器指向`+http://your_subdomain.cloudhub.io/this_is_a_test+`。浏览器保持空白。
+. 登录到Anypoint Platform以输入您的应用程序，并从仪表板中选择日志。
+. 记录结果消息：
++
+image:msmq3-info.png[MSMQinfo]
+
+=== 支持负载平衡器方案
+
+可以在HTTP负载平衡器下配置多个网关实例以水平扩展。由于MSMQ连接器使用HTTP与网关进行通信，因此从网络角度不需要额外的配置。但是，这稍微改变了网关中支持两阶段提交协议的后台进程的行为。
+
+此过程负责确保批次存储在子队列中的消息已被确认，因此可将其删除或移回父队列。当网关的多个实例在负载平衡器中碰到相同的队列时，有可能会同时扫描和更新队列，这可能会显着影响MSMQ服务性能。为避免此并发问题，在网关配置中添加了新设置"cleanup-offset"。
+
+这种设置的想法是在启动后台进程的过程中引入数分钟的延迟。该设置的默认值是0（零），这意味着没有延迟。
+
+负载均衡器中的每个网关实例都应设置不同的偏移值，以避免此后台进程同时触发相同的队列。作为一个经验法则，在每个网关中增加这个值的单位应该是网关实例的数量为10的结果，例如，对于5个网关的场或2个3个网关的场的场合。
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.8/windows-gateway-services-guide[Windows网关服务]
+*  https://s3-us-west-2.amazonaws.com/mulesoft-sites-vendorcontent/MessageAcknowledgeSample.zip [邮件确认示例zip文件]。
+// * link:_attachments/MessageAcknowledgeSample.zip[MessageAcknowledgeSample.zip]示例zip文件。包含Powershell脚本（.ps1文件类型）和msmq-demo-ack.zip文件。可执行文件使用MuleSoft的证书进行签名。
+*  https://msdn.microsoft.com/en-us/library/ms700996（v = vs.85）.aspx [Microsoft Direct Format Names]。
+*  http://msdn.microsoft.com/en-us/library/system.messaging.acknowledgment[确认枚举]

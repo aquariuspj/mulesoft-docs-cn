@@ -1,0 +1,109 @@
+=  Mule表达语言（MEL）
+:keywords: anypoint studio, esb, mel, mule expression language, native language, custom language, expression, mule expressions
+
+MEL是一种轻量级的Mule特定表达式语言，您可以使用它来访问和评估Mule消息的有效负载，属性和变量中的数据。几乎Mule中每个消息处理器都可以访问和使用，MEL使您能够快速，优雅地过滤，路由或以其他方式处理Mule消息对象的不同部分。
+
+
+== 先决条件
+
+本文档假定您熟悉Mule ESB及其 link:/mule-user-guide/v/3.7/mule-concepts[基本概念]。
+
+== 使用MEL的好处
+
+曾几何时，在开发Mule应用程序时，除了使用诸如Groovy之类的脚本语言或诸如Java之类的编程语言来处理消息对象的内容之外，您几乎别无选择。尽管有效，但使用这些语言并不总是有效，因为没有一致的，标准化的表达式评估方法。
+
+输入MEL，这是一种表达式语言，为开发人员提供一致，标准化的方式来处理Mule消息的有效载荷，属性和变量。它使用Mule特有的上下文对象，它很容易使用（到处自动完成！），并且在测试应用程序时表现良好。此外，最重要的是，MEL在访问有关消息的信息时强制实施一致性：不使用多个表达式计算器，您可以使用MEL（默认表达式计算器）来持续访问和操作信息。
+
+MEL表达式在消息处理器中工作，以修改处理器对消息进行处理的方式，如路由或过滤。下面的示例演示了如何使用MEL在运行时记录流变量的值。
+
+[source, xml]
+----
+<logger message="The value in my first variable is #[flowVars.myVar1]" level="INFO"/>
+----
+
+[NOTE]
+像{MEL}这样的*expression language*与*scripting language*相似，但不相同：它允许您编写动态解析以获取值，设置值或对数据执行操作的短脚本。表达式语言和脚本语言之间的功能是重叠的，但是如果你写的东西足够复杂，需要的不仅仅是几行代码，或者你需要包含条件逻辑，那么脚本语言通常更有用。但是，如果您需要获取或设置值，调用方法或执行函数，则可以使用表达式语言快速轻松地完成。
+
+== 使用MEL
+
+根据Mule在运行时从消息或其环境中提取的信息，Mule评估表达式以完成三种类型的任务：
+
+可用于处理当前消息的*  *Extract*信息;在表达式组件或表达式转换器中设置时，这可能很有用：
+**  `#[payload]`
+**  `#[message.inboundProperties.'propertyName']`
+**  `#[payload.methodCall(parameters)]`
+**  `#[xpath3('//root/element1')]`
+*  *Evaluate conditions*使用当前消息的内容;这对于过滤正在处理的消息非常有用：
+**  `#[payload.age > 21]`
+**  `#[message.inboundProperties.'locale'  ==  'en_us']`
+除了消息有效载荷之外，*  *Define a target*，用于存储表达式评估的结果;通常，这在设置消息richher时很有用
+**  `#[flowVars.output]`
+
+[TIP]
+====
+*Shortcut*
+
+Mule接受`\#[payload]`作为`#[message.payload]`的快捷键。该快捷方式仅适用于有效载荷字段。
+====
+
+以下示例说明了您可以使用MEL的几种方法。
+
+. 使用表达式*extract data*根据消息的内容，属性或属性决定操作过程。例如，路由器（又名流量控制）可以将不同类型的产品的采购订单路由到不同的JMS队列。在下面的例子中，一条消息携带有关从网上商店购买的信息，可以是硬拷贝书或MP3文件。以下代码根据购买类型将消息分类到不同的队列中。
++
+[source, xml, linenums]
+----
+<choice>
+   <when expression="#[payload.getPurchaseType() == 'book']">
+        <jms:outbound-endpoint queue="bookPurchases" />
+    </when>
+   <when expression="#[payload.getPurchaseType() == 'mp3']">
+        <jms:outbound-endpoint queue="songPurchases" />
+    </when>
+ </choice>
+----
++
+. 使用表达式可以从消息的有效内容，属性或上下文及其变量或附件获取值*extract*。例如，连接器可能会从当前消息中提取特定的信息以用作参数。在下面的示例中，表达式从消息中提取信息并将每个片段传递给SMTP端点。
++
+[source, xml, linenums]
+----
+<smtp:outbound-endpoint from="#[flowVars.from]" to="#[flowVars.to]" subject="#[payload.subjectLine]" responseTimeout="10000" doc:name="SMTP"/>
+----
++
+. 对*extract*信息使用表达式，然后使用它来用实际值替换标记。例如，记录器可以从有效内容中提取信息并将其放入日志消息中，如下所示。
++
+[source, xml]
+----
+<logger message="#[payload]" />
+----
+
+如果有效负载是一个对象，并且可以调用一种方法来提取信息，则要提取的表达式可能如下所示。
+
+[source, xml]
+----
+<logger message="#[payload.getLoggingInformation()]" />
+----
+
+Mule中的== 表达式
+
+知道MEL并不总是Mule使用的事实表达式语言很重要。在版本3.3.0之前，Mule中的表达式根据其具体评估者的语法而有所不同。因此，虽然这些表达式支持各种各样的功能，但语法规则的变化花费了大量时间学习。这种较旧的表达风格是以`#[evaluator:expression]`的格式编写的。冒号将评估者与表达式本身分开。
+
+Mule 3.3.0引入了Mule表达式语言（MEL），该语言实现了不再包含评估者的一组语法规则。评估者默认是MEL本身，它可以解释以前与几十个不同评估者相关的表达式。 MEL表达式按照以下格式写入：`#[expression]`。注意没有冒号，这表示Mule表示这是MEL表达式;因此Mule使用MEL逻辑来评估表达式而不是特定评估者的规则。
+
+*Note*：仅在您的应用程序中使用MEL表达式。
+
+== 学习MEL
+
+如果你已经熟悉Java，学习MEL并不困难。也就是说，在了解如何在应用程序中应用MEL表达式之前，了解一些Mule特定细节非常重要。
+
+.  *Understand the Mule message structure.*因为您使用MEL来处理Mule消息对象（负载，属性和变量）的内容，您首先需要了解消息的基本结构。如果您还不熟悉它，请阅读 link:/mule-user-guide/v/3.7/mule-message-structure[骡子消息结构]。
+
+.  *Understand how to see the contents of the Mule message.*为了能够采取措施，您需要能够确定消息包含哪些类型的数据。有效载荷是一个数组吗？消息是否包含流变量？什么入站属性存在？ link:/getting-started/mule-message[骡信息教程]描述了可用于查看消息内部的工具，以便您了解如何使用MEL表达式来操作数据。
+
+吸收了这些材料后，您就可以开始学习MEL基本语法，并开始在应用程序中使用表达式。
+
+== 另请参阅
+
+*  *NEXT STEP*：了解 link:/mule-user-guide/v/3.7/mule-expression-language-basic-syntax[MEL的基本语法]，或深入 link:/mule-user-guide/v/3.7/mule-application-architecture[Mule应用程序架构]。
+* 通过示例更好地学习？访问我们的 link:/mule-user-guide/v/3.7/mule-expression-language-examples[使用MEL的示例应用程序]集合。
+* 通过教程学习更好？访问 link:/getting-started/mule-message[骡信息教程]。
+*  MEL link:/mule-user-guide/v/3.7/mule-expression-language-tips[Mule表达语言技巧]的快速提示

@@ -1,0 +1,149 @@
+= 使用对象库管理应用程序数据存储
+:keywords: cloudhub, object stores, arm, runtime manager
+
+image:logo-cloud-active.png[link="/runtime-manager/deployment-strategies", title="CloudHub"]
+image:logo-hybrid-disabled.png[link="/runtime-manager/deployment-strategies", title="混合部署"]
+image:logo-server-disabled.png[link="/runtime-manager/deployment-strategies", title="Anypoint平台私有云版"]
+image:logo-pcf-disabled.png[link="/runtime-manager/deployment-strategies", title="Pivotal Cloud Foundry"]
+
+CloudHub为其管理的每个应用程序提供应用程序数据存储，这些数据可通过Mule的 link:/mule-user-guide/v/3.8/mule-object-stores[对象存储]功能访问。这个存储可以用来存储任何东西，但其主要用途有两个：
+
+* 存储同步状态：您的应用程序可能需要跟踪上次同步的记录，以便下次应用程序同步时，它可以从中断的位置恢复。
+*  OAuth令牌：启用OAuth的连接器可以使用几行配置代码在对象存储区内存储令牌。
+
+您的应用程序也可以存储自定义的集成数据，并在下面列出的限制内。
+
+*Notes:*
+
+* 对象存储按照本文档中描述的方式进行处理，仅用于部署到CloudHub工作人员的应用程序。对于通过运行时管理器部署到本地服务器的应用程序，您必须处理存储在您自己的存储库中的数据。有关更多详情，请参阅 link:/runtime-manager/deployment-strategies[部署策略]。
+
+* 无论您的应用程序部署到哪个区域，对象存储中的所有数据都由*US-East zone*中的服务器处理。这可能会影响性能。
+
+
+== 存储和检索数据
+
+要使用Mule流中的应用程序数据，请使用Object Store连接器。连接器提供操作以存储，检索，列出并从运行时管理器对象库中删除数据。
+
+*Note:*您必须在连接器中指定唯一的分区名称，并且要在Runtime Manager> Application Data中查看信息，则连接器项目必须包含对`_defaultUserObjectStore` Spring bean实例的对象存储引用。
+
+看到：
+
+*  https://anypoint.mulesoft.com/exchange/org.mule.modules/mule-module-objectstore/ [Anypoint Exchange中的对象存储连接器]。
+*  link:/mule-user-guide/v/3.8/object-store-connector#springbeans[关于对象存储Spring Bean实例]。
+
+=== 存储OAuth数据
+
+每个连接器都包含有关如何使用Object Store模块存储和检索OAuth令牌的说明。有关示例，请参阅 http://mulesoft.github.com/linkedin-connector/mule/linkedin-config.html#config[LinkedIn连接器配置]文档中的"Saving and Restoring State"部分。
+
+== 查看应用程序数据
+
+要查看应用程序数据，请在Runtime Manager中单击您的应用程序名称，单击*Manage Application*，然后单击*Application Data*选项卡。该选项卡包含键和值的列表。您可以将数据视为纯文本或列表。
+
+image:applicationdata.png[应用 - ]
+
+*Tip:*要使属性保持安全，以便使用运行时管理器用户界面或其他位置不可见，请参阅 link:/runtime-manager/secure-application-properties[安全的应用策略]。
+
+== 语义和存储限制
+
+运行时管理器对象存储提供了写后读一致性，而最后一次写操作在更新方面获胜。
+
+此外，运行时管理器对象存储将这些限制放在您的数据上：
+
+* 每个应用最多有100,000个密钥
+*  768字节的密钥大小
+*  1 MB的值大小
+每个应用程序*  1 GB的数据
+
+== 高级信息
+
+在内部，Mule有几种不同类型的对象存储。运行时管理器提供了用户定义的对象存储的实现。这是关于您的应用程序的运行时信息，例如上面提到的用例。如果您希望直接访问该对象库，可以在Mule Registry的`_defaultUserObjectStore`下找到它。对象存储模块和连接器默认使用此存储来存储其所有数据。
+
+== 对象存储示例
+
+要将数据写入Runtime Manager> Application Data对象库：
+
+. 在Anypoint Studio中，创建一个新的Mule项目。这个例子命名应用程序`objectstoredemo`。
+. 创建至少包含以下组件的应用程序：
++
+image:objectstore-flow.png[对象存储流]
++
+*  *HTTP*连接器 - 接收由*curl*命令发送的数据。 +
+*Host*：`0.0.0.0`，*Port*：`8081`，*Path*（在基本设置中）`/store`，*Allowed Methods*设置为`POST`
+*  *Object to String*  - 将输入转换为字符串。 +
+设置：将字段留空。
+*  *JSON to Object*  - 将字符串转换为Java Map对象。 +
+设置：将*Return Class*设置为`java.util.Map`
+*  *ObjectStore*  - 将数据存储在运行时管理器应用程序数据区域中。
++
+设置：
++
+在加号菜单中：
++
+** 您必须指定一个分区名称，它可以是任何唯一的名称。
+** 您必须将对象存储引用设置为`_defaultUserObjectStore`值。
+** 如果为entryTtl指定值，则还需要expirationInterval和maxEntries的值。你可以设置entryTtl为0永不过期。对于*Operation*：`Store`，*Key*：`&#x0023;[payload.key]`和*Value Reference*：`&#x0023;[payload.value]`
++
+*  *Set Payload*  - 显示使用*curl*命令后出现的确认提示。 +
+设置：将*Settings*设置为`KEY: &#x0023;[payload.key] AND VALUE: &#x0023;[payload.value] WERE SAVED OK`
++
+这个例子的来源是：
++
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:objectstore="http://www.mulesoft.org/schema/mule/objectstore"
+xmlns:json="http://www.mulesoft.org/schema/mule/json"
+xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns="http://www.mulesoft.org/schema/mule/core"
+xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+xmlns:spring="http://www.springframework.org/schema/beans"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xsi:schemaLocation="http://www.springframework.org/schema/beans
+http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core
+http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/json
+http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/http
+http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/objectstore
+http://www.mulesoft.org/schema/mule/objectstore/current/mule-objectstore.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0"
+     port="8081" doc:name="HTTP Listener Configuration"/>
+    <objectstore:config name="ObjectStore__Connector" partition="mypartition"
+    entryTtl="0" expirationInterval="42" maxEntries="42"
+    objectStore-ref="_defaultUserObjectStore" doc:name="ObjectStore: Connector"/>
+    <flow name="objectstoreFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration"
+        path="/store" doc:name="HTTP"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <json:json-to-object-transformer returnClass="java.util.Map"
+        doc:name="JSON to Object"/>
+        <objectstore:store config-ref="ObjectStore__Connector"
+        key="#[payload.key]" value-ref="#[payload.value]" doc:name="ObjectStore"/>
+        <set-payload value="KEY: #[payload.key] AND VALUE: #[payload.value] WERE STORED__"
+        doc:name="Set Payload"/>
+    </flow>
+</mule>
+----
++
+. 将此应用程序作为Mule应用程序运行以进行测试。应用程序运行后，您可以停止应用程序。
+. 导出应用程序并将其作为zip文件保存在您的计算机上。在包资源管理器中右键单击项目名称，
+单击导出> Mule> Anypoint Studio项目以Mule Deployable Archive。
+. 登录到Anypoint Platform并单击Runtime Manager。部署应用程序并将您导出到计算机的zip文件用于已部署的应用程序。
+. 启动部署的应用程序。
+. 从命令提示符运行*curl*命令，该命令将JSON格式的键和值发送到`+http://objectstoredemo.cloudhub.io/store+`示例URL：
++
+[source]
+----
+curl -X POST -H "Content-Type: application/json" -d '{
+    "key": "Test",
+    "value": "Test sent to the object store"
+}' "http://objectstoredemo.cloudhub.io/store"
+----
++
+. 在运行时管理器中，单击应用程序的名称，然后单击*Application Data*。来自的数据
+curl命令将显示在“应用程序数据”页面中：
++
+image:objectstore-application-data.png[对象存储的应用程序数据]

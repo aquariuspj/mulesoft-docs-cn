@@ -1,0 +1,185 @@
+= 创建DevKit连接器文档
+
+Mule基于Javadoc自动化并简化连接器参考文档的创建过程，并添加一个自定义Javadoc doclet和一些DevKit特定的Java注释。本文档介绍如何生成文档以及包含哪些内容。
+
+
+== 假设
+
+本文档假定您熟悉Java IDE（Eclipse或IntelliJ），并熟悉Java的Maven构建管理器，特别是Javadoc。它还假定您已经开发并测试了连接器。
+
+== 生成文档
+
+Maven使用每个新连接器生成文档。您也可以使用以下命令自动执行此步骤。
+
+[source, code, linenums]
+----
+mvn javadoc:javadoc
+----
+
+在Maven项目的`target/apidocs`目录中找到生成的文档。打开文件`index.html`以显示完整生成的文档。
+
+文档始终包含以下内容：
+
+*  Mule XML配置文档
+* 直接从Java调用连接器方法的参考文档
+* 一个（样板）指南，用于在Mule中安装连接器
+
+在构建连接器时，请查看生成的文档以确保内容正确无误。如果您发现生成的文档不够用，您可以随时在代码中的Javadoc注释中包含更多细节。
+
+== 强制性文档
+
+ 以下各节介绍DevKit将执行的必需注释。
+
+[WARNING]
+如果缺少所需的注释，DevKit将不会构建您的项目。
+
+=== 所需的连接器元数据：@Connector和@Author
+
+每个使用`@Connector`注释的类都必须具有类级别的Javadoc注释，并对扩展进行高级概述。 `@Connector`类还需要`@Author`注释。
+
+查看来自 http://www.mulesoft.org/connectors/zuora-cloud-connector[Zuora连接器]的注释示例。
+
+[source, code, linenums]
+----
+/**
+* Zuora is the leader in online recurring billing and payment solutions for SaaS and subscription businesses.
+* <p/>
+* This connector provides full access to the Z-Commerce platform API.   
+* * @author MuleSoft, Inc.
+*/
+@Connector(name = "zuora")
+public class ZuoraModule
+{
+...
+----
+
+=== 文档化@Configurable属性
+
+用`@Configurable`注释的每个字段都必须有一个Javadoc注释，它简要地解释了该属性。
+
+查看来自 http://www.mulesoft.org/connectors/magento-cloud-connector[Magento连接器]的注释示例。
+
+[source, code, linenums]
+----
+/**
+ * The user name to access Magento Web Services
+ */
+@Configurable
+private String username;
+ 
+/**
+ * The password to access Magento Web Services
+ */
+@Configurable
+private String password;
+ 
+/**
+ * The address to access Magento Web Services
+ */
+@Configurable
+private String address;
+----
+
+=== 记录@Processor方法和参数：@param和@return
+
+每个用@Processor或@Source注解的方法（用于流式API）必须有一个Javadoc注释，其中包含以下内容：
+
+* 该方法的使用说明
+* 指向Mule中元素的XML代码示例的指针（如下所述）
+* 对于该方法的每个参数，使用一个Javadoc @param注释以及参数的描述
+
+如果该方法的返回类型不是`void`，则Javadoc `@return`注释将包含对返回值的描述。
+
+下面的完整`@Processor`方法声明示例来自 http://www.mulesoft.org/connectors/mongodb-connector[MongoDB连接器]。
+
+[source, code, linenums]
+----
+/**
+* Creates a new collection. If the collection already exists, a MongoException
+* will be thrown.
+*
+* {@sample.xml ../../../doc/mongo-connector.xml.sample mongo:create-collection}
+*
+* @param collection the name of the collection to create
+* @param capped if the collection will be capped
+* @param maxObjects the maximum number of documents the new collection is able
+* to contain
+* @param size the maximum size of the new collection
+*/
+@Processor public void createCollection(String collection,
+@Optional
+@Default(CAPPED_DEFAULT_VALUE) boolean capped,
+@Optional Integer maxObjects,
+@Optional Integer size)
+{ client.createCollection(collection, capped, maxObjects, size); }
+----
+
+=== 必需的XML代码示例：@ sample.xml
+
+`@sample.xml`注释指向一个XML片段，演示如何在Mule的XML中使用此方法。然后，此示例将在生成的DevKit文档中提供。
+
+DevKit还对`@sample.xml`注释引用的XML代码进行完整性检查，以确保XML示例能够成功解析连接器生成的模式。
+
+下面的示例中显示了注释的语法。
+
+[source, code, linenums]
+----
+{@sample.xml xml-location tag-name}
+----
+
+传递给`@sample.xml `的参数如下所示：
+
+*  `xml-location`：从`src/main/java`到示例文件的相对路径。 Maven原型在您的项目`doc/project-name.xml.sample`中创建此文件;相对路径通常是`../../../` ` `
+*  `tag-name`：`.xml.sample`文件中示例的名称，格式为`myconnector:my-method-name`或`myconnector:myMethodName`。
+
+由`@sample.xml`标记指定的示例文件必须符合以下示例所显示的结构。
+
+[source, xml, linenums]
+----
+<!-- BEGIN_INCLUDE(myconnector:method-a) -->
+// example here
+<!-- END_INCLUDE(myconnector:method-a) -->
+<!-- BEGIN_INCLUDE(myconnector:method-b) -->
+// example here
+<!-- END_INCLUDE(myconnector:method-b) -->
+...
+...
+----
+
+这是来自 http://www.mulesoft.org/connectors/salesforce-cloud-connector[Salesforce.com连接器]的示例。
+
+[source, xml, linenums]
+----
+<!-- BEGIN_INCLUDE(sfdc:create) -->
+<sfdc:create type="Account">
+    <sfdc:objects>
+        <sfdc:object>
+        <Name>MuleSoft</Name>
+        <BillingStreet>30 Maiden Lane</BillingStreet>
+        <BillingCity>San Francisco</BillingCity>
+        <BillingState>CA</BillingState>
+        <BillingPostalCode>94108</BillingPostalCode>
+        <BillingCountry>US</BillingCountry>
+        </sfdc:object>
+    </sfdc:objects>
+</sfdc:create>
+<!-- END_INCLUDE(sfdc:create) -->
+<!-- BEGIN_INCLUDE(sfdc:upsert) -->
+<sfdc:upsert type="Account" externalIdFieldName="InternalAccountCode">
+    <sfdc:objects>
+        <sfdc:object>
+        <InternalAccountCode>A01596</InternalAccountCode>
+        <Name>MuleSoft</Name>
+        <BillingStreet>30 Maiden Lane</BillingStreet>
+        <BillingCity>San Francisco</BillingCity>
+        <BillingState>CA</BillingState>
+        <BillingPostalCode>94108</BillingPostalCode>
+        <BillingCountry>US</BillingCountry>
+    </sfdc:object>
+</sfdc:objects>
+</sfdc:upsert> <!-- END_INCLUDE(sfdc:upsert) -->
+----
+
+== 另请参阅
+
+* 将所有必需的操作添加到连接器后，开发测试并完成记录，移至 link:/anypoint-connector-devkit/v/3.4/packaging-your-connector-for-release[包装和释放您的连接器]。

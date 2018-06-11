@@ -1,0 +1,242 @@
+= 存储库API
+:keywords: tcat, repository, api
+
+Tcat服务器存储库API允许您在存储库内创建，更新和删除工作空间和工件。它基于简单但强大的Atom发布协议标准。 AtomPub API使用Atom条目和提要来表示工作区，工件和工件版本。这些可以通过基于RESTful HTTP的API进行操作。
+
+== 资料库供稿网址
+
+Tcat Server包含以下供稿，您可以使用GET，POST和DELETE操作来使用本页面其余部分所述的存储库：
+
+[%header,cols="2*a"]
+|===
+| {饲料{1}} URL
+|根工作区列表和搜索 | {{http：// host / console / api / registry}}
+|工作区列表 | {{http：// host / console / api / registry / <workspacePath>}}
+|子工作区 | {{http：// host / console / api / registry / <workspacePath>;工作区}}
+|工件版本 | {{http：// host / console / api / registry / <workspacePath> / <item>;历史记录}}
+|===
+
+== 列出工作区中的所有项目
+
+工作空间可以包含其他工作空间和工件。要列出工作区中的所有项目，请在其URL上执行GET操作。
+
+=== 示例请求
+
+[source, code, linenums]
+----
+GET /console/api/registry/Applications
+----
+
+=== 示例响应
+
+[source, code, linenums]
+----
+200 OK
+Content-Type: application/atom+xml
+Server: Apache-Coyote/1.1
+Date: Mon, 10 Aug 2015 00:12:55 GMT
+ 
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <id>tag:galaxy.mulesource.com,2008:registry:local$00fbf647-9d48-4982-8831-311d67af1e3f:feed</id>
+  <title type="text">Mule Galaxy Registry/Repository</title>
+  <link href="" />
+  <link href="" rel="self" />
+  <author>
+    <name>Mule Galaxy</name>
+  </author>
+  <updated>2015-08-10T16:30:21.325Z</updated>
+  <entry>
+    <link href="/console/api/registry/Applications/myapp.war" rel="edit" />
+    <id>urn:galaxy:artifact:local$f85ab0f6-a3e0-460b-bbf7-87dc68d6bcc8</id>
+    <title type="text">myapp.war</title>
+    <updated>2015-08-10T16:30:21.202Z</updated>
+    <author>
+      <name>Administrator</name>
+    </author>
+    <item-info xmlns="http://galaxy.mule.org/2.0" created="2015-08-10T16:30:21.199Z" name="myapp.war" type="Artifact" />
+    <metadata xmlns="http://galaxy.mule.org/2.0" />
+    <content type="text" />
+  </entry>
+  <entry>
+    <link href="/console/api/registry/Applications/MyWorkspace" rel="edit" />
+    <id>urn:galaxy:artifact:local$f85ab0f6-a3e0-460b-bbf7-87dc68d6bcc8</id>
+    <title type="text">MyWorkspace</title>
+    <updated>2015-08-10T16:30:21.202Z</updated>
+    <author>
+      <name>Administrator</name>
+    </author>
+    <item-info xmlns="http://galaxy.mule.org/2.0" created="2015-08-10T16:30:21.199Z" name="MyWorkspace" type="Workspace" />
+    <metadata xmlns="http://galaxy.mule.org/2.0" />
+    <content type="text" />
+  </entry>
+</feed>
+----
+
+== 创建一个工作区
+
+要创建工作空间，请将表示工作空间的Atom条目发布到父工作空间。以下示例在"Applications"工作区内创建名为"MyWorkspace"的工作区。
+
+[source, code, linenums]
+----
+POST /console/api/registry/Applications HTTP/1.0
+Authorization: Basic YWRtaW46YWRtaW4=
+Host: localhost:8080
+Content-Type: application/atom+xml;type=entry
+ 
+<entry xmlns="http://www.w3.org/2005/Atom">
+  <title type="text">MyWorkspace</title>
+  <updated>2015-08-10T16:30:20.916Z</updated>
+  <author>
+    <name>Ignored</name>
+  </author>
+  <id>urn:uuid:4574C8E01C5BF290C31260894620921</id>
+  <content type="text"></content>
+  <item-info xmlns="http://galaxy.mule.org/2.0" name="MyWorkspace" type="Workspace" />
+</entry>
+----
+
+== 创建工件
+
+当您创建工件时，您必须提供额外的HTTP标头，用于指定工件的版本标签和工件名称：
+
+*  `X-Artifact-Version`：您正在发布的工件的版本标签。
+*  `Slug`：用于确定存储库中工件的名称。
+
+一个典型的HTTP POST看起来像这样：
+
+[source, code, linenums]
+----
+POST /console/api/registry/Applications HTTP/1.0
+Authorization: Basic YWRtaW46YWRtaW4=
+Host: localhost:8080
+Content-Type: text/plain
+X-Artifact-Version: 1.0
+Slug: test.war
+ 
+...
+----
+
+以下是使用`wget`的示例：
+
+[source, code, linenums]
+----
+$ wget --post-file=YOURFILE --http-user=admin --http-password=admin -S \
+--header="X-Artifact-Version: 0.1" \
+--header="Slug: ARTIFACT_NAME"
+http://localhost:8080/console/api/registry/Default%20Workspace
+----
+
+== 创建工件的新版本
+
+创建工件的新版本与创建工件非常相似，只是使用了工件URL而不是工作空间URL，并且不需要Slug标头。
+
+一个典型的HTTP POST看起来像这样：
+
+[source, code, linenums]
+----
+POST /console/api/registry/Applications/test.war HTTP/1.0
+Authorization: Basic YWRtaW46YWRtaW4=
+Host: localhost:8080
+Content-Type: text/plain
+X-Artifact-Version: 2.0
+ 
+... file data ...
+----
+
+== 查看工件
+
+要下载最新版本的工件，可以将其在存储库中的路径追加到基础存储库URL：
+
+[source, code, linenums]
+----
+GET /console/api/registry/Applications/test.war
+ 
+200 OK
+Content-Type: application/octet-stream
+Server: Apache-Coyote/1.1
+Date: Mon, 10 Aug 2015 00:12:55 GMT
+ 
+... file data ...
+----
+
+要查看工件的特定版本，请使用版本标签指定版本查询参数：
+
+[source, code, linenums]
+----
+GET /console/api/registry/Applications/test.war?version=1.1
+ 
+200 OK
+Content-Type: application/octet-stream
+Server: Apache-Coyote/1.1
+Date: Mon, 10 Aug 2015 00:12:55 GMT
+ 
+... file data ...
+----
+
+要查看关于工件的Atom条目元数据，请将";atom"附加到其URL。
+
+[source, code, linenums]
+----
+GET /console/api/registry/Applications/test.war;atom
+ 
+<entry>
+  <link href="/console/api/registry/registry/Applications/test.war;atom" rel="edit" />
+  <id>urn:galaxy:artifact:local$804e5dde-effc-4d55-8888-7750e7dbe536</id>
+  <title type="text">test.war</title>
+  <updated>2015-08-10T17:05:26.609Z</updated>
+  <author><name>Administrator</name></author>
+  <item-info xmlns="http://galaxy.mule.org/2.0" created="2015-08-10T17:05:26.596Z" name="test.war" type="Artifact" />
+  <metadata xmlns="http://galaxy.mule.org/2.0" />
+  <collection xmlns="http://www.w3.org/2007/app" id="versions" href="/console/api/registry/Applications/test.war;children">
+    <atom:title xmlns:atom="http://www.w3.org/2005/Atom" type="text">Child Items</atom:title>
+  </collection>
+  <content type="text"></content>
+</entry>
+----
+
+== 删除一个项目
+
+要从存储库中删除项目（工作区，工件或工件版本），请对该项目的URL执行DELETE。例如：
+
+[source, code, linenums]
+----
+DELETE /console/api/registry/Applications/test.war
+ 
+204
+Server: Apache-Coyote/1.1
+Date: Mon, 10 Aug 2015 00:12:55 GMT
+----
+
+== 搜索存储库
+
+您可以通过在`/api/registry`网址上进行GET并提供搜索字符串来搜索存储库。以下是一个选择所有WAR文件的示例查询：
+
+*Query*
+
+[source, code, linenums]
+----
+select where name like ".war"
+----
+
+*URL*
+
+[source, code, linenums]
+----
+http://localhost:8080/console/api/registry?q=select%20where%20name%20like%20%22.war%22
+----
+
+=== 网址编码
+
+如果您为客户端代码使用 http://incubator.apache.org/abdera[阿布德拉]，则可以使用`org.apache.abdera.i18n.text.UrlEncoding`类中的编码方法处理您的URL编码：
+
+[source, code, linenums]
+----
+import org.apache.abdera.i18n.text.UrlEncoding;
+import org.apache.abdera.i18n.text.CharUtils.Profile;
+ 
+String encodedQuery = UrlEncoding.encode("select artifact where ...", Profile.PATH.filter());
+----
+
+注意：如果您使用的是Abdera 0.3.0，则必须改用`EncodingUtil.sanitize()`方法。
+
+有关哪些字符必须进行网址编码的参考，请点击 link:http://www.blooberry.com/indexdot/html/topics/urlencoding.htm[这里]。只需用适当的编码字符替换查询中的任何这些字符即可。例如，如果您编码的是"select artifact"，则可以用`%20`替换空格，因为这是空格字符的URL编码表示形式。

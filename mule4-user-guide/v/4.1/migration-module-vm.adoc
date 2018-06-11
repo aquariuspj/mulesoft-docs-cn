@@ -1,0 +1,154 @@
+= 迁移VM传输
+
+VM传输被完全重写。它从Mule 3运输模型演变为基于操作的连接器。这启用了许多新功能：
+
+* 按需使用队列中的消息的能力，与仅提供轮询入站端点的旧传输不同。
+* 增强 link:/anypoint-studio/v/7.1/datasense-explorer[DataSense]。
+
+[[whats_covered_here]]
+== 这里涵盖了什么？
+
+*  <<file_configs>>
+*  <<vm_listener>>
+*  <<vm_outbound>>
+
+[[file_configs]]
+== 迁移VM传输配置
+
+在Mule 3中，所有传输配置都设置在名为`<vm:connector />`的顶级元素下。每个配置都可以处理多个队列，但限制条件是它们都必须是暂时的或持久的。为了结合瞬态和持久性，需要两个独立的传输配置。
+
+.Mule 3示例：定义持久性VM传输
+[source,xml, linenums]
+----
+<vm:connector name="persistentVmConnector" queueTimeout="1000">
+    <vm:queue-profile>
+        <default-persistent-queue-store/>
+    </vm:queue-profile>
+</vm:connector>
+----
+
+在Mule 4中，每个连接器配置都定义了要预先处理的队列。这些队列中的每一个都可以有自己的设置，使得清晰和灵活。但是，每个配置只能访问它定义的队列。这是一个限制，以避免发布到无人监听的队列，这是一个常见的错误。
+
+.Mule 4示例：定义VM连接器配置
+[source,xml, linenums]
+----
+<vm:config name="vm">
+    <vm:queues>
+        <vm:queue queueName="transientQueue" queueType="TRANSIENT" />
+        <vm:queue queueName="persistentQueue" queueType="PERSISTENT" />
+    </vm:queues>
+</vm:config>
+----
+
+[[vm_listener]]
+== 迁移入站端点
+
+在Mule 3中，使用`<vm:inbound-endpoint>`消息源来侦听消息的特定队列。对于队列中的每个元素，都会触发一条新消息。
+
+.Mule 3示例：VM入站端点
+[source,xml, linenums]
+----
+<flow name="persistentVM">
+    <vm:inbound-endpoint path="persistentQueue" exchange-pattern="request-response">
+        <vm:transaction action="ALWAYS_BEGIN"/>
+    </vm:inbound-endpoint>
+
+    ...
+</flow>
+----
+
+此配置定义了一个事务性入站端点，该端点监听名为`persistentQueue`的队列。另外，`exchange-pattern`参数用于确定流是否发送响应。如果配置为`request-response`，端点将响应流程结束时获得的任何消息（更多信息请参见<<vm_outbound>>部分）。
+
+在Mule 4中，使用`<vm:listener>`消息源代替：
+
+.Mule 4示例：VM侦听器
+[source,xml, linenums]
+----
+<flow name="persistentVM">
+    <vm:listener queueName="persistentQueue" transactionalAction="ALWAYS_BEGIN" config-ref="vm">
+        <vm:response>
+            <vm:content>
+                #[lower(payload.salute)]
+            </vm:content>
+        </vm:response>
+    </vm:listener>
+
+    ...
+</flow>
+----
+
+主要区别是：
+
+* 监听器指向一个配置，并且只能监听在该配置中定义的队列。
+* 现在，您可以使用`<vm:response>`元素来控制响应。如果没有提供，则在流程结束时产生的消息有效载荷将是设置。
+* 您不再需要使用`exchange-pattern`来控制是否发送响应。根据通过`<vm:publish>`或`<vm:publish-response>`操作生成的消息，连接器自动知道何时发送它。
+
+=== 按顺序收听邮件
+
+另一个入站端点用例是按顺序侦听消息。在Mule 3中，必须使用`numberOfConcurrentTransactedReceivers`参数在连接器级别配置。
+
+.Mule 3示例：按顺序收听消息
+[source,xml, linenums]
+----
+    <vm:connector name="vmConnector" numberOfConcurrentTransactedReceivers="1"/>
+----
+
+在Mule 4中，你现在可以在听众层面上做到这一点：
+
+.Mule 4示例：按顺序收听消息
+[source,xml, linenums]
+----
+<flow name="synchronousQueue" maxConcurrency="1">
+    <vm:listener queueName="synchronousQueue" numberOfConsumers="1" config-ref="vm" transactionalAction="ALWAYS_BEGIN"/>
+    ...
+</flow>
+----
+
+通过将流`maxConcurrency`和侦听器`numberOfConsumers`都设置为1，您可以按顺序处理消息。
+
+[[vm_outbound]]
+== 迁移出站端点
+
+Mule 3传输使用`<vm:outbound-endpoint>`组件将消息发布到队列中：
+
+.Mule 3示例：将消息发布到队列
+[source,xml, linenums]
+----
+<vm:outbound-endpoint path="sendAsync" exchange-pattern="one-way"/>
+<vm:outbound-endpoint path="sendAndWait" exchange-pattern="request-response"/>
+----
+
+`exchange-pattern`参数在上述示例的行为中起着关键作用。如果模式为`one-way`，则将发送消息并继续执行相同的消息负载。如果使用`request-response`，则执行等待来自具有`<vm:inbound-endpoint>`的流监听同一队列的流的响应，然后将获得的响应传播到下一个消息处理器。
+
+Mule 4通过两种不同的操作实现了这一点：
+
+.Mule 4示例：将消息发布到队列
+
+[source,xml, linenums]
+----
+<vm:publish queueName="sendAsync" config-ref="vm">
+    <vm:content>#[upper(payload)]</vm:content>
+</vm:publish>
+
+<vm:publish-consume queueName="sendAndWait" config-ref="vm">
+    <vm:content>#[upper(payload)]</vm:content>
+</vm:publish-consume>
+----
+
+两种操作的配置都相似，并允许您使用DataWeave构建正在发送的消息的内容。但是，{{0​​}}操作发布内容并继续使用相同的消息时，`<vm:publish-consume>`操作将等待引用队列的`<vm:listener>`发出的响应。
+
+要使用VM连接器，只需使用Studio调色板将其添加到应用程序中，或者在您的`pom.xml`文件中添加以下依赖项：
+
+[source,XML,linenums]
+----
+<dependency>
+    <groupId>org.mule.connectors</groupId>
+    <artifactId>mule-vm-connector</artifactId>
+    <version>1.1.0</version> <!-- or newer -->
+    <classifier>mule-plugin</classifier>
+</dependency>
+----
+
+== 另请参阅
+
+*  link:/connectors/file-connector[关于文件连接器]

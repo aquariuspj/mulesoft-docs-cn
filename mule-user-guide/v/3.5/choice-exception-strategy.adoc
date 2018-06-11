@@ -1,0 +1,203 @@
+= 选择例外策略
+
+你可以定义一个选择异常策略来自定义Mule处理消息的方式，并在抛出异常时根据消息的内容处理错误。选择异常策略捕获其父流中抛出的所有异常，检查消息内容和异常类型，然后将消息路由到适当的异常策略进行处理。
+
+通常，您在选择异常策略中定义多个异常策略。每个异常策略 - 无论是捕获还是回滚 - 都使用_Mule表达式_来为选择异常策略提供建议，以接受和处理哪种类型的消息。
+
+以下是它的工作原理：当选择异常策略捕获异常时，它会评估发生错误时的异常类型和消息内容。然后，它逐个检查每个异常策略的表达式属性，以查看哪一个应该处理该错误。然后将消息路由到_first_异常策略，该策略的评估结果为true（具有与消息表达式匹配的表达式）。如果其异常策略都不能处理该错误，则选择异常策略会将消息路由到Mule的默认异常策略。
+
+* 您可以将任意数量的catch或rollback异常策略放入选择异常策略中。
+* 您无法将选择异常策略放入另一个选择异常策略中。
+* 您可以使用任何Mule表达式计算器作为异常策略的表达式属性。当您需要根据他们抛出的异常类型路由邮件时，请考虑使用异常类型表达式评估程序，例如`org.mule.example.ValidationException`。 +
+
+== 何时使用
+
+使用选择异常策略来使Mule能够决定如何处理流中发生的每个错误。
+
+例如，在处理订单的流程中，可以使用选择异常策略来应用以下错误处理规则：
+
+* 抛出AlreadyProcessedException的消息应该被丢弃。
+* 引发ValidationException的消息应发送到无效的订单队列。
+* 所有其他引发异常的消息都应回滚到重试处理。
+
+选择异常策略可以评估在此流程中抛出异常的每条消息的异常类型，并将它们路由到以下三种异常策略之一：
+
+* 处理和丢弃所有AlreadyProcessedException的catch异常策略
+* 第二个catch异常策略处理所有ValidationException并将它们发送到invalid.orders队列
+* 回滚异常策略回滚订单事务，以便重试父流程中的处理
+
+以下是检查特定例外情况的有用表达式：
+
+*  *Instance of*：检查异常是ExceptionType的一个实例。 +
+语法：`&#x0023;[exception.causedBy(ExceptionType)]` +
+示例：`&#x0023;[exception.causedBy(java.lang.IllegalArgumentException)]`
++
+*  *Exact Match*：检查异常是否与ExceptionType完全匹配。 +
+语法：`&#x0023;[exception.causedExactlyBy(ExceptionType)]` +
+示例：`&#x0023;[exception.causedExactlyBy(java.net.SocketTimeoutException)]`
++
+*  *Regular Expression Match*：检查异常类型是否与特定正则表达式（Regex）字符串匹配。
+语法：`&#x0023;[exception.causeMatches(String)]` +
+示例：`&#x0023;[exception.causeMatches('*BusinessException')]`
+
+
+== 配置选择异常策略
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Search for and drag and drop the choice exception strategy icon to put into the footer bar of a flow.
++
+image:choice+1.png[choice+1]
++
+. Click the title bar of the exception strategy to open its *Properties Editor*, then enter a name for your choice exception strategy in the *Display Name* field.  +
++
+. Search for and drag and drop one or more catch or rollback exception strategy icons to put into the choice exception strategy box.
++
+[WARNING]
+Keep in mind that the choice exception strategy checks the expression attribute of each of its exception strategies one by one, _serially_, to see which one of them should handle the error; it then routes the message to the _first exception strategy_ that evaluates to true. Therefore, organize your exception strategies keeping in mind that the top-most will be evaluated first, then the one below it, and so on. You cannot rearrange the exception strategies once they have been placed inside the choice exception strategy.
++
+image:choice+2.png[choice+2]
++
+. Follow the instructions to define and configure each catch exception strategy and rollback exception strategy. Be sure to enter a Mule expression in the *Execute When* or *When* fields of each catch or rollback (respectively) exception strategy that you have put into the choice exception strategy. The contents of the *Execute When* or *When* field determine what kind of errors the exception strategy accepts and processes.
++
+[TIP]
+You can leave the *Execute When* field blank in the _last_ exception strategy configured inside your choice exception strategy. An exception strategy with a blank *Execute When* field accepts and processes any and all kinds of exceptions that messages throw in the parent flow.
++
+. Drag building blocks from the palette into each catch exception strategy and rollback exception strategy box to build flows that will process messages with errors. Each catch and rollback exception strategy can contain any number of message processors.
++
+image:choice+2.png[choice+2]
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+. In your flow, below all the message processors, add a `choice-exception-strategy` element. Refer to code below.
+
+. Configure attributes of the exception strategy according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Req'd |Value
+|*doc:name* |x |A unique name for the rollback exception strategy in your application. +
+Not required in Standalone.
+|===
++
+[source, xml, linenums]
+----
+<choice-exception-strategy doc:name="Choice Exception Strategy"/>
+----
++
+. As child elements, add one or more catch or rollback exception strategy icons to your choice exception strategy.
++
+[WARNING]
+Keep in mind that the choice exception strategy checks the expression attribute of each of its exception strategies one by one, _serially_, to see which one of them should handle the error; it then routes the message to the _first exception strategy_ that evaluates to true. Therefore, organize your exception strategies keeping in mind that the top-most evaluates first, then the one below it, and so on. 
++
+[source, xml, linenums]
+----
+<flow name="Sample_Flow">
+...
+<choice-exception-strategy doc:name="Choice Exception Strategy">
+    <catch-exception-strategy doc:name="Catch Exception Strategy"/>
+    <rollback-exception-strategy doc:name="Rollback Exception Strategy"/>
+</choice-exception-strategy>
+</flow>
+----
++
+. Follow the instructions to define and configure each catch exception strategy and rollback exception strategy. Be sure to define a Mule expression as the value of the `when` attribute of each catch or rollback (respectively) exception strategy that you have put into the choice exception strategy. The value of the `when` attributes ** determine what kind of errors the exception strategy accepts and processes.
++
+[TIP]
+You can leave the value of the `when` attribute empty in the _last_ exception strategy configured inside your choice exception strategy. An exception strategy with an empty `when` attribute accepts and processes any and all kinds of exceptions that messages throw in the parent flow.
++
+. Add message processors as child elements in each catch exception strategy and rollback exception strategy to build exception strategy flows to process messages with errors. Each catch and rollback exception strategy can contain any number of message processors.
+
+....
+------
+
+== 创建全球选择例外策略
+
+您可以创建一个或多个 link:/mule-user-guide/v/3.5/error-handling#creating-a-global-default-exception-strategy[全球例外策略]，以便在整个Mule应用程序的流程中重复使用。首先，创建全局选择异常策略，然后向流添加 link:/mule-user-guide/v/3.5/reference-exception-strategy[*参考例外战略*]以应用新的全局选择异常策略的错误处理行为。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+You can create one or more link:/mule-user-guide/v/3.5/error-handling#creating-a-global-default-exception-strategy[global exception strategies] to reuse in flows throughout your Mule project. First, create a global choice exception strategy, then add a link:/mule-user-guide/v/3.5/reference-exception-strategy[*Reference Exception Strategy*] to a flow to apply the error handling behavior of your new global choice exception strategy.
+
+. Click *File* > *New* > *Mule Configuration File*. You can use this configuration file to store the building blocks to share with all the flows in your project. This file appears in your Studio project under `src/main/app`. For this example, you can name it `global.xml`. The configuration file has the same elements the same as a Mule project so you can search for and drag building blocks into the configuration file. 
+. Click *Message Flow* and copy the building blocks you want in the configuration file. The catch exception strategy should be in the configuration file.
++
+image:choice+4.png[choice+4]
++
+. Follow <<Configuring a Choice Exception Strategy>> to configure exception strategies within your choice exception strategy, then define the flows to handle errors when they occur.
+....
+[tab,title="XML Editor or Standalone"]
+....
+. Above all the flows in your application, create a `choice`**`-exception-strategy`** element.
+. Configure attributes of the exception strategy according to the table below.
++
+[%header%autowidth.spread]
+|=======
+|Attribute |Req'd |Value
+|*doc:name* |x |A unique name for the rollback exception strategy in your application. +
+Not required in Standalone.
+|=======
++
+. Follow <<Configuring a Choice Exception Strategy>> to configure exception strategies within your choice exception strategy, then define the flows to handle errors when they occur.
+....
+------
+
+=== 将全局选择例外策略应用于流程
+
+使用 link:/mule-user-guide/v/3.5/reference-exception-strategy[参考例外策略]指示流采用由全局选择异常策略定义的错误处理行为。换句话说，您必须要求您的流程参考全局捕获异常策略以获取有关如何处理错误的说明。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Search for and drag and drop the *Reference Exception Strategy* icon to put into the footer bar of a flow. 
++
+image:reference+1.png[reference+1]
++
+. Open the Reference Exception Strategy's *Properties Editor*. 
++
+image:choice+setup+choice.png[choice+setup+choice]
++
+. Use the drop-down to select your *Global Exception Strategy*.
+. Save your changes.
++
+[NOTE]
+You can create a global rollback exception strategy (that is, access the Choose Global Type panel) from the reference exception strategy’s pattern properties panel. Click the (plus) button next to the Global Exception Strategy drop-down and follow the steps above to create a global choice exception strategy.
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+. In your flow, below all the message processors, add a **`reference-exception-strategy`** element. Refer to the code below.
+. Configure attributes of the exception strategy according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Req'd |Value
+|*ref* |x |The name of the global exception strategy to which your flow should refer to handle exceptions.
+|*doc:name* |x |A unique name for the rollback exception strategy in your application. +
+Not required in Standalone. 
+|===
+
+[source, xml, linenums]
+----
+<exception-strategy ref="Global_Choice_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+----
+....
+------
+
+[TIP]
+您可以将引用异常策略附加到您的Mule应用程序中的任意数量的流，并指示它们引用您创建的任何全局catch，回滚或选择异常策略。您可以指定任意数量的引用异常策略来引用相同的全局异常策略。
+
+== 另请参阅
+
+* 了解如何配置 link:/mule-user-guide/v/3.5/catch-exception-strategy[捕捉异常策略]。
+* 了解如何配置 link:/mule-user-guide/v/3.5/rollback-exception-strategy[回滚异常策略]。

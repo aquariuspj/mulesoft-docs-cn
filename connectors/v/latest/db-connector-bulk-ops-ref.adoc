@@ -1,0 +1,65 @@
+= 执行批量操作
+:keywords: db, connector, Database, bulk
+：TOC：
+：TOC标题：
+
+上面看到的插入，更新和删除操作适用于每个输入参数只能取一个值的情况。
+
+例如，删除时，许多行可以符合条件并被删除，但只提供了一个条件`(POSITION = X)`。同样的概念适用于更新，如果您使用`UPDATE PRODUCTS set PRICE = PRICE * 0.9 where PRICE > :price`，则可能会在许多产品上应用10％的折扣，但价格输入参数只会占用一个值。
+
+如果我们想要对具有不同价格的产品应用不同的折扣率，会发生什么情况？那么，我们可以通过执行许多操作来完成。例如，假设您有一个有效载荷，它是以下结构{price：number，discountRate：number}的对象列表，那么我们可以这样做：
+
+[source,xml,linenums]
+----
+<foreach>
+  <db:update config-ref="dbConfig">
+    <db:sql>
+      UPDATE PRODUCTS set PRICE = PRICE * :discountRate where PRICE > :price
+    </db:sql>
+    <db:input-parameters>
+     #[
+      {
+        'discountRate' : payload.discountRate,
+        'price' : payload.price,
+      }
+    ]
+    </db:input-parameters>
+  </db:update>
+</foreach>
+----
+
+这种方法肯定会完成工作;然而，这是非常低效的。需要对列表中的每个元素执行一个查询。这意味着对于每个元素我们将不得不：
+
+* 解析查询
+* 解析参数
+* 获取与数据库的连接（通过获取池中的一个或创建一个新池）
+* 支付所有网络开销
+*  RBMS必须处理查询并应用更改
+* 释放连接
+
+您可以通过执行批量操作来避免上述所有步骤。当你看它时，这里只有一个查询;更新语句是不变的，不是动态的。唯一改变的是，在每次迭代中，我们提供了一组不同的参数。
+
+批量操作允许您完成以下操作：使用一组参数值运行单个查询。不要误解，这不仅仅是上面相同的`<foreach>`的快捷方式，它使用JDBC API上的功能，以便：
+
+* 查询只解析一次
+* 由于执行单个语句，因此只需要一个数据库连接
+* 网络开销最小化
+*  RBDMS可以原子执行批量操作
+
+对于这些用例，连接器提供三种操作`<db:bulk-insert>`，`<db:bulk-update>`和`<db:bulk-delete>`。
+
+它们与单个对象非常相似，不同之处在于，它们不是以键值对的形式接收输入参数，而是将它们视为键值对的列表。
+
+我们来看一个例子：
+
+[source,xml,linenums]
+----
+<db:bulk-insert config-ref="dbConfig" >
+  <db:sql>
+    insert into customers (id, name, lastName) values (:id, :name, :lastName)
+  </db:sql>
+  <db:bulk-input-parameters>
+    #[[{'id': 2, 'name': 'George', 'lastName': 'Costanza'}, {'id': 3, 'name': 'Cosmo', 'lastName': 'Kramer'}]]
+  </db:bulk-input-parameters>
+</db:bulk-insert>
+

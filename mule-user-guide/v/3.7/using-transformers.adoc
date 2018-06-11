@@ -1,0 +1,242 @@
+= 使用变形金刚
+:keywords: anypoint studio, studio, mule, transformers
+
+变形金刚将信息有效载荷转换为其目的地预期的格式。 Mule提供了许多标准变换器，您可以使用Mule XML配置文件中的预定义元素和属性进行配置。您还可以使用`<custom-transformer>`元素配置自定义转换器，您可以在其中指定自定义转换器类的完全限定类名称。有关创建和配置自定义转换器的更多信息，请参阅 link:/mule-user-guide/v/3.7/creating-custom-transformers[创建自定义变形金刚]。
+
+[TIP]
+转换邮件的最强大的工具是 link:/mule-user-guide/v/3.7/dataweave[DataWeave变压器]，它不仅可以更改邮件的格式，还可以以任何您想要的方式重命名，聚合，拆分或重新排列邮件中的字段。
+
+标准变压器比自定义变压器更易于使用。您不需要知道转换器的Java名称，并且所有属性都在Mule配置模式中显式声明。以下是一个声明标准附加字符串转换器的示例，它将字符串文本附加到原始邮件负载：
+
+[source,xml]
+----
+<append-string-transformer name="myAppender" message=" ... that's good to know!"/>
+----
+
+如果原始消息有效负载是字符串"foo"，则上面的转换器会将字符串转换为"foo ... that's good to know!"。
+
+本页面的<<Available Transformers>>部分描述了Mule提供的所有标准变压器。此外，许多 link:/mule-user-guide/v/3.7/transports-reference[运输]和 link:/mule-user-guide/v/3.7/modules-reference[模块]都有自己的变换器，例如JMS传输的ObjectToJMSMessage转换器。
+
+== 配置变形金刚
+
+您可以配置变压器_locally_或_globally_。您可以在端点或流中或您想要应用它的位置配置本地转换器，而在Mule配置文件中的任何`<model>`或`<flow>`元素之前配置全局转换器，然后引用它。
+
+例如，下面的代码定义了两个全局变换器，它们从两个不同的地方引用：
+
+[source,xml, linenums]
+----
+<xm:xml-to-object-transformer name="XMLToExceptionBean" returnClass="org.mule.example.errorhandler.ExceptionBean"/>
+<custom-transformer name="ExceptionBeanToErrorMessage" class="org.mule.example.errorhandler.ExceptionBeanToErrorMessage"
+returnClass="org.mule.example.errorhandler.ErrorMessage"/>
+ 
+...
+<flow name="Error Manager">
+  <inbound-endpoint address="file://./test-data/in" transformer-refs="XMLToExceptionBean ExceptionBeanToErrorMessage">
+    <file:filename-wildcard-filter pattern="*.xml" />
+  </inbound-endpoint>
+    ...
+</flow>
+...
+<flow name="Business Error Manager">
+  <inbound-endpoint address="jms://exception.queue"/>
+  <transformer ref="XMLToExceptionBean"/>
+  <transformer ref="ExceptionBeanToErrorMessage"/>
+  ...
+</flow>
+----
+
+== 链接变形金刚
+
+您可以将变压器链接在一起，以便一台变压器的输出成为下一台变压器的输入。要链接转换器，您可以在`transformer-refs`或`responseTransformer-refs`属性中创建空格分隔的转换器列表，或创建多个`<transformer>`元素，如上所示。
+
+例如，该链最终会从ByteArray转换为InputStream：
+
+[source, code, linenums]
+----
+transformer-refs="ByteArrayToString StringToObject ObjectToInputStream"
+----
+
+你也可以如下配置它：
+
+[source,xml, linenums]
+----
+<transformer ref="ByteArrayToString"/>
+<transformer ref="StringToObject"/>
+<transformer ref="ObjectToInputStream"/>
+----
+
+请注意，如果您指定变压器链，则不应用任何默认变压器或可发现变压器。如果你想使用这些变换器，你必须用其他链式变换器明确地指定它们。
+
+== 转化最佳做法
+
+骡子有一个有效的转化机制。变形金刚适用于入站或出站端点，并且在从端点发送或接收数据之前对数据进行转换。变形金刚可以连接在一起，因此对传输中的数据进行多重转换非常简单。
+
+没有一个标准的方法来确定如何以及在哪里进行转换。有人认为，因为转换应始终应用于入站/出站数据，转换应作为企业服务总线的一部分而不是组件内部。这种方法与面向方面编程（AOP）的概念相匹配。其他人得出结论认为，将转换逻辑编码到组件本身会更有效率。然而，在第二种情况下，与业务流程相关的代码和足够通用的可重用的代码之间没有区别，这与Mule的哲学相矛盾。
+
+虽然没有行业最佳实践，但MuleSoft建议开发人员检查其转换逻辑，以确定其是否总是使用（AOP）或是否特定于业务流程。一般来说，如果它总是被使用，你应该使用一个变压器，并且如果它是特定于单个业务流程的话，它应该是组件的一部分。
+
+请注意以下您应该*not*配置变压器的情况：
+
+* 默认转换器：某些转换器具有默认调用的默认转换器，但前提是您未配置显式转换。
+* 可发现的转换器：根据消息的类型可以自动发现和使用一些转换器。你不明确配置这些变压器。这些包括已被定义为可发现的定制变压器。有关更多信息，请参阅 link:/mule-user-guide/v/3.7/creating-custom-transformers[创建自定义变形金刚]。
+
+*References:*
+
+*  link:http://msdn2.microsoft.com/en-us/library/aa480061.aspx[面向服务的体系结构中的消息传递模式，第2部分]
+*  link:http://it.toolbox.com/blogs/composite-apps/transformation-in-a-soa-12186[SOA中的转换]
+
+== 可用变形金刚
+
+以下是Mule提供的变压器。一些变压器特定于运输或模块。有关更多信息，请参阅 link:/mule-user-guide/v/3.7/transports-reference[传输参考]和 link:/mule-user-guide/v/3.7/modules-reference[模块参考]。有关标准Mule转换器的元素和属性的完整参考，请参阅 link:/mule-user-guide/v/3.7/transformers-configuration-reference[变压器配置参考]。
+
+=== 基本
+
+基本的转换器位于 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transformer/simple/package-summary.html[org.mule.transformer.simple]包中。它们不需要任何特殊配置。有关这些转换器的详细信息，请参阅 link:/mule-user-guide/v/3.7/transformers-configuration-reference[变压器配置参考]。
+
+[%header,cols="2*"]
+|===
+| {变压器{1}}说明
+| BeanBuilderTransformer a |
+通过定义对象并设置一些用于填充bean属性的表达式来构造简单的bean对象。例如：
+
+[source,xml, linenums]
+----
+<bean-builder-transformer name="testTransformer3" beanClass="org.mule.test.fruit.Orange">
+  <bean-property property-name="brand" evaluator="mule" expression="message.payload" optional="true"/>
+  <bean-property property-name="segments" evaluator="mule" expression="message.header(SEGMENTS)"/>
+</bean-builder-transformer>
+----
+
+| ByteArrayToHexString < - > +
+  HexStringToByteArray  |在字节数组和十六进制字符串之间进行转换的一对变换器。
+| ByteArrayToMuleMessage < - > +
+  MuleMessageToByteArray  |在字节数组和Mule消息之间进行转换的一对变换器。
+| ByteArrayToObject < - > +
+  ObjectToByteArray  |在字节数组和对象之间转换的一对变换器。如果字节数组未被序列化，则ByteArrayToObject将返回一个由字节创建的字符串作为变换器上的returnType。
+| ByteArrayToSerializable < - > +
+  SerializableToByteArray  |一对序列化和反序列化对象的变换器。
+| CombineCollectionsTransformer  |获取作为集合集合的有效载荷并将其转换为单个列表。例如，如果有效负载是包含元素A和B的集合和包含元素C和D的另一个集合的集合，则这会将它们转换为元素A，B，C和D的单个集合。
+| ExpressionTransformer  |计算当前消息的一个或多个表达式并将结果作为数组返回。有关详情，请参阅 link:/mule-user-guide/v/3.7/mule-expression-language-mel[Mule表达语言MEL]。
+| MessagePropertiesTransformer  |可配置的消息转换器，允许用户添加，覆盖和删除当前消息的属性。
+| ObjectArrayToString < - > +
+  StringToObjectArray  |在对象数组和字符串之间转换的一对变换器。使用配置元素`<byte-array-to-string-transformer>`和`<string-to-byte-array-transformer>`。
+| ObjectToInputStream  |将可序列化对象转换为输入流，但通过使用String.getBytes（）方法转换为字节来区别对待java.lang.String。
+| ObjectToOutputHandler  |将字节数组转换为字符串。
+| ObjectToString  |返回各种对象的可读输出。用于调试。
+| StringAppendTransformer  |将字符串附加到现有字符串。
+| StringToObjectArray  |将字符串转换为对象数组。使用配置元素`<string-to-byte-array-transformer>`。
+|===
+
+===  XML
+
+XML转换器位于 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/module/xml/transformer/package-summary.html[org.mule.module.xml.transformer]包中。它们提供了在不同XML格式之间转换，使用XSLT以及从XML转换为POJO的能力。有关信息，请参阅 link:/mule-user-guide/v/3.7/xml-module-reference[XML模块参考]。
+
+[%header,cols="2*"]
+|===
+| {变压器{1}}说明
+| link:/mule-user-guide/v/3.7/xmlobject-transformers[XmlToObject < - > ObjectToXml]  |使用 link:http://x-stream.github.io/[XStream的]将XML转换为Java对象。
+| link:/mule-user-guide/v/3.7/jaxb-transformers[JAXB XmlToObject < - > JAXB ObjectToXml]  |使用 link:http://java.sun.com/developer/technicalArticles/WebServices/jaxb/[JAXB]绑定框架将XML转换为Java对象。
+| link:/mule-user-guide/v/3.7/xslt-transformer[XSLT]  |使用XSLT转换XML有效负载。
+| link:/mule-user-guide/v/3.7/xquery-transformer[XQuery的]  |使用 link:http://en.wikipedia.org/wiki/XQuery[XQuery的]转换XML有效负载。
+| link:/mule-user-guide/v/3.7/domtoxml-transformer[DomToXml < - > XmlToDom]  |将DOM对象转换为XML并返回。
+| link:/mule-user-guide/v/3.7/xmltoxmlstreamreader-transformer[XmlToXMLStreamReader]  |将XML从消息负载转换为StAX XMLStreamReader。
+| link:/mule-user-guide/v/3.7/xpath-extractor-transformer[XPath提取器]  |使用JAXP使用XPath表达式查询和提取对象图。
+| link:/mule-user-guide/v/3.7/jxpath-extractor-transformer[JXPath提取器]  |使用JXPath使用XPath表达式查询和提取对象图。
+| link:/mule-user-guide/v/3.7/xmlprettyprinter-transformer[XmlPrettyPrinter]  |允许您使用受控格式输出XML，包括修剪空白和指定缩进。
+|===
+
+===  JSON
+
+JSON转换器位于 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/module/json/transformers/package-summary.html[org.mule.module.json.transformers]包中。它们提供了使用JSON文档并将它们自动绑定到Java对象的功能。有关信息，请参阅 link:/mule-user-guide/v/3.7/native-support-for-json[本机支持JSON]。
+
+=== 脚本
+
+link:/mule-user-guide/v/3.7/scripting-module-reference[脚本]转换器使用脚本（例如JavaScript或 link:http://www.groovy-lang.org/[Groovy的]脚本）转换对象。该转换器位于 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/module/scripting/transformer/package-summary.html[org.mule.module.scripting.transformer]包中。
+
+=== 加密
+
+加密转换器位于 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transformer/encryption/package-summary.html[org.mule.transformer.encryption]包中。
+
+[%header,cols="2*"]
+|===
+| {变压器{1}}说明
+| link:/mule-user-guide/v/3.7/transformers-configuration-reference[加密< - >解密]  |一对使用配置的EncryptionStrategy实现来加密和解密数据的转换器。
+|===
+
+=== 压缩
+
+压缩转换器位于 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transformer/compression/package-summary.html[org.mule.transformer.compression]包中。它们不需要任何特殊配置。
+
+[%header,cols="2*"]
+|===
+| {变压器{1}}说明
+| link:/mule-user-guide/v/3.7/transformers-configuration-reference[GZipCompressTransformer < - > GZipUncompressTransformer]  |一对压缩和解压缩数据的转换器。
+|===
+
+=== 编码
+
+编码转换器位于 link:http://www.mulesoft.org/docs/site/3.7.0/apidocs/org/mule/transformer/codec/package-summary.html[org.mule.transformer.codec]包中。它们不需要任何特殊配置。
+
+[%header,cols="2*"]
+|===
+| {变压器{1}}说明
+| link:/mule-user-guide/v/3.7/transformers-configuration-reference[Base64Encoder < - > Base64Decoder]  |一对转换为Base 64编码和从Base 64编码转换而来的转换器。
+| link:/mule-user-guide/v/3.7/transformers-configuration-reference[XMLEntityEncoder < - > XMLEntityDecoder]  |一对转换为XML实体编码的转换器。
+|===
+
+=== 电子邮件
+
+电子邮件传输提供了几个转换器，用于将电子邮件转换为字符串，将对象转换为MIME等等。有关详情，请参阅 link:/mule-user-guide/v/3.7/email-transport-reference[电子邮件传输参考]。
+
+=== 文件
+
+文件传输提供了用于从文件转换为字节数组（字节[]）或字符串的变换器。有关详情，请参阅 link:/mule-user-guide/v/3.7/file-transport-reference[文件传输参考]。
+
+===  HTTP
+
+HTTP连接器提供了几个转换器，用于将HTTP响应转换为Mule消息，映射或字符串，并将消息转换为HTTP请求或响应。有关详情，请参阅 link:/mule-user-guide/v/3.7/http-connector[HTTP连接器]。
+
+===  JDBC
+
+_ *Enterprise* _
+
+JDBC传输的Mule企业版本提供了用于将CSV和XML数据从文件移动到数据库并返回的转换器。有关详情，请参阅 link:/mule-user-guide/v/3.7/jdbc-transport-reference[JDBC传输参考]。
+
+*Note*：JDBC传输已被弃用，并将在Mule版本4中被删除。请改用 link:/mule-user-guide/v/3.7/database-connector[数据库连接器]。
+
+===  JMS
+
+link:/mule-user-guide/v/3.7/jms-transport-reference[JMS传输参考]和 link:/mule-user-guide/v/3.7/mule-wmq-transport-reference[Mule WMQ运输参考]（仅限企业）都提供用于在JMS消息和多种不同数据类型之间进行转换的转换器。
+
+=== 字符串和字节数组
+
+link:/mule-user-guide/v/3.7/multicast-transport-reference[多播传输参考]和 link:/mule-user-guide/v/3.7/tcp-transport-reference[TCP传输参考]都提供在字节数组和字符串之间进行转换的转换器。
+
+===  XMPP
+
+XMPP传输提供用于在XMPP数据包和字符串之间转换的变换器。有关详情，请参阅 link:/mule-user-guide/v/3.7/xmpp-transport-reference[XMPP传输参考]。
+
+=== 自定义
+
+Mule支持构建 link:/mule-user-guide/v/3.7/creating-custom-transformers[定制变压器]的能力。构建自定义转换器以满足应用程序中的特定数据转换需求。
+
+== 通用属性
+
+以下是所有变压器共有的属性。
+
+===  returnClass
+
+这指定了变换器返回的Java类的名称。
+
+===  ignoreBadInput
+
+如果设置为true，则变换器会忽略任何不知道如何变换的数据，但会调用当前链中跟随它的任何变换器。如果设置为false，变换器也会忽略任何不知道如何变换的数据，但不会进行进一步的变换。
+
+===  mime类型
+
+此MIME类型在此变换器生成的所有消息上设置。
+
+=== 编码
+
+该编码在该变压器产生的所有消息上设置。
+

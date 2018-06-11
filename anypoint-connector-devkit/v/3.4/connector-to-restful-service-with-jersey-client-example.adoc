@@ -1,0 +1,781 @@
+使用Jersey客户端示例的= 连接到RESTful服务
+
+本讨论介绍了为RESTful Web服务构建Jersey Client连接器所需的步骤。 Jersey与服务进行交互，并将JSON映射到Java对象和从中映射。
+
+这个例子使用了Dropbox的RESTful服务。实际上，使用现有的Java客户端库可以更简单地实现构建Dropbox连接器，但这仍是一个有用的示例。
+
+本文档引导您构建连接器，首先从服务端点，服务文档及其支持的资源和操作开始。
+
+== 先决条件
+
+* 您应该熟悉RESTful Web服务。
+* 您对Jersey有一些了解。请参阅 http://repo1.maven.org/maven2/com/sun/jersey/jersey-documentation/1.6/jersey-documentation-1.6-user-guide.pdf[Jersey 1.6用户指南]了解更多信息。
+
+[NOTE]
+====
+这里描述的直接路径应该为任何使用JSON代表请求和响应的RESTful API生成工作连接器。注意：
+
+*  Jersey是JAX-RS参考实现，广泛用于为RESTful Web服务开发Java客户端。 Jersey还增加了JAX-RS附加功能和实用程序，进一步简化了RESTful服务和客户端开发。
+* 这个例子使用Jersey的common 1.x分支。 Mule在需要的地方使用Jersey v1.6。
+* 在内部，Jersey Client使用Jackson来执行此映射。本次讨论中的一些实现细节是杰克逊特有的。
+* 此示例实现OAuth1身份验证。在 link:/anypoint-connector-devkit/v/3.4/implementing-oauth-1.0-authentication[实施OAuth 1.0身份验证]中查找有关实现OAuth1支持（参考相同示例代码）的更详细讨论。实现OAuth2支持类似;有关更多详细信息，请参阅 link:/anypoint-connector-devkit/v/3.4/implementing-oauth-2.0-authentication[实施OAuth 2.0身份验证]。
+{} *  MuleSoft根据Jersey在MuleSoft开发的连接器上的成功，推荐和记录了基于Jersey客户端的方法，但您也可以使用其他框架（如Apache CXF）创建R​​ESTful客户端。
+====
+
+带有Jersey客户端的== 连接器体系结构
+
+从一个新的连接器项目开始：
+
+* 创建一个`@Connector`类并添加认证逻辑。
+* 创建Java类（除非您使用的是Maps），它们表示传递给服务操作或从服务操作返回的实体。
+* 在Java中构建一个基于Jersey的客户端，与Web服务API协同工作，并将POJO或Maps转换为JSON并从JSON转换为Mule中使用。
+* 将基于Jersey的客户端类与集成了Mule的`@Connector`类进行封装。
+
+
+==  Dropbox RESTful示例连接器
+
+本讨论中使用的示例连接器连接到DropBox的Core API]。在https://github.com/mulesoft/devkit-documentation-rest-jersey[GitHub REST Jersey文档]上找到连接器源代码。
+
+该连接器公开了API操作`GET` https://api.dropbox.com/1/account/info，它检索有关Dropbox帐户资源的信息，记录在https://www.dropbox.com/developers/core/文档＃帐户信息[这里]。
+
+对此方法的典型响应如下所示：
+
+[source, code, linenums]
+----
+{
+    "referral_link": "https://www.dropbox.com/referrals/r1a2n3d4m5s6t7",
+    "display_name": "John P. User",
+    "uid": 12345678,
+    "country": "US",
+    "quota_info": {
+        "shared": 253738410565,
+        "quota": 107374182400000,
+        "normal": 680031877871
+    }
+}
+----
+
+请注意，帐户信息是一个包含多个字段的JSON对象，其中包含用于帐户配额信息的嵌套JSON对象。连接器将不得不将这两个JSON对象转换为POJO，以使响应在Mule中消耗。
+
+该连接器还在Mule级别进行第二次操作。 `LogInfo`记录OAuth访问令牌和访问令牌密钥（但不会随时调用Dropbox Web服务）。您可能希望在开发过程中在连接器中包含类似的调试实用程序操作。
+
+== 开发流程概述
+
+使用Jersey客户端开发连接器有几项主要任务：
+
+. 假设您已经准备好初始连接器项目：+
+.. 将Jersey和Jackson依赖关系添加到POM
+.. 创建任何客户端或实体软件包
+.. 使用新的依赖项重建项目
+. 创建Jersey Client类+
+.. 启用Jersey客户端JSON-POJO映射
+. 创建连接器类+
+.. 添加OAuth
+.. 构建并测试连接器
+. 添加一个操作+
+.. 将操作添加到客户端类，并将所需的POJO添加到项目中
+.. 通过Connector类公开客户端操作
+.. 手动构建和测试（可选）
+.. 定义和运行单元测试和Javadoc示例
+
+=== 准备连接器项目
+
+如 link:/anypoint-connector-devkit/v/3.4/creating-a-connector-project[创建一个连接器项目]中所述创建连接器项目后，必须将Jersey，Jackson和JSON相关的依赖关系添加到POM，并在添加操作之前创建将在连接器中使用的包和类。
+
+==== 向POM添加依赖项
+
+以下`<dependency>`元素将Jersey，Jackson和Mule JSON支持添加到您的项目中：
+
+*POM Dependencies for Jersey, Jackson and JSON*
+
+[source, xml, linenums]
+----
+<!-- Add this to use Jersey Client -->
+    <dependency>
+            <groupId>com.sun.jersey</groupId>
+            <artifactId>jersey-client</artifactId>
+            <version>${jersey.client.version}</version>
+        </dependency>
+          
+    <!-- Add this to use Mule support for JSON based on Jackson -->
+          
+        <dependency>
+            <groupId>org.mule.modules</groupId>
+            <artifactId>mule-module-json</artifactId>
+            <version>${mule.version}</version>
+            <scope>provided</scope>
+        </dependency>
+----
+
+将这些添加到您的POM中的`<dependencies>`元素以及您的项目所需的任何其他依赖项。例如，Dropbox示例连接器为OAuth支持添加了以下附加依赖关系：
+
+[source, xml, linenums]
+----
+<!-- Add this to use OAuth support in DevKit-->  
+        <dependency>
+            <groupId>oauth.signpost</groupId>
+            <artifactId>signpost-core</artifactId>
+            <version>1.2.1.2</version>
+        </dependency>
+----
+
+下面是从Devkit 3.5连接器Maven原型生成的Dropbox示例连接器项目的完整POM。
+
+*Dropbox RESTful Connector pom.xml*
+
+[source, xml, linenums]
+----
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>org.mule.samples.devkit</groupId>
+    <artifactId>dropboxrest</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>mule-module</packaging>
+    <name>Mule ${serviceName} Cloud Connector</name>
+    <parent>
+        <groupId>org.mule.tools.devkit</groupId>
+        <artifactId>mule-devkit-parent</artifactId>
+        <version>3.5.0-andes</version>
+    </parent>
+    <properties>
+        <junit.version>4.9</junit.version>
+        <mockito.version>1.8.2</mockito.version>
+        <jdk.version>1.6</jdk.version>
+        <category>Cloud Connectors</category>
+        <licensePath>LICENSE.md</licensePath>
+        <devkit.studio.package.skip>false</devkit.studio.package.skip>
+        <serviceName>DropBox REST Sample</serviceName>
+         
+        <!-- required for Jersey Client -->
+        <jersey.client.version>1.6</jersey.client.version>
+        <jersey.multipart.version>1.3</jersey.multipart.version>
+    </properties>
+ 
+ <dependencies>
+        <!-- Add this to use OAuth support in DevKit-->  
+        <dependency>
+            <groupId>oauth.signpost</groupId>
+            <artifactId>signpost-core</artifactId>
+            <version>1.2.1.2</version>
+        </dependency>
+         
+        <!-- Add this to use Jersey Client -->
+        <dependency>
+            <groupId>com.sun.jersey</groupId>
+            <artifactId>jersey-client</artifactId>
+            <version>${jersey.client.version}</version>
+        </dependency>
+          
+        <!-- Add this to use Mule support for JSON -->
+          
+        <dependency>
+            <groupId>org.mule.modules</groupId>
+            <artifactId>mule-module-json</artifactId>
+            <version>${mule.version}</version>
+            <scope>provided</scope>
+        </dependency>
+         
+ </dependencies>
+</project>
+----
+
+==== 为支持类创建包
+
+例如。 Dropbox REST连接器使用以下组织来支持连接器中使用的不同类：
+
+* 包`org.mule.examples.restjerseyconnector.client`包含泽西客户端代码类`DropboxClient.java`
+* 包`org.mule.examples.restjerseyconnector.exception`定义可由连接器抛出的异常：+
+**  `DropboxRestConnectorTokenExpiredException:`安全/验证例外
+**  `DropboxRestConnectorException:`一个奇怪的例外
+* 套餐`org.mule.examples.restjerseyconnector.entities`包含两个POJO：AccountInfo和QuotaInfo。这些代表了Dropbox API的结果。
+
+实体类通常会作为传入或传出的有效载荷在您的连接器上运行。知道连接器是否需要实体类的一种方法是查看有关请求和响应的任何文档或元数据。无论您看到任何JSON数组或复杂对象，您都需要相应的实体类。
+
+现在，创建包但不要用类填充它。
+
+如果你的连接器只会将地图呈现给Mule，那么你可能不需要创建这个包。只有在连接器呈现动态数据模型时才使用地图。
+
+==== 用新的依赖性重建项目
+
+现在您的POM文件包含了这些附加内容，请执行干净的构建并安装您的项目。现在这样做是在开始进行任何实际编码之前发现POM中任何错误的便捷方式。
+
+在项目所在目录的命令行中运行以下Maven命令：
+
+[source, code, linenums]
+----
+mvn clean install
+----
+
+这个命令有两个目标调用Maven：
+
+. '干净'告诉Maven清除所有以前的构建内容。
+. '安装'告诉Maven：
+.. 编译项目的所有代码
+.. 运行任何已定义的测试
+.. 将编译的代码打包为Eclipse更新站点。
+.. 将其安装在本地Maven存储库中。
+
+在这个过程中的任何失败，例如失败的构建或测试，都会阻止Maven尝试后续的目标。有关Maven构建的更多详细信息，请参阅Apache Maven项目网站上的 http://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html[构建生命周期介绍]。
+
+你的首选IDE也应该支持这个过程。例如，在Eclipse中，如果您安装了m2eclipse，则可以选择该项目并调用**Run as > Maven Build.**
+
+===  *Create Client Class and `@Connector` Class*
+
+客户端类准备和调用远程Web服务的实际工作。它将请求和响应实体序列化并反序列化为JSON。 `@Connector`类在需要时创建客户端类的实例，并调用方法对资源执行操作。这里的两个相关任务是创建客户端类，并更新`@Connector`类来实例化并引用它。
+
+客户端类建立在Jersey客户端提供的功能上。请参阅 http://repo1.maven.org/maven2/com/sun/jersey/jersey-documentation/1.6/jersey-documentation-1.6-user-guide.pdf[Jersey 1.6用户指南]了解更多信息。
+
+客户端类的==== 必需导入
+
+客户端类至少需要以下导入才能选择Jackson和Jersey Client以及支持功能。
+
+[source, code, linenums]
+----
+import javax.ws.rs.core.MediaType;
+import com.sun.jersey.api.client.*;
+import com.sun.jersey.api.client.config.ClientConfig;
+import com.sun.jersey.api.client.config.DefaultClientConfig;
+import com.sun.jersey.api.json.JSONConfiguration;
+----
+
+泽西岛和杰克逊可能需要额外进口，具体取决于他们在您的特定客户中的使用情况。例如，示例客户端在Jersey中使用以下导入来获得OAuth功能：
+
+[source, code, linenums]
+----
+import com.sun.jersey.oauth.client.OAuthClientFilter;
+import com.sun.jersey.oauth.signature.OAuthParameters;
+import com.sun.jersey.oauth.signature.OAuthSecrets;
+----
+
+示例客户端中的客户端类不直接调用Jackson，因此不需要导入。
+
+预计在添加操作时添加更多导入。例如，如果你需要拿起任何实体类和例外。
+
+==== 客户端类属性和构造函数
+
+了解如何构建客户端类构造函数的最简单方法是查看示例连接器客户端类的构造函数。
+
+[source, java, linenums]
+----
+public class DropboxClient {
+    private Client client;
+  
+/** 
+* a Jersey client instance 
+*/
+  
+    private WebResource apiResource;
+    private RestJerseyConnector connector;
+     
+    public DropboxClient(RestJerseyConnector connector) {
+        setConnector(connector);
+        ClientConfig clientConfig = new DefaultClientConfig();
+  
+/** 
+*enable support for JSON to POJO entity mapping in Jersey 
+*/
+  
+        clientConfig.getFeatures().put(JSONConfiguration.FEATURE_POJO_MAPPING, Boolean.TRUE);
+        this.client = Client.create(clientConfig);
+        this.apiResource = this.client.resource(getConnector().getApiUrl() + "/" + getConnector().getApiVersion());
+    }
+  
+...
+  
+/** 
+* getters, setters and other methods omitted
+*/
+  
+}
+----
+
+注意：
+
+* 某些`@Connector`类值经常在客户端类代码中使用：+
+*  API网址和版本
+*  OAuth +的操作
+** 使用者密钥
+** 访问令牌
+{0}}消费者的秘密
+** 访问令牌密钥
+* 不向每个操作传递`@Connector`类值或在两个地方定义它们：+
+** 这些值在`@Connector`类中定义为属性
+**  `@Connector`类的实例被传递到客户端类构造函数中，并作为属性存储在客户端类中
+* 每个客户端操作都将使用`com.sun.jersey.api.Client`（实际的Jersey客户端实例）和`com.sun.jersey.api.client.WebResource`（它表示服务上的顶级资源）的实例，因此这些将在构造函数中创建并存储在客户端类的`client.`和`apiResource`属性中。 （定义这些实例的Getters和setter，但这里省略了这些代码。）
+
+==== 启用Jersey客户端JSON到POJO映射
+
+要配置Jersey客户端实例以启用可选功能，例如支持将JSON内容映射到POJO：
+
+. 创建`ClientConfig`的实例
+. 设置所需的选项
+. 将`ClientConfig`传递给`Client.create()`方法。
+
+在这种情况下，添加功能`JSONConfiguration.FEATURE_POJO_MAPPING`可以将JSON响应映射到Java对象。
+
+无论您是将实体的POJO用于​​静态数据模型还是将实体用于动态数据模型，都需要此功能。
+
+稍后，使用实体类上的注释来定义传入和传出类的实体，以控制JSON文档如何映射到对象实例。
+
+请注意，尽管Jackson是Jersey的序列化/反序列化的默认提供者，但您可以替换其他提供者，例如GSON。此外，** **请注意，使用不同的提供程序将改变您将服务的JSON文档映射到连接器的实体类的方式;您的序列化提供者的文档将提供更多信息。
+
+在添加操作和身份验证之前，=== 客户端类代码
+
+在添加对使用的实体的操作和引用之前，我们的示例连接器的完整代码：
+
+*DropboxRESTClient.java Before Adding Operations*
+
+[source, java, linenums]
+----
+package org.mule.examples.restjerseyconnector.client;
+ 
+import javax.ws.rs.core.MediaType;
+ 
+import com.sun.jersey.api.client.*;
+import com.sun.jersey.api.client.config.ClientConfig;
+import com.sun.jersey.api.client.config.DefaultClientConfig;
+import com.sun.jersey.api.json.JSONConfiguration;
+import com.sun.jersey.oauth.client.OAuthClientFilter;
+import com.sun.jersey.oauth.signature.OAuthParameters;
+import com.sun.jersey.oauth.signature.OAuthSecrets;
+import org.mule.examples.restjerseyconnector.RestJerseyConnector;
+import org.mule.examples.restjerseyconnector.entities.AccountInfo;
+import org.mule.examples.restjerseyconnector.exception.RestJerseyConnectorException;
+import org.mule.examples.restjerseyconnector.exception.RestJerseyConnectorTokenExpiredException;
+ 
+ 
+public class DropboxClient {
+ 
+ 
+    private Client client;
+    private WebResource apiResource;
+    private RestJerseyConnector connector;
+ 
+ 
+    public DropboxClient(RestJerseyConnector connector) {
+        setConnector(connector);
+ 
+ 
+        ClientConfig clientConfig = new DefaultClientConfig();
+        clientConfig.getFeatures().put(JSONConfiguration.FEATURE_POJO_MAPPING, Boolean.TRUE);
+        this.client = Client.create(clientConfig);
+        this.apiResource = this.client.resource(getConnector().getApiUrl() + "/" + getConnector().getApiVersion());
+    }
+ 
+ 
+ 
+ 
+    public Client getClient() {
+        return client;
+    }
+ 
+    public void setClient(Client client) {
+        this.client = client;
+    }
+ 
+    public WebResource getApiResource() {
+        return addSignHeader(apiResource);
+    }
+ 
+    public void setApiResource(WebResource apiResource) {
+        this.apiResource = apiResource;
+    }
+ 
+    public RestJerseyConnector getConnector() {
+        return connector;
+    }
+ 
+    public void setConnector(RestJerseyConnector connector) {
+        this.connector = connector;
+    }
+}
+----
+
+=== 完成`@Connector`类
+
+Maven在创建连接器项目时为您创建了一个框架`@Connector`类。现在，您将增强它以添加所需的属性（其中一些`@Configurable`），初始化`@Connector`时客户端类以及添加身份验证功能。
+
+您的连接器将使用`@Configurable`属性用于几个目的，例如：
+
+* 更改服务的API根资源URL和版本以将目标定位到特定的沙箱或测试系统，而不是生产环境
+* 存储用户必须配置的认证相关值。 +
+** 对于OAuth：API密钥和API密钥
+** 基本认证：用户名和密码。
+
+可能还有一些属性不是`@Configurable`，但在内部使用。例如，OAuth1支持需要访问令牌和访问令牌密钥的某些属性。
+
+根据需要为所有这些创建属性：
+
+[source, code, linenums]
+----
+/**
+     * Dropbox API Url
+     */
+    @Configurable @Optional @Default("https://api.dropbox.com")
+    private String apiUrl;
+ 
+    /**
+     * Dropbox API version
+     */
+    @Configurable @Optional @Default("1")
+    private String apiVersion;
+ 
+    /**
+     * The ApiKey
+     */
+    @Configurable @OAuthConsumerKey
+    private String consumerKey;
+    /**
+     * The consumerSecret
+     */
+    @Configurable @OAuthConsumerSecret
+    private String consumerSecret;
+ 
+ 
+    @OAuthAccessToken
+    private String accessToken;
+     
+    @OAuthAccessTokenSecret
+    private String accessTokenSecret;
+----
+
+注意：
+
+* 在`@Configurable`中使用`@Optional`和`@Default`。
+** 有关这些注释的更多信息，请参阅 link:/anypoint-connector-devkit/v/3.4/defining-configurable-connector-attributes[定义可配置的连接器属性]。
+* 使用OAuth注释。
+
+===  `@Connector Class @Start Method`和客户端类
+
+这个实例中的`@Connector`类没有构造函数。它的大多数实例属性都是配置属性。相反，`@Start`方法利用Mule生命周期在首次需要时创建客户端类的实例。然后保存在`@Connector`类的实例变量中：
+
+[source, code, linenums]
+----
+private DropboxClient client;
+ 
+@Start
+    public void init() {
+        setClient(new DropboxClient(this));
+    }
+----
+
+有关使用`@Start`注释的详细信息，请参阅 link:/anypoint-connector-devkit/v/3.4/integrating-connectors-with-the-mule-lifecycle[将连接器与Mule生命周期集成]。
+
+[NOTE]
+====
+这个例子说明了你可以在自己的连接器中遵循的有用模式。
+
+* 客户端类构造函数引用`@Connector`类实例。通过调用getters和setters，`@Connector`类的属性（包括可配置的属性）很容易在客户端使用。这比将`@Connector`属性作为单个参数传递给单个操作要容易得多。
+*  `@Connector`类实例保存对客户端类实例的引用，该实例可用于调用客户端类上的方法。此实例也可以用于`@Stop`方法，从而将客户端类实例的生命周期绑定到`@Connector`类实例。
+====
+
+=== 添加OAuth身份验证
+
+支持OAuth 1.0a认证需要在`@Connector`类和客户端类中进行更改：
+
+* 导入OAuth包
+* 根据身份验证的需要，将OAuth注释添加到`@Connector`类
+* 添加与OAuth相关的`@Configurable`属性+
+**  API密钥
+**  API秘密
+** 访问令牌
+** 访问令牌密钥（包括setter和getters）
+* 包含客户端类代码，以便为每个请求传递OAuth 1.0a请求标头
+
+link:/anypoint-connector-devkit/v/3.4/implementing-oauth-1.0-authentication[实施OAuth 1.0身份验证]详细讨论了OAuth支持的代码更改，并参考了本讨论中使用的相同代码示例。
+
+=== 构建和测试您的连接器
+
+此时，您的连接器项目具有在Studio中构建和安装的所有必需元素。在开始添加操作之前，这是一个方便的理智检查。
+
+该过程在 link:/anypoint-connector-devkit/v/3.4/installing-and-testing-your-connector[安装和测试连接器]中进行了描述。
+
+构建Jersey客户端连接器的基本版本并在Studio中进行安装后，可以在面板中将组件拖放到画布中。
+
+== 将操作添加到连接器
+
+要将操作添加到连接器，您必须：
+
+* 定义与该操作一起使用的任何实体类以及要引发的任何新异常
+* 在客户端类中，添加Jersey代码以调用该操作，并对结果进行序列化和反序列化
+* 向`@Connector`类添加一个`@Processor`方法以将操作公开给Mule
+
+[WARNING]
+====
+*Apply a Test-Driven Approach* +
+
+当涉及到向连接器添加操作时，许多成功的项目都遵循类似于测试驱动开发的周期。
+
+首先，确定操作的详细要求：
+
+* 个实体（POJO或具有特定内容的地图），它可以接受为输入或作为响应返回。
+* 针对一系列有效和无效输入的预期响应。
+* 在服务不可用，验证失败，输入无效等情况下，操作可能引发的任何异常。
+
+然后，重复以下循环，直到完成所有计划的功能：
+
+. 创建覆盖预期行为的JUnit测试。
+. 实现功能以满足这些要求：
+.. 定义实体（并根据需要对它们进行注释以映射到/从JSON）。
+.. 创建或增强客户端类中的方法和`@Connector`类中的`@Processor`方法。
+.. 使用必要的代码段评论更新您的`@Connector`类。
+.. 运行Maven构建以运行JUnit测试并修复所有错误，直到所有测试通过。
+
+继续操作，直到涵盖每项操作的所有功能。完成后，您可以为连接器提供完整的验证套件，以便在发生目标服务，连接器本身，Mule ESB或DevKit发生更改时捕获任何回退。
+
+您可能会问，"When do I try my connector in Studio? Why can't I just test manually?"除了自动化的JUnit测试之外，随时随地手动测试每个操作是有用的（也是令人满意的）：
+
+* 您可以在工作中看到基本的操作功能
+* 您可以查看连接器在Studio用户界面中的显示方式，这些自动化单元测试无法显示给您
+
+在Studio中进行测试将提供机会来优化连接器的可用性，通过合理的默认设置改进体验，并通过更好的Javadoc注释来填充工具提示等等。
+
+但是，这并没有削弱测试驱动方法的价值。由于未能提供精心策划的测试套件，许多连接器开发项目陷入困境或产生难以使用或不可靠的连接器。它似乎是（现在）更多的工作，但它确实带来了更好的结果，速度更快。
+====
+
+=== 定义和注释实体类
+
+定义用于连接器操作的实体类（POJO或Maps）取决于您 - 您决定连接器操作呈现给Mule其余部分的对象模型。一旦您定义了这些类，您还必须定义如何在JSON结构和POJO之间进行映射。您应该逐步添加，因为它们是您所构建的操作所需要的。
+
+在内部，Jersey依靠一个基于Jackson的序列化提供程序来封送和取消编组JSON文档到传入和传出连接器的对象类。该过程依赖于Jackson注释，该注释描述如何将实体POJO的字段映射到Web服务返回的JSON内容的结构。
+
+用于此目的的Jackson注释的详细信息位于https://github.com/FasterXML/jackson-databind [杰克逊数据库注释文档]和https://github.com/FasterXML/jackson-annotations [完整杰克逊注释文档]。
+
+[NOTE]
+====
+请注意，类AccountInfo上的`@Generated`注释指示此类定义是使用`jsonschema2pojo`实用程序生成的。如果您不想提出自己的数据模型，则还可以使用`jsonschema2pojo`从示例JSON文档生成类定义。
+====
+
+[TIP]
+====
+*Online Tool*
+
+涵盖使用Jackson将JSON模式或文档映射到POJO的所有可能的排列组合超出了本文档的范围。通过Web服务返回的JSON文档快速生成对象模型的一种方法是使用https://github.com/joelittlejohn/jsonschema2pojo[jsonschema2pojo项目]和 http://www.jsonschema2pojo.org/[在线工具]。该实用程序用于在此示例中生成实体类。您可以在https://github.com/mulesoft/devkit-documentation-rest-jersey/tree/master/src/main/java/org/mule/examples/restjerseyconnector/entities[project实体类代码中看到最终结果在GitHub中]，特别是上面的代码片段，https://github.com/mulesoft/devkit-documentation-rest-jersey/tree/master/src/main/java/org/mule/examples/restjerseyconnector/entities [ AccountInfo类]。
+====
+
+将类及其成员映射到JSON文档需要进行一些更改：
+
+* 注释实体类以配置JSON序列化：
++
+
+[source, java, linenums]
+----
+@JsonSerialize(include = JsonSerialize.Inclusion.NON_NULL)
+@Generated("com.googlecode.jsonschema2pojo")
+@JsonPropertyOrder({ "referral_link", "display_name", "uid", "country", "quota_info" })
+public class AccountInfo {
+ 
+...
+ 
+----
+
+* 将`@JsonProperty`注释添加到实体类实例属性（及其获取者和设置者）中：
++
+
+[source, java, linenums]
+----
+@JsonProperty("referral_link")
+    private String referralLink;
+     
+...
+ 
+    @JsonProperty("referral_link")
+    public String getReferralLink() {
+        return referralLink;
+    }
+ 
+ 
+    @JsonProperty("referral_link")
+    public void setReferralLink(String referralLink) {
+        this.referralLink = referralLink;
+    }
+----
+
+=== 在客户端类中实现操作
+
+接下来，您将向客户端类添加代码以通过Jersey客户端发出Web服务请求。
+
+==== 助手：将身份验证添加到Jersey客户端请求
+
+根据您使用的身份验证方法，您可能必须在`@Connector`和客户端类中更改代码，才能实现在目标服务上调用的每个操作。
+
+在示例连接器中，DropBox API使用OAuth 1.0访问受保护的资源。发送每个请求时，身份验证需要包含授权标头。
+
+Jersey提供了一个用于修改请求的过滤器链接机制，可用于添加标头。由于此步骤对于受OAuth保护的任何操作都是必需的，因此该示例使用了一种方便的方法`addSignHeader`：
+
+[source, code, linenums]
+----
+/**
+     * Adds the required OAuthClientFilter to insert the required header when the WebResource is used
+     * to access the protected resources of the DropBox API
+     *
+     * @param webResource The WebResource in which the header will be added
+     */
+    private WebResource addSignHeader(WebResource webResource) {
+        OAuthParameters params = new OAuthParameters();
+        params.signatureMethod("PLAINTEXT");
+        params.consumerKey(getConnector().getConsumerKey());
+        params.setToken(getConnector().getAccessToken());
+        OAuthSecrets secrets = new OAuthSecrets();
+        secrets.consumerSecret(getConnector().getConsumerSecret());
+        secrets.setTokenSecret(getConnector().getAccessTokenSecret());
+        OAuthClientFilter filter = new OAuthClientFilter(client.getProviders(), params, secrets);
+        webResource.addFilter(filter);
+        return webResource;
+    }
+ 
+----
+
+请参阅 http://repo1.maven.org/maven2/com/sun/jersey/jersey-documentation/1.6/jersey-documentation-1.6-user-guide.pdf[Jersey 1.6用户指南]了解更多信息。
+
+==== 助手：通过泽西岛执行申请
+
+提出任何请求需要：
+
+. 将入站对象封装为JSON
+. 调用Web服务，
+. 解组响应，
+. 处理响应状态代码和异常。
+
+与身份验证一样，使用辅助方法来封装所有这些重复的步骤。在示例客户端类中，方法`execute()`实现了所有这些逻辑：
+
+[source, code, linenums]
+----
+/**
+     * Executes the Dropbox request
+     *
+     */
+    private <T> T execute(WebResource webResource, String method, Class<T> returnClass) throws RestJerseyConnectorTokenExpiredException,
+            RestJerseyConnectorException {
+        ClientResponse clientResponse = webResource.accept(MediaType.APPLICATION_JSON).method(method, ClientResponse.class);
+        if(clientResponse.getStatus() == 200) {
+            return clientResponse.getEntity(returnClass);
+        } else if (clientResponse.getStatus() == 401) {
+            throw new RestJerseyConnectorTokenExpiredException("The access token has expired; " +
+                    clientResponse.getEntity(String.class));
+        } else {
+            throw new RestJerseyConnectorException(
+                    String.format("ERROR - statusCode: %d - message: %s",
+                            clientResponse.getStatus(), clientResponse.getEntity(String.class)));
+        }
+    }
+----
+
+==== 处理异常
+
+如前所述，在单独的异常包中定义连接器中可能出现的任何异常。至少，您需要一个全面的全面例外。特定的异常也可能更容易诊断故障，例如与认证相关的故障，应用程序级别的错误等。上面的`execute()`方法是集中您的异常处理代码的好地方，因为它传递所有操作的所有请求。
+
+对于我们的示例连接器，软件包`org.mule.examples.restjerseyconnector.exception`包含两个例外：catchall `RestJerseyConnectorException`和与OAuth相关的`RestJerseyConnectorTokenExpiredException`。
+
+[TIP]
+====
+另请注意，`execute()`方法提供格式良好的错误消息。如果您的连接器遇到错误，此步骤可提高您诊断问题的能力。您可能希望在此放置更详细的信息，例如发送的消息，HTTP请求方法等。
+
+在开发测试用例时，对无效请求或失败请求的测试可以检查与正确异常相关的消息。
+====
+
+使用@InvalidateConnectionOn注释来处理重新连接。如果连接器使用@OAuth作为验证方法，使用@OAuthInvalidateAccessTokenOn（例外= MyAccessTokenExpiredException.class）。
+
+==== 创建操作客户端方法
+
+有了这些辅助类，实际的客户端方法对资源的请求很短。例如，`getAccountInfo()`方法对`/account/info`资源发出GET请求：
+
+[source, code, linenums]
+----
+/**
+     * Returns the Account Information of the user
+     *
+     * @return The AccountInfo
+     * @throws org.mule.examples.restjerseyconnector.exceptions.RestJerseyConnectorException If the response is an error or the response cannot be parsed as an AccountInfo
+     * @throws org.mule.examples.restjerseyconnector.exceptions.RestJerseyConnectorTokenExpiredException If the current token used for the call to the service is no longer valid
+     */
+    public AccountInfo getAccountInfo()
+            throws RestJerseyConnectorException, RestJerseyConnectorTokenExpiredException {
+        WebResource webResource = getApiResource().path("account").path("info");
+        return execute(webResource, "GET", AccountInfo.class);
+}
+----
+
+=== 在`@Connector`类中公开操作
+
+要在`@Connector`类中公开客户端类的操作，您需要添加一个`@Processor`方法来调用Jersey客户端上的相应方法。
+
+. 更新`@Connector`类以导入调用客户端类操作所需的任何实体类和异常类。
+. 在`@Connector`类上定义一个`@Processor`方法，该方法以该操作命名。 +
+.. 根据需要为认证注释该方法。
+. 此方法的参数必须与要在Mule ESB级别（在XML配置或属性对话框中）公开的参数匹配。 +
+.. 注释参数以控制默认值和可选值，以及Studio属性对话框中的所需位置等等。
+. 方法体应该调用客户端类的操作方法，传递适当的对象，并将要设置的值返回给有效内容。
+
+对于我们的`getAccountInfo`操作，我们在`@Connector`类中添加以下导入：
+
+[source, java, linenums]
+----
+import org.mule.examples.restjerseyconnector.entities.AccountInfo;
+import org.mule.examples.restjerseyconnector.exceptions.RestJerseyConnectorException;
+import org.mule.examples.restjerseyconnector.exceptions.RestJerseyConnectorTokenExpiredException;
+----
+
+公开`getAccountInfo`操作的`@Processor`方法如下所示：
+
+[source, code, linenums]
+----
+/**
+     * Returns the Account Information of the user
+     *
+     * {@sample.xml ../../../doc/rest-jersey-connector.xml.sample rest-jersey:get-account-info}
+     *
+     * @return The AccountInfo object
+     * @throws org.mule.examples.restjerseyconnector.exceptions.RestJerseyConnectorException If the response is an error or the response cannot be parsed as an AccountInfo
+     * @throws org.mule.examples.restjerseyconnector.exceptions.RestJerseyConnectorTokenExpiredException If the current token used for the call to the service is no longer valid
+     */
+    @OAuthProtected
+    @Processor
+    public AccountInfo getAccountInfo() throws RestJerseyConnectorException, RestJerseyConnectorTokenExpiredException {
+        return getClient().getAccountInfo();
+    }
+----
+
+=== 为JavaDoc添加XML配置示例
+
+DevKit强制执行连接器操作的Javadoc文档，包括每个受支持操作的XML配置示例。这些用于为连接器生成的JavaDoc。 link:/anypoint-connector-devkit/v/3.4/creating-devkit-connector-documentation[学到更多]有关DevKit的JavaDoc注释。
+
+在`@Connector`类源代码中，以下注释将该方法链接到其所需的XML示例：
+
+*{@sample.xml ../../../doc/rest-jersey-connector.xml.sample rest-jersey：get-account-info}
+
+您将在DevKit生成的项目的doc文件夹中看到示例代码片段文件。
+
+DevKit创建了这个文件，但是我们需要用每个操作的示例Mule XML配置来填充它。在本例中，将以下内容添加到文件中以记录操作：
+
+[source, xml, linenums]
+----
+<!-- BEGIN_INCLUDE(rest-jersey:get-account-info) -->
+    <rest-jersey:get-account-info />
+<!-- END_INCLUDE(rest-jersey:get-account-info) -->
+----
+
+当您构建JavaDoc时，上面的示例将被插入到文档中。
+
+手动测试连接器=== 
+
+完成上述所有步骤后，您可以在Studio中手动构建和测试连接器。请参阅 link:/anypoint-connector-devkit/v/3.4/installing-and-testing-your-connector[安装和测试连接器]，了解构建连接器并将其导入Studio的步骤。
+
+DevKit不会强制您为您的连接器添加单元测试，但如前所述，强烈建议您这么做。如果你添加了连接器没有通过的单元测试，你的Maven构建失败。您可以通过向Maven命令添加参数`-Dmaven.test.skip=true`来暂时绕过单元测试。例如：
+
+`mvn clean install -Dmaven.test.skip=true`
+
+将连接器导入Studio后，您将在调色板中看到它，并且可以在流中使用它。属性编辑器显示您的操作。
+
+请注意由DevKit自动添加到任何OAuth连接器的授权和未授权操作。
+
+== 另请参阅
+
+恭喜！你有一个连接器可以很好地安装在Studio中并通过基本的单元测试。现在，
+
+* 继续通过上述迭代过程添加操作，直到您拥有所需的操作和测试用例来验证所有期望的行为。
+* 将测试添加到您的测试套件中，如 link:/anypoint-connector-devkit/v/3.4/developing-devkit-connector-tests[开发DevKit连接器测试]中所述。
+* 根据 link:/anypoint-connector-devkit/v/3.4/customizing-connector-integration-with-esb-and-studio[定制连接器与ESB和Studio集成]中的描述，优化连接器对话框和XML元素的外观。
+* 您也可以返回到 link:/anypoint-connector-devkit/v/3.4/devkit-shortcut-to-success[DevKit成功的捷径]。
+* 有关更多信息，请参阅 http://repo1.maven.org/maven2/com/sun/jersey/jersey-documentation/1.6/jersey-documentation-1.6-user-guide.pdf[Jersey 1.6用户指南]。

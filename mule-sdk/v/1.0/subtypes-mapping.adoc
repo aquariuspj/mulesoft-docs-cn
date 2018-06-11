@@ -1,0 +1,186 @@
+= 使用通用参数进行扩展行为
+
+:keywords: parameter, parameters, mule, sdk, dsl, xml, subtype, type
+
+Module API中的类型定义会影响提供给用户的体验。类型的正确构建可以大大简化您公开给用户的API。
+
+== 使用SubTypeMapping简化UX
+
+如果参数表示通用组件（如`authentication`或`destination`），则允许使用多组有效的配置。您的身份验证可以是不同的类型（`basic`，`digest`，`ntlm`，`oauth`），但对于用户来说，让每个身份验证的所有参数都可用一次全部。
+
+例如，如果我们想要在单个参数中支持`basic`，`digest`和`ntlm`的认证，那么我们的认证类将很短，但也很令人困惑：
+
+[source, Java, linenums]
+----
+public class Authentication {
+
+  @Parameter
+  private boolean useDigest; //<1>
+
+  @Parameter
+  private String username;
+
+  @Parameter
+  @Password
+  private String password;
+
+  @Parameter
+  @Optional
+  private String domain; //<2>
+
+  @Parameter
+  @Optional
+  private String workstation;
+
+}
+----
+
+<1>参数`useDigest`仅用于分隔`basic`和`digest`
+<2> `domain`和`workstation`仅与`ntlm`配置相关，因此`useDigest`无关紧要。
+
+即使只需要四个参数，也很容易迷失在正确的配置中。
+
+相反，如果您使用`@SubTypeMapping`，则很容易理解如何使用代码本身的类型，并声明值更简洁：
+
+[source, Java, linenums]
+----
+
+@Extension(name = "HTTP")
+@SubTypeMapping(baseType = Authentication.class, // <1>
+    subTypes = {BasicAuthentication.class, DigestAuthentication.class, NtlmAuthentication.class})
+public class HttpConnector {
+
+}
+
+public interface Authentication { // <2>
+
+  void authenticate(HttpRequestBuilder builder);
+
+}
+
+public class BasicAuthentication implements Authentication { // <3>
+
+  @Parameter
+  private String username;
+
+  @Parameter
+  @Password
+  private String password;
+
+}
+
+public class DigestAuthentication implements Authentication { // <4>
+
+  @Parameter
+  private String username;
+
+  @Parameter
+  @Password
+  private String password;
+
+}
+
+public class NtlmAuthentication implements Authentication { // <5>
+
+  @Parameter
+  private String username;
+
+  @Parameter
+  @Password
+  private String password;
+
+  @Parameter
+  @Optional
+  private String domain;
+
+  @Parameter
+  @Optional
+  private String workstation;
+
+}
+----
+
+<1> `SubTypeMapping`的声明
+<2>通用`Authentication`界面
+<3>将`Authentication`实施为`basic`
+<4>将`Authentication`实施为`digest`
+<5>将`Authentication`实施为`ntlm`
+
+接下来，声明泛型`Authentication`的参数：
+
+[source, Java, linenums]
+----
+@Alias("request")
+public class HttpRequesterProvider implements CachedConnectionProvider<HttpExtensionClient> {
+
+  @Parameter
+  private Authentication authentication;
+}
+----
+
+现在用户能够以更简洁和一致的方式声明三个可能的值中的每一个：
+
+[source, xml, linenums]
+----
+<http:request-connection>
+  <http:authentication>
+      <http:basic-authentication username="withBasic" password="123">
+  </http:authentication>
+</http:request-connection>
+
+<http:request-connection>
+  <http:authentication>
+      <http:digest-authentication username="withDigest" password="456">
+  </http:authentication>
+</http:request-connection>
+
+<http:request-connection>
+  <http:authentication>
+      <http:ntlm-authentication username="withNtlm" password="Beeblebrox" domain="Ursa-Minor"/>>
+  </http:authentication>
+</http:request-connection>
+----
+
+通过模块贡献扩展行为== 
+
+如果您希望模块提供自己的认证方法，请使用`@Import`和`@SubTypeMapping`的组合。
+
+在这个例子中，我们向`http`模块添加了`oauth`认证：
+
+
+[source, Java, linenums]
+----
+@Extension(name = "OAuth")
+@Import(type = HttpRequestAuthentication.class) //<1>
+@SubTypeMapping(baseType = Authentication.class, //<2>
+    subTypes = {DefaultAuthorizationCodeGrantType.class, ClientCredentialsGrantType.class})
+public class OAuthExtension {
+
+}
+----
+
+<1>声明来自HTTP认证类型的导入。
+<2>将更多子类型映射添加到OAuth扩展的`Authentication`类型。
+
+现在，一旦实现了两种新的身份验证方法，我们就可以将它们参数化为任何应用程序中的HTTP连接器，而无需修改任何原始扩展`HTTP`的代码。也就是说，对于我们上面的同一个应用程序，我们可以添加一个新的身份验证方法：
+
+[source, xml, linenums]
+----
+<http:request-connection host="localhost" port="${oauth.server.port}">
+    <http:authentication> // <1>
+        <oauth:authorization-code-grant-type // <2>
+                clientId="${client.id}"
+                clientSecret="${client.secret}"
+                externalCallbackUrl="${local.callback.url}"
+                tokenManager="multitenantOauthConfig"
+                localAuthorizationUrl="${local.authorization.url}"
+                authorizationUrl="${authorization.url}"
+                refreshTokenWhen="#[attributes.statusCode == 500]"
+                tokenUrl="${token.url}">
+        </oauth:authorization-code-grant-type>
+    </http:authentication>
+</http:request-connection>
+----
+
+<1> `authentication`元素是相同的，但它包含一个新元素`authorization-code-grant-type`
+<2>元素`authorization-code-grant-type`来自`oauth`名称空间

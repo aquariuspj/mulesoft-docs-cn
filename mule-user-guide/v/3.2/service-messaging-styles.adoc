@@ -1,0 +1,208 @@
+=  Mule消息样式
+
+Mule可以发送消息_asynchronously_（消息的每个阶段在不同的线程上）或_synchronously_（在消息被组件接收后，它在整个生命周期的其余部分使用单个线程并支持请求响应）。您可以在连接器上，端点上以及隐式地在传输中设置请求响应属性。
+
+默认情况下，Mule服务使用SEDA，该SEDA使用异步单向舞台队列。一个线程用于入站消息，另一个线程用于处理服务组件中的消息，另一个线程用于出站消息。您可以配置消息，以便入站消息位于一个线程上，其余阶段位于第二个线程上，或者使所有阶段位于单个线程上。
+
+Mule服务还支持请求 - 响应消息传递风格。在这种情况下，不存在出站路由器，因此该消息将作为入站端点发送回同一端点，并将回复提供给发件人。
+
+您可以在整个Mule服务中使用混合的请求响应和单向消息传送样式。您还可以将一组样式用于单个服务组件。例如，服务组件可以有多个出站路由器，这些出站路由器根据过滤条件路由到不同的端点，并且您可能希望消息在某些情况下等待响应，而在其他情况下则不会。
+
+本页的其余部分详细描述了各种消息传递方式以及如何配置它们。它包括对每种消息样式支持的消息交换模式（MEP）的引用。有关MEP和Mule的更多信息，请参见＃[MULECDEV：MEP]＃。
+
+== 单向
+
+image:pattern-asynchronous.png[图案异步]
+
+[%autowidth.spread]
+|===
+| *Description*  |接收消息并将其放在SEDA队列中。被调用者线程返回并且该消息由SEDA线程池处理。通话结果没有任何结果。
+| *Error Handling*  |如果发生错误，则由Mule服务器处理。错误端点可用于路由错误，并且启动调用的客户端可以在单独的线程中侦听错误队列，而其他客户端则可以使用特定的错误处理客户端。
+| *Mule Config*  | Mule服务必须有一个异步入站端点。
+| *Equivalent MEPs*  |在仅
+| *Discussion Points*  |我们没有办法在Web服务之外支持Robust In-Only MEP（在Mule中您将使用Request / Response）并在服务合约中定义MEP。
+|===
+
+=== 示例配置
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd
+       http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.2/mule-jms.xsd
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd">
+
+    <model name="Asynchronous_Message_Pattern">
+        <service name="AsynchronousService">
+            <inbound>
+                <jms:inbound-endpoint queue="test.in" exchange-pattern="one-way"/>
+            </inbound>
+            <test:component/>
+        </service>
+    </model>
+</mule>
+----
+
+== 请求响应
+
+image:pattern-request-response.png[图案请求 - 响应]
+
+[%autowidth.spread]
+|===
+| *Description*  |接收消息并且组件返回消息。如果组件调用返回null，则返回带有`NullPayload`的`MuleMessage`。如果调用方法是_void_，则返回请求消息。
+| *Mule Config*  | Mule服务必须具有同步入站端点，并且没有配置出站端点。您使用`synchronous="true"`将端点设置为同步。 HTTP / S，SSL，TCP和Servlet端点默认是同步的，不需要此设置。
+| *Error Handling*  |回复消息始终发回。客户可以检查`MuleMessage.getExceptionPayload()`以获取有关服务器端错误的所有信息。如果异常源自客户端调用，则将抛出异常。
+| *Equivalent MEPs*  | In-Out，In-Optional-Out
+| *Discussion Points*  |如果调用没有结果，则In-Optional-Out将返回请求消息。
+|===
+
+=== 示例配置
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd
+       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd">
+
+    <model name="Request-Response_Message_Pattern">
+        <service name="SynchronousService">
+            <inbound>
+                <http:inbound-endpoint host="localhost" port="8080" path="/mule/services" exchange-pattern="request-response"/>
+            </inbound>
+            <test:component/>
+        </service>
+    </model>
+</mule>
+----
+
+== 同步
+
+*NOTE*：从3.0开始，端点上的"synchronous"标志已被替换为"exchange-pattern"属性，该属性具有以下可能的值：
+
+* 单向
+* 请求 - 响应
+
+如果满足以下条件之一，则现在会同步处理消息：
+
+* 端点是请求 - 响应
+* 交易处于活动状态
+* 消息属性MULE_FORCE_SYNC被设置为TRUE
+
+image:pattern-synch-remotesync.png[图案同步-remotesync]
+
+[%autowidth.spread]
+|===
+| *Description*  |在将消息发送到另一个端点之前接收消息和组件进程。该请求发生在同一个线程中。出站端点上的Mule阻塞等待来自远程应用程序的响应（如果适用），直到达到`responseTimeout`阈值。如果没有收到响应，则返回空值。如果在入站端点上使用事务，则必须使用同步调用。同步调用总是返回结果，即使有出站端点。
+| *Mule Config*  | Mule服务必须配置请求 - 响应入站端点和出站端点。您使用`message-exchange="request-response"`将端点设置为请求 - 响应。 HTTP / S，SSL，TCP和Servlet端点默认为请求响应，不需要此设置。 ñ
+| *Error Handling*  |回复消息始终发回。客户可以检查`MuleMessage.getExceptionPayload()`以获取有关服务器端错误的所有信息。如果异常源自客户端调用，则将抛出异常。
+| *Equivalent MEPs*  | In-Only，In-Optional-Out，In-Out
+| *Discussion Points*  | Mule总是将组件的结果返回给调用者，并通过出站端点发送出去。
+|===
+
+=== 示例配置
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd
+       http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.2/mule-jms.xsd
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd">
+
+    <model name="Synchronous_Message_Pattern">
+        <service name="SynchronousService">
+            <inbound>
+                <jms:inbound-endpoint queue="test.in" exchange-pattern="request-response"/>
+            </inbound>
+
+            <test:component/>
+
+            <outbound>
+                <pass-through-router>
+                    <jms:outbound-endpoint queue="test.out" exchange-pattern="one-way"/>
+                </pass-through-router>
+            </outbound>
+        </service>
+    </model>
+</mule>
+----
+
+== 异步请求响应
+
+image:pattern-async-request-response.png[图案异步请求 - 响应]
+
+[%autowidth.spread]
+|===
+| *Description*  |此模式允许后端进程分叉以调用其他服务并根据多个服务调用的结果返回结果。 _Async Reply Router_用于在_Reply To_端点上侦听结果。
+| *Mule Config*  |在出站路由器上设置回复地址，并设置<async-reply>元素在该回复终端上侦听。如果您还希望调用者获得响应，请通过设置`message-exchange="request-response"`来使用同步入站端点。
+| *Error Handling*  |回复消息始终发回。客户可以检查`MuleMessage.getExceptionPayload()`以获取有关服务器端错误的所有信息。如果异常源自客户端调用，则将抛出异常。
+| *Equivalent MEPs*  | In-Out，In-Optional-Out
+| *Discussion Points*  |无
+|===
+
+=== 示例配置
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+      xmlns:test="http://www.mulesoft.org/schema/mule/test"
+      xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+      xmlns:spring="http://www.springframework.org/schema/beans"
+      xsi:schemaLocation="
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.2/mule.xsd
+       http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.2/mule-test.xsd
+       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/3.2/mule-http.xsd
+       http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/3.2/mule-jms.xsd
+       http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/3.2/mule-scripting.xsd
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd">
+
+    <model name="Async_Request-Response_Message_Pattern">
+        <service name="AsyncRequestResponseService">
+            <inbound>
+                <http:inbound-endpoint host="localhost" port="8080" path="/mule/services"
+                    exchange-pattern="request-response"/>
+            </inbound>
+
+            <test:component/>
+
+            <outbound>
+                <multicasting-router>
+                    <jms:outbound-endpoint queue="service1" exchange-pattern="one-way"/>
+                    <jms:outbound-endpoint queue="service2" exchange-pattern="one-way"/>
+                    <reply-to address="jms://reply.queue"/>
+                </multicasting-router>
+            </outbound>
+
+            <async-reply timeout="5000">
+                <jms:inbound-endpoint queue="reply.queue" exchange-pattern="one-way"/>
+                <collection-async-reply-router/>
+            </async-reply>
+        </service>
+    </model>
+</mule>
+----

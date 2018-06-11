@@ -1,0 +1,83 @@
+<mule xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:json="http://www.mulesoft.org/schema/mule/json"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd">
+
+
+	<!-- load props into registry for access through mel -->
+	<spring:beans>
+		<spring:bean id="appProps2"
+			class="org.springframework.beans.factory.config.PropertiesFactoryBean">
+			<spring:property name="singleton" value="true" />
+			<spring:property name="location"
+				value="common.properties" />
+		</spring:bean>
+	</spring:beans>
+
+	<!-- turns maps into 'prittified' json -->
+	<json:object-to-json-transformer name="hashMapToJson"
+		mapper-ref="ObjectMapperPretty" doc:name="Object to JSON" />
+	<spring:beans>
+		<spring:bean id="Bean2" name="ObjectMapperPretty"
+			class="com.mulesoft.training.ObjectMapperPretty" scope="singleton" />
+	</spring:beans>
+
+
+
+	<db:template-query name="insert_into_current"
+		doc:name="Template Query">
+		<db:parameterized-query><![CDATA[INSERT INTO current("name", "date", "bookvalue") VALUES(:name,:date,:bookvalue);]]></db:parameterized-query>
+		<db:in-param name="name" defaultValue="#[xpath3('//Name').text]" />
+		<db:in-param name="date" type="DATE"
+			defaultValue="#[xpath3('//LastTradeDate').text]" />
+		<db:in-param name="bookvalue" defaultValue="#[xpath3('//BookValue').text])" />
+	</db:template-query>
+
+	<http:listener-config name="HTTP_Listener_Configuration"
+		host="localhost" port="8081" doc:name="HTTP Listener Configuration" />
+	<http:request-config name="HTTP_Request_Configuration"
+		host="query.yahooapis.com" basePath="v1/public/yql" doc:name="HTTP Request Configuration" />
+	<context:property-placeholder location="common.properties" />
+    <db:generic-config name="Generic_Database_Configuration" url="jdbc:postgresql://localhost:5432/stock?password=postgres&amp;user=postgres" driverClassName="org.postgresql.Driver" doc:name="Generic Database Configuration"/>
+
+	<flow name="financeapiFlow1">
+		<http:listener config-ref="HTTP_Listener_Configuration"
+			path="/" doc:name="HTTP" />
+		<http:request config-ref="HTTP_Request_Configuration"
+			port="80" path="/" method="GET" doc:name="HTTP">
+			<http:request-builder>
+                <http:query-param paramName="q" value="#[message.inboundProperties.'http.query.params'.q]"/>
+                <http:query-param paramName="env" value="#[message.inboundProperties.'http.query.params'.env]"/>
+                <http:query-param paramName="format" value="#[message.inboundProperties.'http.query.params'.format]"/>
+			</http:request-builder>
+		</http:request>
+        <byte-array-to-string-transformer mimeType="application/xml" doc:name="Byte Array to String"/>
+	<!-- 	<splitter expression="#[flowVars.results]" doc:name="Splitter" />
+	-->
+		
+		<splitter expression="#[xpath3('//quote', payload, 'NODESET')]"
+            doc:name="Splitter" />
+        <mulexml:dom-to-xml-transformer doc:name="DOM to XML"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.dbName=xpath3('//Name');
+flowVars.dbBookValue=xpath3('//BookValue');
+]]></expression-component>
+        <set-variable variableName="insertStatement" value="INSERT INTO mystock(name,date,bookvalue) VALUES('#[flowVars.dbName]','#[flowVars.dbBookValue]');" doc:name="Variable"/>
+        <db:insert config-ref="Generic_Database_Configuration" doc:name="Database">
+            <db:dynamic-query><![CDATA[INSERT INTO mystock(name,bookvalue) VALUES('#[flowVars.dbName]','#[flowVars.dbBookValue]');]]></db:dynamic-query>
+        </db:insert>
+	</flow>
+    <flow name="docs-splitterFlow">
+        <variable-transformer doc:name="Variable"/>
+    </flow>
+</mule>

@@ -1,0 +1,148 @@
+= 使用Web服务
+:keywords: core, connector, web service consumer, WSS, service, consumer, wsdl, soap
+
+一旦创建了Web服务使用者（WSC）连接器配置，就可以开始使用配置的服务中的SOAP操作。 （请注意，如果尚未创建Web Service使用者配置，则可以参考 link:web-service-consumer-configure[Web服务使用者配置文档]）。
+
+WSC连接器包含一个操作，即消费（`wsc:consume`）操作。此操作的两个重要参数是操作（`operation`）和消息（`wsc:message`）。
+
+以下是Consume操作的基本语法：
+
+。基本消费操作示例
+[source,xml,linenums]
+----
+<wsc:consume config-ref="config" operation="clients-list">
+    <wsc:message>
+        <wsc:body>#[payload]</wsc:body>
+    </wsc:message>
+</wsc:consume>
+----
+
+如果在调度SOAP消息时出现问题，您将收到`WSC:CANNOT_DISPATCH`错误。
+
+== 操作参数
+
+`operation`参数定义要调用的Web服务的哪个SOAP操作。在设计时，操作参数将定义消耗操作的输入和输出类型。类型将根据您选择的操作而变化。
+
+==  消息参数
+
+`message`参数是`SOAP:ENVELOP`的表示
+由3个元素组成：Body，Headers和Attachments。全部都是可选的。
+
+=== 车身
+
+`body`是消息的主要部分。它包含旨在用于SOAP消息的最终端点的SOAP消息。此参数始终是特定于XML应用程序的
+元件。
+
+`body`元素接受嵌入的DataWeave脚本作为值，这样您就可以构造XML请求而不会对消息产生副作用，或者不得不使用多个组件来创建请求。默认情况下，消息正文的值是`#[payload]`。这意味着默认情况下它希望传入的有效负载是准备发送到服务的XML实体。
+
+以下是body元素内的转换示例：
+
+.DataWeave表达式在body参数中
+[source,xml,linenums]
+----
+<wsc:consume config-ref="config" operation="addClients">
+    <wsc:message>
+        <wsc:body>
+        #[
+        %dw 2.0
+        output application/xml
+        ns con http://service.soap.clients.namespace/
+        ---
+        con#clients: {
+            client: {
+                name: "Natasha",
+                lastname: "Ferrari"
+            },
+            client: {
+                name: "Lucas",
+                lastname: "Barzola"
+            }
+        }]
+        </wsc:body>
+    </wsc:message>
+</wsc:consume>
+----
+
+如果主体不是有效的XML，或者由于某种原因无法创建请求，则会收到`WSC:BAD_REQUEST`错误。
+
+请注意，如果未提供主体内容，则Web服务使用者将尝试生成一个内容。这只适用于在本体中没有XML实体的情况。
+
+=== 集管
+
+可选的`headers`元素包含有关SOAP消息的特定于应用程序的信息（如身份验证，付款等）。与`body`元素一样，此元素是一个XML实体，并且可以嵌入DataWeave脚本作为其值，例如：
+
+.DataWeave表达式在body参数中
+[source,xml,linenums]
+----
+<wsc:consume config-ref="config" operation="addClients">
+    <wsc:message>
+        <wsc:body>#[payload]</wsc:body>
+        <wsc:headers>
+          #[
+          %dw 2.0
+          output application/xml
+          ns con http://service.soap.clients.namespace/
+          ---
+          "headers": {
+              con#user: "NahuelMonin",
+              con#pass: "%M4g\/iT0Rn4!"
+          }]
+        </wsc:header>
+    </wsc:message>
+</wsc:consume>
+----
+
+=== 附件
+
+`attachments`元素使您能够将附件绑定到SOAP消息。要创建通过SOAP进行传输的附件，您需要声明一个DataWeave脚本，其中每个条目表示一个附件，其值提供附件的内容，例如：
+
+.DataWeave表达式在body参数中
+[source,xml,linenums]
+----
+<wsc:consume config-ref="config" operation="addClients">
+    <wsc:message>
+        <wsc:body>#[payload]</wsc:body>
+        <wsc:attachments>
+          #[{ clientsJson: vars.jsonFile } ]
+        </wsc:attachments>
+    </wsc:message>
+</wsc:consume>
+----
+
+该示例声明了名为`clientsJson`的新附件，其内容存储在名为`jsonFile`的变量中。例如，该变量可以从`file:read`操作中设置。
+
+== 输出
+
+Consume操作的输出表示传入的SOAP消息，其中包含与`message`参数相同的元素，并且您可以访问它的每个部分。
+
+这里是一个例子：
+
+.DataWeave表达式在body参数中
+[source,xml,linenums]
+----
+<flow name="output">
+  <wsc:consume config-ref="config" operation="addClients">
+      <wsc:message>
+          <wsc:body>#[payload]</wsc:body>
+      </wsc:message>
+  </wsc:consume>
+  <set-variable name="soap.body" value="#[payload.body]">
+  <set-variable name="soap.auth.header" value="#[payload.headers.auth]">
+  <set-variable name="soap.attachment.json" value="#[payload.attachments.json]">
+</flow>
+----
+
+该示例将正文的内容存储在名为`soap.body`的新变量中。它将名为`auth`的标头存储在`soap.auth.header`变量中，并将名为`json`的附件的内容存储在名为`soap.attachment.json`的变量中
+
+== 属性
+
+在使用Web服务操作时，您可能不仅对响应内容感兴趣，而且对用于分派消息的底层传输的元数据也感兴趣。例如，当你使用
+HTTP，属性带有绑定到HTTP请求的HTTP标头（`content-length`，`status`等）。
+
+Web服务使用者使用Mule消息属性来访问这些信息。
+
+
+== 另请参阅
+
+*  link:web-service-consumer-reference[Web服务消费者技术参考]
+*  link:web-service-consumer-configure[配置WSC]

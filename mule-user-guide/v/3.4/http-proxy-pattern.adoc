@@ -1,0 +1,97 @@
+=  HTTP代理模式
+
+== 摘要
+
+HTTP代理位于调用者应用程序和目标Web资源之间，传播HTTP请求和响应。
+
+image:HTTP+Proxy.png[HTTP +代理]
+
+您可以使用它以受控的方式访问远程Web资源。例如，如果您不想有大量内部应用程序直接依赖于外部服务，请使用HTTP代理。它也支持缓存，它允许您减少对常规（当然可缓存）网页资源的出站流量。
+
+=== 用例
+
+* 将远程Web资源公开为公司防火墙之后的托管
+* 添加或删除HTTP标头
+* 动态分派到不同的远程资源
+* 定期访问资源的内容缓存
+
+=== 配置
+
+配置HTTP代理
+
+[source,xml, linenums]
+----
+<pattern:http-proxy name="http-proxy-sample"
+                    inboundAddress="http://localhost:8080/acme-data"
+                    outboundAddress="http://acme.org/feeds/data" />
+
+<pattern:http-proxy name="http-proxy-sample">
+    <http:inbound-endpoint address="http://localhost:8080/acme-data" />
+    <http:outbound-endpoint address="http://acme.org/feeds/data" />
+</pattern:http-proxy>
+----
+
+入站和出站端点可以指定为完整URI地址属性，端点引用属性或子元素。使用地址属性时，您可以为请求和响应阶段定义具有属性的变换器（如下所示）;否则，必须在端点元素内配置变换器。
+
+[source,xml, linenums]
+----
+<pattern:http-proxy name="transforming-http-proxy"
+                    inboundAddress="http://localhost:8080/acme-data"
+                    transformer-refs="canonical-to-acme add-acme-headers"
+                    responseTransformer-refs="drop-acme-headers acme-to-canonical"
+                    outboundAddress="http://acme.org/feeds/data" />
+----
+
+与所有其他配置模式一样，HTTP代理支持继承，这可以重新使用通用配置元素。在以下示例中，变换器配置在抽象父项和具体实现之间共享。然后可以创建具有不同地址的更具体的实现。
+
+[source,xml, linenums]
+----
+<pattern:http-proxy name="abstract-parent-http-acme-proxy"
+                   abstract="true"
+                   transformer-refs="canonical-to-acme add-acme-headers"
+                   responseTransformer-refs="drop-acme-headers acme-to-canonical" />
+
+<pattern:http-proxy name="concrete-acme-http-proxy"
+                    parent="abstract-parent-http-proxy"
+                    inboundAddress="http://localhost:8080/acme-data"
+                    outboundAddress="http://acme.org/feeds/data" />
+----
+
+== 主要功能
+
+=== 路径扩展
+
+HTTP代理自动将入站端点上收到的路径扩展传播到出站端点的路径。
+
+这意味着，在前面的示例的上下文中，如果向代理发送对http：// localhost：8080 / acme-data / extra / stuff.txt的请求，它将作为+ http：// acme .ORG /供稿/数据/额外/ stuff.txt +。
+
+同样，传播查询参数。因此，`+http://localhost:8080/acme-data?id=123+`将变为`+http://acme.org/feeds/data?id=123+`。
+
+=== 动态调度
+
+路径扩展是一种方便的机制，但要求发件人了解远程服务的URL结构。由于HTTP代理支持Mule表达式语言，它可以根据任何可以在飞行中消息上评估的表达式生成出站地址。与此代理进行交互时，调用方应用程序必须提供名为"X-Acme-Feed"的HTTP标头，该标头将用于构建实际的出站地址。您可以创建更复杂的表达式来实现更复杂的动态调度规则。
+
+例如：
+
+[source,xml, linenums]
+----
+<pattern:http-proxy name="dynamic-http-proxy"
+                    inboundAddress="http://localhost:8080/acme-data"
+                    outboundAddress="{{0}}" />
+----
+
+=== 缓存
+
+缓存是保存已处理数据的一种方法，以避免多次重新处理相同请求的成本。要使用缓存，HTTP代理必须引用缓存策略 - 例如HTTP缓存策略（EE） - 它使用HTTP缓存指令来确定如何缓存每个响应。
+
+例如：
+
+[source,xml, linenums]
+----
+<ee:http-caching-strategy name="httpCachingStrategy"/>
+
+<pattern:http-proxy name="http-proxy-caching-sample"
+                    cachingStrategy-ref="httpCachingStrategy"
+                    inboundAddress="http://localhost:8080/acme-data"
+                    outboundAddress="http://acme.org/feeds/data" />
+----

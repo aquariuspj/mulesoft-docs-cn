@@ -1,0 +1,250 @@
+=  JBoss jBPM模块参考
+
+http://www.jboss.org/jbpm[JBoss jBPM]是一个开源的BPMS，与Mule很好地集成。 jBPM的一个优点是它直接嵌入到Mule运行时中，可以提高性能。有关jBPM的一般信息以及如何配置它，请参阅 http://docs.jboss.com/jbpm/v4/userguide/html_single/[jBPM用户指南]。
+
+[WARNING]
+该模块为JBoss jBPM提供了一个用于Mule的BPM支持的"Plug-in"。如果您还没有阅读Mule的 link:/mule-user-guide/v/3.3/bpm-module-reference[BPM支持]的一般文档，请先阅读，然后返回此页面。
+
+
+== 命名空间和语法
+
+XML名称空间：
+
+[source, xml, linenums]
+----
+xmlns:bpm "http://www.mulesoft.org/schema/mule/bpm"
+----
+
+XML架构位置：
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/bpm/3.3/mule-bpm.xsd
+----
+
+句法：
+
+[source, xml, linenums]
+----
+<bpm:jbpm />
+ 
+<bpm:process processName="myProcess" processDefinition="my-process.jpdl.xml" />
+----
+
+== 特点
+
+* 使用合理的默认值，将jBPM作为Mule配置中的BPMS进行简单声明。
+*  jBPM流程定义语言（jPDL）的自定义元素，可让您轻松将Mule集成到业务流程中。
+
+有关Mule BPM支持提供的一般功能列表，请参阅 link:/mule-user-guide/v/3.3/bpm-module-reference[BPM模块参考]。
+
+[NOTE]
+jBPM库与Mule发行版捆绑在一起。从Mule 3.0.1开始，jBPM 4.4是最新的支持版本。
+
+== 用法
+
+在Mule中使用jBPM由几件事组成：
+
+* 配置jBPM
+* 配置Hibernate和用于存储进程状态的数据库
+* 声明jBPM为您在Mule配置中使用的BPMS
+* 从流程定义中与Mule进行交互
+
+===  jBPM配置
+
+jBPM的默认配置文件称为`jbpm.cfg.xml`。您需要将此文件作为您Mule应用程序的一部分。如果默认值对你来说可以，那么它可以像下面这样简单。
+
+*jBPM Configuration (jbpm.cfg.xml)*
+
+[source, xml, linenums]
+----
+<jbpm-configuration>
+    <import resource="jbpm.default.cfg.xml" />
+    <import resource="jbpm.jpdl.cfg.xml" />
+    <import resource="jbpm.tx.hibernate.cfg.xml" />
+ 
+    <process-engine-context>
+        <object class="org.mule.module.jbpm.MuleMessageService" /> ❶
+    </process-engine-context>
+</jbpm-configuration>
+----
+
+❶请注意，您需要在`<process-engine-context>`内定义MuleMessageService，否则jBPM将无法"see" Mule。
+
+有关更多配置选项，请参阅 http://docs.jboss.org/jbpm/v3/userguide/configuration.html[jBPM文档]。
+
+=== 数据库配置
+
+jBPM使用Hibernate来持久化进程的状态，所以你需要提供一个 http://community.jboss.org/wiki/SupportedDatabases[数据库由Hibernate支持]并且包含任何客户端jar作为你的Mule应用程序的一部分。您还需要为所选数据库提供适当的Hibernate设置的文件`jbpm.hibernate.cfg.xml`。
+
+例如，简单的内存数据库 http://db.apache.org/derby/[德比]可能会使用这些设置：
+
+*Derby settings*
+
+[source, xml, linenums]
+----
+<property name="hibernate.dialect">org.hibernate.dialect.DerbyDialect</property>
+  <property name="hibernate.connection.driver_class">org.apache.derby.jdbc.EmbeddedDriver</property>
+  <property name="hibernate.connection.url">jdbc:derby:memory:muleEmbeddedDB</property>
+  <property name="hibernate.hbm2ddl.auto">create-drop</property>
+----
+
+而Oracle数据库可能会使用这些设置：
+
+*Oracle settings*
+
+[source, xml, linenums]
+----
+<property name="hibernate.dialect">org.hibernate.dialect.OracleDialect</property>
+  <property name="hibernate.connection.driver_class">oracle.jdbc.driver.OracleDriver</property>
+  <property name="hibernate.connection.url">jdbc:oracle:thin:user/pass@server:1521:dbname</property>
+----
+
+需要注意的一个非常重要的Hibernate设置是`hibernate.hbm2ddl.auto`。如果设置为`create`，那么Hibernate将在启动时自动为jBPM创建数据库模式，前提是数据库中尚不存在该模式。如果它设置为`create-drop`，那么架构也将在关闭时被删除，这在测试环境中很有用。
+
+有关更多配置选项，请参阅 http://docs.jboss.org/jbpm/v3/userguide/configuration.html[jBPM文档]和/或 http://docs.jboss.org/hibernate/core/3.6/reference/en-US/html_single/#configuration-xmlconfig[Hibernate文档]。
+
+===  Mule配置
+
+在Mule配置中使用jBPM就像包含`<bpm:jbpm>`元素一样简单。默认配置文件假定为`jbpm.cfg.xml`，否则您可以使用`configurationResource`属性指定它。
+
+*Default config*
+
+[source, xml, linenums]
+----
+<bpm:jbpm />
+----
+
+*Custom config*
+
+[source, xml, linenums]
+----
+<bpm:jbpm name="jBPM" configurationResource="custom-jbpm-config.cfg.xml"/>
+----
+
+=== 流程定义（jPDL）
+
+由于缺乏BPM社区的良好标准，jBPM传统上使用自己的DSL来处理名为 http://docs.jboss.com/jbpm/v4/userguide/html_single/#jpdl[jPDL中]的流程定义。您会发现学习起来非常简单，并且有一个称为图形流程设计器的 http://docs.jboss.org/jbpm/v4/userguide/html_single/#graphicalprocessdesigner[Eclipse插件]，它允许您以可视方式创建流程定义。
+
+[WARNING]
+在将来的版本中，首选定义语言可能是 http://community.jboss.org/wiki/jBPMBPMN[BPMN 2.0]，现在它已成为BPM社区中被广泛接受的标准。 Mule目前通过Activiti BPM模块支持BPMN定义的流程。
+
+Mule为jBPM的流程定义语言（jPDL）提供了两个自定义元素。您可以在流程定义中将这些与其他 http://docs.jboss.com/jbpm/v4/userguide/html_single/#jpdl[标准jPDL元素]一起使用，例如`<state>, <java>, <script>, <decision>`。
+
+[%header,cols="4*"]
+|====
+|元素 |用法 |描述 |必需的属性
+| <mule-send>  | `<mule-send expr="" endpoint="" exchange-pattern="" var="" type="">`  |向Mule *endpoint*发送带有有效载荷*`expr`*的消息的活动。如果*exchange-pattern* =请求响应（默认值），则发送将被阻止，并且响应消息将存储到*var*中。如果消息不是*type*，则会抛出异常。 *expr*可以是一个文字值或一个引用流程变量的 http://java.sun.com/javaee/5/docs/tutorial/doc/bnahq.html[表达]。 |唯一必需的属性是*expr*和*endpoint*，其余是可选的。
+| <mule-receive>  | `<mule-receive var="" endpoint="" type="">`  |等待从Mule *endpoint*到达并将其存储到*var*中的状态。如果消息不是*type*，则会抛出异常。 `<mule-receive>`可以将`<start>`替换为进程的第一个状态，这样您可以将启动进程的消息存储到变量中。 |这些属性都是可选的。
+|====
+
+== 配置示例
+
+*Example Mule Configuration*
+
+[source, xml, linenums]
+----
+<mule ...cut...
+    xmlns:bpm="http://www.mulesoft.org/schema/mule/bpm"
+    xsi:schemaLocation="...cut...
+       http://www.mulesoft.org/schema/mule/bpm http://www.mulesoft.org/schema/mule/bpm/3.3/mule-bpm.xsd"> ❶
+ 
+    <bpm:jbpm name="jbpm" /> ❷
+ 
+    <flow name="ToBPMS">
+        <composite-source>
+            <inbound-endpoint ref="CustomerRequests" /> ❸
+            <inbound-endpoint ref="CreditProfiles" />
+        </composite-source>
+        <bpm:process processName="LoanBroker" processDefinition="loan-broker-process.jpdl.xml" /> ❹
+    </flow>
+    ...cut...
+</mule>
+----
+
+❶导入BPM模式。 +
+❷声明jBPM为要使用的BPMS实施。 +
+these在这些端点上传入的消息开始/前进过程并作为过程变量存储。 +
+loan loan-broker-process.jpdl.xml中定义的流程将在启动时部署到jBPM。
+
+*Example jPDL Process Definition*
+
+[source, xml, linenums]
+----
+<process name="LoanBroker" xmlns="http://jbpm.org/4.3/jpdl">
+ 
+    <mule-receive name="incomingCustomerRequest" endpoint="CustomerRequests" type="foo.messages.CustomerQuoteRequest" var="customerRequest">
+        <transition to="sendToCreditAgency" />
+    </mule-receive> ❶
+ 
+    <mule-send name="sendToCreditAgency"
+          expr="#{customerRequest.customer}" endpoint="CreditAgency" exchange-pattern="one-way">
+        <transition to="sendToBanks" />
+    </mule-send> ❷
+ 
+    <decision name="sendToBanks"> ❸
+        <transition to="sendToBigBank">
+            <condition expr="#{customerRequest.loanAmount >= 20000}" /> ❹
+        </transition>
+        <transition to="sendToMediumBank">
+            <condition expr="#{customerRequest.loanAmount >= 10000}" />
+        </transition>
+        ...cut...
+    </decision>
+ 
+    ...cut...
+    <end name="loanApproved" />
+</process>
+----
+
+❶传入消息需要`foo.messages.CustomerQuoteRequest`类型的端点`CustomerRequests`存储到过程变量`customerRequest`中。 +
+❷将新消息发送到端点`CreditAgency`，端点的有效负载是使用过程变量`customerRequest`的表达式。 +
+❸`<decision>`是一个标准的jPDL元素。 +
+decision决策逻辑使用过程变量`customerRequest`。
+
+=== 配置参考
+
+==  Jbpm的
+
+<jbpm...>的{​​{0}}属性
+
+[%header,cols="5*"]
+|====
+| {名称{1}}输入 |必 |缺省 |说明
+|名称 |名称（无空格） |否 |   |此BPMS的可选名称。如果您有多个BPMS可用，请从您的流程的"bpms-ref"字段中参考此处。
+| configurationResource  |字符串 |否 |   | jBPM的配置文件，如果未指定，则默认为"jbpm.cfg.xml"。
+| processEngine-ref  |字符串 |否 |   |对已经初始化的jBPM ProcessEngine的引用。如果你使用Spring来配置你的jBPM实例，这很有用。请注意，在这种情况下，"configurationResource"属性将被忽略。
+|====
+
+<jbpm...>的{​​{0}}子元素
+
+[%header,cols="34,33,33"]
+|===
+| {名称{1}}基数 |说明
+|===
+
+==  XML架构
+
+该模块使用来自 link:/mule-user-guide/v/3.3/bpm-module-reference[BPM模块]的模式。它没有自己的模式。
+
+导入BPM架构如下：
+
+[source, xml, linenums]
+----
+xmlns:bpm="http://www.mulesoft.org/schema/mule/bpm"
+xsi:schemaLocation="http://www.mulesoft.org/schema/mule/bpm  http://www.mulesoft.org/schema/mule/bpm/3.3/mule-bpm.xsd"
+----
+
+有关BPM模式元素的详细信息，请参阅 link:/mule-user-guide/v/3.3/bpm-module-reference[BPM模块参考]。
+
+== 的Maven
+
+如果您使用Maven构建应用程序，请使用以下groupId / artifactId将此模块作为依赖项包含在内：
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.modules</groupId>
+  <artifactId>mule-module-jbpm</artifactId>
+</dependency>
+----

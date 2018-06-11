@@ -1,0 +1,46 @@
+= 数据库事务参考
+:keywords: db, connector, Database, transaction, XA
+：TOC：
+：TOC标题：
+
+您可以在事务上下文中执行数据库操作。每个操作都有一个`transactionalAction`，用于指定操作可以针对活动事务执行的加入操作的类型（如果有）。例如，选择操作有以下可能的操作：
+
+image::transactional-action.png[如果可能不支持，总是加入连接]
+ 
+*  ALWAYS_JOIN：预计收到消息时正在进行交易。如果没有交易，则会发生错误。
+*  JOIN_IF_POSSIBLE：如果可用，则加入当前事务。否则，不会发生事务。
+*  NOT_SUPPORTED：在任何存在的事务之外执行。
+ 
+== 分组操作
+ 
+有时您需要在同一事务的上下文中原子地执行多个查询。例如，在银行账户转账过程中，您需要从一个账户中扣除资金并将其添加到另一个账户中，但如果两个操作中的任何一个失败，则两者都应回滚：
+
+[source,xml,linenums]
+----
+<db:update config-ref=”db”>
+	<db:sql>UPDATE ACCOUNT set BALANCE = BALANCE - :money where ID = :source</db:sql>
+	<db:input-parameters>#[{‘money’ : payload.money, ‘source’: payload.source}]</db:input-parameters>
+</db:update>
+ 
+<db:update config-ref=”db”>
+	<db:sql>UPDATE ACCOUNT set BALANCE = BALANCE + :money where ID = :target</db:sql>
+	<db:input-parameters>#[{‘money’ : payload.money, ‘target’’: payload.target}]</db:input-parameters>
+</db:update>
+----
+ 
+如果这些查询是在已经存在的事务的上下文中执行的，则这些查询属于同一个事务。如果没有活动交易，您可以使用<try>范围启动一个交易：
+
+[source,xml,linenums]
+----
+<try transactionalAction="ALWAYS_BEGIN">
+	<db:update config-ref="db">
+		<db:sql>UPDATE ACCOUNT set BALANCE = BALANCE - :money where ID = :source</db:sql>
+		<db:input-parameters>#[{'money' : payload.money, 'source': payload.source}]</db:input-parameters>
+	</db:update>
+	
+	<db:update config-ref="db">
+		<db:sql>UPDATE ACCOUNT set BALANCE = BALANCE + :money where ID = :target</db:sql>
+		<db:input-parameters>#[{'money' : payload.money, 'target'': payload.target}]</db:input-parameters>
+	</db:update>
+</try>
+----

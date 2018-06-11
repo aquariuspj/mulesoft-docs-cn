@@ -1,0 +1,83 @@
+=  TLS配置
+:keywords: mule, sdk, security, tls
+
+在模块中添加对TLS配置的支持非常简单，例如声明`TlsContextFactory`类型的<<parameters#, parameter>>，例如：
+
+[source, java, linenums]
+----
+@Parameter
+@Optional
+private TlsContextFactory tlsContextFactory;
+----
+
+上面的例子会自动生成对这个XML设置的支持：
+
+[source, xml, linenums]
+----
+<tls:context enabledProtocols="TLSv1.2,SSLv3">
+    <tls:trust-store path="my-trust-store.jks" password="myPassword"/>
+    <tls:key-store path="my-key-store.jks" keyPassword="myPassword" password="myPassword"/>
+</tls:context>
+----
+
+请注意，TLS上下文也可以定义为应用程序的全局元素，因此您可以在任何需要使用它的地方通过名称引用它。
+
+如果TLS需求对用户隐藏（例如，如果您需要在内部安全地连接到服务），则可以使用其构建器创建自己的`TlsContextFactory`：
+
+[source, java, linenums]
+----
+private final TlsContextFactory tlsContextFactory = TlsContextFactory.builder()
+                                                        .trustStorePath("tls/trustStore")
+                                                        .trustStorePassword("mulepassword")
+                                                        .build()
+----
+
+该构建器还允许创建`TlsContextFactory`的默认实例：
+
+[source, java, linenums]
+----
+private final TlsContextFactory defaultTlsContextFactory = TlsContextFactory.builder().buildDefault();
+----
+
+一旦`TlsContextFactory`可用（无论是作为参数还是通过其构建器获取），都应该进行初始化，例如：
+
+[source, java, linenums]
+----
+if (tlsContextFactory instanceof Initialisable) {
+  ((Initialisable) tlsContextFactory).initialise();
+}
+----
+
+然后可以用它来获得`SSLContext`，`SSLSocketFactory`或`SSLServerSocketFactory`。它还可以获得已启用的TLS协议和密码套件，从而允许您设置大多数使用TLS / SSL的Java组件，如以下示例中所示。
+
+您可以通过获取 link:https://docs.oracle.com/javase/8/docs/api/javax/net/ssl/SSLContext.html[的SSLContext]来设置 link:https://commons.apache.org/proper/commons-net/apidocs/org/apache/commons/net/ftp/FTPSClient.html[FTPSClient]，然后为其配置协议和密码套件：
+
+[source, java, linenums]
+----
+SSLContext sslContext = tlsContextFactory.createSslContext();
+String[] enabledProtocols = tlsContextFactory.getEnabledProtocols();
+String[] enabledCiphers = tlsContextFactory.getEnabledCipherSuites();
+
+FTPSClient client = new FTPSClient(sslContext);
+client.setEnabledProtocols(enabledProtocols);
+client.setEnabledCipherSuites(enabledCiphers);
+----
+
+您可以获得 link:https://docs.oracle.com/javase/8/docs/api/javax/net/ssl/SSLSocketFactory.html[的SSLSocketFactory]来创建您自己的 link:https://docs.oracle.com/javase/8/docs/api/java/net/Socket.html[插座]：
+
+[source, java, linenums]
+----
+SSLSocketFactory sslSocketFactory = tlsContextFactory.createSocketFactory();
+Socket socket = sslSocketFactory.create();
+----
+
+要改为创建 link:https://docs.oracle.com/javase/8/docs/api/java/net/ServerSocket.html[ServerSocket的]，您可以获得 link:https://docs.oracle.com/javase/8/docs/api/index.html?javax/net/ssl/SSLServerSocketFactory.html[的SSLServerSocketFactory]：
+
+[source, java, linenums]
+----
+SSLServerSocketFactory sslServerSocketFactory = tlsContextFactory.createServerSocketFactory();
+ServerSocket socket = sslServerSocketFactory.createServerSocket();
+----
+
+正确配置TLS上下文和所有可用参数
+您可以设置，请参阅 link:/connectors/common-about-tls[Mule TLS上下文]。

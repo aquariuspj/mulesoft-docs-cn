@@ -1,0 +1,89 @@
+= 作用域
+:keywords: anypoint studio, scopes, flow control, routing
+
+有时称为"wrappers"，称为作用域的消息处理器在您首次将它们放置在消息流画布上时显示为处理块。某些范围如*Poll*，*Message Enricher*和*Until Successful*要求您在处理块中只嵌入一个消息处理器。不同的是，这些示波器通过以下方式为嵌入式消息处理器添加功能：
+
+* 定期触发消息处理器
+* 增强消息处理器的有效负载
+* 触发消息处理器，直到关联事件成功
+
+通常，范围的其他子组（包括*Composite*，*Async*和*Sub Flow*）接受多个消息处理器。
+
+image:composite_scope.png[composite_scope]
+
+对于*Composite*，嵌入式处理器实际上是消息源，也称为入站连接器，它们在不同通道上并行侦听传入消息。每当这些接收者中的任何一个接收到消息时，*Composite*作用域将其传递给流中的第一个消息处理器，从而触发该流。
+
+对于*Async*和*Sub Flow*范围，嵌入式消息处理器构成一个单一的组合消息处理器（或事件）序列。
+
+[TIP]
+====
+_Synchronous_表示在父流程恢复处理之前执行主流程暂停处理以及子流程中的所有消息处理器;换句话说，当同步子流程正在执行时，在父流程中不发生处理。
+
+_Asynchronous_意味着只要子流接收到消息，它立即将该消息的一个副本发送到父流中的下一个消息处理器，以便父流中的处理继续，基本上不中断。异步子流程也开始用自己的消息处理器序列处理消息的另一个副本。这两个同步处理分支独立地继续，直到每个分支完成。
+====
+
+*Async*作用域位于父流程序列中，当它接收到消息时，它将消息副本发送到父流程中的下一个消息处理器，同时（和_asychronously_）处理另一个副本消息通过它自己的嵌入式消息处理器序列。
+
+*Sub Flow*作用域相对于父流作为_synchronous_分支流存在。从 link:/mule-user-guide/v/3.8/flow-reference-component-reference[流量参考组件]收到消息后，它会通过嵌入式消息处理器的整个序列处理该消息，然后将消息传递回父流中的下一个消息处理器以供进一步处理。该过程每次在主流程"calls"子流程处理块中的流程参考组件重复。
+
+== 代码示例
+
+以下代码显示了使用FTP和HTTP的复合源以及使用包含Java变换器和记录器的Async作用域。
+
+[source,xml,linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:ftp="http://www.mulesoft.org/schema/mule/ee/ftp" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/ftp http://www.mulesoft.org/schema/mule/ee/ftp/current/mule-ftp-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="scope-Flow">
+        <composite-source doc:name="Composite Source">
+            <ftp:inbound-endpoint host="localhost" port="21" responseTimeout="10000" doc:name="FTP"/>
+            <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        </composite-source>
+        <async doc:name="Async">
+            <custom-transformer class="myclass" doc:name="Java"/>
+            <logger level="INFO" doc:name="Logger"/>
+        </async>
+    </flow>
+</mule>
+----
+
+Studio中提供的== 范围
+
+[%header,cols="10a,30a,60a"]
+|===
+|   |范围 |说明
+| image:async-icon.png[异步图标]  |异步 |创建一组异步执行的消息处理器，其余流程将继续并行执行。例如，您可以使用一系列执行日志记录的处理器填充异步作用域，以便日志记录不会减慢应用程序流的其余部分。 +
+
+有关配置Async Scope的具体信息，请参阅 link:/mule-user-guide/v/3.8/async-scope-reference[异步范围参考]页面。
+
+| image:cache-icon.png[缓存图标]  |缓存 |缓存部分流所产生的数据。将缓存作用域封装在流中的消息处理器中，以便缓存在作用域内生成的响应事件。有关配置缓存范围的特定信息，请参阅 link:/mule-user-guide/v/3.8/cache-scope[缓存范围]页面。
+
+| image:composite-source-icon.png[合成源图标]  |复合来源 |要接收来自多个输入通道的传入消息，请将两个或多个消息来源（也称为接收器）放入复合来源中。在任何支持的通道上输入复合源的消息都会触发处理流程。
+
+| image:foreach-icon.png[的foreach图标]  | Foreach  |将任何类型的消息拆分为单个消息进行处理，然后在范围末尾再次聚合它们。有关配置Foreach范围的具体信息，请参阅 link:/mule-user-guide/v/3.8/foreach[Foreach范围]页面。
+
+| image:message-enricher-icon.png[消息富集图标]  |消息Enricher  |将消息附加到消息中，通常使用表达式来确定要评估的有效负载的哪部分，以便返回适当的值以便追加到那个有效载荷。例如，该表达式可以评估邮政编码，然后将关联的城市和州附加到有效负载。消息处理器被执行，并且丰富范围使用该执行的结果来丰富进入范围的消息。
+
+| image:poll-icon.png[调查图标]  |轮询 |定期轮询嵌入式消息接收器以查找新消息。例如，通过在Poll处理块中放置一个请求 - 响应连接器（如SMTP），定期轮询以检索电子邮件。
+
+| image:sub-flow-icon.png[子流图标]  |子流 |被另一个流调用的流。子流从流参考继承它们的属性，并且始终是同步的。当需要在同一流程中的多个点重用代码时，这种类型的范围可能非常有用。只需将流参考组件放置（并配置）到您想要执行子流处理模块的任何地方。
+
+| image:transactional-icon.png[交易图标]  |事务性 | Mule将 link:http://en.wikipedia.org/wiki/Transaction_processing[交易]的概念应用于应用程序中的结果不能保持不确定性的操作。换句话说，如果流程中的一系列步骤必须作为一个单元成功或失败，那么Mule会使用交易来划分这样一个单位。
+
+| image:until-successful-icon.png[直到成功的图标]  |直到成功 |以指定的时间间隔尝试将消息路由到嵌入式消息处理器，直至出现以下情况之一：
+
+* 消息处理器成功
+* 达到最大重试次数
+* 抛出异常
+
+因此，直到成功可以证明将消息发送到资源（如共享打印机）可能非常有用，而这些资源可能并不总是立即可用。
+|===
+

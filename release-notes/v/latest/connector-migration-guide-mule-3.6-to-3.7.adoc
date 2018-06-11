@@ -1,0 +1,320 @@
+= 连接器迁移指南 -  DevKit 3.6至3.7
+:keywords: migration, devkit, release notes
+
+*July 8, 2015*
+
+== 从DevKit 3.6迁移到3.7
+
+以下部分列出DevKit在版本3.6.n和3.7.0之间的变化。
+
+[WARNING]
+尽管使用DevKit 3.7支持构建的应用程序支持部署到在JDK 8上运行的环境，但构建DevKit连接器的环境应使用JDK 7.不支持使用DevKit编译新连接器时使用JDK 8。
+
+=== 新的连接器功能测试框架
+
+这个新框架的目标是双重的。首先，它通过使用测试逻辑本身去耦Mule流程来简化测试开发阶段：现在流程中没有定义流程引用，因此测试开发人员不需要Mule流程的概念。其次，它现在允许连接器测试以自动方式在本地或在CloudHub中以不同的Mule版本运行。因此，我们现在可以针对多个Mule版本测试连接器代码，确保向后兼容性，向前兼容性和库兼容性。
+
+===  DevKit 3.6.n和以前版本的旧Mule连接器测试
+
+使用旧的测试框架运行测试时请考虑以下事项。我们来看一个Salesforce连接器测试套件的例子。
+
+. 从*ConnectorTestCase*延伸。此课程提出了诸如*initializeTestRunMessage*，*runFlowAndGetPayload,*或*upsertOnTestRunMessage*的方法。这些方法可让您通过Spring bean加载测试数据，运行流程，获取结果负载，并将数据分别添加到公共测试数据容器。
++
+[source,java, linenums]
+----
+package org.mule.modules.salesforce.automation.testcases;
+       import org.mule.modules.tests.ConnectorTestCase;
+       public abstract class AbstractTestCase extends ConnectorTestCase {
+}
+----
+
+. 加载测试数据并通过**initializeTestRunMessage(springName)**加载测试数据来设置测试环境，通过**runFlowAndGetPayload(flowName)**运行特定流程，并使用**upsertOnTestRunMessage(key,value)**保留结果值。这些方法需要一个Spring bean定义文件，通常称为*automationSpringBeans.xml*和一个Mule应用程序流文件，通常称为**automation-test-flows.xml**。
++
+[source,java, linenums]
+----
+package org.mule.modules.salesforce.automation.testcases;
+ ...
+public class AbortJobTestCases extends AbstractTestCase {
+@Before
+public void setUp() throws Exception {
+      initializeTestRunMessage("abortJobTestData");
+      JobInfo jobInfo = runFlowAndGetPayload("create-job");
+      upsertOnTestRunMessage("jobId", jobInfo.getId());
+}
+ ...
+----
+
+. 执行测试，其中可以通过**runFlowAndGetPayload(flowName)**，*runFlowAndExpectProperty(flowName, propertyName, expectedObject),*或**runFlowWithPayloadAndExpect(flowName, expectedObject, payload)**调用其他可用的方法。
++
+[source,java, linenums]
+----
+@Category({RegressionTests.class})
+@Test
+  public void testAbortJob() {
+  try {
+     JobInfo jobInfo = runFlowAndGetPayload("abort-job");
+ 
+    assertEquals(com.sforce.async.JobStateEnum.Aborted,  jobInfo.getState());
+    assertEquals(getTestRunMessageValue("jobId").toString(), jobInfo.getId());                       
+    assertEquals(getTestRunMessageValue("concurrencyMode").toString(),jobInfo.getConcurrencyMode().toString());
+    assertEquals(getTestRunMessageValue("operation").toString(),jobInfo.getOperation().toString());
+    assertEquals(getTestRunMessageValue("contentType").toString(),
+    jobInfo.getContentType().toString());
+ 
+    } catch (Exception e) {
+        fail(ConnectorTestUtils.getStackTrace(e));
+    }
+  }
+}
+----
+
+=== 脱离3.7之前的测试框架
+
+以下是3.7版之前的测试框架的正常测试，我们可以观察两件事情。
+
+* 一方面，我们在Spring bean文件中有测试数据，通常如下所示：
++
+[source, xml, linenums]
+----
+<beans xmlns="http://www.springframework.org/schema/beans"
+...>
+ 
+    <context:property-placeholder location="${CREDENTIALS}"/>
+ 
+        <util:map id="abortJobTestData" map-class="java.util.HashMap" key-type="java.lang.String" value-type="java.lang.Object">
+              <entry key="type" value="Account" />
+              <entry key="concurrencyMode" value="Parallel" />
+              <entry key="contentType" value="XML" />
+              <entry key="externalIdFieldName" value="Id" />
+              <entry key="operation" value="insert" />
+        </util:map>
+</beans>
+----
++
+这个Spring文件收集整个测试执行阶段使用的所有测试数据。
+
+* 另一方面，我们有一个* Mule application flows*文件，如下所示：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"...>
+<context:property-placeholder location="CREDENTIALS"/>
+<sfdc:config name="Salesforce" doc:name="configDocName" password="${config.password}" username="${config.username}" ...>
+ 
+<flow name="create-job" doc:name="create-job">
+     <sfdc:create-job config-ref="Salesforce" doc:name="Create job" type="#[payload.type]" concurrencyMode="#[payload.concurrencyMode]" contentType="#[payload.contentType]" externalIdFieldName="#[payload.externalIdFieldName]" operation="#[payload.operation]"></sfdc:create-job>
+</flow>
+<flow name="abort-job" doc:name="abort-job">
+       <sfdc:abort-job config-ref="Salesforce" doc:name="Abort job" jobId="#[payload.jobId]">
+       </sfdc:abort-job>
+</flow>
+----
+
+这个Mule应用程序流文件定义了Salesforce操作（记住我们正在使用Salesforce作为示例）的执行方式。流程定义了要执行的特定操作，名称，要使用的连接器配置以及该特定操作的每个参数。 Mule应用程序由流程组成，这些流程在一个（或许多）Mule应用程序流程文件中定义。
+
+*  因此，为了运行一个测试（或一系列测试），定义一个Spring bean文件和一个流文件，主要是分解测试数据，要运行的方法和测试本身的逻辑。通过简单阅读没有Spring文件或流文件的测试类来理解测试几乎是不可能的。
+
+新的连接器测试框架的目标是使测试独立，将测试与Mule流和Spring bean解耦。您应该对Mule的运行方式有一个最低限度的理解，将测试数据保留在测试本身内（或足够关闭）。
+
+下一节将介绍新的连接器测试框架及其功能。我们另外还展示了不同的用例，包括分页或Mule DataSense等功能。
+
+新框架的=== 迁移指南
+
+从以前的Mule Connector Test方法到这个新框架的迁移已经过仔细考虑，因此我们有易于遵循的迁移指南。
+
+=== 迭代迁移
+
+我们强烈建议连接器开发人员将当前的连接器测试移至旧版软件包。例如，如果您当前有名为**org.mule.modules.connector.automation.testcases**的软件包，请将其重命名为**org.mule.modules.connector.automation.testcases.legacy**。然后像以前一样创建一个包**org.mule.modules.connector.automation.testcases**。这个新创建的包现在包含每个迁移的测试。
+
+测试资源很可能会在迁移测试中使用，因此我们建议将这些资源保持原样，通常位于`src/test/resources`之内。
+
+有些测试可能因为框架限制或开发人员选择而无法迁移。如果在迁移过程中出现框架限制或问题，请通知Mule支持。
+
+请记住，我们目前不打包运行旧版测试套件所需的旧框架Maven依赖项。说，如果你维护遗留套件，需要在pom.xml文件中手动添加依赖项。
+
+[source, xml, linenums]
+----
+<dependency>
+       <groupId>org.mule.modules</groupId>
+       <artifactId>mule-connector-test</artifactId>
+       <version>2.0.7</version>
+       <scope>test</scope>
+</dependency>
+----
+
+=== 调用连接器方法与Mule流
+
+从Mule Connector Test到这个新的测试框架的主要变化是如何调用和执行操作。我们来考虑下面的例子。
+
+[source,java, linenums]
+----
+...
+initializeTestRunMessage("sampleTestCaseData");
+JobInfo jobInfo = runFlowAndGetPayload("create-job");
+upsertOnTestRunMessage("jobId", jobInfo.getId());
+...
+----
+
+我们首先需要通过在外部Spring bean文件中定义的称为sampleTestCaseData的Spring bean来测试数据*load*。接下来，我们需要运行一个名为create-job的Mule流程，并将其定义在外部文件中。最后，我们需要将最近获取的作业标识符添加到公共数据容器中以供以后使用。这需要理解Spring bean，Mule流和*ConnectorTestCase*中的三种不同方法来执行简单的创建作业操作。
+
+我们从根本上改变了这种做法。我们简化了测试开发人员通过直接访问连接器的操作来编写测试的方式。只有特殊操作（如分页）需要其他方法。考虑到和以前一样的例子，考虑到我们已经有一个连接器模型实例，我们现在有一个简化的接口，如下所示：
+
+[source,java, linenums]
+----
+...
+JobInfo jobInfo = connector.createJob(OperationEnum.insert, "Account", "Id", ContentType.XML, ConcurrencyMode.Parallel);
+----
+
+其主要特点是Mule流的概念消失，并且测试数据捆绑在测试本身内。
+
+=== 测试数据管理
+
+测试数据目前在Spring beans中维护。我们鼓励放弃对Spring bean的支持，并遵循这些做法：
+
+* 如果测试对象很简单（字符串，整数等），只需添加到测试本身中，如下所示：
++
+[source,java, linenums]
+----
+JobInfo jobInfo = connector.createJob(OperationEnum.insert, "Account", "Id", ContentType.XML, ConcurrencyMode.Parallel);
+----
+
+* 如果测试对象比较复杂（如域对象），请实施*DataBuilder*并按如下所示使用它：
++
+[source,java, linenums]
+----
+List<Map<String, Object>> batchPayload = DataBuilder.createdBatchPayload();
+    batchInfo = connector.createBatch(jobInfo, batchPayload);
+----
++
+实施DataBuilder必须保持测试的一致性。但是，DataBuilder可以读取存在的Spring bean以加载已定义的对象或在构建模式之后从头创建新的Spring Bean。如果加载现有的Spring bean来构建对象，可能的方法是在数据生成器类中使用ApplicationContext，如下所示：
++
+[source,java, linenums]
+----
+import ...
+public class TestDataBuilder {
+ 
+      public TestDataBuilder(){
+          ApplicationContext context = new ClassPathXmlApplicationContext(automationSpringBeans.xml);
+      }
+ 
+      public static CustomObjectType createCustomTestData(){
+          CustomObjectType ret = (CustomObjectType) context.getBean("customObject");
+          return ret;
+      }
+ 
+      public void shutDownDataBuilder(){
+      ((ConfigurableApplicationContext)context).close();
+      }
+}
+----
+
+{连接器/ @模块类级别不支持===  @可配置字段
+
+在DevKit 3.7.n中，不再鼓励@Connector和/或@Module类中的@Configurable字段。您应该将@Configurable字段移至适当的@Config。
+
+====  3.6.n连接器示例
+
+以下显示了在3.6.n版本中如何编码@Connector类：
+
+[source,java, linenums]
+----
+@Connector(name="my-connector", friendlyName="MyConnector")
+public class MyConnector
+{
+    @Configurable
+    String token;
+
+    @Config
+    ConnectorConfiguration config;
+
+    @Processor
+    public String myProcessor(String param) {
+    ...
+    }
+}
+----
+
+====  3.7.n连接器示例
+
+下面显示了如何在版本3.7.n中对@C onnector类进行编码：
+
+[source,java, linenums]
+----
+@Connector(name="my-connector", friendlyName="MyConnector")
+public class MyConnector
+{
+    @Config
+    ConnectorConfiguration config;
+
+    @Processor
+    public String myProcessor(String param) {
+    ...
+    }
+}
+ 
+ 
+@Configuration(configElementName="config",friendlyName="Configuration")
+public class ConnectorConfiguration
+{
+    @Configurable
+    String token;
+ 
+
+    // More Configurable Fields
+    …
+
+
+}
+----
+
+*Important*：如果您想在@Config类之间共享@Configurable字段，请创建一个抽象类并使所有的@Config类扩展包含共享@Configurable字段的父元素。
+
+@Processor级别不支持===  @ Inject
+
+Mule 3.7符合JSR-330规范。因此，@Processor级别的@Inject注释无效。从DevKit 3.7开始，如果签名方法具有MuleEvent或MuleMessage作为参数，则DevKit会在调用处理器时正确地注入该参数。
+
+*Important: * DevKit不支持JSR-330规范。
+
+====  3.6.n传统@Inject示例
+
+以下显示了在版本3.6.n中如何使用@Inject：
+
+[source,java, linenums]
+----
+@Inject
+@Processor
+public boolean parameterInjectionModule(MuleEvent event, MuleMessage message)
+    throws Exception {
+    if(event == null || message == null) {
+        throw new RuntimeException("MuleEvent or MuleMessage cannot be null");
+    }
+    return true;
+}
+----
+
+====  3.7.n @参数注入的处理器示例
+
+以下显示了如何在版本3.7.n中注入参数：
+
+[source,java, linenums]
+----
+@Processor
+public boolean parameterInjectionModule(MuleEvent event, MuleMessage message)
+    throws Exception {
+    if(event == null || message == null) {
+        throw new RuntimeException("MuleEvent or MuleMessage cannot be null");
+    }
+    return true;
+}
+----
+
+== 另请参阅
+
+[%header%autowidth.spread]
+|===
+| {文献{1}}说明
+| link:/mule-user-guide/v/3.7/anypoint-connectors[Anypoint连接器]  | MuleSoft连接器用户指南。
+| https://www.anypoint.mulesoft.com/exchange/?type=connector [连接器]  |可从MuleSoft或第三方来源获得的连接器。
+| link:/anypoint-connector-devkit/v/3.7[Anypoint连接器DevKit]  |连接器开发信息。
+| link:/anypoint-connector-devkit/v/3.7/annotation-reference[注释参考]  |描述以at符号（@）开头的DevKit元素，您可以在连接符中使用它来标识Anypoint功能的类和函数。
+|===

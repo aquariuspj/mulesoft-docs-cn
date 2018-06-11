@@ -1,0 +1,213 @@
+=  Analytics事件API
+:keywords: analytics, api, reports
+
+API Manager为您管理的每个API收集分析数据。您可以创建查询和显示事件数据的图表。使用Analytics Event API可以创建查询原始事件数据并通过API端点公开的报告。
+
+您可以创建跨多个API的报告，或为同一个API创建不同的报告。 Analytics事件API为事件提供了一个月的保留策略，并且数据可用性延迟高达10分钟。
+
+Analytics事件API强制实施每分钟10个请求的使用限制，每个请求最多可处理20,000个事件。高于10个请求/分钟的请求速率将被限制。
+
+== 创建报告
+
+以下过程介绍如何创建报告以查找导致违反策略的API事件。假设您想查找由于策略违规（例如速率限制或IP黑名单）而被拒绝的任何事件。在步骤5中，您选择字段中的违规策略名称以这种方式过滤数据。
+
+. 在API管理器>分析>管理报告中，单击新建以创建新报告。
+. 在创建报告中，选择数据源，范围和格式。
+. 在字段中，选择违规的政策名称。
++
+出现一个URL，您可以在保存后使用它来查看报告。数据变成的日期
+可用于您指定的数据源。
++
+. 保存报告。
++
+当报告变得可用时，转到URL查看它。
+
+== 在浏览器中运行报告
+
+以下步骤显示如何运行报告。 API Analytics列出数据何时可用于API的起点，如果没有可用于API的数据，则包括警告消息。
+
+在*Manage Reports*页面上，点击指定报告的*Run*。
+
+image:anev_running_report.png[anev_running_report]
+
+报告运行后，CSV或JSON文件包含您在报告中指定的参数的所有原始分析数据。
+
+== 以编程方式调用报表
+
+以下步骤描述如何使用curl调用报告的API端点并以编程方式检索分析数据。如果您使用Windows，则可以使用PowerShell作为卷曲的替代方法。
+
+=== 使用卷曲查看报告信息
+
+通过在此过程中运行curl命令获得$ TOKEN的值。该命令获取此响应的access_token JSON属性。
+
+授权标题的格式如下：授权：`Bearer {$TOKEN.access_token}`
+
+使用jq命令行JSON处理器是获取访问令牌值的一种可能的解决方案。下载并安装此应用程序或具有此过程相同功能的应用程序。
+
+以编程方式查看报告信息：
+
+. 打开一个新的终端窗口并执行以下命令：
++
+[source,xml]
+----
+TOKEN=$(curl -s https://anypoint.mulesoft.com/accounts/login -d "username=<YOUR-USERNAME>&password=<YOUR-PASSWORD>" | jq -r .access_token)
+----
++
+. 该命令向Anypoint Platform的认证服务器发送请求，如果请求成功，则返回存储在`$TOKEN`变量中的访问令牌。这个变量的值显示如下：
++
+[source, json,linenums]
+----
+{
+ "access_token": "54545454-5454-5454-5454-545454545454",
+ "token_type": "Bearer",
+ "redirectUrl": "/accounts/#/cs/profile/home"
+ }
+----
++
+. 收到访问令牌后，它必须附加到您的报告的Analytics Reporting API端点请求中的`Authorization`标头。要向此端点发出请求，请从Google Analytics仪表板中的*Manage Reports*页面复制该端点。使用上一步中的`$TOKEN`变量，将其包含在下一个请求中，如下所示：
++
+[source,xml]
+----
+curl -H "Authorization: Bearer $TOKEN" "https://anypoint.mulesoft.com/analytics/1.0/<ORGANIZATION_ID>/events?format=csv&startDate=2016-01-01&endDate=2016-12-31&fields=Application%20Name.Client%20IP.Resource%20Path > output.csv"
+----
++
+. 如果请求成功，则响应将包含一个CSV文件（根据请求）下载为`curl`请求所在目录中具有指定名称（`output.csv)`的文件。
+
+结合两个curl命令并在命令提示符窗口中显示值的shell脚本示例如下：
+
+[source,xml,linenums]
+----
+TOKEN=$(curl -s https://anypoint.mulesoft.com/accounts/login -d "username=myusername&password=mypassword" | jq -r .access_token)
+curl -H "Authorization: Bearer $TOKEN" "https://anypoint.mulesoft.com/analytics/1.0/42424242-4242-4242-4242-424242424242/events?format=csv&startDate=2016-01-01&endDate=2016-11-10&fields=Application%20Name.Client%20IP.Resource%20Path"
+echo;echo
+----
+
+此命令的输出示例是：
+
+[source,code,linenums]
+----
+"Application Name","Client IP","Resource Path",Timestamp,"API ID","API Version ID","API Name","API Version Name"
+"Las Vegas T-Shirt serviceLas Vegas T-Shirt serviceLas Vegas",83.178.96.0,/,2016-10-03T04:27:02.072Z,61460,63811,"test api contracts",1
+"Las Vegas T-Shirt serviceLas Vegas T-Shirt serviceLas Vegas",83.178.96.0,/,2016-10-03T05:03:38.774Z,61460,63811,"test api contracts",1
+  ...
+----
+
+=== 命令选项
+
+以下选项可以添加到curl命令中：
+
+[%header,cols="20s,80a"]
+|===
+| {选项{1}}说明
+| apiIds  |要包含在查询中的逗号分隔的API ID列表。省略或指定`all`或`*`
+包括所有的API。 +
+
+*Type:*字符串+
+*Required:*否+
+*Example:* `appIds=42,54`
+| apiVersionIds  |要包含在查询中的逗号分隔的API版本ID列表。
+省略或指定`all`或`*`包含所有API版本。
+如果没有为API ID指定值，则忽略。 +
+
+*Type:*字符串+
+*Required:*否+
+*Example:* `apiVersionIds=42,54`
+
+|持续时间 |报告应该返回数据的持续时间。由表示数量的整数组成
+和一个单字母后缀表示单位。
+
+后缀是以下之一：
+
+*  `d`：天
+*  `h`：小时
+*  `m`：分钟
+*  `s`：秒
+
+要覆盖一周的持续时间，请将`7d`指定为持续时间。要覆盖半分钟，请指定`30s`。 +
+
+*Type:*字符串+
+*Required:*否+
+*Example:* `duration=45m`
+|字段 |要包含在报告中的字段。 CSV输出和JSON输出可选。
+字段列表可以用逗号或句点分隔。使用空格`%20`。你可以使用任何值
+在<<Data Fields for Reports>>中。
+时间戳，API名称，API ID，API版本，API版本ID始终包含在内。 +
+
+*Type:*字符串+
+*Required:*否+
+*Example:* `fields=Hardware%20Platform.Client%20IP.Resource%20Path`
+|格式 |确定返回数据的序列化格式。 `csv`或`json`。 +
+
+*Type:*字符串+
+*Required:*是+
+*Example:* `format=csv`
+| maxResults  |要返回的最大事件数量。默认值是`20000`。+
+
+*Type:*整数+
+*Required:*否+
+*Example:* `maxResults=3`
+| startDate  |开始日期和时间，如`+http://joda-time.sourceforge.net/apidocs/org/joda/time/format/ISODateTimeFormat.html#dateTimeParser()+` [ISO所述
+日期时间分析器]。 +
+
+*Type:*日期+
+*Required:*否+
+*Example:*
+`startDate=2016-01-01T08:15:30-05:00`
+| endDate  | 结束日期和时间，如`+http://joda-time.sourceforge.net/apidocs/org/joda/time/format/ISODateTimeFormat.html#dateTimeParser()+`所述。 +
+
+*Type:*日期+
+*Required:*否+
+*Example:* `endDate=2016-11-10`
+| pathPrefix  |通过事件资源路径过滤结果，用于报告a
+特定的REST资源根。 +
+
+*Type:*字符串+
+*Required:*否+
+*Example:* `pathPrefix=/products/electronics`
+|===
+
+
+报告的== 数据字段
+
+您的报告可以查询一个，多个或所有可用数据字段的数据。这些字段在下表中解释。
+
+[%header,cols="30s,70a"]
+|===
+|数据字段名称 |说明
+|应用 |与传入API请求关联的客户端ID。
+|应用程序名称 |发出API请求的应用程序的名称（仅在客户端ID与请求一起传递时才可用）。
+|浏览器 |与传入API请求关联的浏览器类型。
+|城市 | API请求源自的城市（由客户端的IP地址推断）。
+|客户端IP  |发出API请求的客户端的IP地址。
+|大洲 | API请求所源自的大陆（由客户端的IP地址推断）。
+|国家 | API请求所源自的国家（由客户端的IP地址推断）。
+|硬件平台 |提出请求的客户端的硬件类型（例如Mobile，Tablet，Desktop等）。
+|消息ID  |消息ID值。
+| OS系列 |客户端操作系统类型：Mac OS X，iOS，Windows，Linux。
+|操作系统主要版本 |操作系统主要版本。
+|操作系统次要版本 |操作系统次要版本。
+|操作系统版本 |操作系统版本。
+|邮政编码 | API请求源自的邮政编码（由客户端的IP地址推断）。
+|请求结果 |指示请求是成功还是导致违反策略。
+|请求大小 |传入客户端请求的大小（以字节为单位）。
+|资源路径 |客户端请求的路径。
+|响应大小 | API响应的大小（以字节为单位）。见下面的注释。
+|响应时间 | API请求的处理时间。
+|状态码 |响应的HTTP状态码。
+|时区 | API请求发起的时区（由客户端的IP地址推断）。
+|用户代理名称 |传入客户端请求的完整用户代理字符串。
+|用户代理版本 |传入客户端请求的用户代理字符串版本。
+|动词 |与API客户端请求（GET，POST，PATCH等）关联的REST动词。
+|违反的政策名称 | API请求违反的政策名称（如果有的话）。
+|===
+
+如果存在Content-Length标题，则将响应大小设置为该值。如果Content-Length报头不存在且有效负载是字符串，则Analytics会计算字符串的长度并报告该值。如果Content-Length报头不存在且有效负载不是字符串，则Analytics会将响应大小报告为-1。例如，如果返回的输出是DataWeave流并且Content-Length标题不存在，则Analytics不会报告响应大小，因为该值不是字符串。但是，如果您的应用程序执行字符串转换，则会列出响应大小。
+
+== 另请参阅
+
+*  link:/api-manager/v/1.x/viewing-api-analytics[查看API分析]
+*  link:https://stedolan.github.io/jq/[jq命令行JSON处理器]
+
+
+
+

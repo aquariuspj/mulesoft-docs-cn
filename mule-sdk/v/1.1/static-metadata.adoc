@@ -1,0 +1,163 @@
+= 自定义静态元数据
+
+*Available since version 1.1*
+
+我们将使用静态元数据来引用编译时已知的元数据
+可以从连接器罐子中的类型获得。简单的java类型是其中的一部分
+静态元数据以及开发人员在其模型中定义的自定义POJO。该
+相关的部分是该结构是众所周知的或可以被内省的，而不依赖于其他参数。
+
+静态元数据优于动态的优点是，因为它不会改变，
+没有必要重新计算其结构。这意味着决议是
+在开发应用程序时已经完成。
+
+
+当使用简单的java类型或POJO作为返回值或参数类型时，SDK将创建
+一个合适的元素静态类型，但是当你的类型没有被定义为java对象时（例如Json Schema，XSD等）
+你确切知道你正在使用的类型的结构，你需要使用
+SDK提供的自定义静态元数据功能。
+
+==  XML和JSON类型
+
+操作可能需要参数为遵循特定结构（模式）的JSON或XML类型。
+可以使用适当的XSD或JSON模式将此信号发送给DataSense。
+
+注意：这只适用于`InputStream`和`String` java类型参数。
+
+===  JSON类型
+
+要确定JSON类型的结构，必须提供JSON模式。
+
+*  `@OutputJsonType`
+
+[source, java, linenums]
+----
+@OutputJsonType(schema = "person-schema.json")
+public Result<InputStream, RetrieveAttributes> retrievePerson() {
+  // ...
+}
+----
+
+*  `@AttributesJsonType`
+
+[source, java, linenums]
+----
+@AttributesJsonType(schema = "resolution-attributes-schema.json")
+public Result<Integer, InputStream> getSolution() {
+  // ...
+}
+----
+
+*  {@ {1}}
+
+[source, java, linenums]
+----
+public void addPerson(@InputJsonType(schema = "person-schema.json") InputStream person) {
+  // ...
+}
+----
+
+===  XML类型
+
+要确定XML的结构，您必须提供一个XSD文件和限定名称
+用于引用要加载的元素。
+
+*  `@OutputXmlType`
+
+[source, java, linenums]
+----
+@OutputXmlType(schema = "order.xsd", qname = "shiporder")
+public Result<InputStream, OrderAttributes> retrieveOrder() {
+  // ...
+}
+----
+
+*  `@AttributesXmlType`
+
+[source, java, linenums]
+----
+@AttributesXmlType(schema = "order-attributes.xsd", qname = "attributes")
+public Result<Integer, InputStream> getOrderStatistics() {
+  // ...
+}
+----
+
+*  `@InputXmlType`
+
+[source, java, linenums]
+----
+public void createOrder(@InputXmlType(schema = "order.xsd", qname = "shiporder") InputStream order) {
+  // ...
+}
+----
+
+== 静态类型解析器
+
+解决输入参数，输出有效负载或输出属性的自定义静态元数据的方式
+是非常相似的，并在下面的例子中显示：
+
+在每个示例中，解析器扩展了实现`StaticResolver`的抽象类。
+`getStaticMetadata`是为了解析元数据必须实施的方法。
+
+===  InputStaticTypeResolver
+
+对操作的输入参数使用自定义静态元数据解析
+必须使用`@TypeResolver`注释该参数，并且注释的值必须为
+一个`InputStaticTypeResolver`。
+
+这是`InputStaticTypeResolver`的示例，它必须实现方法`getStaticMetadata`：
+
+[source, java, linenums]
+----
+public class JsonPersonInputStaticTypeResolver extends InputStaticTypeResolver {
+  @Override
+  public MetadataType getStaticMetadata() {
+    ObjectTypeBuilder object = BaseTypeBuilder.create(MetadataFormat.JSON).objectType();
+    object.id("json-object");
+    object.addField().key("name").value().stringType();
+    object.addField().key("last-name").value().stringType();
+    return object.build();
+  }
+}
+----
+
+===  OutputStaticTypeResolver
+
+在操作的输出有效负载上使用自定义静态元数据解析
+必须用`@OutputResolver`注释该方法，并且注释的输出值必须为
+一个`OutputStaticTypeResolver`。
+
+这是`OutputStaticTypeResolver`的示例，它必须实现方法`getStaticMetadata`：
+
+[source, java, linenums]
+----
+public class CsvOutputStaticTypeResolver extends OutputStaticTypeResolver {
+  @Override
+  public MetadataType getStaticMetadata() {
+    return BaseTypeBuilder.create(MetadataFormat.CSV).objectType().id("csv-object").build();
+  }
+}
+----
+
+===  AttributesStaticTypeResolver
+
+在操作的输出属性上使用自定义静态元数据解析
+必须使用`@OutputResolver`对方法进行注释，并且注释的属性值必须为
+一个`OutputStaticTypeResolver`。
+
+这是`AttributesStaticTypeResolver`的示例，它必须实现方法`getStaticMetadata`：
+
+[source, java, linenums]
+----
+public class CsvAttributesStaticTypeResolver extends AttributesStaticTypeResolver {
+
+  @Override
+  public MetadataType getStaticMetadata() {
+    ObjectTypeBuilder object = BaseTypeBuilder.create(MetadataFormat.CSV).objectType();
+    object.addField().key("location").value().stringType();
+    object.addField().key("size").value().numberType();
+    return object.build();
+  }
+}
+----
+

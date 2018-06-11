@@ -1,0 +1,887 @@
+= 开发DevKit连接器测试
+
+尽管DevKit不强制进行写入测试，但您应该为连接器开发单元和功能测试，作为开发过程的一部分。如果没有测试套件，连接器不应被视为生产就绪。
+
+虽然测试策略可能会根据您的特定需求而大不相同，但本文档介绍了Mule和DevKit可用于支持测试工作的基础知识。
+
+== 先决条件
+
+本文件假定您：
+
+* 按 link:/anypoint-connector-devkit/v/3.5/creating-an-anypoint-connector-project[创建Anypoint连接器项目]所述安装了Anypoint Connector DevKit插件
+* 熟悉Anypoint Studio
+* 熟悉用于Java的Maven构建管理器
+* 准备为新连接器准备测试套件
+* 熟悉jUnit  - 回归和烟雾测试脚手架调用jUnit
+
+要测试的== 个区域
+
+将这些测试合并到您的测试套件中：
+
+.  *Input data validation:*
+* 如果您的连接器接受来自其他应用程序的用户参数或参数，请对输入运行一致性检查。云服务采取的参数可以是可选的，而其他参数必须遵守特定的规则。
+* 实施单元测试，为每个连接器的方法分配有效或无效的输入，并检查输入验证是否相应响应。
+.  *API Interaction*：
+* 如果您的连接器通过Internet与远程服务进行通信（通常是通过重试或抛出明确异常），则处理连接或通信错误。
+无论您选择哪种错误处理策略，{0}}都会测试错误处理。
+* 模拟测试Web服务。
+* 将连接器指向您的测试端点而不是生产目标，以便您可以更轻松地重现错误情况，如超时或连接丢失。
+
+.  *Mule ESB Integration:*
+
+* 覆盖连接器测试套件中的所有操作 - 至少测试一次操作和参数。
+* 为每项操作传入并接收所有合理的输入和输出。
+* 特别注意覆盖传入和接收来自XML操作的复杂数据类型，因为这些可能会非常棘手。
+* 测试XML中默认和可选参数值的使用，以确保它们的行为与预期相符。
+* 您期望连接器引发异常的测试案例。
+.  *Studio Integration:*
+* 在Studio中测试连接器的外观和可用性。
+* 在属性对话框中包含行为和提示，从Javadoc注释中生成工具提示等。测试此方法的唯一方法是在Studio中手动使用连接器。
+
+== 生成测试脚手架
+
+测试脚手架是在使用Anypoint Studio生成测试之后出现在src / test / java下的一组Java文件。 Studio生成这些文件：
+
+测试运行程序 - 运行测试用例集：
+
+* 回归测试套件文件 - 您可以使用此代码通过将连接器的以前状态与当前状态进行比较来发现新的错误。如果这是第一次运行，它会发现新的错误。
+* 烟雾测试套件文件 - 显示诸如"does this feature run?"之类的简单问题，您可以使用它们确保连接器的基本行为按预期运行。
+
+回归和理智测试等级：
+
+* 测试用例自动化Java文件 - 脚手架测试连接器中的每种方法。
+* 可选测试数据文件 - 为连接器提供测试数据。
+
+创建测试案例脚手架：
+
+. 在包资源管理器中右键单击您的项目，然后点击*Anypoint Connector*> *Generate Tests*：
++
+image:GenerateTests.png[GenerateTests]
+
+. 单击要为其创建测试脚手架的方法，或者单击*Select All*。该向导显示应用程序中方法的选项，例如，此应用程序包含许多方法：+
+image:TestScaffoldingGeneration.png[TestScaffoldingGeneration] +
+
+. 点击*Generate Test Case Scaffolding*创建脚手架文件。
+. 如果您希望Studio创建可用于测试连接器的测试数据，请单击其他选项：
++
+*  *Generate Functional Test Data Files*
+*  *Generate Interop Test Data Files*
+. 点击*Finish*。 Studio创建出现在src / test / java下的Package Explorer中的文件。
+. 将您的代码添加到脚手架测试中。要运行测试，请参阅<<Running Generated Tests>>。
+
+=== 示例脚手架文件
+
+测试例子：
+
+[source, java, linenums]
+----
+package org.mule.modules.automation.testcases;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
+public class EnterTimeOffTestCases
+    extends myTestParent
+{
+ 
+    @Before
+    public void setup() {
+        //TODO: Add setup required to run test or remove method
+        initializeTestRunMessage("enterTimeOffTestData");
+    }
+    @After
+    public void tearDown() {
+        //TODO: Add code to reset sandbox state to the one before the test was run or remove
+    }
+    @Category({
+        RegressionTests.class,
+        SmokeTests.class
+    })
+    @Test
+    public void testEnterTimeOff()
+        throws Exception
+    {
+        Object result = runFlowAndGetPayload("enter-time-off");
+        throw new RuntimeException("NOT IMPLEMENTED METHOD");
+    }
+}
+----
+
+您可以用您的测试代码替换"TODO"语句。
+
+== 测试程序
+
+Anypoint Connector DevKit的测试程序提供了这些功能。
+
+=== 目标
+
+集成到连接器的* 自动化测试套件。
+* 运行测试时使用真正的沙箱和Mule服务器。
+* 自动化测试套件维护应该尽可能少。
+* 过时的自动化套件不会影响开发。
+
+=== 测试创建标准
+
+* 为每个测试启动并完成一个Mule实例，确保与套件的其余部分隔离。
+*  setUp（）方法在运行实际测试之前创建测试夹具。实体是专门为测试操作而创建的。
+* 用作测试输入的测试数据值与测试保持分开，如Spring文件中的bean。
+* 测试应足够灵活以支持所有可能的实体及其数量（如果适用），并且只应在操作上发生业务逻辑更改或修改操作本身时更新（例如，签名更改）。
+* 每个操作的骡子流量。 Java代码将操作粘合到更复杂的用例中。
+* 测试应该自行清理。运行测试之前，沙箱处于该状态。
+* 测试应该只测试一次。
+
+=== 覆盖类别
+
+*  Smoke套件确保回归运行符合测试前提条件。
+* 回归套件为每个操作至少包含一个测试用例。这种测试的输入取自Mule Message，因此它们被完全参数化，并且可以从AutomationSpringBeans.xml文件修改它们的数据。
+
+=== 测试创建标准 - 覆盖类别
+
+====  mule连接器测试框架
+
+===== 目标
+
+通过不同的连接器业务模型实现一致的测试套件实现。* 
+* 增加代码的可重用性。
+* 通过封装复杂性改进了测试用例的可读性。
+* 降低维护成本。
+* 通过将测试套件实现与Mule类的变化分离来提高稳健性。
+
+===== 概念
+
+用例构建为一系列连接器操作调用。在运行用例之前，TestRunMessage被初始化并加载用例所需的数据。一旦操作被调用，TestRunMessage的内容就会变成一个MuleEvent，然后被操作使用。然后将断言应用于测试操作的有效负载。
+
+=====  Maven依赖关系
+
+mule-devkit-parent包含框架版本属性（如果需要，可以在连接器pom上覆盖它）及其依赖节点。
+
+[source, xml, linenums]
+----
+   ...
+<properties>
+   ...
+   <connector.test.version>2.0.6</connector.test.version>
+</properties>
+<!-- Mule Connector Test Framework -->
+<dependency>
+   <groupId>org.mule.modules</groupId>
+   <artifactId>mule-connector-test</artifactId>
+   <version>${connector.test.version}</version>
+   <scope>test</scope>
+</dependency>
+   ...
+----
+
+=== 框架和测试套件组件
+
+====  ConnectorTestCase类
+
+ConnectorTestCase类从*org.mule.tck.junit4.FunctionalTestCase*继承，并将`FunctionalTestCase`方法封装在便于自动化连接器操作用例的方法中，并在构建测试套件时实施统一的方法。 ConnectorTestCase由_ <Connector> TestParent.java_构成，并且此类成为所有测试用例的父级测试类。
+
+====  ConnectorTestUtils类
+
+提供了使用NullPayload，初始化随机测试数据以及对Spring文件进行日期操作的方法。还增强了为更加准确的调试显示的异常消息。
+
+====  <Connector> TestParent类
+
+扩展ConnectorTestCase类，可用于覆盖默认框架配置设置，添加OAuth功能，实施帮助程序方法或存储全局设置，例如测试运行超时规则。
+
+该服务的常见用例可以定义为这个类的方法，以便使它们可供测试套件的其余部分使用。这将使测试更具可读性并与连接器的特定域相关。
+
+所有TestCases类都必须从此TestParent扩展。
+
+====  <OperationName> TestCases类
+
+*Note*：不要由Maven自动运行自动化测试，因为它们需要凭据。
+
+连接器上的每个操作都有其包含其相关测试用例的_ <OperationName> TestCases.java_类。在@Before，@ Test，@After循环中调用的操作序列构成一个操作用例。
+
+[source, code, linenums]
+----
+...
+public class <OperationName>TestCases extends <ConnectorName>TestParent {
+   // Private attributes used as auxiliary fields for storing test run values
+   private Integer leadRecordId;
+            
+   // Create the test fixture
+   @Before
+   public void setUp() throws Exception {
+     ...  
+   }
+            
+   // Return the sandbox to its original state
+   @After
+   public void tearDown() throws Exception {
+      ...             
+   }
+            
+   // Invoke the flow of operations under test and asserts on its payload
+   @Category({SmokeTests.class, RegressionTests.class})
+   @Test
+   public void test<operationName>() {
+      try {
+         ...          
+      } catch (Exception e) {
+         fail(ConnectorTestUtils.getStackTrace(e));
+      }
+   }
+}
+...
+----
+
+=== 测试资源
+
+*  *AutomationSpringBeans.xml*  - 包含测试运行所需的贴图和POJO。
+*  *automation-test-flows.xml*  - 将在测试中调用的流（每个包含连接器操作）的集合。
+*  *automation-credentials.properties*  - 存储连接器凭证和经过验证的用户相关信息。
+
+=== 测试跑步者
+
+不同组的测试可以在跑步者的帮助下运行。这就是测试用例分为两类的原因：
+
+*  *Smoke*：测试验证在@Before和@After方法上使用的操作，从而确保运行测试套件是有意义的。
+*  *Regression*：从Message传递哪些操作属性的肯定测试。
+
+=== 套件实施
+
+==== 测试开发环境设置
+
+在构建连接器之后，将_target / generated-sources / mule_添加到项目构建路径中，可能需要根据连接器（如_target / generated-sources / cxf_）将其他生成的源添加到构建路径。
+
+另外，如果连接器是*Standard*，请记住将muleLicenseKey.lic添加到src / test / resources文件夹，并在提交更改之前将其删除。
+
+==== 包和文件
+
+*  _ org.mule.modules。<connector-project>。automation_包含<Connector> TestParent和SmokeTests和RegressionTests类别界面。
+*  _ org.mule.modules。<connector-project>。automation.testrunners_包含跑步者（RegressionTestSuite，SmokeTestSuite）。
+*  _ org.mule.modules。<connector-project>。automation.testcases_仅包含功能测试用例。
+*  _ <connector-project> / src / test / resources_包含自动化流程，凭证和Spring bean文件：
+**  AutomationSpringBeans.xml
+** 自动化测试flows.xml
+**  automation-credentials.properties
+
+==== 自动化流程
+
+对于每个操作，自动化测试流程中最多放置两个流程。一个用于强制性属性（这将测试没有强制性参数在连接器上未实现的情况），并且如果适用，则使用所有属性（强制性和可选性）构建更一般的操作案例。
+
+=====  automation-test-flows.xml和操作属性
+
+在连接器上的每个操作至少在automation-test-flows文件上有相应的流程。流程及其相关操作应被视为可从多个测试中调用的资源。流名应该与它们包含的操作相同，或者至少以它们包含的操作的名称开头，例如：
+
+[source, xml, linenums]
+----
+<flow name="<operation-name>" doc:name="<operation-name>">
+   <marketo:<operation-name> config-ref="<ConfigName>" 
+     doc:name="<operation-name>"  ... />
+</flow>
+<flow name="<operation-name>-<particular-case>" doc:name="<operation-name>">
+   <marketo:<operation-name> particularCaseAttribute="#[flowVars.attributeName]" 
+     config-ref="<ConfigName>" doc:name="<operation-name>"  ... />
+</flow>
+----
+
+操作属性将以这种方式填充：
+
+`attributeName="#[flowVars.attributeName]"`
+
+或者这个其他情况：
+
+`<taleo:<entityName> ref="#[flowVars.<entityName>Ref]"/>`
+
+在通过引用或通过使用任意点手动创建它的情况下，通过有效载荷，通过引用或者通过手动创建它来选择传递非原始类型（例如，POJO，`List<POJOs>`，`Map<POJOs>`等） Studio应该选择从有效负载或通过引用获取值。
+
+[source, xml, linenums]
+----
+<!-- mobjects value passed by as reference -->  
+<flow name="sync-mobjects" doc:name="sync-mobjects">
+   <marketo:sync-mobjects config-ref="Marketo"  doc:name="Sync MObjects"
+     operation="#[flowVars.operation]" type="#[flowVars.type]">
+   <marketo:mobjects ref="#[flowVars.mobjectsRef]"/>
+   </marketo:sync-mobjects>
+</flow>
+----
+
+要么：
+
+[source, xml, linenums]
+----
+<!-- mobject value taken from payload -->     
+<flow name="sync-mobjects" doc:name="sync-mobjects">
+   <marketo:sync-mobjects config-ref="Marketo"  doc:name="Sync MObjects"
+     operation="#[flowVars.operation]" type="#[flowVars.type]"/>
+</flow>
+----
+
+==== 保持更新的标题
+
+将连接器版本更改为*current*以避免配置xml被破坏，例如从http://www.hulesoft.org/schema/mule/taleo/1.0-SNAPSHOT/mule-taleo.xsd_到http://www.hulesoft.org/schema/mule/taleo/current/mule-taleo.xsd_ 。
+
+==== 凭据
+
+应该在测试开发期间从automation-credential.properties文件中挑选连接器凭证，或者如果要从Eclipse内运行测试。使用占位符填充配置元素字段：`configRefAttribute="${serviceName.configRefAttribute}"`
+
+例如：
+
+[source, xml, linenums]
+----
+<marketo:config name="Marketo" userId="${marketo.userId}"
+ key="${marketo.key}" endpointUrl="${marketo.endpointUrl}" doc:name="Marketo">
+   <marketo:connection-pooling-profile initialisationPolicy="INITIALISE_ONE"
+     exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+</marketo:config>
+----
+
+创建一个引用automation-credentials.properties的属性占位符，或将`xmlns:context="http://www.springframework.org/schema/context"`作为Mule节点的一个属性添加为其子节点之一：
+
+[source, xml]
+----
+<context:property-placeholder location="automation-credentials.properties" />
+----
+
+在提交之前，将位置值更改为以下内容以通过传递存储automation-credentials.properties的URL从控制台或构建计划运行套件：
+
+[source, xml]
+----
+<context:property-placeholder location="${<CONNECTOR_NAME>_CREDENTIALS}" />
+----
+
+==== 使用Spring Bean测试数据
+
+AutomationSpringBeans存储每个测试运行所需的测试数据。
+
+最常见的情况是拥有包含特定测试的所有基元值或bean引用的*<testMethod>TestData*映射。对于更复杂的情况，除主要"TestData"地图外，还可能需要其他用于测试的bean。
+
+方法是每个测试都有一套专门的测试值，因此是惯例。在不同的测试结果中重复使用相同的bean，如果特定测试需要某些特定的数据设置，则更改可能最终导致其他人出现意外的行为。
+
+按照惯例，与操作有关的所有bean ID都应以操作名称开头，后跟bean类。这避免了名称冲突，并明确了使用这个bean的操作。
+
+[source, xml, linenums]
+----
+<!--  get-lead -->
+<bean id="testGetLeadLeadKey" class="com.marketo.mktows.LeadKey">
+   <property name="keyType">
+      <util:constant static-field="com.marketo.mktows.LeadKeyRef.IDNUM" />
+   </property>
+</bean>
+         
+<util:map id="testGetLeadLeadRecord" scope="prototype">
+   <entry key="City" value="city" />
+   <entry key="Company" value="company_title" />
+   <entry key="Country" value="country" />
+   <entry key="FirstName" value="first_name" />
+   <entry key="LastName" value="last_name" />
+   <entry key="MobilePhone" value="cell_phone" />
+   <entry key="Phone" value="work_phone" />
+   <entry key="State" value="state" />
+   <entry key="Title" value="job_title" />
+</util:map>
+ 
+<!--  testGetLead method TestData map -->  
+<util:map id="testGetLeadTestData" scope="prototype">
+   <entry key="type" value="LeadRecord" />
+</util:map>
+----
+
+* 在春季，使用_scope = "prototype" _（如果适用）确保以前测试（ID等）的值在以下测试中不会重复使用。
+可以使用*  "TestData"地图来存储期望的结果，以防与期望值相关的数据被传递给它们。
+
+[source, xml, linenums]
+----
+<util:map id="createBatchAttendeeListTestData" map-class="java.util.HashMap"
+  key-type="java.lang.String" value-type="java.lang.Object" scope="prototype">
+  <entry key="payloadContent" value-ref="attendeeBatch"/>
+  <entry key="batchType" value="CREATE"/>
+  <entry key="expectedRecordsSucceeded" value="2"/>
+</util:map>
+@Test
+public void testCreateBatchAttendeeList() {
+   ...
+  assertEquals(payload.getRecordsSucceeded(),
+    getTestRunMessageValue("expectedRecordsSucceeded"));
+}
+----
+
+==== 从数据派生的相关案例
+
+* 非原始值的属性类型或实体成员（例如，具有日期字段或复杂类型的实体）。
+* 查询中的通配符和特殊字符。
+* 输出实体，例如包含不同类型记录的列表。
+* 如果客户端操作不仅仅是被打包，而是通过更复杂的测试数据设置来测试连接器自定义代码。这方面的一个例子是接收数据表示对象并返回具体实例的方法（_Hint：检查开发人员的单元测试_）。
+
+[source]
+----
+ConcreteInstance fromMap(Map<String,Object> mapRepresentation)
+----
+
+具有唯一值的==== 字段
+
+生成包含唯一值的实体字段，以使自动运行更加健壮。例如：
+
+[source, xml, linenums]
+----
+<bean id="randomEmailAddress" 
+  class="org.mule.modules.tests.ConnectorTestUtils"
+  factory-method="generateRandomEmailAddress" 
+  scope="prototype" />
+----
+
+==== 日期生成常见情况
+
+[source, xml, linenums]
+----
+<bean id="xmlGregorianCalendarDateInThePast"
+ class="org.mule.modules.tests.ConnectorTestUtils"
+ factory-method="generateXMLGregorianCalendarDateForYesterday"
+ scope="prototype" />
+----
+
+==== 用户相关数据
+
+将automation-credentials.properties文件与AutomationSpringBeans.xml一起使用以测试与用户相关的操作。
+
+=====  automation-credentials.properties
+
+[source, code, linenums]
+----
+taleo.username=username
+taleo.password=password
+taleo.companyCode=companyCode
+taleo.userId=42
+----
+
+=====  AutomationSpringBeans
+
+[source, xml, linenums]
+----
+<bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+  <property name="location">
+    value>automation-credentials.properties</value>
+  </property>
+</bean>
+<!-- search-user  -->
+<util:map id="testSearchUserTestData" map-class="java.util.HashMap"
+  key-type="java.lang.String" value-type="java.lang.Object" scope="prototype">
+  <entry key="expectedUserId" value="${taleo.userId}" />
+  <entry key="searchParams" value-ref="searchUserSearchParams" />
+</util:map>
+----
+
+=== 测试方法
+
+==== 测试方法的命名约定
+
+使用单个流并将属性值传递为null。不需要具有不同属性集的两个流。
+
+基本测试用例名称可以扩展为涵盖特定情况，例如：
+
+`testMandatoryAttributes_UPDATEbatchType`
+
+====  testMandatoryAttributes _ <particularCase>
+
+如果适用，每个类应声明一个`nullifyOptionalAttributes()`方法：
+
+[source, code, linenums]
+----
+private void nullifyOptionalAttributes() {
+            upsertOnTestRunMessage("parentCode", null);
+            upsertOnTestRunMessage("filter", null);
+    }
+    @Category({RegressionTests.class})
+    @Test
+    public void testOnlyMandatory() {
+        nullifyOptionalAttributes();
+        ListItems listItems = null;
+        try {
+            listItems = runFlowAndGetPayload("get-list-items");
+        } catch (Exception e) {
+            fail(ConnectorTestUtils.getStackTrace(e));
+        }
+        assertTrue(listItems.getListItem().size() > 0);  
+        Iterator<ListItem> iterator = listItems.getListItem().iterator();
+        while (iterator.hasNext()) {
+            ListItem listItem = iterator.next();
+            assertTrue(listItem.getItemsLink().contains(listID));
+        }    
+    }
+----
+
+在初始化TestRunMessage之后以及在测试调用下的操作之前调用此方法。
+
+====  testOptionalAttributes _ <particularCase>
+
+大多数情况下，通常将筛选应用于响应测试。
+
+使用`&#x0023;{null}`表达式来处理AutomationSpringBeans文件中的不同情况。
+
+[source, xml, linenums]
+----
+<util:map id="getListItemsTestData" map-class="java.util.HashMap"
+    key-type="java.lang.String" value-type="java.lang.Object" scope="prototype">
+    <entry key="parentCode" value="#{null}"/>
+    <entry key="filter" value="#{null}"/>
+ </util:map>
+----
+
+=== 否定案例
+
+==== 良好的测试用例质量
+
+* 灵活性：可以从Spring文件执行所有数据设置更改（例如，实体类型更改），而无需修改测试。
+* 只有运行时生成的值应该在测试中处理，其他所有内容都应该在AutomationSpringBeans文件中声明。
+
+例：
+
+[source, code, linenums]
+----
+DeleteRecord deleteUserRecordRequest = new DeleteRecord();
+deleteUserRecordRequest.setSysId(userSysId);
+upsertPayloadContentOnTestRunMessage(deleteUserRecordRequest);
+runFlowAndGetPayload("delete-user-record");
+----
+
+* 可扩展性：测试用例可以用于任何数量的实体，也可以将验证应用于任何类型的输出。
+在调用被测试的操作之前，*  @Test不应该从任何准备开始。这应该属于@Before方法。理想情况下，测试应调用被测试操作的流程，声明结果，并在必要时设置@After方法所需的数据。
+* 断言应用于响应的值，避免使用assertNotNull断言。
+
+如果消息处理器返回一个可以包含空字段值的对象，则可以在该字段上执行assertNotNull，然后执行该功能断言。这可避免将错误记录为错误。
+
+如果消息处理器的返回类型为void，并且未使用有效负载将数据传递给它，则可以使用`org.mule.modules.tests.ConnectorTestUtils.assertNullPayload(Object)`断言。
+
+[source, code, linenums]
+----
+GetResponse getResponse = runFlowAndGetPayload("get-user");
+assertEquals(userSysId, getResponse.getSysId());
+assertEquals(expectedName, getResponse.getName());
+----
+
+* 如果被测试的操作返回void，则可以对其他操作进行辅助调用，以验证更改是否生效。
+{0}}作为最后的手段，通过测试用例对无效操作进行分组，以验证其使用不会返回异常。
+
+==== 测试夹具和撕下
+
+请求测试数据并在@Before方法上执行用例准备逻辑。如果可能的话，@ Test方法应该只包含一个流程调用（与测试中的操作相关的流程调用）和其有效负载上的断言。在@After方法上，应该还原沙箱上的更改。
+
+该框架执行：
+
+* 被测试的操作所使用的数据必须来自TestRunMessage。这意味着TestRunMessage必须始终在调用包含该操作的流之前的某个点进行初始化。
+* 可以在不改变TestRunMessage的情况下调用其他流程，方法是使用：
+
+[source, code, linenums]
+----
+runFlowAndGetMessage(String flowName, String beanId)
+runFlowAndGetPayload(String flowName, String beanId)
+----
+
+可以将* 运行时值添加到TestRunMessage中，以准备被测试操作的数据。
+
+[source, java, linenums]
+----
+@Before
+  public void setUp() throws Exception {        
+     HashMap<String, Object> 
+     leadRecord = getBeanFromContext("listOperationMObject");
+     initializeTestRunMessage(leadRecord);
+     // allows updating leadRecord with values from operation responses
+     ...
+  }
+----
+
+*  "Operation under test"测试数据需要由setUp响应组成。
+
+==== 错误和失败
+
+Fixture和tearDown抛出一个异常，以便将其逻辑或调用列表上的意外错误作为测试错误而不是失败。
+
+[source, java, linenums]
+----
+@Before
+ public void setUp() throws Exception {
+    // setUp logic
+ }
+----
+
+[source, java, linenums]
+----
+@Test
+public void setUp() throws Exception {
+  // Setup logic
+}
+----
+
+如果在@Test上引发异常，则测试列为失败：
+
+[source, java, linenums]
+----
+@Category({SmokeTests.class, RegressionTests.class})
+@Test
+public void test<operationName>() {
+      try {
+         ...          
+      } catch (Exception e) {
+         fail(ConnectorTestUtils.getStackTrace(e));
+      }
+}  
+----
+
+=== 测试用例分类
+
+测试使用@Category注释在测试方法签名之上进行分类。
+
+[source, java, linenums]
+----
+@Category({SmokeTests.class, RegressionTests.class})
+@Test
+----
+
+在@Before或@After上使用的操作测试将被标记为SmokeTests。
+
+==== 测试跑步者
+
+一个用于每个测试用例类型（SmokeTest，RegressionTest）。放置在org.mule.modules中。<connector>。自动化。
+
+[source, java, linenums]
+----
+@RunWith(Categories.class)
+@IncludeCategory(RegressionTests.class)
+@SuiteClasses({
+      // All <operation>TestCases classes within the automation.testcases package
+      AppendTestCases.class,
+      DeleteDirectoryTestCases.class,
+      ...
+   })
+public class RegressionTestSuite {
+                        
+}
+----
+
+==== 测试入站端点
+
+目前，入站端点测试必须通过在具有我们要测试的入站端点的流中添加 link:/mule-user-guide/v/3.5/vm-transport-reference[VM端点]来完成。虚拟机端点基本上是一个内存中队列（因此​​它的名称为虚拟机，因为它们由JVM处理）可以通过URL进行寻址，这些URL存储消息直到它们被处理。通过将入站端点接收到的消息存储在VM队列中，我们可以在测试用例中检索它们并对它们进行断言。
+
+例如，如果我们想要测试SQS的接收消息操作，我们需要两个流程：实际发送消息的流程，以及接收消息入站端点的另一个流程，如下所示：
+
+[source, xml, linenums]
+----
+<flow name="send-message" doc:name="SendMessage">
+     <sqs:send-message config-ref="Sqs"
+      message="#[flowVars.message]"
+      queueUrl="#[flowVars.queueUrl]"
+      />
+</flow>
+     
+<flow name="receive-message" doc:name="receive-message">
+<sqs:receive-messages config-ref="Sqs" queueUrl="#[flowVars.queueUrl]"/>
+...
+</flow> 
+----
+
+要实际获取要在我们的测试中使用的消息，请将VM端点添加到流程中：
+
+[source, xml, linenums]
+----
+<flow name="receive-message" doc:name="receive-message">
+      <sqs:receive-messages config-ref="Sqs"
+        queueUrl="#[flowVars.queueUrl]"/>
+      <vm:outbound-endpoint path="receive"/>
+</flow>
+----
+
+要使用VM端点，请将其作为Maven依赖项添加到您的项目中：
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-vm</artifactId>
+  <version>${mule.version}</version>
+</dependency> 
+----
+
+另外，更新XML模式和名称空间。有关详细信息，请参阅 link:/mule-user-guide/v/3.5/vm-transport-reference[VM端点文档]。
+
+在你的测试用例中，使用runFlowAndWaitForResponseVM方法。这里要注意的重要一点是队列的路径。这些流程的简单测试是：
+
+[source, java, linenums]
+----
+public void testReceiveMessages() throws Exception {
+    String message = "Hello world";
+    upsertOnTestRunMessage("message", message);
+    String response = runFlowAndWaitForResponseVM("send-message", "receive", 500L);
+    assertEquals(message, response);
+} 
+----
+
+runFlowAndWaitForResponseVM的参数如下所示：
+
+* 要运行的流程
+* 要等待消息的VM队列
+* 在超时和抛出异常之前等待多长时间（以毫秒为单位）。
+
+这个信息也可以在Javadoc中看到。
+
+这是实现此功能的初步方法，因为理想情况下，应该不需要手动将端点添加到流以便测试它们。
+
+====  OAuth身份验证设置
+
+必须手动生成accessToken，然后将凭证传递给服务以运行测试套件。
+
+以Facebook为例：
+
+. 手动为每个Facebook的https://developers.facebook.com/tools/explorer[图形API资源管理器]获取访问令牌。
+. 将accessToken属性添加到automation-credentials。
++
+[source, code, linenums]
+----
+facebook.username=<usernameValue>
+facebook.appId=<appIdValue>
+facebook.appSecret=<appSecretValue>
+facebook.domain=<domainValue>
+facebook.localPort=<localPortValue>
+facebook.remotePort=<remotePortValue>
+facebook.path=<pathValue>
+facebook.accessToken=<generatedAccessToken> 
+----
++
+. 将FacebookConnectorOAuthState bean添加到AutomationSpringBeans。
++
+[source, xml, linenums]
+----
+<bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+      <property name="location">
+            <value>automation-credentials.properties</value>
+      </property>
+</bean>
+<bean id="connectorOAuthState" class="org.mule.module.facebook.oauth.FacebookConnectorOAuthState" >
+       <property name="accessToken" value="${facebook.accessToken}" />
+</bean>
+----
++
+. 在*<connectorName>TestParent*中，在初始化muleContext之后，将FacebookConnectorOAuthState实例添加到对象存储：
++
+[source, java, linenums]
+----
+@Before
+    public void init() throws ObjectStoreException {          
+      ObjectStore objectStore = muleContext.getRegistry().lookupObject(MuleProperties.DEFAULT_USER_OBJECT_STORE_NAME);
+      objectStore.store("accessTokenId",
+        (FacebookConnectorOAuthState) context.getBean("connectorOAuthState"));
+    }
+----
++
+. 将`accessTokenId="accessTokenId"`添加到自动化测试流程中的操作。该值由ObjectStore解决。
++
+[source, xml, linenums]
+----
+<facebook:config-with-oauth name="Facebook"
+  appId="${facebook.appId}"
+  appSecret="${facebook.appSecret}"
+  doc:name="Facebook">
+<facebook:oauth-callback-config domain="${facebook.domain}"
+  localPort="${facebook.localPort}"
+  remotePort="${facebook.remotePort}"
+  path="${facebook.path}"/>
+</facebook:config-with-oauth>
+<flow name="get-user" doc:name="get-user">
+  <facebook:get-user config-ref="Facebook"
+    user="#[flowVars.username]"
+    accessTokenId="accessTokenId"
+    doc:name="Facebook" />
+</flow> 
+----
+
+=== 运行套件
+
+从控制台：
+
+[source, code, linenums]
+----
+export CO_CREDENTIALS=http://<ip>/automation/co/automation-credentials.mvnproperties
+mvn -Dtest=SmokeTestSuite test
+mvn -Dtest=GetDailyTrendsTestCases#testGetDailyTrendsParametrized test 
+----
+
+要么：
+
+[source, code, linenums]
+----
+mvn -Dtest=SmokeTestSuite -Dmule.test.timeoutSecs=180 -DCO=http://<ip>/automation/co/automation-credentials.properties test 
+----
+
+=== 调试测试
+
+==== 设置测试超时
+
+无论是在<ConnectorName> TestParent：
+
+[source, code, linenums]
+----
+// Sets global timeout
+    @Rule
+    public Timeout globalTimeout = new Timeout(300000);
+----
+
+或者，如果在首选项> Java>已安装的JRE中使用Eclipse，请编辑JRE并将 -  `Dmule.test.timeoutSecs=300`添加到默认的VM参数。
+
+==== 在CXF中查看入站和出站消息
+
+将以下文件放入/ <connector-project> / src / test / resources _：_
+
+=====  log4j.properties
+
+[source, code, linenums]
+----
+# Default properties to initialise log4j
+log4j.rootLogger=INFO, A1
+log4j.appender.A1=org.apache.log4j.ConsoleAppender
+log4j.appender.A1.layout=org.apache.log4j.PatternLayout
+log4j.appender.A1.layout.ConversionPattern=[%d{MM-dd HH:mm:ss}] %-5p %c{1} [%t]: %m%n
+# Settings for specific packages
+#log4j.logger.org.mule=DEBUG
+# CXF is used heavily by Mule for web services
+log4j.logger.org.apache.cxf=DEBUG
+#log4j.logger.org.apache.jcp=DEBUG
+#log4j.logger.org.apache.ws.security=DEBUG
+log4j.logger.org.apache.cxf.interceptor.LoggingInInterceptor=DEBUG, console
+log4j.logger.org.apache.cxf.interceptor.LoggingOutInterceptor=DEBUG, console 
+----
+
+=====  cxf.xml
+
+[source, xml, linenums]
+----
+<beans xmlns="http://www.springframework.org/schema/beans"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:cxf="http://cxf.apache.org/core"
+      xsi:schemaLocation="
+http://www.springframework.org/schema/beans
+http://www.springframework.org/schema/beans/spring-beans.xsd
+http://cxf.apache.org/core http://cxf.apache.org/schemas/core.xsd">
+   <cxf:bus>
+      <cxf:features>
+         <cxf:logging/>
+      </cxf:features>
+   </cxf:bus>
+</beans> 
+----
+
+== 运行生成的测试
+
+使用_Project_> *Anypoint Connector*> *Generate Tests*创建测试并使用特定于您的连接器的代码填充测试脚手架后，可以使用_Project_> *Anypoint Connector*> *Run Interop Tests* ：
+
+image:RunInteropTests.png[RunInteropTests]
+
+*  **Basic **  - 更改前的TestData文件
+*  *Override*  - 更改后的TestData文件
+* 测试运行：+
+**  *Connectivity*  - 测试连接器的连接问题
+**  *Data Mapper*  - 测试DataMapper问题
+**  *Xml Generation*  - 测试XML代码
+*  *Verbose Mode*  - 包含其他信息
+
+*Note*：单击确定后，您的测试运行。一旦测试开始，你不能摆脱它们。测试完成后，结果将显示在Studio控制台中。
+
+== 下一步
+
+如果在向连接器添加操作的同时开发单个单元测试，则应该返回到开发过程。使用Maven构建您的连接器项目;如果你的任何测试失败，那么你的Maven构建过程失败。
+
+完成测试套件后，您可以为连接器 link:/anypoint-connector-devkit/v/3.5/creating-reference-documentation[完整的文档和样本]。

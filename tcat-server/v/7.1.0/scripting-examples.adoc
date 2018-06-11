@@ -1,0 +1,288 @@
+= 脚本示例
+:keywords: tcat, script, examples
+
+此页面提供了使用 link:/tcat-server/v/7.1.0/automating-tasks[脚本]的示例。
+
+== 在部署之前和之后执行自定义Shell脚本
+
+此脚本将自己注册为部署前和发布后事件的侦听器。回调方法用于调用自定义shell脚本。用本例中列出的脚本替换你自己的shell脚本。
+
+=== 前后部署事件
+
+[source,java, linenums]
+----
+package com.mulesoft.tcat
+import org.mule.galaxy.event.annotation.Async
+import org.mule.galaxy.event.annotation.BindToEvents
+import org.mule.galaxy.event.annotation.OnEvent
+import org.mule.galaxy.event.EventManager;
+import org.springframework.context.ApplicationContext;
+@BindToEvents(value=["com.mulesoft.tcat.PreServerDeploymentEvent","com.mulesoft.tcat.PostServerDeploymentEvent"])
+public class ScriptExecutor {
+    def ApplicationContext applicationContext;
+    def EventManager eventManager;
+
+    public ScriptExecutor(ApplicationContext applicationContext) {
+        this.applicationContext = applicationContext;
+    }
+
+    public void install() {
+        eventManager = applicationContext.getBean("eventManager");
+        // Remove the previous listener, if any
+        eventManager.listeners.each {
+            if (it.class.simpleName == "ScriptExecutor") {
+                eventManager.removeListener(it)
+                println "Removed previous listener"
+            }
+        }
+        // Add the event listener again
+        eventManager.addListener(this)
+    }
+
+    @Async
+    @OnEvent
+    void onEvent(com.mulesoft.tcat.PreServerDeploymentEvent e) {
+        println "/Users/karanmalhi/tmp/pre_script.sh".execute().text;
+    }
+    @Async
+    @OnEvent
+    void onEvent(com.mulesoft.tcat.PostServerDeploymentEvent e) {
+         println "/Users/karanmalhi/tmp/post_script.sh".execute().text;
+    }
+}
+new ScriptExecutor(applicationContext).install();
+----
+
+
+== 重新部署一个命名包
+
+这个简单的脚本抓取具有特定名称的包，并使用供应服务重新部署它。
+
+[source,java, linenums]
+----
+def provisioningService = applicationContext.getBean("provisioningService")
+def deployment = provisioningService.getDeploymentByName("MyPackage")
+provisioningService.redeploy(deployment.id)
+----
+
+== 在工件更新后自动重新部署
+
+如果您使用 link:/tcat-server/v/7.1.0/maven-publishing-plug-in[Maven插件]或API更新WAR，则可能需要监听更新并自动重新部署与其关联的所有软件包。以下脚本安装一个事件侦听器，该侦听器侦听项目`artifact`属性的更新，该属性在WAR文件数据发生更改时发生更改。发生此事件时，脚本将搜索具有此特定工件的任何部署软件包并重新部署它们。
+
+[source,java, linenums]
+----
+import com.mulesoft.tcat.DeploymentService;
+import com.mulesoft.tcat.DeploymentAction.Action;
+import org.mule.galaxy.Item;
+import org.mule.galaxy.Registry;
+import org.mule.galaxy.event.EventManager;
+import org.mule.galaxy.event.PropertyChangedEvent;
+import org.mule.galaxy.event.annotation.Async;
+import org.mule.galaxy.event.annotation.BindToEvent;
+import org.mule.galaxy.event.annotation.OnEvent;
+ 
+import org.springframework.context.ApplicationContext;
+ 
+@BindToEvent("PropertyChanged")
+public class AutomaticRedeployer {
+    def Registry registry;
+    def DeploymentService deploymentService;
+    def EventManager eventManager;
+    def ApplicationContext applicationContext;
+ 
+    public AutomaticRedeployer(ApplicationContext applicationContext) {
+        this.applicationContext = applicationContext;
+    }
+ 
+    public void install() {
+        registry = applicationContext.getBean("registry");
+        eventManager = applicationContext.getBean("eventManager");
+        deploymentService = applicationContext.getBean("deploymentService");
+ 
+        // remove the previous listener, if any
+        eventManager.listeners.each {
+            if (it.class.simpleName == "AutomaticRedeployer") {
+                eventManager.removeListener(it)
+                println "Removed previous listener"
+            }
+        }
+        // add the event listener again
+        eventManager.addListener(this)
+    }
+ 
+    @Async
+    @OnEvent
+    void onEvent(PropertyChangedEvent e) {
+        if ("artifact" != e.propertyName)
+            return;
+ 
+        println "Artifact for ${e.itemPath} has been updated. Looking for deployments..."
+ 
+        doRedeploy(e.itemPath)
+    }
+ 
+    /**
+     * Redeploy any packages which have the specified artifact version.
+     */
+    void doRedeploy(String artifactVersionPath) {
+        def query = "select where type.name = 'Deployment Version' and package.latest = 'true' and deployment.artifacts = '${artifactVersionPath}'"       
+ 
+        println "Query: ${query}"
+ 
+        def results = registry.search(query, 0, -1)
+ 
+        for (Item deployVersion : results.results) {
+            println "Redeploying ${deployVersion.parent.name}"
+ 
+            deploymentService.doAction(Action.REDEPLOY, deployVersion.parent.id)
+        }
+    }
+}
+ 
+new AutomaticRedeployer(applicationContext).install()
+----
+
+== 发送新工件版本的通知
+
+此脚本监视新的工件版本并向任何在"contacts"属性中注册的用户发送电子邮件。
+
+[source,java, linenums]
+----
+import org.mule.galaxy.event.*;
+import org.mule.galaxy.event.annotation.*;
+ 
+import org.mule.galaxy.Registry
+import org.mule.galaxy.security.User
+import org.mule.galaxy.Item
+ 
+import javax.mail.*;
+import javax.mail.internet.*;
+ 
+import java.util.Properties;
+ 
+// An event listener which fires emails when new entry versions are created
+@BindToEvents(["EntryVersionCreated"])
+public class EmailNotifier {
+ 
+    def String userProperty = "contacts"
+    def String server = 'smtp.foo.com'
+    def String port = '465'
+    def String username = 'XXXX'
+    def String password = 'XXXX'
+    def Registry registry
+     
+    @Async
+    @OnEvent
+    void onEvent(EntryVersionCreatedEvent e) {
+        notifyUsers(e)
+    }
+     
+    void notifyUsers(ItemEvent e) {
+        Properties props = new Properties();
+ 
+        props.setProperty("mail.host", server);
+        props.setProperty("mail.user", username);
+        props.setProperty("mail.smtp.port", port);
+        props.setProperty("mail.password", password);
+        props.setProperty("mail.smtp.auth", "true");
+ 
+        Item item = registry.getItemById(e.itemId);
+         
+        def mailSession = Session.getDefaultInstance(props, null);
+        Transport transport = mailSession.getTransport("smtps");
+   
+        MimeMessage message = new MimeMessage(mailSession);
+        message.setSubject("Artifact/entry ${item.name} was created");
+        message.setContent("Artifact/entry was created in ${item.path}", "text/plain");
+         
+        def contacts = item.getProperty(userProperty);
+        contacts?.each {
+            message.addRecipient(Message.RecipientType.TO,
+                 new InternetAddress(it.email));
+        }
+         
+        if (!contacts) { return };
+ 
+        transport.connect();
+        transport.sendMessage(message, message.getAllRecipients());
+        transport.close();
+    }
+}
+ 
+// Remove the previous listener, if any
+eventManager.listeners.each {
+    if (it.class.simpleName == "EmailNotifier") {
+        eventManager.removeListener(it);
+        println("Removed listener");
+    }
+}
+ 
+// Add the event listener again
+eventManager.addListener(new EmailNotifier(registry: registry));
+----
+
+== 复制工作区
+
+您可以将工作区从一个Tcat服务器实例复制到另一个。复制通过自定义脚本执行。这使您可以轻松地自定义复制过程并通过计划程序进行安排。
+
+通过将工件和条目从一个工作区复制到另一个工作区来进行复制。如果要复制到远程Tcat服务器实例，则必须先将其作为远程工作空间附加。
+
+一旦考虑了源和目标工作区，您可以创建一个执行此复制的脚本。以下是一个示例脚本：
+
+[source,java, linenums]
+----
+import org.mule.galaxy.ee.util.*;
+// Create a replicator called "myReplicator"
+def replicator = new Replicator(registry, activityManager, "myReplicator");
+ 
+// Copy from the first workspace, to the second one.
+replicator.copy("/LocalWorkspace", "/RemoteWorkspace");
+----
+
+该脚本将所有工件和条目从LocalWorkspace复制到RemoteWorkspace。请注意，为您的复制器提供一个ID（在本例中为myReplicator）是有益的。这样可以轻松查看活动日志中复制器的操作。
+
+== 重新启动服务器
+
+如果您需要重新启动服务器，则可以通过管理控制台轻松完成。但是，如果您想安排在特定日期/时间自动重新启动，该怎么办？您可以通过编写脚本并使用 link:/tcat-server/v/7.1.0/automating-tasks[Tcat调度程序]进行安排来实现此目的。以下是一个示例脚本：
+
+[source,java, linenums]
+----
+def serverName= "Tcat-8081"; // Replace this with your server name
+def serverManager = applicationContext.getBean("serverManager");
+def server = serverManager.getServerByName(serverName,false);
+def serverId = server.getId();
+serverManager.restartServerNow(serverId);
+----
+
+以下脚本将重新启动除Tcat管理控制台服务器之外的所有服务器：
+
+[source,java, linenums]
+----
+// Get the server manager
+def sm = applicationContext.getBean("serverManager");
+// Get all servers from all groups
+def results = sm.getServersForGroup(null,0,-1,null);
+def allServers =  results.getData();
+// Server IDs array
+def serverIds = [];
+// Loop through all servers and extract their IDs except for the console
+for(server in allServers){
+// Replace the agentUrl with the URL for your console agent
+ def agentUrl = "https://localhost:51443/agent";
+// Skip the console server, we do not want to restart it, so do not need its ID
+ if(agentUrl.equals(server.getAgentUrl()))
+   continue;
+// For the remaining servers, extract the ID and add it to the list
+ serverIds.add(server.getId());
+}
+// Restart all servers
+sm.restartServers(serverIds);
+// Return the ID of the restarted servers
+return serverIds;
+----
+
+保存此脚本后，可以通过 link:/tcat-server/v/7.1.0/automating-tasks[调度]定期运行此脚本，这很容易。
+
+link:/tcat-server/v/7.1.0/automating-tasks[<<上一页：*自动执行任务*]
+
+link:/tcat-server/v/7.1.0/creating-custom-policies[下一步：*创建自定义策略* >>]

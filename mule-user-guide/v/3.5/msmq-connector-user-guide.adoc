@@ -1,0 +1,656 @@
+=  MSMQ连接器用户指南
+:keywords: msmq, owin, katana, web api, microsoft, queueing, .net, iis
+
+== 解决方案概述
+
+Microsoft消息队列（MSMQ）连接器使用具有两层的典型客户端 - 服务器体系结构，在Mule中运行的连接器或客户端以及在服务器端运行的Anypoint Gateway。后者公开了用于发送或接收MSMQ消息的HTTP Web API。
+
+以下是解决方案架构的高级图：
+
+image:1.jpeg[1]
+
+Anypoint Gateway利用以下技术/框架：
+
+*  link:http://www.asp.net/web-api[ASP.NET Web API]公开发送和接收原始消息的HTTP Web API。
+*  link:http://owin.org/[OWIN]提供HTTP层。用于.NET的开放式Web界面（OWIN）是一个开放的规范，用于将应用程序与Web服务器功能分离，为使所有HTTP关注独立于主机平台提供了一个层。
+*  link:https://www.asp.net/aspnet/overview/owin-and-katana[武士刀]提供OWIN Microsoft实现，该实现处理OWIN应用程序的self和IIS主机。
+
+主要用例== 
+
+MSMQ连接器支持两种主要用例：
+
+* 发送（HTTP POST）单个消息MSMQ。
+* 从MSMQ接收（HTTP GET）一条或多条消息。
+
+==  HTTP POST方案
+
+在POST方案中，Mule使用连接器将当前流中的Mule消息的原始表示使用HTTP发送到MSMQ到Anypoint网关。该消息作为HTTP POST发送。 HTTP请求的有效载荷是Mule消息的序列化有效载荷（二进制或文本）。 Web API在Anypoint Gateway上运行，并使用MSMQ将消息转发到队列。
+
+以下消息显示HTTP POST请求的结构。
+
+=== 发布请求消息
+
+[source, code, linenums]
+----
+POST: https://localhost:9000/msmq
+Authorization: mule test-token
+Mule-Msmq-Queue-Name: .\private$\qout
+Mule-Api-Version: 1
+Body: THIS IS A SAMPLE MESSAGE
+----
+
+POST回应消息
+
+[source, code, linenums]
+----
+Http /1.1 201 Created
+----
+
+==  HTTP GET方案
+
+在GET方案中，Mule使用连接器从MSMQ接收一条或多条消息。这是作为Anypoint网关的HTTP GET完成的。 Web API在网关中运行，并返回MSMQ队列中的可用消息。这些消息使用MIME `multipart/mixed`内容类型在单个HTTP响应中返回。
+
+以下消息说明了HTTP GET请求的结构。
+
+===  GET请求消息
+
+[source, code, linenums]
+----
+GET: https://localhost:9000/msmq?count=50
+Authorization: mule test-token
+Mule-Msmq-Queue-Name: .\private$\out
+Mule-Api-Version: 1
+----
+
+===  GET响应消息
+
+[source, code, linenums]
+----
+Transfer-Encoding: chunked
+Content-Type: multipart/mixed; boundary="47c7462b-f831-48f5-aed2-a561ef31dcc6"
+ 
+ 
+28
+--47c7462b-f831-48f5-aed2-a561ef31dcc6
+ 
+ 
+218
+Content-Type: application/octet-stream
+mule-msmq-acknowledgement-type: None
+mule-msmq-acknowledgement: None
+mule-msmq-attach-sender-id: True
+mule-msmq-body-type: 0
+mule-msmq-connector-type: 0
+mule-msmq-correlation-id: 00000000-0000-0000-0000-000000000000\0
+mule-msmq-id: 22af009e-3b1b-4173-ad7f-34b060a158fc\6145
+mule-msmq-label:
+mule-msmq-lookup-id: 288230376151717889
+mule-msmq-message-type: Normal
+mule-msmq-priority: Normal
+mule-msmq-source-machine: win-dt3v2pm5d7l
+mule-msmq-extension:
+mule-msmq-app-specific: 0
+ 
+ 
+11
+THIS IS A MESSAGE
+2C
+ 
+--47c7462b-f831-48f5-aed2-a561ef31dcc6--
+ 
+0
+----
+
+用于向网关服务发送消息和从网关服务接收消息的HTTP标头在本文后面会详细讨论。
+
+=== 两阶段提交
+
+MSMQ连接器使用两阶段协议来确保网关内的零消息丢失通信。
+
+在传统方案中，在网关中读取消息后，将从队列中删除消息。如果ESB中存在连接故障或其他问题，导致邮件无法读取，则该邮件将丢失。
+
+在使用两阶段提交协议的场景中，从主队列中读取的消息将保留在子队列中作为备份。连接器收到消息副本后，会向网关发送一个附加请求，以从子队列中删除该消息。当此提交操作未完成时，消息仍保留在子队列中。经过一段时间后，被视为孤儿的子队列中的消息将被移回其退出的父队列。
+
+=== 消息超时
+
+在不同的方法中，MSMQ消息提供了两个有助于授予信息可靠性的属性：
+
+*  *timeToReachQueue*：邮件在网关中收到后可以到达MSMQ服务器的最大秒数。默认不超时（InfiniteTimeout）。
+*  *timeToBeReceived*：消息在为第三方应用程序出队之前可保留在队列中的秒数。默认是不超时（InfiniteTimeout）。
++
+image:MSMQmessageTimeouts2.png[MSMQmessageTimeouts2]
+
+*Note*：如果任一属性超时，则消息将移至死信队列。
+
+指定属性的值：
+
+[source, xml, linenums]
+----
+<msmq:send
+    config-ref="MSMQ"
+    messageFormatter="ActiveXMessageFormatter"
+    doc:name="MSMQ"
+    timeToBeReceived="0"
+    timeToReachQueue="0" />
+----
+
+这两个属性都可以在连接器配置中设置，并由Anypoint Gateway读取。如果指定值为零（0），则默认值为（InfiniteTimeout）。
+
+=== 无效的消息处理
+
+无法读取的邮件将移至`invalid-queue-name`子队列。您可以使用Anypoint Gateway服务配置文件更改此队列的名称。您也可以更改无效消息的超时时间，以使用不正确的格式化程序解析消息的有效内容。
+
+[source, xml, linenums]
+----
+<!-- The name of the invalid messages sub-queue -->
+<add key="invalid-queue-name" value="Invalid"/>
+ 
+<!-- Time in seconds for invalid messages before being sent to dead-letter queue -->
+<add key="invalid-message-timeout" value="86400"/>
+----
+
+== 启用完全一次和有序支持
+
+要启用Exactly-Once和In-Order（EOIO）支持，您必须在Anypoint Studio中选择包含MSMQ连接器的流，并将默认操作*Processing Strategy*设置为同步。否则，连接器处理在ESB中收到的消息，并忽略队列中的原始顺序。
+
+image:FlowConfiguration.png[FlowConfiguration]
+
+该设置在XML中显示为：
+
+[source, xml, linenums]
+----
+<flow name="myMSMQFlow" doc:name="myMSMQFlow" processingStrategy="synchronous">
+----
+
+== 安全考虑
+
+Anypoint Gateway验证直接调用者（它是在Mule ESB中运行的连接器），以及代表连接器的用户（可选）。
+
+=== 服务认证
+
+连接器的身份验证通过HTTP授权标头中包含的安全令牌完成。使用Mule方案对网关的每个HTTP请求都包含此令牌：
+
+[source, code, linenums]
+----
+GET: https://localhost:9000/msmq?count=50
+Authorization: mule test-token
+Mule-Msmq-Queue-Name: .\private$\out
+Mule-Api-Version: 1
+----
+
+在连接器上以及在网关配置文件中配置令牌。以下配置部分显示如何在双方配置令牌。
+
+=== 连接器配置
+
+[source, xml, linenums]
+----
+<msmq:config name="MSMQ" doc:name="MSMQ" accessToken="test-token" rootQueueName=".\private$\qout" serviceAddress="localhost:9000">
+  <msmq:connection-pooling-profile initialisationPolicy="INITIALISE_ONE" exhaustedAction="WHEN_EXHAUSTED_GROW"/>
+</msmq:config>
+----
+
+=== 网关配置
+
+[source, xml, linenums]
+----
+<appSettings>   
+    <add key="mule-auth-token" value="test-token"/>
+</appSettings>
+----
+
+*Note*：Anypoint网关服务的安装程序自动生成密码安全令牌，以供第一次安装时调用者使用。该令牌在安装过程中显示并放置在剪贴板上，以便轻松复制到Mule应用程序中。
+
+== 用户身份验证
+
+代表连接器执行呼叫的用户通过两个自定义HTTP标头`mule-impersonate-username`和`mule-impersonate-password`进行身份验证。
+
+使用用户身份验证时，MSMQ中的队列也必须标记为需要身份验证。这两个标题代表运行Anypoint Gateway服务的Active Directory林中的现有用户的Windows凭据，或代表托管该服务的计算机上的本地帐户。当HTTP请求中包含这些HTTP标头时，Anypoint网关服务在对来自MSMQ的消息进行排队/出队前对其进行身份验证和模拟。这提供了使用Windows凭据在队列上配置正确的访问控制列表权限的功能。
+
+以下HTTP请求示例说明了如何将这两个头从连接器传递到网关：
+
+[source, code, linenums]
+----
+GET: https://localhost:9000/msmq?count=50
+Authorization: mule test-token
+Mule-Impersonate-Username: domain\myuser
+Mule-Impersonate-Password: password
+Mule-Msmq-Queue-Name: .\private$\out
+Mule-Api-Version: 1
+----
+
+*Note*：连接器和网关使用SSL来保护所有HTTP通信。
+
+== 队列权限
+
+要使用队列权限，请将队列标记为需要验证。另外，连接器必须发送HTTP请求消息中的`Mule-Impersonate-Username`和`Mule-Impersonate-Password`头来模拟单元;否则将使用模拟主机的帐户（如果网关位于IIS中，则用户模拟Windows服务或应用程序池）。
+
+*Note*：Windows用户在使用经过身份验证的队列之前必须至少第一次登录。当用户第一次登录时，Windows会创建一个用户配置文件，该用户配置文件必须存在供用户使用经过身份验证的队列。
+
+下表显示了从队列发送或接收消息所需的权限：
+
+[%header%autowidth.spread]
+|===
+| {操作{1}}权限
+| *Receive*  |接收消息，查看消息
+| *Send*  |发送消息，查看消息，获取属性
+|===
+
+在这两种情况下，Peek Message仅用于测试连接。如果不需要测试连接，则可以删除此权限。
+
+*Note*：当MSMQ安装在未加入Windows域的计算机上时，它可以在工作组模式下工作。在这种模式下，认证队列不受支持，因此也不能使用队列权限。
+
+== 消息序列化和格式化
+
+Anypoint网关服务不使用MSMQ格式化程序，除非它由连接器指定。因此，HTTP请求paylaod中发送的消息以原始形式存储在MSMQ消息的主体中。但是，可以通过在连接器中设置消息格式化程序来覆盖此行为。开箱即用支持单个格式器：`ActiveXMessageFormatter`。
+
+以下示例说明如何在MSMQ连接器中设置格式器：
+
+[source, xml, linenums]
+----
+<msmq:receive config-ref="MSMQ" doc:name="MSMQ (Streaming)" pollingPeriod="3000" messageFormatter="ActiveXMessageFormatter" />
+----
+
+在连接器上设置消息格式化程序时，会向Anypoint网关发送附加的HTTP标头`Mule-Msmq-Formatter`。网关使用格式化程序在消息从MSMQ入队或出队时序列化和反序列化消息。
+
+对于ActiveXMessageFormatter，网关还使用HTTP请求消息中由连接器设置的Content-Type：
+
+[%header%autowidth.spread]
+|===
+|的Content-Type  |说明
+| plain / text  |连接器在当前Mule消息字符串的有效载荷时设置它。设置时，网关将MSMQ消息的主体流设置为字符串。其他应用程序可以直接以字符串形式读取此消息。接收此消息的MSMQ连接器将Mule消息的有效载荷设置为字符串，以便不需要转换器。
+| application / octet-stream  |设置有效负载是字节数组的时间。该消息以字节流的形式存储。
+|===
+
+=== 配置msmq：receive元素
+
+主要场景中使用`msmq:receive`元素来接收来自网关的一条或多条消息。
+
+下表显示了此元素中的属性：
+
+[%header%autowidth.spread]
+|===
+|属性 |用法
+| *queueName*  | UNC路径或FormatName表示法中的队列名称。有关更多信息，请参阅https://docs.google.com/a/mulesoft.com/document/d/1mUBv_Cdz1DDzdYgVHBy4cpXkvtdh1kwa3s4dLkjBEiM/edit#heading=h.4rg6xwxl7scj[Queue名称]部分。覆盖全局元素中设置的队列名称。可选的。
+| *pollingPeriod*  |连接器用于轮询MSMQ中已配置队列的时间间隔（以毫秒为单位）。可选的。
+| *messageCount*  |在单个批次中检索的最大邮件数量。可选的。
+| *userName*  |从网关访问MSMQ时用于模拟呼叫的用户的名称。覆盖Global元素中设置的用户名。可选的。
+| *password*  |从网关访问MSMQ时将用于模拟呼叫的用户的密码。覆盖Global元素中设置的密码。可选的。
+| *messageFormatter*  |要在MSMQ中用于序列化和反序列化消息的消息格式器。可选的。
+|===
+
+=== 配置msmq：send元素
+
+在主要场景中使用`msmq:send`元素将一条消息发送到网关。
+
+下表显示了此元素中的属性：
+
+[%header%autowidth.spread]
+|===
+|属性 |用法
+| *queueName*  | UNC路径或FormatName表示法中的队列名称。覆盖全局元素中设置的队列名称。可选的。
+| *userName*  |从网关访问MSMQ时用于模拟呼叫的用户的名称。覆盖Global元素中设置的用户名。可选的。
+| *password*  |从网关访问MSMQ时用于模拟呼叫的用户的密码。覆盖Global元素中设置的密码。可选的。
+| *messageFormatter*  |要在MSMQ中用于序列化和反序列化消息的消息格式器。可选的。
+| *payload*  |要发送到网关的消息有效负载。可选的。
+|===
+
+== 队列名称（公共，私有和群集）
+
+MSMQ连接器支持专用和公用队列。专用队列是不在Active Directory中发布的队列，仅在包含它们的本地计算机上显示。
+
+支持以下方案：
+
+* 路径名称：`ComputerName\private$\QueueName`
+* 本地计算机上的路径名称：`\private$\QueueName`
+* 直接格式名称：`DIRECT=ComputerAddress\PRIVATE$\PrivateQueueName`
+* 私有格式名称：`PRIVATE=ComputerGUID\QueueNumber`
+
+公用队列是在Active Directory中发布的队列。
+
+公共格式名称包含字符串`PUBLIC=`，后跟创建时分配给队列的标识符。此标识符是为Active Directory中的队列对象列出的GUID。
+
+以下是用于引用公用队列及其关联队列日志的一般格式：
+
+*  `PUBLIC=QueueGUID`
+*  `PUBLIC=QueueGUID;JOURNAL`
+
+该连接器还支持故障转移群集中承载的专用队列，也称为MSMQ群集。这些队列对于群集是私有的，并使用以下格式引用：
+
+`ClusterName\private$\QueueName`
+
+== 支持的消息属性
+
+连接器允许传递或接收MSMQ消息的属性。这些属性在当前的Mule消息中设置，并作为自定义HTTP头传递给Anypoint网关。以下消息说明连接器如何为标签属性创建值为"CustomLabel"的新MSMQ消息：
+
+[source, code, linenums]
+----
+POST: https://localhost:9000/msmq
+Authorization: mule test-token
+Mule-Msmq-Queue-Name: .\private$\qout
+Mule-Api-Version: 1
+Mule-Msmq-Label: CustomLabel
+Body: THIS IS A SAMPLE MESSAGE
+----
+
+下表总结了接收操作的所有受支持属性以及HTTP标头的映射。
+
+[%header%autowidth.spread]
+|===
+|属性 | HTTP标题 |用法
+| msmq.acknowledgement.type  | msmq-acknowledgement-type  |设置确认消息的类型以返回到发送应用程序。
+| msmq.acknowledgement  | mule-msmq-acknowledgment  |设置接收消息队列生成的确认消息的队列。
+| msmq.attach.sender.id  | mule-msmq-attach-sender-id  |获取一个值，该值指示是否将发件人ID附加到邮件。
+| msmq.body.type  | mule-msmq-body-type  |获取消息正文包含的数据的类型。
+| msmq.connector.type  | mule-msmq-connector-type  |获取一个值，该值指示通常由消息队列设置的某些消息属性是由发送应用程序设置的。
+| msmq.correlation.id  | mule-msmq-correlation-id a |引用原始消息的消息标识符。此ID用于确认，报告和回复消息。支持的格式：<GUID> \ <Number>
+
+例如：66785f20-a2f3-42a3-bdcd-9ac5a937ac52 \ 1
+| msmq-id  | mule-msmq-id  |消息的唯一标识符，由消息队列生成。
+| msmq.label  | mule-msmq-label  |获取描述消息的应用程序定义的unicode字符串。
+| msmq.lookup.id  | mule-msmq-lookup-id  |其中一个System.Messaging.MessagePriority值，它表示非事务性消息的优先级。默认值是“正常”。
+| msmq.message.type  | mule-msmq-message-type  |获取从队列中检索的消息的类型，可以是Normal，Acknowledgement或Report。
+| msmq.priority  | mule-msmq-priority  |获取或设置消息优先级，指示将消息放入队列的位置。
+| msmq.extension  | mule-msmq-extension  |设置与消息关联的其他应用程序定义信息。将其编码为base64。
+| msmq.app.specific  | mule-msmq-app-specific  |设置其他特定于应用程序的信息。
+|===
+
+下表总结了发送操作的所有支持属性以及HTTP标头的映射。
+
+[%header%autowidth.spread]
+|===
+|属性 | HTTP标题 |用法
+| msmq.body.type  | mule-msmq-body-type  |设置邮件正文包含的数据的类型。
+| msmq.label  | mule-msmq-label  |设置描述消息的应用程序定义的unicode字符串。
+| msmq.acknowledgement.type  | msmq-acknowledgement-type  |设置要返回给发送应用程序的确认消息的类型。
+| smq.attach.sender.id  | mule-msmq-attach-sender-id  |设置一个值，指示发件人ID是否应附加到邮件。
+| msmq.priority  | mule-msmq-priority  |获取或设置消息优先级，它确定消息放置在队列中的哪个位置。
+| msmq.connector.type  | mule-msmq-connector-type  |设置一个值，该值指示通常由消息队列设置的一些消息属性由发送应用程序设置。
+| msmq.correlation.id  | mule-msmq-correlation-id a |设置引用原始消息的消息标识符。用于确认，报告和回复消息。支持的格式：<GUID> \ <Number>
+
+例如：66785f20-a2f3-42a3-bdcd-9ac5a937ac52 \ 1
+| msmq.use.tracing  | mule-msmq-use-tracing  |设置一个值，该值指示在向目标队列移动时是否跟踪消息。
+| msmq.extension  | mule-msmq-extension  |设置与消息关联的其他应用程序定义的信息。编码为base64。
+| msmq.app.specific  | mule-msmq-app-specific  |设置其他特定于应用程序的信息。
+|===
+
+以下示例显示了"set-payload"组件如何为MSMQ消息设置标签。
+
+[source, xml]
+----
+<set-property propertyName="msmq-label" value="message_from_mule" doc:name="Label"/>
+----
+
+==  Anypoint网关服务疑难解答
+
+Anypoint Gateway服务利用内置的.NET跟踪系统。基本前提很简单，跟踪消息通过交换机发送给侦听器，侦听器对特定存储介质说谎。配置文件中提供了连接器使用的跟踪源的侦听器：
+
+[source, xml, linenums]
+----
+<sharedListeners>
+   <add name="console" type="System.Diagnostics.ConsoleTraceListener" />
+   <add name="file" type="System.Diagnostics.TextWriterTraceListener" initializeData="Mule.Msmq.log" />
+   <add name="etw" type="System.Diagnostics.Eventing.EventProviderTraceListener, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" initializeData="{47EA5BF3-802B-4351-9EED-7A96485323AC}" />
+</sharedListeners>
+ 
+<sources>
+    <source name="Mule.Msmq">
+        <listeners>
+            <clear />
+            <add name="console" />
+            <add name="etw"/>
+        </listeners>
+    </source>
+</sources> 
+----
+
+前面的示例为输出控制台，文件和窗口事件跟踪（ETW）配置了三个侦听器。连接器`Mule.Msmq`的跟踪源被配置为仅将跟踪输出到控制台和ETW。
+
+== 更改跟踪级别
+
+Anypoint Gateway默认配置为记录所有内容，即*Verbose*级别。其他可能的级别是：
+
+*  *Error*：输出错误处理消息
+*  *Warning*：输出警告和错误处理消息
+*  *Info*：输出信息性消息，警告和错误处理消息
+*  *Off*：禁用跟踪
+
+您可以在配置文件中的交换机级别配置级别：
+
+[source, xml, linenums]
+----
+<switches>
+    <add name="Mule.Msmq" value="Verbose" />
+</switches>
+----
+
+==  Windows事件跟踪（ETW）
+
+ETW是一个非常高效的内置发布和订阅机制，用于在内核级别进行事件跟踪。与依赖于I / O将痕迹存储在持久性存储中的其他传统跟踪解决方案（如文件或数据库）相比，使用此功能的开销不大。作为Windows中的内置机制，许多操作系统服务和组件也都使用此功能。因此，您不仅可以排除应用程序故障，还可以排除许多涉及相同执行的操作系统组件。
+
+在ETW中，应用程序通过ETW会话在队列（或提供程序）和其他应用程序中发布事件，这些应用程序通过这些队列实时地消耗事件。在提供者中发布事件时，除非有会话在该队列上收集事件，否则它将无处可用。 （事件不会持续）。
+
+.NET中的跟踪系统包括用于ETW的跟踪侦听器`EventProviderTraceListener`，您可以使用会话标识符配置该ETW用于收集跟踪：
+
+[source, xml, linenums]
+----
+<sharedListeners>
+   <add name="etw"type="System.Diagnostics.Eventing.EventProviderTraceListener, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" initializeData="{47EA5BF3-802B-4351-9EED-7A96485323AC}"/>
+</sharedListeners>
+----
+
+在该示例中，会话与此标识符关联：`{47EA5BF3-802B-4351-9EED-7A96485323AC}`
+
+=== 收集会话跟踪
+
+收集sesison痕迹：
+
+. 打开Windows控制台并运行以下命令启动新会话：
++
+[source]
+----
+logman start mysession -p {47EA5BF3-802B-4351-9EED-7A96485323AC} -o etwtrace.etl -ets
+----
++
+. 运行此命令停止会话：
++
+[source]
+----
+logman stop mysession -ets
+----
++
+这会生成带有跟踪会话数据的`etwtrace.etl`文件。
++
+. 运行此命令以生成可读文件：
++
+[source]
+----
+tracerpt etwtrace.etl
+----
++
+该命令在`dumpfile.xml`文本文件中传输有用的信息。有关详情，请参阅 link:http://technet.microsoft.com/en-us/library/cc732700.aspx[Tracerpt]
+
+==  MSMQ连接器疑难解答
+
+MSMQ连接器与Mule ESB日志记录基础结构集成，用于记录用户的错误和相关信息。
+
+下表列出了使用MSMQ连接器时可能发生的常见错误：
+
+[%header%autowidth.spread]
+|===
+| {错误{1}}原因
+|未经授权。 "Authentication with the proxy failed"。 |连接器上配置的安全令牌和网关上的安全令牌不匹配。验证在Mule和Anypoint Gateway服务配置文件中的MSMQ连接器上配置的令牌。
+|禁止。 "Access Forbidden to write in queue [Queue Name]"  |具有在用户名和密码中指定的凭据的用户没有写入或读取队列的权限。验证队列访问权限。
+|不可接受。 "The connector and proxy version do not match"  |这不太可能发生。在ESB中运行的连接器的版本与Anypoint Gateway的版本不兼容。确保更新连接器或网关以使用相同的版本。
+未找到|。队列未找到[队列名称]  |无法找到连接器中配置的队列。
+未找到|。 |连接器中配置的网关地址和端口不正确。验证网关配置以确定正确的服务器名称和端口。
+|内部服务器错误 |网关出现意外错误。检查网关轨迹以确定问题的原因。
+|===
+
+== 消息确认示例
+
+*Requirements*：
+
+link:http://go.microsoft.com/fwlink/?LinkID=240290[Windows Management Framework 3.0]下的*  Windows PowerShell 3.0
+按照本指南中的说明安装MSMQ连接器的*  Anypoint Studio
+*  link:_attachments/MessageAcknowledgeSample.zip[MessageAcknowledgeSample.zip]对zip文件进行采样。包含PowerShell脚本（.ps1文件类型）和msmq-demo-ack.zip文件。可执行文件使用MuleSoft的证书进行签名。
+
+=== 第1步：打开msmq-demo-ack项目
+
+. 启动Anypoint Studio并打开现有的Mule项目。
+. 点击*File >Import > Anypoint Studio generated Deployable Archive (.zip)*。
+. 在zip文件中，导航文件系统，然后点击`msmq-demo-ack.zip`文件。
+. 点击*Finish*。
+
+=== 第2步：运行安装程序脚本
+
+. 该脚本为样本创建消息队列并发送消息。
+. 打开命令窗口：Windows键+ *R*，键入*PowerShell*，右键单击该程序，然后单击*Run As Administrator*。
+. 转至示例目录，然后输入*Set-ExecutionPolicy Unrestricted*，然后按*Enter*。默认情况下，执行策略值是受限制的，不允许您运行此示例。
+. 输入*.\1-setup.ps1*并按*Enter*。
+. 控制台显示：
++
+[source, code, linenums]
+----
+Creating .\private$\sampleq
+Queue Creating .\private$\secondq
+Queue Creating .\private$\adminq
+Queue Sending Message 1 to .\private$\sampleq
+Sending Message 2 to .\private$\secondq
+Sending Message 3 to .\private$\sampleq
+Sending Message 4 to .\private$\sampleq
+----
++
+. 请勿关闭此控制台。
+
+=== 第3步：运行演示
+
+. 右键单击*msmq-demo.xml*并选择*Run As Mule Application*。
+. 检查控制台以查看应用程序何时启动：
++
+[source, code, linenums]
+----
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++ Started app 'msmq-demo-ack' + ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+----
++
+. Check for these lines, which indicate that MSMQ connector is listening to both queues and received 1 message in sampleq queue and 6 messages in adminq queue.
++
+[source, code, linenums]
+----
+INFO  XXXX-XX-XX XX:XX:XX,XXX [Receiving Thread] org.mule.modules.msmq.MsmqConnector: Connecting to https://localhost:9000/msmq
+INFO  XXXX-XX-XX XX:XX:XX,XXX [Receiving Thread] org.mule.modules.msmq.MsmqConnector: Connecting to https://localhost:9000/msmq
+INFO  XXXX-XX-XX XX:XX:XX,XXX [Receiving Thread] org.mule.modules.msmq.MsmqConnector: Receiving 1 from .\private$\sampleq
+INFO  XXXX-XX-XX XX:XX:XX,XXX [Receiving Thread] org.mule.modules.msmq.MsmqConnector: Receiving 6 from .\private$\adminq
+----
++
+. The following lines appear (order may change), which indicate that one message was read, `** Message 1 **`. The message's body and label are shown along with several incorrect versions of ACK (logged as INFOs') or NACK (logged as WARNs) depending on the context and the message. For more information, see http://msdn.microsoft.com/en-us/library/system.messaging.acknowledgment[Acknowledgement Enumeration].
++
+[source, code, linenums]
+----
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-choice-flow.stage1.03] org.mule.api.processor.LoggerMessageProcessor: ACK Cause: ReachQueue | Correlation Id: xxxx  | Label: Message 2
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-choice-flow.stage1.07] org.mule.api.processor.LoggerMessageProcessor: ACK Cause: Receive | Correlation Id: xxxx  | Label: Message 1
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-normalFlow.stage1.02] org.mule.api.processor.LoggerMessageProcessor: Label: Message 1 | Body: <?xml version="1.0"?>
+<string>First Message</string>
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-choice-flow.stage1.04] org.mule.api.processor.LoggerMessageProcessor: ACK Cause: ReachQueue | Correlation Id: xxxx  | Label: Message 4
+INFO  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-choice-flow.stage1.02] org.mule.api.processor.LoggerMessageProcessor: ACK Cause: ReachQueue | Correlation Id: xxxx  | Label: Message 1
+WARN  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-ReceiveTimeout.stage1.02] org.mule.api.processor.LoggerMessageProcessor: 'ReceiveTimeout NACK' Received | Correlation Id: xxxx | Label: Message 4
+WARN  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-NotTransactionalQueue.stage1.02] org.mule.api.processor.LoggerMessageProcessor: 'NotTransactionalQueue NACK' Received | Correlation Id: xxxx | Label: Message 3
+----
++
+. Double-click *Choice* flow control under the *msmq-choice-flow* flow to view its properties:
++
+image:MSMQAdmin.png[MSMQAdmin]
++
+The Choice flow control evaluates the `msmq.acknowledgement` property of each message received. This routes messages to a SubFlow (using Flow Reference control). Messages received in `adminq` are just for acknowledgement purposes. Even when those six messages have an `msmq.id` property, it is not important, but what is relevant is the `msmq.correlation.id`, which points to the `msmq.id` of the message originating the acknowledgement message in the administrative queue. In the sample, Message 4 has been set with a millisecond in the property timeToBeReceived, which produces a ReceiveTimout NACK. Also, Message 6 is sent in a transactional way using a non-transactional queue, which brings a NotTransactionalQueue NACK.
+
+=== Deleting a Message
+
+. Open the Message Queuing Administrative Console.
+. Press the Windows Key + *E*.
+. Right-click *Computer* and clcik `Manage`.
++
+image:MSMQManage.png[MSMQManage]
+
+. In the Computer Management Console tree on the left, open *Services and Applications > Message Queueing > Private Queues*
+. A remaining message dispalys in secondq, as MSMQ connector in not configured to listen this queue.
+. Delete the message: In the left tree, open *Private Queues > secondq > Queue messages* and right-click *Queue messages > All Tasks > Purge*:
++
+image:MSMQpurge.png[MSMQpurge]
+
+. Select *Yes* in the popup.
+. Return to Anypoint Studio and notice these additional lines in the Console, which indicate an additional kind of NACK, and that the orginating message has not been read and has not been purged:
++
+[source, code, linenums]
+----
+INFO  XXXX-XX-XX XX:XX:XX,XXX [Receiving Thread] org.mule.modules.msmq.MsmqConnector: Receiving 1 from .\private$\adminq
+WARN  XXXX-XX-XX XX:XX:XX,XXX [[msmq-demo-ack].msmq-QueuePurged.stage1.02] org.mule.api.processor.LoggerMessageProcessor: 'QueuePurged NACK' Received | Correlation Id: xxxx | Label: Message 2
+----
+
+=== Step 4: Cleaning the Environment
+
+* Go back to the console and type *.2\clean-ps1* and this message appears:
+
+[source, code, linenums]
+----
+Deleting .\private$\sampleq Queue
+Deleting .\private$\secondq Queue
+Deleting .\private$\adminq Queue
+----
+
+== CloudHub Integration Sample
+
+This sample receives incoming requests via HTTP connector, and sends the request via MSMQ connector (Send operation) to the remote MSMQ queue. It then receives a MSMQ message from your server (Streaming Receive operation) and logs the result.
+
+. Create new Mule project from *File > New > Mule Project*. You can set name to cloudhub-test. Click *Finish*.
+. Go to Configuration XML tab and replace existing code with the following:
++
+[source, xml, linenums]
+----
+<mule xmlns:msmq="http://www.mulesoft.org/schema/mule/msmq" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans" 
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/msmq http://www.mulesoft.org/schema/mule/msmq/current/mule-msmq.xsd">
+    <msmq:config name="MSMQ" serviceAddress="X.X.X.X:9000" accessToken="you_key" rootQueueName=".\private$\test-cloudhub" ignoreSSLWarnings="true" doc:name="MSMQ"/>
+    <flow name="msmq-cloudhub-test2Flow1" doc:name="msmq-cloudhub-test2Flow1">
+        <http:inbound-endpoint exchange-pattern="one-way" host="localhost" port="80" doc:name="HTTP"/>
+        <expression-filter expression="#[payload != '/favicon.ico']" doc:name="Expression"/>
+        <set-payload value="#['Hello, ' + payload + '. Today is ' + server.dateTime.format('dd/MM/yy') + '.' ]" doc:name="Set Payload"/>
+        <msmq:send config-ref="MSMQ" messageFormatter="ActiveXMessageFormatter" doc:name="MSMQ"/>
+    </flow>
+    <flow name="msmq-cloudhub-test2Flow2" doc:name="msmq-cloudhub-test2Flow2">
+        <msmq:receive config-ref="MSMQ" messageFormatter="ActiveXMessageFormatter" doc:name="MSMQ (Streaming)"/>
+        <byte-array-to-string-transformer doc:name="Byte Array to String"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+</mule>
+----
++
+In the MSMQ configuration node:
++
+* *serviceAddress* is the IP and port of your VPN appliance. Double check that port 9000 (or the one set during Anypoint Gateway setup) is open in the firewall settings and the appliance server.
+* *accessToken* is the token configured during Gateway setup.
+* *rootQueueName* is the _existing_ queue name with writing rights to user Everyone according normal installation of Mule samples. You can verify that connectivity to MSMQ is OK by using the *Test Connection* button:
++
+image:MSMQGlobalElProps.png[MSMQGlobalElProps]
++
+. Right-click the *cloudhub-test* Mule project, select*Deploy to Anypoint Platform* -> *Cloud*.
+. Fill in the fields with the provided account settings that you used when you created your account in the link:https://anypoint.mulesoft.com[Anypoint Platform]
+. Select the Environment, choose an available domain and click *Finish*. You are prompted with a confirmation window. Click *OK. Then you are able to use the intergation project.
++
+image:MSMQCHsuccess.png[MSMQCHsuccess]
++
+. Point your browser to this address (note that the browser remains blank):
++
+[source]
+----
+http://your_subdomain.cloudhub.io/this_is_a_test
+----
++
+. Log into the link:https://anypoint.mulesoft.com[Anypoint Platform] to enter your application, and select Logs from the dashboard.
+. The resulting messages are logged:
++
+image:MSMQinfo.png[MSMQinfo]
+

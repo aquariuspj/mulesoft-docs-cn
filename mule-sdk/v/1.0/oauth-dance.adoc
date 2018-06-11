@@ -1,0 +1,49 @@
+= 使用支持OAuth的模块执行OAuth舞蹈
+:keywords: mule, sdk, security, oauth
+
+使用该模块的最后一步是触发OAuth舞蹈。 <<oauth-configuring#, Configuring an OAuth-Enabled Module>>包含一个名为的参数
+`authorizePath`最终用户通过它配置自动创建的HTTP端点的路径，该端点需要点击浏览器并启动OAuth舞蹈。
+
+提示：请记住，SDK支持的授权码授权类型需要通过Web浏览器进行人机交互。
+
+== 多租户
+
+OAuth的多租户意味着能够多次执行OAuth舞蹈并将每个获得的令牌与不同的资源所有者ID相关联。
+
+最终用户需要在启动舞蹈时指定`resourceOwnerId`分配给该标记。例如，如果`authorizePath`设置为`/authorize`，并且您想为用户`sdk_demo`执行跳舞，则应该点击以下HTTP路径：`/authorize?resourceOwnerId=sdk_demo`。
+
+舞蹈完成后，您使用为该用户获取的访问令牌执行操作。您可以通过在模块配置的`resourceOwnerId`参数上使用表达式来实现。这是一个完整的例子：
+
+[source, xml, linenums]
+----
+<sfdc:config name="salesforce">
+    <sfdc:oauth-connection display="PAGE" immediate="FALSE" prompt="CONSENT">
+        <sfdc:oauth-authorization-code consumerKey="${sfdc.consumerkey}" consumerSecret="${sfdc.consumersecret}"
+                                       authorizationUrl="http://..." accessTokenUrl="http://..."/
+                                       localAuthorizationUrl="http://localhost:8080/.." scope="this that and those"
+                                       resourceOwnerId="#[vars.ownerId]" /> <!-- <1> -->
+        <sfdc:oauth-callback-config listenerConfig="myHtttpListener"
+                                    callbackPath="/callback"
+                                    authorizePath="/authorize" />  <!-- <2> -->
+</sfdc:config>
+----
+
+<1> `resourceOwnerId`参数设置为表达式。每次执行OAuth保护的操作时，都会评估该表达式，并使用与该值关联的标记。
+<2>该示例设置授权端点`authorizePath`。
+
+=== 使访问令牌失效
+
+多租户意味着能够使特定`resourceOwnerId`的访问令牌无效。使标记无效会导致关联的标记信息被删除。
+
+要使访问令牌失效，SDK会自动向每个启用OAuth的模块添加名为`unauthorize`的操作。回到上面的例子，您可能会使用以下任何语句使得到的标记无效：
+
+[source, xml, linenums]
+----
+<sfdc:unauthorize resourceOwnerId="sdk_demo" config-ref="salesforce"/>
+<!-- or -->
+<sfdc:unauthorize resourceOwnerId="#[vars.resourceOwnerId]" config-ref="salesforce" />
+----
+
+== 下一步
+
+<<oauth-token-expiration#, Handling Expired Access Tokens>>

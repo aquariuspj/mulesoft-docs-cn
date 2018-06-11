@@ -1,0 +1,1256 @@
+// Andres Alleva
+= 示例：迁移基于API的应用程序
+：imagesdir：./_images
+
+本示例介绍了将基于API的应用程序从Mule 3成功迁移到Mule 4的必要步骤。以下REST API通过MySQL数据库执行CRUD（创建，读取，更新和删除）操作。
+
+image::m3-apikit-based-example-main.png[api-main在Studio 6中]
+
+image::m3-apikit-based-example-console.png[Studio 6中的api-console]
+
+image::m3-apikit-based-example-get-products.png[在Studio 6中获取：/ product：api-config流程]
+
+image::m3-apikit-based-example-get-product-id.png[在Studio 6中获取：/ product / {id}：api-config流程]
+
+image::m3-apikit-based-example-post-product.png[在Studio 6中发布：/ product：application / json：api-config流程]
+
+image::m3-apikit-based-example-delete-product.png[在Studio 6中删除：/ product / {id}：api-config流]
+
+image::m3-apikit-based-example-put-product.png[在Studio 6中放置：/ product / {id}：application / json：api-config流]
+
+image::m3-apikit-based-example-GlobalExceptionMapping.png[api-apiKitGlobalException在Studio 6中映射流]
+
+== 迁移属性占位符
+
+//请用解释来替换此评论
+//你如何迁移该功能，并显示Studio 6
+//与Studio 7 XML相关的功能。请提供任何
+//了解对此功能的更改需要额外的信息
+//在Mule 3和Mule 4中。
+Mule 4支持将属性占位符作为`.yaml`或`.properties`配置文件。
+
+. 在`/src/main/resources`项目目录下创建一个名称为`config`的文件夹。
+. 在新创建的配置文件夹中创建名称为`configuration.yaml`的配置文件。
+. 将属性占位符从`.properties`迁移到`.yaml`格式。
++
+.configuration.properties
+----
+http.host=0.0.0.0
+http.port=8081
+
+mysql.password=pa$$w0rd
+mysql.port=3306
+mysql.user=admin
+mysql.database=products
+mysql.host=corp.services.com
+
+autodiscovery.api.version=1.0.0:1762946
+autodiscovery.api.name=groupId:com.mulesoft.retailer.manufacturingit.apis:assetId:product-api-database
+
+anypoint.platform.client_id=1f702j71hu9z2x88v9vd19v7h248s589
+anypoint.platform.client_secret=87v8V47668701Dd574B0531255d6287d
+----
++
+.configuration.yaml
+----
+http:
+  host: "0.0.0.0"
+  port: "8081"
+
+mysql:
+  password: "pa$$w0rd"
+  port: "3306"
+  user: "admin"
+  database: "products"
+  host: "corp.services.com"
+
+autodiscovery:
+  api:
+    name: "groupId:com.mulesoft.retailer.manufacturingit.apis:assetId:product-api-database"
+    version: "1.0.0:1762946"
+
+anypoint:
+  platform:
+    client_id: "1f702j71hu9z2x88v9vd19v7h248s589"
+    client_secret: "87v8V47668701Dd574B0531255d6287d"
+----
++
+. 将标准Spring元素`<context:property-placeholder>`替换为新的全局元素`configuration-properties`。
++
+。Studio 6中的属性占位符的配置XML。
+[source,xml,linenums]
+----
+<context:property-placeholder location="configuration.properties" />
+----
++
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
+`file`属性指向位于`/src/main/resources/config`文件夹下的YAML格式的新配置文件。
++
+。Studio 7中的属性占位符的配置XML。
+[source,xml,linenums]
+----
+<configuration-properties file="config/configuration.yaml" doc:name="Configuration properties" />
+----
+
+== 迁移全局HTTP侦听器配置
+
+//现在对下一个迁移的功能也是如此，等等。
+
+。Studio 6中全局HTTP侦听器配置的配置XML。
+[source,xml,linenums]
+----
+<http:listener-config name="HTTP_Listener_Configuration" host="${http.host}" port="${http.port}" doc:name="HTTP Listener Configuration"/>
+----
+
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
+最小配置需要在内部`http:listener-connection`元素中指定`host`和`port`。我们使用上一步中定义的占位符。
+
+。用于Studio 7中全局HTTP侦听器配置的配置XML。
+[source,xml,linenums]
+----
+<http:listener-config name="httpListenerConfig">
+  <http:listener-connection host="${http.host}" port="${http.port}" />
+</http:listener-config>
+----
+
+== 迁移MySQL全局配置
+
+//现在对下一个迁移的功能也是如此，等等。
+数据库连接器便于设置_Derby_，_MySQL_和_Oracle_数据库以用于Mule应用程序。
+
+. 在Mule调色板中，点击`Add Module`，然后从可用模块中选择`Database Connector`。
+. 添加一个`Database Config`全局配置元素。
+. 在数据库配置>连接中，选择MySQL连接。
+. 在MySQL JDBC驱动程序中，单击添加依赖关系并配置驱动程序的Maven信息。
++
+....
+<dependency>
+   <groupId>的MySQL </groupId>
+   <artifactId>的MySQL连接器的Java </artifactId>
+   <version> 5.1.6 </version>
+</dependency>
+....
++
+使用先前定义的占位符，. 使用`host`，`port`，`user`，`password`和`database`完成MySQL全局配置。
++
+。Studio 6中用于MySQL全局配置的配置XML。
+[source,xml,linenums]
+----
+<db:mysql-config name="MySQL_Configuration" host="${mysql.host}" port="${mysql.port}" user="${mysql.user}" password="${mysql.password}" database="${mysql.database}" doc:name="MySQL Configuration" />
+----
++
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
++
+。在Studio 7中用于MySQL全局配置的配置XML。
+[source,xml,linenums]
+----
+<db:config name="MySQL_Configuration" doc:name="Database Config">
+  <db:my-sql-connection host="${mysql.host}" port="${mysql.port}" user="${mysql.user}" password="${mysql.password}" database="${mysql.database}" />
+</db:config>
+----
+
+== 迁移API自动发现配置
+
+//现在对下一个迁移的功能也是如此，等等。
+`api-platform-gw`全局元素是在Anypoint Platform中注册API所必需的。
+
+。用于Studio 6中API自动发现配置的配置XML。
+[source,xml,linenums]
+----
+<api-platform-gw:api apiName="${autodiscovery.api.name}" version="${autodiscovery.api.version}" flowRef="api-main" create="true" doc:name="API Autodiscovery"/>
+----
+
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
+在Mule Runtime 4.x中，`apiName`，`version`和`create`属性被删除。只需`apiId`和`flowRef`属性。 `apiId`由API Manager生成，并在API实例仪表板上可见。
+
+对于Mule Runtime 4.x中的API自动发现配置：
+
+. 添加以下命名空间架构`global.xml`配置文件。
++
+....
+的xmlns：API-网关= "http://www.mulesoft.org/schema/mule/api-gateway"
+http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd
+....
++
+. 将所需的自动发现相关性信息添加到项目`pom.xml`文件。
++
+....
+<dependency>
+   <groupId> com.mulesoft.anypoint </groupId>
+   <artifactId>骡模块-自动发现</artifactId>
+   <version> 4.0.0 </version>
+</dependency>
+....
++
+。用于Studio 7中API自动发现配置的配置XML。
+[source,xml,linenums]
+----
+<api-gateway:autodiscovery apiId="${autodiscovery.api.id}" flowRef="api-product-main" doc:name="API Autodiscovery"/>
+----
+
+== 迁移全局验证配置
+
+//现在对下一个迁移的功能也是如此，等等。
+
+。Studio 6中用于全局验证配置的配置XML。
+[source,xml,linenums]
+----
+<validation:config name="Validation_Configuration" doc:name="Validation Configuration"/>
+----
+
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
+与Mule Runtime 3.x相反，需要在Mule Palette中添加验证模块才能继续进行配置。
+
+. 在Mule调色板中，点击`Add Module`，然后从可用模块中选择`Validation Module`。
+. 添加一个`Validation Config`全局配置元素。
+
+。用于Studio 7中全局验证配置的配置XML。
+[source,xml,linenums]
+----
+<validation:config name="Validation_Config" doc:name="Validation Config" />
+----
+
+== 迁移_get-products-flow_
+
+//现在对下一个迁移的功能也是如此，等等。
+`get-products-flow`通过`Product Category`和/或`Product Name`返回来自数据库过滤的产品，并支持带有`offset`和`maxResults`参数的分页查询。
+
+。Studio 6中的.get-products-flow
+image::m3-apikit-based-example-get-products-flow.png[在Studio 6中获得产品流]
+
+。在Studio 6中为获取产品流配置XML。
+[source,xml,linenums]
+----
+<flow name="get-products-flow">
+  <message-properties-transformer doc:name="Get Query Params" scope="invocation">
+    <add-message-property key="queryOffset" value="#[Integer.valueOf(message.inboundProperties.'http.query.params'.offset)]" />
+    <add-message-property key="queryLimit" value="#[Integer.valueOf(message.inboundProperties.'http.query.params'.maxResults)]" />
+    <add-message-property key="queryName" value="#[ (message.inboundProperties.'http.query.params'.name != null) ? ('%'+message.inboundProperties.'http.query.params'.name+'%') : '%%']" />
+    <add-message-property key="queryCategory" value="#[ (message.inboundProperties.'http.query.params'.category != null) ? ('%'+message.inboundProperties.'http.query.params'.category+'%') : '%%']" />
+  </message-properties-transformer>
+  <db:select config-ref="MySQL_Configuration" doc:name="Query Products">
+    <db:parameterized-query><![CDATA[SELECT  p.id, p.name, p.description, p.product_number, p.manufactured, p.colors, p.categories, p.stock, p.safety_stock_level, p.standard_cost, p.list_price, p.size, p.size_unit_measure_code, p.weight, p.weight_unit_measure_code, p.days_to_manufacture, p.images,  p.modified_date, p.created_date
+FROM product p
+WHERE LOWER(p.name) like #[flowVars.queryName.toLowerCase()] AND LOWER(p.categories) like #[flowVars.queryCategory.toLowerCase()]
+LIMIT #[flowVars.queryLimit]
+OFFSET #[flowVars.queryOffset]]]>
+    </db:parameterized-query>
+  </db:select>
+  <dw:transform-message doc:name="Products to JSON">
+    <dw:set-payload resource="classpath:mappings/get-products-response.dwl"/>
+  </dw:transform-message>
+</flow>
+----
+
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
+.  `get-products-flow`定义没有任何更改。
++
+
+[source,xml,linenums]
+----
+<flow name="get-products-flow">
+----
+
+. 在`src/main/resources`文件夹下创建名称为`variables`的包。
++
+
+. 在`src/main/resources/variables`文件夹下创建文件`set-queryCategory-variable.dwl`，并编写一个DW脚本来设置`queryCategory`流变量。
++
+....
+％dw 2.0
+输出应用程序/ java
+var queryCategory = attributes.queryParams.category
+---
+如果（queryCategory！= null）
+	 queryCategory
+其他
+	 '%%'
+....
+
+. 在`src/main/resources/variables`文件夹下创建文件`set-queryLimit-variable.dwl`，并编写一个DW脚本来设置`queryLimit`流变量。
++
+....
+％dw 2.0
+输出应用程序/ java
+---
+attributes.queryParams.maxResults as Number
+....
+
+. 在`src/main/resources/variables`文件夹下创建文件`set-queryName-variable.dwl`，并编写一个DW脚本来设置`queryName`流变量。
++
+....
+％dw 2.0
+输出应用程序/ java
+var queryName = attributes.queryParams.name
+---
+如果（queryName！= null）
+	 queryName
+其他
+	 '%%'
+....
+
+. 在`src/main/resources/variables`文件夹下创建文件`set-queryOffset-variable.dwl`，并编写一个DW脚本来设置`queryOffset`流变量。
++
+....
+％dw 2.0
+输出应用程序/ java
+---
+attributes.queryParams.offset as Number
+....
+
+. 添加`Transform component`来替换`message-properties-transformer`中的逻辑并设置变量`queryOffset`，`queryLimit`，`queryName`和`queryCategory`引用到它的DW脚本。
++
+
+[source,xml,linenums]
+----
+<flow name="get-products-flow">
+  <ee:transform doc:name="Get Query Params" doc:id="ab756164-e1df-4fc5-8fbe-8f4f8cafc2f6">
+    <ee:message />
+    <ee:variables>
+     <ee:set-variable variableName="queryOffset" resource="variables/set-queryOffset-variable.dwl" />
+     <ee:set-variable variableName="queryLimit" resource="variables/set-queryLimit-variable.dwl" />
+     <ee:set-variable variableName="queryName" resource="variables/set-queryName-variable.dwl" />
+     <ee:set-variable variableName="queryCategory" resource="variables/set-queryCategory-variable.dwl" />
+   </ee:variables>
+ </ee:transform>
+</flow>
+----
+
+. 添加一个引用MySQL全局配置的`db:select`元素。在参数化查询中使用冒号（:)语法。参数必须作为键值对提供给`db:input-parameters`元素。
++
+
+[source,xml,linenums]
+----
+<db:select config-ref="MySQL_Configuration" doc:name="Query Products">
+  <db:sql >SELECT  p.id, p.name, p.description, p.product_number, p.manufactured, p.colors, p.categories, p.stock, p.safety_stock_level, p.standard_cost, p.list_price, p.size, p.size_unit_measure_code, p.weight, p.weight_unit_measure_code, p.days_to_manufacture, p.images,  p.modified_date, p.created_date
+FROM product p
+WHERE LOWER(p.name) like :name AND LOWER(p.categories) like :category
+LIMIT :limit
+OFFSET :offset</db:sql>
+  <db:input-parameters ><![CDATA[#[{'name' : lower(vars.queryName), 'category': lower(vars.queryCategory), 'limit': vars.queryLimit, 'offset': vars.queryOffset}]]]></db:input-parameters>
+</db:select>
+----
+
+. 在`src/main/resources`文件夹下创建名称为`mappings`的包。
++
+
+. 在`src/main/resources/mappings`文件夹下创建文件`get-products-response.dwl`。
++
+
+. 将`get-products-response.dwl` DW 1.0脚本迁移到DW 2.0。
++
+。在DW 1.0中转换获取产品响应。
+----
+%dw 1.0
+%output application/json
+---
+payload map {
+	id: $.id,
+	categories: ($.categories default "") splitBy ",",
+	colors: ($.colors default "") splitBy ",",
+	images: ($.images default "") splitBy ",",
+	createdDate: $.created_date as :string {format: "yyyy-MM-dd"},
+	modifiedDate: $.modified_date as :string {format: "yyyy-MM-dd"},
+	safetyStockLevel: $.safety_stock_level as :number,
+	stock: $.stock as :number,
+	daysToManufacture: $.days_to_manufacture,
+	name: $.name,
+	description: $.description,
+	listPrice: $.list_price,
+	manufactured: $.manufactured,
+	productNumber: $.product_number,
+	size: $.size,
+	sizeUnitMeasureCode: $.size_unit_measure_code,
+	standardCost: $.standard_cost,
+	weightUnitMeasureCode: $.weight_unit_measure_code,
+	weight: $.weight
+}
+----
++
+。在DW 2.0中转换获取产品响应。
+----
+%dw 2.0
+output application/json
+---
+payload map {
+	id: $.id,
+	categories: ($.categories default "") splitBy ",",
+	colors: ($.colors default "") splitBy ",",
+	images: ($.images default "") splitBy ",",
+	createdDate: $.created_date as String {format: "yyyy-MM-dd"},
+	modifiedDate: $.modified_date as String {format: "yyyy-MM-dd"},
+	safetyStockLevel: $.safety_stock_level as Number,
+	stock: $.stock as Number,
+	daysToManufacture: $.days_to_manufacture,
+	name: $.name,
+	description: $.description,
+	listPrice: $.list_price,
+	manufactured: $.manufactured,
+	productNumber: $.product_number,
+	size: $.size,
+	sizeUnitMeasureCode: $.size_unit_measure_code,
+	standardCost: $.standard_cost,
+	weightUnitMeasureCode: $.weight_unit_measure_code,
+	weight: $.weight
+}
+----
++
+. 最后，添加一个`Transform component`，使用DW 2.0转换来设置有效负载。
++
+[source,xml,linenums]
+----
+<flow name="get-products-flow">
+	<!-- more logic here -->
+	<ee:transform doc:name="Products to JSON">
+		<ee:message>
+			<ee:set-payload resource="mappings/get-products-response.dwl" />
+		</ee:message>
+	</ee:transform>
+</flow>
+----
+
+。在Studio 7中为获取产品流配置XML。
+[source,xml,linenums]
+----
+<flow name="get-products-flow">
+  <ee:transform doc:name="Get Query Params" doc:id="ab756164-e1df-4fc5-8fbe-8f4f8cafc2f6">
+    <ee:message />
+    <ee:variables>
+      <ee:set-variable variableName="queryOffset" resource="variables/set-queryOffset-variable.dwl" />
+      <ee:set-variable variableName="queryLimit" resource="variables/set-queryLimit-variable.dwl" />
+      <ee:set-variable variableName="queryName" resource="variables/set-queryName-variable.dwl" />
+      <ee:set-variable variableName="queryCategory" resource="variables/set-queryCategory-variable.dwl" />
+    </ee:variables>
+  </ee:transform>
+  <db:select config-ref="MySQL_Configuration" doc:name="Query Products">
+    <db:sql>SELECT p.id, p.name, p.description, p.product_number,
+				p.manufactured, p.colors, p.categories, p.stock,
+				p.safety_stock_level, p.standard_cost, p.list_price, p.size,
+				p.size_unit_measure_code, p.weight, p.weight_unit_measure_code,
+				p.days_to_manufacture, p.images, p.modified_date, p.created_date
+				FROM product p
+				WHERE LOWER(p.name) like :name AND LOWER(p.categories) like :category
+				LIMIT :limit
+				OFFSET :offset</db:sql>
+    <db:input-parameters><![CDATA[#[{'name' : lower(vars.queryName), 'category': lower(vars.queryCategory), 'limit': vars.queryLimit, 'offset': vars.queryOffset}]]]></db:input-parameters>
+  </db:select>
+  <ee:transform doc:name="Products to JSON">
+    <ee:message>
+      <ee:set-payload resource="mappings/get-products-response.dwl" />
+    </ee:message>
+  </ee:transform>
+</flow>
+----
+
+。Studio 7中的.get-products-flow
+image::m4-apikit-based-example-get-products-flow.png[在Studio 7中获得产品流]
+
+== 迁移_get-product-by-id-flow_
+
+//现在对下一个迁移的功能也是如此，等等。
+`get-product-by-id-flow`从`id`过滤数据库中的产品。如果没有所需ID的产品，则返回`HTTP 404 Not Found`错误。
+
+。在Studio 6中通过id-product-get-product-by-id-flow
+image::m3-apikit-based-example-get-product-by-id-flow.png[在Studio 6中通过ID流获取产品]
+
+。在Studio 6中为通过ID流获取产品配置XML。
+[source,xml,linenums]
+----
+<flow name="get-product-by-id-flow">
+  <db:select config-ref="MySQL_Configuration" doc:name="Get by Id">
+    <db:parameterized-query><![CDATA[SELECT p.id, p.name, p.description, p.product_number, p.manufactured, p.colors, p.categories, p.stock, p.safety_stock_level, p.standard_cost, p.list_price, p.size, p.size_unit_measure_code, p.weight, p.weight_unit_measure_code, p.days_to_manufacture, p.images,  p.modified_date, p.created_date FROM product p where p.id = #[id]]]></db:parameterized-query>
+  </db:select>
+  <validation:is-true config-ref="Validation_Configuration" doc:name="Is Not Empty" exceptionClass="org.mule.module.apikit.exception.NotFoundException" expression="#[payload.size() &gt; 0]"/>
+  <dw:transform-message doc:name="Product to JSON">
+    <dw:set-payload resource="classpath:mappings/get-product-by-id-response.dwl"/>
+  </dw:transform-message>
+</flow>
+----
+
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
+.  `get-product-by-id-flow`定义没有任何更改。
++
+[source,xml,linenums]
+----
+<flow name="get-product-by-id-flow" />
+----
+
+. 在`src/main/resources/variables`文件夹下创建`set-productId-variable.dwl`。添加以下用于从`uriParams`获取`id`的逻辑。
++
+....
+％dw 2.0
+输出应用程序/ java
+---
+attributes.uriParams.id
+....
+. 添加引用DW脚本的`Transform component`，该脚本将收到的`productId`值设置为`URI parameter`的变量。
++
+[source,xml,linenums]
+----
+<flow name="get-product-by-id-flow">
+  <ee:transform doc:name="Get Uri Params">
+    <ee:message />
+    <ee:variables>
+      <ee:set-variable variableName="id" resource="variables/set-productId-variable.dwl" />
+    </ee:variables>
+  </ee:transform>
+</flow>
+----
+. 添加一个引用MySQL全局配置的`db:select`元素。在参数化查询中使用冒号（:)语法。参数必须作为键值对提供给`db:input-parameters`元素。
++
+[source,xml,linenums]
+----
+<db:select config-ref="MySQL_Configuration" doc:name="Get by Id">
+  <db:sql>SELECT p.id, p.name, p.description, p.product_number, p.manufactured, p.colors, p.categories, p.stock, p.safety_stock_level, p.standard_cost, p.list_price, p.size, p.size_unit_measure_code, p.weight, p.weight_unit_measure_code, p.days_to_manufacture, p.images,  p.modified_date, p.created_date
+FROM product p
+where p.id = :id</db:sql>
+  <db:input-parameters><![CDATA[#[{'id' : vars.id}]]]></db:input-parameters>
+</db:select>
+----
+. 在`db:select`之后添加一个`validation:is-true`元素，用于检查查询是否返回结果。如果不是，则抛出`APP:NOT_FOUND`错误。请注意，`MEL`已被`DataWeave`替代为默认表达式语言，`#[payload.size() &gt; 0]`被重写为`#[sizeOf(payload) &gt; 0]`。
++
+[source,xml,linenums]
+----
+<validation:is-true doc:name="Is Not Empty" config-ref="Validation_Config" expression="#[sizeOf(payload) &gt; 0]">
+  <error-mapping sourceType="VALIDATION:INVALID_BOOLEAN" targetType="APP:NOT_FOUND" />
+</validation:is-true>
+----
+. 在`src/main/resources/mappings`文件夹下创建`get-product-by-id-response.dwl`文件，并将用于构建JSON响应的DataWeave脚本从1.0迁移到2.0。
++
+。在DW 1.0中转换获取产品的id-response。
+----
+%dw 1.0
+%output application/json
+%var product = payload[0]
+---
+{
+	id: product.id,
+	name: product.name,
+	description: product.description,
+	manufactured: product.manufactured,
+	productNumber: product.product_number,
+	colors: (product.colors default "") splitBy "," ,
+	categories:(product.categories default "") splitBy "," ,
+	safetyStockLevel: product.safety_socket_level,
+	standardCost: (product.standard_cost default "0.0") as :string {format: "##.##"} as :number,
+	listPrice: (product.list_price default "0.0") as :string {format: "##.##"} as :number,
+	stock: product.stock,
+	safetyStockLevel: product.safety_stock_level,
+	daysToManufacture: product.days_to_manufacture,
+	size: product.size,
+	sizeUnitMeasureCode: product.size_unit_measure_code,
+	weight: product.weight,
+	weightUnitMeasureCode: product.weight_unit_measure_code,
+	daysToManufacture: product.days_to_manufacture,
+	images: (product.images splitBy "," default null),
+	modifiedDate: (product.modified_date default "") as :date {format: "yyyy-MM-dd"},
+	createdDate: (product.created_date default "") as :date {format: "yyyy-MM-dd"}
+
+}
+----
++
+在DW 2.0中转换get-product-by-id-response.dwl。
+----
+%dw 2.0
+output application/json
+var product = payload[0]
+---
+{
+	id: product.id,
+	name: product.name,
+	description: product.description,
+	manufactured: product.manufactured,
+	productNumber: product.product_number,
+	colors: (product.colors default "") splitBy "," ,
+	categories:(product.categories default "") splitBy "," ,
+	safetyStockLevel: product.safety_socket_level,
+	standardCost: (product.standard_cost default "0.0") as String {format: "##.##"} as Number,
+	listPrice: (product.list_price default "0.0") as String {format: "##.##"} as Number,
+	stock: product.stock,
+	safetyStockLevel: product.safety_stock_level,
+	daysToManufacture: product.days_to_manufacture,
+	size: product.size,
+	sizeUnitMeasureCode: product.size_unit_measure_code,
+	weight: product.weight,
+	weightUnitMeasureCode: product.weight_unit_measure_code,
+	daysToManufacture: product.days_to_manufacture,
+	images: (product.images splitBy "," default null),
+	modifiedDate: (product.modified_date default "") as Date {format: "yyyy-MM-dd"},
+	createdDate: (product.created_date default "") as Date {format: "yyyy-MM-dd"}
+}
+----
++
+. 最后，添加一个`Transform component`，使用DW 2.0转换来设置有效负载。
++
+[source,xml,linenums]
+----
+<ee:transform doc:name="Product to JSON">
+  <ee:message>
+    <ee:set-payload resource="mappings/get-product-by-id-response.dwl" />
+  </ee:message>
+</ee:transform>
+----
+
+。在Studio 7中为通过ID流获取产品配置XML。
+[source,xml,linenums]
+----
+<flow name="get-product-by-id-flow">
+  <ee:transform doc:name="Get Uri Params">
+    <ee:message />
+    <ee:variables>
+      <ee:set-variable variableName="id" resource="variables/set-productId-variable.dwl" />
+    </ee:variables>
+  </ee:transform>
+  <db:select config-ref="MySQL_Configuration" doc:name="Get by Id">
+    <db:sql>SELECT p.id, p.name, p.description, p.product_number, p.manufactured, p.colors, p.categories, p.stock, p.safety_stock_level, p.standard_cost, p.list_price, p.size, p.size_unit_measure_code, p.weight, p.weight_unit_measure_code, p.days_to_manufacture, p.images,  p.modified_date, p.created_date
+FROM product p
+where p.id = :id</db:sql>
+    <db:input-parameters><![CDATA[#[{'id' : vars.id}]]]></db:input-parameters>
+  </db:select>
+  <validation:is-true doc:name="Is Not Empty" config-ref="Validation_Config" expression="#[sizeOf(payload) &gt; 0]">
+    <error-mapping sourceType="VALIDATION:INVALID_BOOLEAN" targetType="APP:NOT_FOUND" />
+  </validation:is-true>
+  <ee:transform doc:name="Product to JSON">
+    <ee:message>
+      <ee:set-payload resource="mappings/get-product-by-id-response.dwl" />
+    </ee:message>
+  </ee:transform>
+</flow>
+----
+
+。在Studio 7中通过id-product-get-product-by-id-flow
+image::m4-apikit-based-example-get-product-by-id-flow.png[在Studio 7中通过ID流获取产品]
+
+== 迁移_post-product-flow_
+
+//现在对下一个迁移的功能也是如此，等等。
+`post-product-flow`将产品插入数据库中。
+
+。在Studio 6中使用.post-product-flow
+image::m3-apikit-based-example-post-product-flow.png[后期产品流程在Studio 6中]
+
+。用于Studio 6后期产品流的配置XML。
+[source,xml,linenums]
+----
+<flow name="post-product-flow">
+  <set-variable variableName="originalPayload" value="#[payload:java.lang.String]" doc:name="Set Original Payload" />
+  <dw:transform-message doc:name="Json to Map">
+    <dw:set-payload resource="classpath:mappings/json-product-to-java.dwl"/>
+  </dw:transform-message>
+  <transactional action="ALWAYS_BEGIN" doc:name="Transactional">
+    <db:insert config-ref="MySQL_Configuration" doc:name="Insert Product" autoGeneratedKeys="true" autoGeneratedKeysColumnNames="id" target="#[payload]">
+      <db:parameterized-query><![CDATA[insert into product(name, description, product_number, manufactured, colors, categories, stock, safety_stock_level, standard_cost, list_price, size, size_unit_measure_code, weight, weight_unit_measure_code, days_to_manufacture, images, modified_date, created_date) values(#[payload.name],#[payload.description], #[payload.productNumber], #[payload.manufactured], #[payload.colors],  #[payload.categories], #[payload.stock], #[payload.safetyStockLevel], #[payload.standardCost], #[payload.listPrice], #[payload.size], #[payload.sizeUnitMeasureCode], #[payload.weight], #[payload.weightUnitMeasureCode], #[payload.daysToManufacture], #[payload.images], CURDATE(), CURDATE() );]]></db:parameterized-query>
+    </db:insert>
+  </transactional>
+  <dw:transform-message doc:name="Database to Json">
+    <dw:input-variable doc:sample="json.json" mimeType="application/json" variableName="originalPayload" />
+    <dw:set-payload resource="classpath:mappings/post-product-response.dwl"/>
+  </dw:transform-message>
+</flow>
+----
+
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
+.  `post-product-flow`定义没有任何更改。
++
+
+[source,xml,linenums]
+----
+<flow name="post-product-flow" />
+----
+
+. 在`src/main/resources/mappings`文件夹中创建一个`json-to-java.dwl`文件，将JSON请求转换为JAVA地图。
++
+....
+％dw 2.0
+输出应用程序/ java
+---
+有效载荷
+....
+
+. 在`src/main/resources/mappings`中创建一个`json-product-to-java.dwl`文件，并将原始脚本从DW 1.0迁移到2.0。
++
+。在DW 1.0中转换json-product-to-java.dwl。
+----
+%dw 1.0
+%output application/java
+---
+{
+	categories: payload.categories joinBy ",",
+	colors: payload.colors joinBy ",",
+	daysToManufacture: payload.daysToManufacture,
+	description: payload.description,
+	images: payload.images joinBy ",",
+	listPrice: payload.listPrice,
+	(manufactured: 1) when payload.manufactured == true,
+	(manufactured: 0) when payload.manufactured == false,
+	name: payload.name,
+	productNumber: payload.productNumber,
+	safetyStockLevel: payload.safetyStockLevel,
+	size: payload.size,
+	sizeUnitMeasureCode: payload.sizeUnitMeasureCode,
+	standardCost: payload.standardCost,
+	stock: payload.stock,
+	weight: payload.weight,
+	weightUnitMeasureCode: payload.weightUnitMeasureCode
+}
+----
++
+。在DW 2.0中转换json-product-to-java.dwl。
+----
+%dw 2.0
+output application/java
+fun getManufacturedCode(value) =
+	if (value == true) 1
+	else 0
+---
+{
+	categories: payload.categories joinBy ",",
+	colors: payload.colors joinBy ",",
+	daysToManufacture: payload.daysToManufacture,
+	description: payload.description,
+	images: payload.images joinBy ",",
+	listPrice: payload.listPrice,
+	manufactured: getManufacturedCode(payload.manufactured),
+	name: payload.name,
+	productNumber: payload.productNumber,
+	safetyStockLevel: payload.safetyStockLevel,
+	size: payload.size,
+	sizeUnitMeasureCode: payload.sizeUnitMeasureCode,
+	standardCost: payload.standardCost,
+	stock: payload.stock,
+	weight: payload.weight,
+	weightUnitMeasureCode: payload.weightUnitMeasureCode
+}
+----
++
+. 使用先前创建的DataWeave转换添加设置`originalPayload`和`newPayload`的`Transform component`。
++
+[source,xml,linenums]
+----
+<flow name="post-product-flow">
+  <ee:transform doc:name="Json to Map">
+    <ee:message />
+    <ee:variables>
+      <ee:set-variable variableName="originalPayload" resource="mappings/json-to-java.dwl" />
+      <ee:set-variable variableName="newPayload" resource="mappings/json-product-to-java.dwl" />
+    </ee:variables>
+  </ee:transform>
+</flow>
+----
+
+. 要配置事务的详细信息，请使用新的`try`范围替换Mule 3.x `transactional`范围，并将`transactionalAction`属性设置为`ALWAYS_BEGIN`。
++
+[source,xml,linenums]
+----
+<try doc:name="Try" transactionalAction="ALWAYS_BEGIN">
+</try>
+----
+
+. 将`db:insert`元素添加到`Try scope`中，引用MySQL全局配置。参数必须作为键值对提供给`db:input-parameters`元素。另请注意，包含`db:auto-generated-keys-column-name`标签用于设置数据库引擎自动生成的`ID`的有效内容。
++
+[source,xml,linenums]
+----
+<try transactionalAction="ALWAYS_BEGIN" doc:name="Try">
+  <db:insert config-ref="MySQL_Configuration" doc:name="Insert Product" autoGenerateKeys="true">
+    <db:sql>insert into product(name, description, product_number,
+					manufactured, colors, categories, stock, safety_stock_level,
+					standard_cost, list_price, size, size_unit_measure_code, weight,
+					weight_unit_measure_code, days_to_manufacture, images,
+					modified_date, created_date)
+					values(:name, :description,
+					:product_number, :manufactured, :colors,
+					:categories, :stock,
+					:safety_stock_level, :standard_cost,
+					:list_price, :size,
+					:size_unit_measure_code, :weight,
+					:weight_unit_measure_code,
+					:days_to_manufacture, :images,
+					CURDATE(), CURDATE());
+				</db:sql>
+    <db:input-parameters><![CDATA[#[{'name': vars.newPayload.name, 'description': vars.newPayload.description, 'product_number': vars.newPayload.productNumber, 'manufactured': vars.newPayload.manufactured, 'colors': vars.newPayload.colors, 'categories': vars.newPayload.categories, 'stock': vars.newPayload.stock, 'safety_stock_level': vars.newPayload.safetyStockLevel, 'standard_cost': vars.newPayload.standardCost, 'list_price': vars.newPayload.listPrice, 'size': vars.newPayload.size, 'size_unit_measure_code': vars.newPayload.sizeUnitMeasureCode, 'weight': vars.newPayload.weight, 'weight_unit_measure_code': vars.newPayload.weightUnitMeasureCode, 'days_to_manufacture': vars.newPayload.daysToManufacture, 'images': vars.newPayload.images}]]]></db:input-parameters>
+    <db:auto-generated-keys-column-names>
+      <db:auto-generated-keys-column-name value="id" />
+    </db:auto-generated-keys-column-names>
+  </db:insert>
+</try>
+----
+
+. 在`src/main/resources/mappings`下创建一个`post-product-response.dwl`文件，并将DataWeave 1.0中的响应转换迁移到2.0。注意差异从表达式`payload.generatedKeys.GENERATED_KEY`获取有效载荷中生成的`id`。
++
+。在DW 1.0中转换后产品响应.dwl。
+----
+%dw 1.0
+%output application/json
+---
+flowVars.originalPayload ++
+id: payload[0].GENERATED_KEY
+----
++
+。在DW 2.0中转换后产品响应.dwl。
+----
+%dw 2.0
+output application/json
+---
+vars.originalPayload ++
+id: payload.generatedKeys.GENERATED_KEY
+----
++
+. 添加一个`Transform component`并使用DataWeave脚本设置负载。
++
+[source,xml,linenums]
+----
+<ee:transform doc:name="Database to Json">
+  <ee:message>
+    <ee:set-payload resource="mappings/post-product-response.dwl" />
+  </ee:message>
+</ee:transform>
+----
+
+。用于Studio 7后期产品流的配置XML。
+[source,xml,linenums]
+----
+<flow name="post-product-flow">
+  <ee:transform doc:name="Json to Map">
+    <ee:message />
+    <ee:variables>
+      <ee:set-variable variableName="originalPayload" resource="mappings/json-to-java.dwl" />
+      <ee:set-variable variableName="newPayload" resource="mappings/json-product-to-java.dwl" />
+    </ee:variables>
+  </ee:transform>
+  <try transactionalAction="ALWAYS_BEGIN" doc:name="Try">
+    <db:insert config-ref="MySQL_Configuration" doc:name="Insert Product" autoGenerateKeys="true">
+      <db:sql>insert into product(name, description, product_number,
+					manufactured, colors, categories, stock, safety_stock_level,
+					standard_cost, list_price, size, size_unit_measure_code, weight,
+					weight_unit_measure_code, days_to_manufacture, images,
+					modified_date, created_date)
+					values(:name, :description,
+					:product_number, :manufactured, :colors,
+					:categories, :stock,
+					:safety_stock_level, :standard_cost,
+					:list_price, :size,
+					:size_unit_measure_code, :weight,
+					:weight_unit_measure_code,
+					:days_to_manufacture, :images,
+					CURDATE(), CURDATE());
+				</db:sql>
+      <db:input-parameters><![CDATA[#[{'name': vars.newPayload.name, 'description': vars.newPayload.description, 'product_number': vars.newPayload.productNumber, 'manufactured': vars.newPayload.manufactured, 'colors': vars.newPayload.colors, 'categories': vars.newPayload.categories, 'stock': vars.newPayload.stock, 'safety_stock_level': vars.newPayload.safetyStockLevel, 'standard_cost': vars.newPayload.standardCost, 'list_price': vars.newPayload.listPrice, 'size': vars.newPayload.size, 'size_unit_measure_code': vars.newPayload.sizeUnitMeasureCode, 'weight': vars.newPayload.weight, 'weight_unit_measure_code': vars.newPayload.weightUnitMeasureCode, 'days_to_manufacture': vars.newPayload.daysToManufacture, 'images': vars.newPayload.images}]]]></db:input-parameters>
+      <db:auto-generated-keys-column-names>
+        <db:auto-generated-keys-column-name value="id" />
+      </db:auto-generated-keys-column-names>
+    </db:insert>
+  </try>
+  <ee:transform doc:name="Database to Json">
+    <ee:message>
+      <ee:set-payload resource="mappings/post-product-response.dwl" />
+    </ee:message>
+  </ee:transform>
+</flow>
+----
+
+。在Studio 7中使用.post-product-flow
+image::m4-apikit-based-example-post-product-flow.png[后期产品流程在Studio 7中]
+
+== 迁移_put-product-flow_
+
+//现在对下一个迁移的功能也是如此，等等。
+`put-product-flow`根据指定的`id`更新数据库中的产品。
+
+。Studio 6中的输出产品流
+image::m3-apikit-based-example-put-product-flow.png[在Studio 6中放置产品流]
+
+。在Studio 6中为Put-product-Flow配置XML。
+[source,xml,linenums]
+----
+<flow name="put-product-flow">
+  <dw:transform-message doc:name="JSon to Product">
+    <dw:set-payload resource="classpath:mappings/put-json-product-to-java.dwl"/>
+  </dw:transform-message>
+  <transactional action="ALWAYS_BEGIN" doc:name="Transactional">
+    <db:update config-ref="MySQL_Configuration" doc:name="Update Product">
+      <db:parameterized-query><![CDATA[update product set name = #[payload.name], description = #[payload.description], product_number = #[payload.productNumber], manufactured = #[payload.manufactured], colors = #[payload.colors], categories= #[payload.categories], stock = #[payload.stock], safety_stock_level = #[payload.safetyStockLevel], standard_cost = #[payload.standardCost], list_price = #[payload.listPrice], size = #[payload.size], size_unit_measure_code = #[payload.sizeUnitMeasureCode], weight = #[payload.weight], weight_unit_measure_code = #[payload.weightUnitMeasureCode], days_to_manufacture = #[payload.daysToManufacture], images = #[payload.images],  modified_date = CURDATE() where id = #[id]]]></db:parameterized-query>
+    </db:update>
+  </transactional>
+  <set-payload value="#[NullPayload.getInstance()]" doc:name="Set Payload" />
+  <set-property propertyName="http.status" value="204" doc:name="Set Status" />
+</flow>
+----
+
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
+.  `put-product-flow`定义没有任何更改。
++
+[source,xml,linenums]
+----
+<flow name="put-product-flow" />
+----
+
+. 在`src/main/resources/mappings`文件夹下创建一个`put-json-product-to-java.dwl`文件，并将原始脚本从DW 1.0迁移到2.0。
++
+。在DW 1.0中转换put-json-product-to-java.dwl。
+----
+%dw 1.0
+%output application/java
+---
+{
+	categories: payload.categories joinBy ",",
+	colors: payload.colors joinBy ",",
+	daysToManufacture: payload.daysToManufacture,
+	description: payload.description,
+	images: payload.images joinBy ",",
+	listPrice: payload.listPrice,
+	manufactured: payload.manufactured,
+	name: payload.name,
+	productNumber: payload.productNumber,
+	safetyStockLevel: payload.safetyStockLevel,
+	size: payload.size,
+	sizeUnitMeasureCode: payload.sizeUnitMeasureCode,
+	standardCost: payload.standardCost,
+	stock: payload.stock,
+	weight: payload.weight,
+	weightUnitMeasureCode: payload.weightUnitMeasureCode
+}
+----
++
+。在DW 2.0中转换put-json-product-to-java.dwl。
+----
+%dw 2.0
+output application/java
+---
+{
+	categories: payload.categories joinBy ",",
+	colors: payload.colors joinBy ",",
+	daysToManufacture: payload.daysToManufacture,
+	description: payload.description,
+	images: payload.images joinBy ",",
+	listPrice: payload.listPrice,
+	manufactured: payload.manufactured,
+	name: payload.name,
+	productNumber: payload.productNumber,
+	safetyStockLevel: payload.safetyStockLevel,
+	size: payload.size,
+	sizeUnitMeasureCode: payload.sizeUnitMeasureCode,
+	standardCost: payload.standardCost,
+	stock: payload.stock,
+	weight: payload.weight,
+	weightUnitMeasureCode: payload.weightUnitMeasureCode
+}
+----
++
+. 使用先前创建的DataWeave转换和`id`和`variables/set-productId-variable.dwl`脚本添加设置`updatePayload`的`Transform component`。
++
+[source,xml,linenums]
+----
+<flow name="put-product-flow">
+  <ee:transform doc:name="JSon to Product">
+    <ee:message />
+    <ee:variables >
+      <ee:set-variable variableName="updatePayload" resource="mappings/put-json-product-to-java.dwl" />
+      <ee:set-variable variableName="id" resource="variables/set-productId-variable.dwl" />
+    </ee:variables>
+  </ee:transform>
+</flow>
+----
+. 要配置事务的详细信息，请使用新的`try`范围替换Mule 3.x `transactional`范围，并将`transactionalAction`属性设置为`ALWAYS_BEGIN`。
++
+[source,xml,linenums]
+----
+<try doc:name="Try" transactionalAction="ALWAYS_BEGIN">
+</try>
+----
+. 将`db:update`元素添加到`Try scope`中，引用MySQL全局配置。参数必须作为键值对提供给`db:input-parameters`元素。
++
+[source,xml,linenums]
+----
+<try doc:name="Try" transactionalAction="ALWAYS_BEGIN">
+  <db:update config-ref="MySQL_Configuration" doc:name="Update Product">
+    <db:sql >update product
+set name = :name, description = :description, product_number = :product_number, manufactured = :manufactured, colors = :colors, categories= :categories, stock = :stock, safety_stock_level = :safety_stock_level, standard_cost = :standard_cost, list_price = :list_price, size = :size, size_unit_measure_code = :size_unit_measure_code, weight = :weight, weight_unit_measure_code = :weight_unit_measure_code, days_to_manufacture = :days_to_manufacture, images = :images,  modified_date = CURDATE()
+where id = :id</db:sql>
+    <db:input-parameters ><![CDATA[#[{'name': vars.updatePayload.name, 'description': vars.updatePayload.description, 'product_number': vars.updatePayload.productNumber, 'manufactured': vars.updatePayload.manufactured, 'colors': vars.updatePayload.colors, 'categories': vars.updatePayload.categories, 'stock': vars.updatePayload.stock, 'safety_stock_level': vars.updatePayload.safetyStockLevel, 'standard_cost': vars.updatePayload.standardCost, 'list_price': vars.updatePayload.listPrice, 'size': vars.updatePayload.size, 'size_unit_measure_code': vars.updatePayload.sizeUnitMeasureCode, 'weight': vars.updatePayload.weight, 'weight_unit_measure_code': vars.updatePayload.weightUnitMeasureCode, 'days_to_manufacture': vars.updatePayload.daysToManufacture, 'images': vars.updatePayload.images, 'id': vars.id}]]]></db:input-parameters>
+  </db:update>
+</try>
+----
+. 添加`Transform component`，并使用`set-httpStatus-with-204.dwl`文件将`httpStatus`变量设置为`src/main/resources/variables`。
++
+[source,xml,linenums]
+----
+<ee:transform doc:name="Set Status">
+  <ee:message />
+  <ee:variables >
+    <ee:set-variable variableName="httpStatus" resource="variables/set-httpStatus-with-204.dwl" />
+  </ee:variables>
+</ee:transform>
+----
+
+。在Studio 7中为put-product-flow配置XML。
+[source,xml,linenums]
+----
+<flow name="put-product-flow">
+  <ee:transform doc:name="JSon to Product">
+    <ee:message />
+    <ee:variables >
+      <ee:set-variable variableName="updatePayload" resource="mappings/put-json-product-to-java.dwl" />
+      <ee:set-variable variableName="id" resource="variables/set-productId-variable.dwl" />
+    </ee:variables>
+  </ee:transform>
+  <try doc:name="Try" transactionalAction="ALWAYS_BEGIN">
+    <db:update config-ref="MySQL_Configuration" doc:name="Update Product">
+      <db:sql >update product
+set name = :name, description = :description, product_number = :product_number, manufactured = :manufactured, colors = :colors, categories= :categories, stock = :stock, safety_stock_level = :safety_stock_level, standard_cost = :standard_cost, list_price = :list_price, size = :size, size_unit_measure_code = :size_unit_measure_code, weight = :weight, weight_unit_measure_code = :weight_unit_measure_code, days_to_manufacture = :days_to_manufacture, images = :images,  modified_date = CURDATE()
+where id = :id</db:sql>
+      <db:input-parameters ><![CDATA[#[{'name': vars.updatePayload.name, 'description': vars.updatePayload.description, 'product_number': vars.updatePayload.productNumber, 'manufactured': vars.updatePayload.manufactured, 'colors': vars.updatePayload.colors, 'categories': vars.updatePayload.categories, 'stock': vars.updatePayload.stock, 'safety_stock_level': vars.updatePayload.safetyStockLevel, 'standard_cost': vars.updatePayload.standardCost, 'list_price': vars.updatePayload.listPrice, 'size': vars.updatePayload.size, 'size_unit_measure_code': vars.updatePayload.sizeUnitMeasureCode, 'weight': vars.updatePayload.weight, 'weight_unit_measure_code': vars.updatePayload.weightUnitMeasureCode, 'days_to_manufacture': vars.updatePayload.daysToManufacture, 'images': vars.updatePayload.images, 'id': vars.id}]]]></db:input-parameters>
+    </db:update>
+  </try>
+  <ee:transform doc:name="Set Status">
+    <ee:message />
+    <ee:variables >
+      <ee:set-variable variableName="httpStatus" resource="variables/set-httpStatus-with-204.dwl" />
+    </ee:variables>
+  </ee:transform>
+</flow>
+----
+
+.put-product-flow在Studio 7中
+image::m4-apikit-based-example-put-product-flow.png[在Studio 7中放置产品流]
+
+== 迁移_delete-product-flow_
+
+//现在对下一个迁移的功能也是如此，等等。
+`delete-product-flow`将指定为`URI parameter`的`id`从MySQL数据库中删除产品记录，并返回HTTP 204状态代码。
+
+。Studio 6中的删除产品流
+image::m3-apikit-based-example-delete-product-flow.png[在Studio 6中删除产品流]
+
+。用于Studio 6中删除产品流的配置XML。
+[source,xml,linenums]
+----
+<flow name="delete-product-flow">
+  <transactional action="ALWAYS_BEGIN" doc:name="Transactional">
+    <db:delete config-ref="MySQL_Configuration" doc:name="Delete Product">
+      <db:parameterized-query><![CDATA[delete from product where id=#[id]]]></db:parameterized-query>
+    </db:delete>
+  </transactional>
+  <set-payload value="#[NullPayload.getInstance()]" doc:name="Set Payload"/>
+  <set-property propertyName="http.status" value="204" doc:name="Set Status"/>
+</flow>
+----
+
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
+.  `delete-product-flow`定义没有任何更改。
++
+
+[source,xml,linenums]
+----
+<flow name="delete-product-flow" />
+----
+
+. 添加引用DW脚本的`Transform component`，该脚本将收到的`productId`值设置为`URI parameter`的变量。
++
+
+[source,xml,linenums]
+----
+<flow name="delete-product-flow">
+  <ee:transform doc:name="Set productId variable">
+    <ee:message />
+    <ee:variables>
+      <ee:set-variable variableName="productId" resource="variables/set-productId-variable.dwl" />
+    </ee:variables>
+  </ee:transform>
+</flow>
+----
+
+. 要配置事务的详细信息，请使用新的`try`范围替换Mule 3.x `transactional`范围，并将`transactionalAction`属性设置为`ALWAYS_BEGIN`。
++
+
+[source,xml,linenums]
+----
+<try doc:name="Try" transactionalAction="ALWAYS_BEGIN">
+</try>
+----
+
+. 将`db:delete`元素添加到`Try scope`中，引用MySQL全局配置。参数必须作为键值对提供给`db:input-parameters`元素。与Mule 3.x相反，先前定义的`productId`流变量必须作为`vars.productId`而不是`flowVars.productId`来访问。
++
+
+[source,xml,linenums]
+----
+<try doc:name="Try" transactionalAction="ALWAYS_BEGIN">
+  <db:delete config-ref="MySQL_Configuration" doc:name="Delete Product">
+    <db:sql>delete from product where id=:productId</db:sql>
+    <db:input-parameters><![CDATA[#[{'productId' : vars.productId}]]]></db:input-parameters>
+  </db:delete>
+</try>
+----
+
+. 按照以下步骤在`src/main/resources/variables`下创建一个`set-httpStatus-with-204.dwl`文件。
++
+
+....
+％dw 2.0
+输出应用程序/ java
+---
+204
+....
+
+. 使用`Transform Component`为值`204`设置`httpStatus`变量，用于定义`NO CONTENT`响应代码。
++
+
+[source,xml,linenums]
+----
+<ee:transform doc:name="Set 204 HTTP Status code">
+  <ee:message />
+  <ee:variables>
+    <ee:set-variable variableName="httpStatus" resource="variables/set-httpStatus-with-204.dwl" />
+  </ee:variables>
+</ee:transform>
+----
+
+要返回特定的HTTP状态代码，而不是设置`http.status`属性，Mule 4中的APIkit需要设置名称为`httpStatus`的变量。
+
+。用于Studio 7中删除产品流的配置XML。
+[source,xml,linenums]
+----
+<flow name="delete-product-flow">
+  <ee:transform doc:name="Set productId variable">
+    <ee:message />
+    <ee:variables>
+      <ee:set-variable variableName="productId" resource="variables/set-productId-variable.dwl" />
+    </ee:variables>
+  </ee:transform>
+  <try doc:name="Try" transactionalAction="ALWAYS_BEGIN">
+    <db:delete config-ref="MySQL_Configuration" doc:name="Delete Product">
+      <db:sql>delete from product where id=:productId</db:sql>
+      <db:input-parameters><![CDATA[#[{'productId' : vars.productId}]]]></db:input-parameters>
+    </db:delete>
+  </try>
+  <ee:transform doc:name="Set 204 HTTP Status code">
+    <ee:message />
+    <ee:variables>
+      <ee:set-variable variableName="httpStatus" resource="variables/set-httpStatus-with-204.dwl" />
+    </ee:variables>
+  </ee:transform>
+</flow>
+----
+
+。Studio 7中的删除产品流
+image::m4-apikit-based-example-delete-product-flow.png[在Studio 7中删除产品流]
+
+== 迁移后端流
+
+//现在对下一个迁移的功能也是如此，等等。
+迁移后端流程：
+
+对于由APIkit生成的每个后端流，请在其实现中添加一个`flow-ref`。
++
+。Studio 6中后端流的配置XML。
+[source,xml,linenums]
+----
+<flow name="get:/product:api-config">
+  <flow-ref name="get-products-flow" doc:name="get-products-flow" />
+</flow>
+<flow name="get:/product/{id}:api-config">
+  <flow-ref name="get-product-by-id-flow" doc:name="get-product-by-id-flow" />
+</flow>
+<flow name="post:/product:application/json:api-config">
+  <flow-ref name="post-product-flow" doc:name="post-product-flow" />
+</flow>
+<flow name="delete:/product/{id}:api-config">
+  <flow-ref name="delete-product-flow" doc:name="delete-product-flow" />
+</flow>
+<flow name="put:/product/{id}:application/json:api-config">
+  <flow-ref name="put-product-flow" doc:name="put-product-flow" />
+</flow>
+----
++
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
++
+。Studio 7中后端流的配置XML。
+[source,xml,linenums]
+----
+<flow name="get:\product:api-product-config">
+  <flow-ref name="get-products-flow" doc:name="get-products-flow" />
+</flow>
+<flow name="get:\product\(id):api-product-config">
+  <flow-ref doc:name="get-product-by-id-flow" name="get-product-by-id-flow"/>
+</flow>
+<flow name="post:\product:application\json:api-product-config">
+  <flow-ref name="post-product-flow" doc:name="post-product-flow" />
+</flow>
+<flow name="delete:\product\(id):application\json:api-product-config">
+  <flow-ref doc:name="delete-product-flow" doc:id="38894873-9a01-4e59-8362-5eefce5ea043" name="delete-product-flow"/>
+</flow>
+<flow name="put:\product\(id):application\json:api-product-config">
+  <flow-ref doc:name="put-product-flow" doc:id="e64cf378-26a2-4435-8d0d-269c50282b3c" name="put-product-flow"/>
+</flow>
+----
+
+== 扩展默认的APIkit全局例外策略
+
+//现在对下一个迁移的功能也是如此，等等。
+
+. 将`APP:NOT_FOUND`异常类型添加到ApiKit生成的404映射中，以处理`get-product-by-id-flow`中的`validation:is-true`元素抛出的异常。您可以重复此过程来查找您想要映射到特定状态码的任何其他错误。
++
+。Studio 6中的ApiKit映射404的配置XML。
+[source,xml,linenums]
+----
+<apikit:mapping statusCode="404">
+  <apikit:exception value="org.mule.module.apikit.exception.NotFoundException" />
+  <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+  <set-payload value="{ &quot;message&quot;: &quot;Resource not found&quot; }" doc:name="Set Payload" />
+</apikit:mapping>
+----
++
+。Studio 7中的ApiKit映射404的配置XML。
+[source,xml,linenums]
+----
+<on-error-propagate type="APIKIT:NOT_FOUND, APP:NOT_FOUND" doc:name="On Error Propagate" enableNotifications="true" logException="true">
+  <ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd" doc:id="70f893cb-6106-42d9-9a95-e201e9349159">
+    <ee:message>
+      <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Resource not found"}]]></ee:set-payload>
+    </ee:message>
+    <ee:variables>
+      <ee:set-variable variableName="httpStatus"><![CDATA[404]]></ee:set-variable>
+    </ee:variables>
+  </ee:transform>
+</on-error-propagate>
+----
++
+. 为所有非先前管理的例外添加通用ApiKit映射500。
++
+。Studio 6中的通用ApiKit映射500的配置XML。
+[source,xml,linenums]
+----
+<apikit:mapping-exception-strategy name="api-apiKitGlobalExceptionMapping">
+  <!-- other exception strategies here -->
+  <apikit:mapping statusCode="500">
+    <apikit:exception value="java.lang.Exception" />
+    <set-property propertyName="Content-Type" value="application/json" doc:name="Property" />
+    <set-payload value="{ &quot;message&quot;: &quot;Internal Server Error&quot; }" doc:name="Set Payload" />
+  </apikit:mapping>
+</apikit:mapping-exception-strategy>
+----
++
+//解释Studio 7中Mule 4的变化，包括您需要使用的任何不同模块，组件。
++
+。Studio 7中的通用ApiKit映射500的配置XML。
+[source,xml,linenums]
+----
+<error-handler>
+  <!-- other exception strategies here -->
+  <on-error-propagate doc:name="On Error Propagate" enableNotifications="true" logException="true">
+    <ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd" doc:id="7e8049ff-cae6-4937-8569-c36bb7f06dad">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Internal Server Error"}]]></ee:set-payload>
+      </ee:message>
+      <ee:variables>
+        <ee:set-variable variableName="httpStatus"><![CDATA[500]]></ee:set-variable>
+      </ee:variables>
+    </ee:transform>
+  </on-error-propagate>
+</error-handler>
+----

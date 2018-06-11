@@ -1,0 +1,159 @@
+=  Mule CRC32处理器
+
+Mule可以对消息应用循环冗余校验（CRC）以确保完整性。 CRC32处理器在进入系统时充当了为消息生成*checksum*的丰富功能，然后在消息离开系统时充当验证校验和的过滤器。如果入口和出口值不匹配，则CRC终止消息的处理。
+
+CRC32处理器允许用户验证消息在发送者和接收者之间保持完好。由于它本身不提供加密或在邮件中追加签名，因此可以将其与其他安全功能一起使用，以提供对邮件真实性的额外信心。
+
+== 生成校验和
+
+[NOTE]
+本主题介绍全球元素的概念;如果您不熟悉此功能，请继续阅读 link:/mule-user-guide/v/3.4/global-elements[全球元素]以了解更多信息。
+
+
+要使用CRC32处理器在消息上生成校验和，您至少必须在Mule应用程序中配置两个元素：
+
+* 全局CRC32元素
+*  CRC32处理器
+
+完成这些步骤可确保Mule根据您的有效负载计算校验和，并利用该校验和丰富您的Mule消息的属性。
+
+==== 创建全局元素
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Create and configure the global element through the Global Element tab at the bottom of the canvas, or directly within the CRC32 building block' Properties pane by clicking the image:add.png[plus] icon to the right of the *Connector Ref* field. 
+. Configure the global element's attributes according to the table below.
++
+image:GlobalCRC32Calculation5.png[GlobalCRC32Calculation5]
++
+[%header%autowidth.spread]
+|===
+|Attribute |Req'd |Value
+|*Name* |x |A unique name for your global element.
+|*Target Expression* |x |A Mule expression, accept the default variable name `&#x0023;[variable:crc32]`
+|===
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+. Create a `crc32:config` element, set above all the flows in your application.
+. Configure the global element's attributes according to the table below.
++
+[%header%autowidth.spread]
+|===
+|Attribute |Req'd |Value
+|*name* | x |A unique name for your global element.
+|*targetExpression* | x |A Mule expression, accept the default variable name `&#x0023;[variable:crc32]`
+|===
+....
+------
+
+==== 配置CRC32消息处理器
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Insert a *CRC32* processor in your Mule flow.
+. Configure the message processor's attributes according to the table below.
++
+image:CRC32Calculation2.png[CRC32Calculation2]
++
+[%header%autowidth.spread]
+|===
+|Attribute |Req'd |Value
+|*Display Name* |x |A unique name for your message processor.
+|*Config Reference* |x |Use the global element you created above.
+|*Operation* |x |Calculate
+|*Input Reference* |  |By default, Mule calculates based on the entire payload. Use the *Input Reference* field to specify a different target for the calculation, if necessary.
+|===
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+
+. Insert a `crc32:calculate` processor in your Mule flow.
+. Configure the element's attributes according to the table below.
+
+[source, xml]
+----
+<crc32:calculate config-ref="Global_CRC32_Calculation" doc:name="CRC Calculation"/>
+----
+
+[%header%autowidth.spread]
+|===
+|Attribute |Req'd |Value
+|*config-ref* |x |Use the global element you created above.
+|*doc:name* |x |A display name for the element in Studio's Visual Editor. Not applicable for Standalone.
+|*input-ref* |  |By default, Mule calculates based on the entire payload. Use input-ref to specify a different target for the calculation, if necessary.
+|===
+....
+------
+
+== 验证校验和
+
+要使用CRC32处理器验证消息的校验和，您至少必须在Mule应用程序中配置两个元素：
+
+*  CRC32消息处理器
+*  CRC32全局元素
+
+完成这些步骤可确保Mule通过将您的消息属性中的校验和与您在CRC32计算<<Generating a Checksum>>中计算的校验和进行比较来验证校验和。
+
+==== 配置CRC32消息处理器
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. Insert a *CRC32* processor into your Mule flow, positioned at the point where you would like to verify the checksum.
+. Configure the message processor's attributes according to the table below.
++
+image:CRC32Filter3.png[CRC32Filter3]
++
+[%header,cols="34,33,33"]
+|===
+|Attribute |Req'd |Value
+|*Display Name* |x |A unique name for your message processor.
+|*Config Reference* |x a|
+Create a "blank" global element satisfies Mule Studio's configuration requirements and needs no further configuration.
+.. Click the image:add.png[plus] icon next to the *Config Reference* field.
+.. Delete the default text in the *Target Expression* field, leaving this field blank, then click *OK*. 
+
+|*Operation* |x |CRC32 Filter
+|*Expected Checksum* |x |Enter the Expected Checksum, matching the contents of the Target Expression field in the CRC32 global element in your configuration of the CRC32 calculation.
+|*Input Reference* |  |By default, Mule calculates based on the entire payload. Use the Input Reference field to specify a different target for the calculation, if necessary.
+|===
+
+....
+[tab,title="XML Editor or Standalone"]
+....
+. _Not required in Standalone_: Create a "blank" `crc32:config` global element, as per the code below, to satisfy Mule Studio's configuration requirements.
++
+[source, xml]
+----
+<crc32:config name="CRC32" doc:name="CRC32"/>
+----
++
+. Insert a `crc32:filter` processor into your Mule flow, positioned at the point where you would like to verify the checksum.
+. Configure the message processor's attributes according to the table below.
++
+[source, xml]
+----
+<crc32:filter config-ref="CRC32" expectedChecksum="#[variable:crc32]" doc:name="CRC32 Filter"/>
+----
+
+[%header%autowidth.spread]
+|====
+|Attribute |Req'd |Value
+|*config-ref* |x |Use the global element you created above.
+|*doc:name* |x |A display name for the element in Studio's Visual Editor. Not applicable for Standalone.
+|*expectedChecksum* |x |Enter the Expected Checksum, matching the contents of the Target Expression field in the CRC32 global element in your configuration of the CRC32 calculation.
+|*input-ref* |  |By default, Mule calculates based on the entire payload. Use the Input Reference field to specify a different target for the calculation, if necessary.
+|====
+....
+------
+

@@ -1,0 +1,346 @@
+= 基本身份验证
+
+基本身份验证是指经典的身份验证方法，为了与您的API用户进行身份验证，只需向Anypoint（TM）连接器提供他们的用户名和密码即可。如果您的API依赖于基本身份验证，那么这也是您希望使用的方案，对用户名和密码使用非典型值。例如，在用户名和密码之上使用安全令牌的API仍然会为其连接的应用程序使用基本身份验证。
+
+Anypoint DevKit Basic Auth框架为连接器提供了多租户功能（管理您的应用程序中给定连接器的具有不同凭据的多个同时连接）以及连接池和实例池。这些优势适用于除OAuth之外的大多数身份验证方案，以及不需要身份验证的API。
+
+本文档描述使用Basic Auth框架的好处，它公开的Java注释，以及如何在您自己的连接器中实现Basic Auth支持以使用您的API进行认证。本次讨论中的示例显示了使用基本身份验证和基本的用户名/密码身份验证，但是它们可以很容易地推广到其他非OAuth协议。
+
+image:5-package.png[5包]
+
+== 假设
+
+本文档假定您熟悉 link:/anypoint-connector-devkit/v/3.5[Anypoint连接器DevKit]，已经 link:/anypoint-connector-devkit/v/3.5/creating-an-anypoint-connector-project[创建一个连接器项目]，并准备在您的连接器上实施身份验证。此外，它假定您熟悉各种 link:/anypoint-connector-devkit/v/3.5/authentication-methods[认证方法]，比较了不同的 link:/anypoint-connector-devkit/v/3.5/authentication[Devkit认证支持选项]和选择的基本身份验证以连接到您的API。
+
+== 关于基本身份验证
+
+任何DevKit的基本身份验证框架都可以通过连接器开发人员的最小努力提供以下好处：
+
+透明多租户 -  Mule应用程序可以打开与单个目标的多个连接，使用不同的凭证代表多个用户同时连接
+* 连接池 - 自动管理连接器类的实例池，以有效管理连接资源
+* 自动使例外连接失效并根据需要重新连接的功能
+
+通过在@Connector类级别应用注释，Anypoint DevKit可以轻松地为连接器添加基本身份验证功能。
+
+[WARNING]
+====
+*Connection Management Framework and Authentication Protocols*
+
+Basic Auth框架可与大多数身份验证协议（如基本用户名/密码身份验证（最常见），SAML，Kerberos，LDAP和NTLM）结合使用。
+
+但是，您不能将基本身份验证框架与使用OAuth身份验证的连接器配合使用;该框架不支持"OAuth dance"或管理OAuth令牌。
+
+如果您使用与OAuth相关的注释，DevKit中的基于OAuth的认证提供了与基本认证相媲美的功能。有关详情，请参阅 link:/anypoint-connector-devkit/v/3.5/oauth-v1[OAuth V1]和 link:/anypoint-connector-devkit/v/3.5/oauth-v2[OAuth V2]。
+====
+
+==  DevKit中的基本身份验证注释
+
+要在连接器中使用基本身份验证，请在@Connector类中定义和注释以下方法：
+
+*  `@Connect method`  - 创建一个连接
+*  `@Disconnect method`  - 显式关闭连接
+*  `@ValidateConnection method`  - 如果连接仍然有效，则返回true，否则返回`false`
+*  `@ConnectionIdentifier method`  - 返回用于为连接池中的连接器实例生成唯一标识的前缀
+
+当API操作由于连接丢失而遇到异常时，也可以使用`@InvalidateConnectionOn`方法。
+
+这些方法的具体实现取决于目标。
+
+由于基本身份验证是一个非常有用的基本功能，生成的代码框架包含已应用基本身份验证注释的占位符方法：
+
+[%header%autowidth.spread]
+|===
+^ |具有连接管理注释方法的骨架连接器
+一个|
+[source, code, linenums]
+----
+/**
+* Connect
+*
+* @param username A username
+* @param password A password
+* @throws ConnectionException
+*/
+@Connect public void connect(@ConnectionKey String username, String password)
+    throws ConnectionException
+{
+ 
+    /**
+    * CODE FOR ESTABLISHING A CONNECTION GOES HERE 
+    */
+}
+ 
+/**
+* Disconnect
+*/ 
+@Disconnect
+public void disconnect()
+{
+ 
+    /**
+    * CODE FOR CLOSING A CONNECTION GOES HERE
+    */
+}
+ 
+/**
+* Validate Connection
+*/
+@ValidateConnection
+public boolean isConnected()
+{
+    //CHECK IF THE CONNECTION IS OPEN
+}
+ 
+/**
+* Connection identifier
+*/
+@ConnectionIdentifier
+public String connectionId()
+{
+    return "001";
+}
+----
+|===
+
+[WARNING]
+开发连接器时，请确保合并与连接器相关的连接逻辑。
+
+Anypoint DevKit框架会根据需要自动调用这些方法;你永远不会直接从你的代码中调用它们。
+
+==  @ Connect方法
+
+此方法指定`@Connector`类中的哪个方法负责创建到目标的连接。当连接器启动时，或者与API的连接已经丢失并且必须重新建立，Mule会自动调用`@Connect`方法。当此方法结束时，如果认证成功，则连接器实例已准备好向API发出请求。
+
+用`@Connect`注释的方法必须：
+
+* 是`public`
+* 抛出`org.mule.api.ConnectionException`（并且没有其他例外）
+* 有一个`void`返回类型
+* 如果使用自动基本身份验证，则只需注释一个方法`@Connect`;否则编译失败
+
+实现实际连接的特定代码取决于API。以下是`@Connect`方法的示例实现：
+
+[%header%autowidth.spread]
+|===
+^ |用于salesforce连接器的连接方法
+一个|
+[source, java, linenums]
+----
+@Connect
+public void connect(@ConnectionKey String username, String password)
+throws ConnectionException
+{
+   ConnectorConfig config = new ConnectorConfig();
+   config.setUsername(username);
+   config.setPassword(password);
+   try
+   {
+      connection = com.mycompany.ws.Connector.newConnection(config);
+   }
+   catch (com.mycompany.ws.ConnectionException e)
+   {
+      throw new org.mule.api.ConnectionException(ConnectionExceptionCode.UNKNOWN, null, e.getMessage(), e);
+   }
+}
+----
+|===
+
+此方法所需的参数是认证所需的凭证，在这种情况下是用户名和密码。由于此方法使用`@Connect`进行了注释，Anypoint DevKit使这些参数在该连接器的配置元素中都可用（与`@Configurable`字段一样），以及在消息处理器被拖入时流量。指定的凭据会覆盖配置元素中设置的凭据。
+
+==  @ ConnectionKey和连接池
+
+用户名参数用`@ConnectionKey`标注。如果启用了池（请参阅下面的 link:/anypoint-connector-devkit/v/3.5/basic-auth[连接池]），Mule将保留一组同时连接，根据需要使用它们来进行调用。 `@ConnectionKey`注释标记此字段用作连接池中此特定连接的密钥，因此一旦创建此用户名的连接并将其添加到池中，它将被重用，而不是为每个连接重新创建请求。
+[NOTE]
+====
+*Choosing a Connection Key*
+
+对于用户名和密码认证，用户名是`@ConnectionKey`的明显选择。对于其他协议，请确定最明显与不同用户关联的值和连接到您的服务的访问权限，并将此值用作您的`@ConnectionKey`。
+==== 
+
+在上例中，`@Connect`方法首先创建一个`ConnectorConfig`对象（一个包含连接配置信息的Salesforce类型），然后将用户名和密码值加载到对象中。该对象用作静态`newConnection()`调用的参数，如果成功则返回`PartnerConnection`。如果验证失败（例如由于登录信息无效），代码将捕获Salesforce类型的异常并抛出一个包含相同信息但标记为正确的Mule异常类型的新异常。
+
+[NOTE]
+请注意，Salesforce Connector类（您称其为`newConnection(config)`）的完全限定名称的使用不是导入类。这是因为DevKit还会导入一个名为`Connector`的类，这会导致导入冲突。
+
+[WARNING]
+对于未使用身份验证的客户端，您仍然需要提供`@ConnectionKey`字段。一个发明的用户名是一种可能性;请参阅 link:/anypoint-connector-devkit/v/3.5/creating-a-connector-for-a-soap-service-via-cxf-client[通过CXF客户端为SOAP服务创建连接器]了解这种实现。
+
+==  @断开连接方法
+
+此注释指示负责处理连接的`@Connector`类中的方法。当连接器关闭或连接明确终止时调用此方法。
+
+用`@Disconnect`注释的方法必须：
+
+* 是`public`
+* 不要输入参数
+* 有一个`void`返回类型
+
+如果使用基本身份验证，则`@Connector`类必须只有一个带注释的`@Disconnect`方法;否则编译失败。
+
+[source, java, linenums]
+----
+@Disconnect
+public void disconnect()
+{
+   if (connection != null)
+   {
+       try
+         {
+         connection.logout();
+         }
+      catch (ConnectionException e)
+         {
+         e.printStackTrace();
+         }
+      finally
+         {
+         connection = null;
+         }
+   }
+}
+----
+
+如果连接器当前打开了连接，则此代码将调用`connection.logout()`，该客户端方法会显式解除身份验证并关闭连接。 `finally`块可以确保，如果注销由于某种原因而失败，则连接仍会设置为空，因此连接器不会再尝试引用该连接器实例。
+
+==  @ ValidateConnection方法
+
+这个方法被Mule调用来检查连接是否实际打开。
+
+用`@ValidateConnection`注释的方法必须：
+
+* 是`public`
+* 不要输入参数
+* 返回`boolean`或`java.lang.Boolean`
+
+只有`@Connector`类中的一种方法可以使用`@ValidateConnection`进行注释。
+
+[source, java, linenums]
+----
+@ValidateConnection    
+public boolean isConnected() 
+{     
+return connection != null;    
+}
+----
+
+在此示例中，为了确定连接是否处于活动状态，代码只检查连接参数是否为空。取决于协议，其他连接器可能需要不同的实现。
+
+==  @ ConnectionIdentifier方法
+
+此注释标识`@Connector`类中的方法，该方法返回连接的唯一标识符，用于记录和调试。
+
+用`@ConnectionIdentifier`注释的方法必须：
+
+* 是`public`
+* 不是`static`
+* 不接受参数
+* 返回`java.lang.String`
+
+使用基本身份验证的@Connector类必须只有一个注释为`@ConnectionIdentifier`的方法;否则编译将失败。
+
+此代码返回连接SessionId作为标识符（如果可用）。在这种情况下，SessionHeader对象包含有关当前连接到API的头信息，包括会话ID。
+
+[source, java, linenums]
+----
+@ConnectionIdentifier
+   public String connectionId() {
+    if (connection != null){
+     return connection.getSessionHeader().getSessionId();
+    } else {
+     return null;
+    }
+   } 
+----
+
+==  @ReconnectOn注释
+
+[WARNING]
+此注释不赞成`@InvalidateConnectionOn`注释。它现在收到一个异常列表，而不是只有一个异常，并且可以在类和处理器级别使用。
+
+此注释用于与连接相关的异常处理。它可以在类级别（使用`@Connector`注释进行注释）或方法级别使用（使用`@Processor`注释进行注释）。如果连接器或处理器引发此类的异常，则`@ReconnectOn`会自动使连接失效。 `@ReconnectOn`接收包含要捕获的例外类的列表（请参阅下面的示例）。发生异常时，`@ReconnectOn`的行为基于配置的重新连接策略。有关更多详情，请参阅 link:/mule-user-guide/v/3.5/configuring-reconnection-strategies[配置重新连接策略]。
+
+[source, java, linenums]
+----
+@Processor
+@ReconnectOn(exceptions = {InvalidSessionFault.class, PasswordChangedException.class})
+public void myOperation(@Optional String source,
+                        @Optional Object destination) throws InvalidSessionFault, PasswordChangedException, InvalidParameterException
+{
+    /**
+    * CODE FOR MY OPERATION
+    */
+}
+----
+
+== 连接池
+
+您可以允许连接器的用户使用同时连接池，而不是共享单个实例来处理消息。
+
+实现池的连接器每个都分配一个池组件，其中包含连接器的多个实例以处理同时发生的请求。连接器的配置池配置文件配置其组件池。
+
+如果将`poolable`注释参数设置为`true`，则生成的模式将包含其他配置元素。
+
+=== 示例
+
+[%header%autowidth.spread]
+|===
+^ |连接器
+一个|
+[source, java, linenums]
+----
+@Connector(name = "myconnector", poolable = true)
+public class MyConnector
+{
+    /**
+    * CODE
+    */
+}
+----
+|===
+
+在相应的XML中，`pooling-config`元素嵌套在`config`元素内。请注意，不需要提供任何自定义Java代码来处理池，所需的只是提供几个参数：
+
+[%header%autowidth.spread]
+|===
+^ | XML
+一个|
+[source, xml, linenums]
+----
+<mymodule:config>
+    <mymodule:pooling-profile maxActive="10" maxIdle="5"
+        initialisationPolicy="INITIALISE_ALL"
+        exhaustedAction="WHEN_EXHAUSTED_FAIL" maxWait="60"/>
+</mymodule:config>
+----
+|===
+
+下表列出了`pooling-profile`个参数：
+
+[%header%autowidth.spread]
+|===
+| {属性{1}}说明
+| maxActive  |必需。控制一次可以从会话中借用的Mule组件的最大数量。负值意味着没有限制。当超过`maxActive`时，该池被认为已耗尽。
+| {了maxidle {1}}必需。控制一次可以在游泳池中闲置的Mule组件的最大数量。负值意味着没有限制。
+| initialisationPolicy a |可选。确定池中的组件应该如何初始化。可能的值：
+
+*  `INITIALISE_NONE`（启动时不会将任何组件加载到池中）
+*  `INITIALISE_ONE`（启动时将一个初始组件加载到池中）
+*  `INITIALISE_ALL`（启动时加载池中的所有组件）。
+
+默认值是`INITIALISE_ONE`。
+| exhaustedAction a |可选。指定池耗尽时Mule组件池的行为。其可能的价值是：
+
+*  `WHEN_EXHAUSTED_FAIL`（抛出NoSuchElementException）
+*  `WHEN_EXHAUSTED_WAIT`（通过调用Object.wait（long）来阻塞，直到有新的或空闲的对象可用）
+*  `WHEN_EXHAUSTED_GROW`（创建一个新的Mule实例并返回它，使maxActive无效）。
+
+如果提供了正数maxWait值，则最多会阻塞很多毫秒，之后会抛出`NoSuchElementException`。如果`maxWait`为负值，则无限期阻止。
+
+默认值是`WHEN_EXHAUSTED_GROW`。
+| MAXWAIT  |必需。指定当池耗尽且exhaustedAction设置为`WHEN_EXHAUSTED_WAIT`时，等待池组件可用的毫秒数。
+|===
+
+== 另请参阅
+
+*  *NEXT*：继续使用您的连接器 link:/anypoint-connector-devkit/v/3.5/defining-attributes-operations-and-data-model[定义属性操作和数据模型]。
+* 请参阅 link:/anypoint-connector-devkit/v/3.5/creating-a-connector-for-a-soap-service-via-cxf-client[通过CXF客户端为SOAP服务创建连接器]示例，在完整的示例中查看基本身份验证注释。

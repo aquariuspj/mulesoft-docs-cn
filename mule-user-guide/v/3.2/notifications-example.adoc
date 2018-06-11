@@ -1,0 +1,160 @@
+通知示例= 
+
+本示例演示如何在简单用例中使用通知。一些基本的自定义代理和自定义安全过滤器用法也将被覆盖。通知的消费将通过简单的支持AJAX的网页来执行。
+
+== 概述
+
+一个简单的支持AJAX的网页将被订阅到一个AJAX出站端点，该端点将发布以JSON编码的结果。该页面还可以将请求发送到Mule托管的回声服务，该服务将通过非常基本的安全过滤器（因此，可以生成通知/安全警告"manually"）。
+
+页面正在监听的出站端点将提交三种类型的事件：
+
+. 来自"heartbeat agent"的自定义通知，每10秒触发一次。
+. 安全过滤器拒绝回应请求时，发出安全警告。
+. 当安全过滤器接受回应请求时，两个通知（一个预调用和另一个后调用）加上回应响应。
+
+== 运行示例
+
+. 将通知示例zip文件复制到Mule安装（$ MULE_HOME / apps）中的apps目录中并启动Mule。你可以在任何时候按Mule控制台窗口中的'CTRL-C'来停止Mule。
+. 将浏览器指向http：// localhost：8082 / services / notifications /
+. 您将立即开始接收通知（新的显示在最上面）。到目前为止，您只会每隔10秒收到一次心跳通知。
+. 在"Secure Echo"文本框中键入内容（例如："Hello Mule!"），将下拉框的值保留为"Administrator"，然后按"Send"按钮。您将看到两个与"TestEcho"资源ID关联的事件（一个预调用和一个后调用）。你也会看到一个看起来有点像这样的回应：
++
+[source,java]
+----
+Response: {"user":"administrator","phrase":"Hello Mule!"}
+----
++
+基本上，你刚发送的内容，用JSON编码。
++
+. 在"Secure Echo"文本框中输入其他内容（例如："Klaatu barada nikto"），从下拉框中选择"Anonymous"，然后按"Send"按钮。这次验证将失败，并且您将收到关联的警告事件（无预先/后期通知，因为没有组件被调用）。
+
+== 在胡德之下
+
+=== 网页
+
+这是一个由index.html和notifications.css组成的简单AJAX网页。请注意，包含"mule.js"库以启用Mule功能。我们还添加了"dojo.js"的精简版，以帮助AJAX和JSON。
+
+[source,xml]
+----
+<script type="text/javascript" src="mule-resource/js/dojo/dojo.js"></script><script type="text/javascript" src="mule-resource/js/mule.js"></script>
+----
+
+
+订阅/取消订阅方法将notif（）回调方法关联/分离到mule端点。 notif（）方法非常简单，将通知添加到表中，并使用与css文件结合的事件类型添加一些颜色和格式。
+
+[source,java]
+----
+function init(){     mule.subscribe("/mule/notifications", notif);}function dispose(){     mule.unsubscribe("/mule/notifications", notif);}function notif(message){     console.debug("data:" + message.data);     if (!message.data)     {          console.debug("bad message format " + message);          return;     }     var event = dojo.fromJson(message.data);     var table = document.getElementById('notificationTable');     var newRow = table.insertRow(1);     newRow.className = event.type;     newRow.insertCell(0).innerHTML = event.action;     newRow.insertCell(1).innerHTML = event.type;     newRow.insertCell(2).innerHTML = event.actionName;     newRow.insertCell(3).innerHTML = event.source;     newRow.insertCell(4).innerHTML = event.resourceIdentifier;     newRow.insertCell(5).innerHTML = event.serverId;     newRow.insertCell(6).innerHTML = event.timestamp;     table.scrollTop = table.scrollHeight - table.clientHeight}
+----
+
+
+还要注意rpcEcho（）方法（与"Submit"按钮关联），该方法调用echo服务（通过对"/services/echo"通道的RPC调用）。回答由rpcEchoResponse（）回调方法显示。
+
+牢记rpcEchoResponse（）与显示前/后事件通知无关。
+
+[source,java]
+----
+function rpcEcho() {   var data = new Object();   data.phrase = document.getElementById('phrase').value;   data.user = document.getElementById('user').value;   mule.rpc("/services/echo", data, rpcEchoResponse);}function rpcEchoResponse(message) {   document.getElementById("response").innerHTML = "<b>Response:&nbsp;</b>" + message.data + "\n";}
+----
+
+
+=== 收听通知
+
+为了与通知互动，我们必须先注册我们想要收听的事件。在这个例子中，这是通过mule配置中的以下几行来实现的：
+
+[source,xml]
+----
+<notifications dynamic="true">    <notification event="COMPONENT-MESSAGE"/></notifications>
+----
+
+
+*  dynamic = "true"指示Mule在上下文启动后动态添加侦听器。
+*  event = "COMPONENT-MESSAGE"指示Mule发送任何类型为"COMPONENT-MESSAGE"的通知，这些通知发生在组件被调用之前/之后。此通知与ComponentMessageNotification类关联。
+
+===  AJAX连接器
+
+[source,xml]
+----
+<ajax:connector name="ajaxServer"    serverUrl="http://0.0.0.0:8082/services/notifications"    resourceBase="${app.home}/docroot"/>
+----
+
+
+此连接器将创建一个嵌入式AJAX服务器。 "resourceBase"属性让我们指定一个用于存储HTML和其他资源（如后面提到的网页）的位置。 $ \ {app.home}是Mule中一个可用的新占位符，它引用了应用程序的根目录。
+
+=== 变形金刚
+
+网页通过JSON与应用程序通信，因此我们必须转换所有入站和出站通信。这种变压器与Mule捆绑在一起，只需要很少的配置。
+
+将====  JSON转换为对象
+
+[source,xml]
+----
+<json:json-to-object-transformer name="JsonToObject"/>
+----
+
+这个很简单。它只需要JSON并将其转换为具有适当字段的对象。
+
+==== 对象到JSON
+
+[source,xml]
+----
+<json:object-to-json-transformer name="ObjectToJson">    <json:serialization-mixin        targetClass="org.mule.context.notification.ComponentMessageNotification"        mixinClass="org.mule.example.notifications.ComponentMessageNotificationMixin"/></json:object-to-json-transformer>
+----
+
+
+这个想法是转换ComponentMessageNotification数据，但不包含其中包含的事件源对象。我们通常会为getter添加"@JsonIgnore"注释，但在这种情况下，我们无法修改源代码。因此，我们必须使用"mixin"。
+
+"mixin"只是一个带有注释方法的接口，它与我们想在另一个对象中修改的方法相匹配。 Mule将两者合并，最终的结果相当于带有注释方法的原始对象。
+
+在这种情况下，ComponentMessageNotification与ComponentMessageNotificationMixin合并，其中getSource（）方法已用"@JsonIgnore"注释。因此，对于所有预期用途，该变压器将忽略该字段。
+
+=== 发布通知
+
+[source,xml]
+----
+<management:publish-notifications ignoreConnectionNotifications="true">    <ajax:outbound-endpoint channel="/mule/notifications" transformer-refs="ObjectToJson"        cacheMessages="true">        <or-filter>            <payload-type-filter expectedType="org.mule.example.notifications.HeartbeatNotification"/>            <payload-type-filter expectedType="org.mule.context.notification.SecurityNotification"/>            <payload-type-filter expectedType="org.mule.context.notification.ComponentMessageNotification"/>        </or-filter>    </ajax:outbound-endpoint></management:publish-notifications>
+----
+
+
+`ignoreConnectionNotifications="true"`将忽略任何连接通知（顾名思义）。
+
+这三种类型的任何通知都将通过"/mule/notifications/" AJAX频道发送，并转换为JSON（transformer-refs = "ObjectToJson"）。如果没有订阅该频道的客户端，则消息将被缓存（cacheMessages = "true"）。
+
+心跳代理=== 
+
+[source,xml]
+----
+<custom-agent class="org.mule.example.notifications.HeartbeatAgent" name="heartbeat"/>
+----
+
+
+这是一个简单的自定义代理。它会每隔10秒触发一次"heartbeat notifications"。随意浏览代码以获取更多细节（特别是HeartbeatAgent类）。
+
+===  TestEcho流
+
+[source,xml]
+----
+<flow name="TestEcho">    <ajax:inbound-endpoint channel="/services/echo">        <custom-security-filter class="org.mule.example.notifications.DummySecurityFilter"/>    </ajax:inbound-endpoint><echo-component/></flow>
+----
+
+
+这是一个非常简单的流程，其中包含一个回声组件和一个自定义安全过滤器来限制未经授权的访问。
+
+=== 虚拟安全过滤器
+
+TestEcho流程使用一个非常简单的安全过滤器，在DummySecurityFilter类（它扩展了AbstractEndpointSecurityFilter）中实现。
+
+它将验证入站和出站事件，确保没有"anonymous"或空用户获得访问权限，并使用正确的消息抛出相应的UnauthorisedException。因此，我们从网页发送的"Administrator"用户将成功通过身份验证。
+
+如果您需要关于示例内部工作的更多信息，请参阅DummySecurityFilter类的源代码。
+
+== 摘要
+
+在这个例子中，我们讨论了以下主题：
+
+* 发布通知。
+* 创建一个AJAX连接器。
+* 使用AJAX从网页接收通知。
+* 将AJAX转换为Object，反之亦然。
+* 创建自定义代理并从中启动自定义通知。
+* 将简单的自定义安全筛选器应用于服务。

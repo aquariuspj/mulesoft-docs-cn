@@ -1,0 +1,382 @@
+= 捕获异常策略
+
+您可以定义一个捕获异常策略来定制Mule处理错误消息的方式。一个catch异常策略捕获在其父流程中抛出的所有异常并处理它们，从而覆盖Mule的隐式默认异常策略。
+
+Mule的catch异常策略行为与Java catch块相似，不同之处在于您不能在catch异常策略中抛出新的异常或捕获其他异常。
+
+== 何时使用
+
+使用catch异常策略来设计处理包含错误的消息的唯一策略。此外，您可以使用捕获异常策略来：
+
+* 避免将例外传播到入站端点
+* 避免通过流参考组件向父流传播异常
+* 确保由流处理的事务在发生错误时不会回退（即事务永远不会“回滚”以重新尝试处理; Mule会提交事务。）
+
+例如，假设您有一个处理来自JMS队列（航班预留）的消息的流，通过添加从外部资源（座位分配）获取的属性来丰富它们，然后将它们发送到另一个队列。您配置捕获异常策略来处理在此流程中发生的错误;当处理过程中发生错误 - 例如座位信息不能从外部资源获得时 - 消息抛出异常。捕获异常策略捕获异常，向其应用标题以通知“没有可用的位置”，并将消息从流中推送到其下一个指定队列。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+image:flight-reservation-example23.png[flight-reservation-example23]
+....
+[tab,title=Studio XML Editor or Standalone]
+....
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ 
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core"
+xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="EE-3.3.0" xsi:schemaLocation=" 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd 
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd 
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd 
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd 
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd ">
+ 
+    <jms:activemq-connector name="Active_MQ" brokerURL="tcp://localhost:61616" 
+         validateConnections="true" doc:name="Active MQ"/>
+ 
+    <flow name="makeReservation" doc:name="makeReservation">
+        <jms:inbound-endpoint queue="seatAssigment" connector-ref="Active_MQ" doc:name="Seat assigment queue"/>
+        <enricher target="#[flowVars['seatInfo']]" doc:name="Create seatInfo variable with seat assigment">
+            <core:processor-chain doc:name="Call seat assigment">
+                <http:outbound-endpoint host="localhost" port="1234" path="seatService" 
+                      doc:name="Seat assigment web service"/>
+                <http:http-response-to-object-transformer doc:name="Transform response to SeatInfo object"/>
+            </core:processor-chain>
+        </enricher>
+        <set-property propertyName="seatInfo" value="#[flowVars['seatInfo'].getSeatNumber()]" 
+             doc:name="Set seatInfo jms property"/>
+        <jms:outbound-endpoint queue="checkin" connector-ref="Active_MQ" doc:name="Check-In queue"/>
+ 
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <set-property propertyName="seatInfo" value="No seat info available" doc:name="Set seatInfo jms property"/>
+            <jms:outbound-endpoint queue="checkin" connector-ref="Active_MQ" doc:name="Check-In queue"/>
+        </catch-exception-strategy>
+    </flow>
+</mule> 
+----
+....
+------
+
+== 配置捕获异常策略
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. From the *Error Handling* palette group, drag and drop the *Catch Exception Strategy* icon into the footer bar of a flow.
++
+image:drag_catchES.png[drag_catchES]
+
+. Double-click to open the *Catch Exception Strategy*, then configure according to the table below.
++
+image:configure_catch.png[configure_catch]
++
+[%header,cols="25s,75a"]
+|===
+|Field |Value
+|Display Name |Unique name for the exception strategy, if you wish.
+|Execute When |
+A MEL expression to indicate the kind of exception the catch exception strategy handles when it is embedded within a link:/mule-user-guide/v/3.3/choice-exception-strategy[*Choice Exception Strategy*].
+
+* *no expression defined*: All messages in this flow that throw exceptions will be handled by this catch exception strategy.
+* *expression defined*: When a choice exception strategy evaluates the defined expression against the message being processed and returns true, Mule executes the exception strategy.
+
+For example, if you enter the following expression, the exception strategy handles only those messages which throw an org.mule.example.AlreadyProcessedException.
+
+[source, code, linenums]
+----
+#[exception.causedBy(org.mule.example.AlreadyProcessedException)]
+----
+|Enable Notifications |
+true _(default)_
+
+false
+
+When set to true, Mule sends an exception notification to a registered listener — say, the Mule Management Console — whenever the catch exception strategy accepts handles an exception.
+|===
++
+[TIP]
+====
+The following are examples of expressions that you can enter in the `Execute When` field:
+
+[source,xml]
+----
+exception.causedBy(org.mule.example.ExceptionType)
+exception.causedExactlyBy(org.mule.example.ExceptionType)
+exception.causeMatches(org.mule.example.*)
+exception.causeMatches(*) && !exception.causedBy(java.lang.ArithmeticException) && !exception.causedBy(org.mule.api.registry.ResolverException)
+----
+====
++
+. Click *OK* to save your configurations.
+. Drag building blocks from the palette into the *Catch Exception Strategy* box to build a flow that processes messages that throw exceptions in the parent flow. A catch exception strategy can contain any number of message processors.
++
+image:flow_catch_ES.png[flow_catch_ES]
++
+[NOTE]
+You can define _only one_ exception strategy for each flow. If you need to design a more complex error handling strategy that involves more than one way of handling exceptions, consider using a link:/mule-user-guide/v/3.3/choice-exception-strategy[Choice Exception Strategy].
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+. To your flow, below all the message processors, add a *catch-exception-strategy* element. Refer to the code below.
+. Configure attributes of the exception strategy according to the table below.
+
+[%header,cols="25s,75a"]
+|===
+|Field |Value
+|doc:name |Unique name for the exception strategy, if you wish.
+|when |
+A MEL expression to indicate the kind of exception the catch exception strategy handles when it is embedded within a link:/mule-user-guide/v/3.3/choice-exception-strategy[*Choice Exception Strategy*].
+
+* *No expression defined*: All messages in this flow that throw exceptions will be handled by this catch exception strategy.
+* *Expression defined*: When a choice exception strategy evaluates the defined expression against the message being processed and returns true, Mule executes the exception strategy.
+
+For example, if you enter the following expression, the exception strategy handles only those messages which throw an `org.mule.example.AlreadyProcessedException`.
+
+|enableNotifications |
+true or false
+
+When set to true, Mule sends an exception notification to a registered listener — say, the Mule Management Console — whenever the catch exception strategy accepts handles an exception.
+|===
+
+[TIP]
+====
+What follows are some examples of expressions that you can enter in the `Execute When` field:
+
+* exception.causedBy(org.mule.example.ExceptionType)
+* exception.causedExactlyBy(org.mule.example.ExceptionType)
+* exception.causeMatches(org.mule.example.*)
+* exception.causeMatches(*) && !exception.causedBy(java.lang.ArithmeticException) && !exception.causedBy(org.mule.api.registry.ResolverException)
+====
+
+[source, xml, linenums]
+----
+<flow name="makeReservation" doc:name="makeReservation">
+    <jms:inbound-endpoint queue="seatAssigment" connector-ref="Active_MQ" doc:name="Seat assigment queue"/>
+    <enricher target="#[flowVars['seatInfo']]" doc:name="Create seatInfo variable with seat assigment">
+        <core:processor-chain doc:name="Call seat assigment">
+            <http:outbound-endpoint host="localhost" port="1234" path="seatService" doc:name="Seat assigment web service"/>
+            <http:http-response-to-object-transformer doc:name="Transform response to SeatInfo object"/>
+        </core:processor-chain>
+    </enricher>
+    <set-property propertyName="seatInfo" value="#[flowVars['seatInfo'].getSeatNumber()]" doc:name="Set seatInfo jms property"/>
+    <jms:outbound-endpoint queue="checkin" connector-ref="Active_MQ" doc:name="Check-In queue"/>
+    <catch-exception-strategy doc:name="Catch Exception Strategy" enableNotifications="true" />
+</flow> 
+----
+
+*Namespace*:
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core"
+xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http
+http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd 
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd 
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd 
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd 
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd 
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+----
+
+. Add message processors as child elements of the `catch-exception-strategy` to build a flow that processes messages that throw exceptions in the parent flow. A catch exception strategy can contain any number of message processors. Refer to sample code below in which a set-property and `jms:outbound-endbpoint` process exceptions.
++
+[source, xml, linenums]
+----
+<flow name="makeReservation" doc:name="makeReservation">
+...
+    <catch-exception-strategy doc:name="Catch Exception Strategy">
+        <set-property propertyName="seatInfo" value="No seat info available" doc:name="Set seatInfo jms property"/>
+        <jms:outbound-endpoint queue="checkin" connector-ref="Active_MQ" doc:name="Check-In queue"/>
+    </catch-exception-strategy>
+</flow> 
+----
++
+[NOTE]
+You can define _only one_ exception strategy for each flow. If you need to design a more complex error handling strategy that involves more than one way of handling exceptions, consider using a link:/mule-user-guide/v/3.3/choice-exception-strategy[Choice Exception Strategy].
+....
+------
+
+== 创建全局捕获异常策略
+
+您可以创建一个或多个 link:/mule-user-guide/v/3.3/error-handling[全球例外策略]，以便在整个Mule应用程序的流程中重复使用。首先，创建一个全局捕获异常策略，然后向流中添加 link:/mule-user-guide/v/3.3/reference-exception-strategy[*参考例外战略*]以应用新的全局捕获异常策略的错误处理行为。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. In the Global Elements tab in Studio, create a *Global Catch Exception Strategy* (below, left), configure it according to the table below (refer to image below, right) then click *OK* to save.
++
+image:catch_global_both.png[catch_global_both]
++
+[%header,cols="10s,85a"]
+|===
+|Field |Value
+|Display Name |Unique name for the exception strategy, if you wish.
+|Execute When |
+A MEL expression to indicate the kind of exception the catch exception strategy handles when it is embedded within a link:/mule-user-guide/v/3.3/choice-exception-strategy[*Choice Exception Strategy*].
+
+* *no expression defined*: All messages in this flow that throw exceptions will be handled by this catch exception strategy.
+* *expression defined*: When a choice exception strategy evaluates the defined expression against the message being processed and returns true, Mule executes the exception strategy.
+
+For example, if you enter the following expression, the exception strategy handles only those messages which throw and `org.mule.example.AlreadyProcessedException`.
+
+[source, xml]
+----
+#[exception.causedBy(org.mule.example.AlreadyProcessedException)]
+----
+|Enable Notifications |
+true _(default)_
+
+false
+
+When set to true, Mule sends an exception notification to a registered listener - say, the Mule Management Console - whenever the catch exception strategy accepts handles an exception.
+|===
+
+. Click on the *Message Flow* tab below the canvas. On the Message Flow canvas, note that your newly created global catch exception strategy box appears _outside_ all other flows in the application. Because it is global, your new catch exception strategy exists independently of any Mule flow.
++
+image:global_ES_flow.png[global_ES_flow]
+
+. Drag building blocks from the palette into the global catch exception strategy box to build a flow that processes messages that throw exceptions. A global catch exception strategy can contain any number of message processors.
++
+image:global_catch_ES.png[global_catch_ES]
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+. Above all the flows in your application, create a `*catch-exception-strategy*` element.
+. To this global `catch-exception-strategy` element, add the attributes according to the table below. Return to code sample below.
++
+[%header,cols="25s,75a"]
+|===
+|Field |Value
+|name |Unique name for the exception strategy, if you wish.
+|when |
+A MEL expression to indicate the kind of exception the catch exception strategy handles when it is embedded within a link:/mule-user-guide/v/3.3/choice-exception-strategy[*Choice Exception Strategy*].
+
+* *No expression defined*: All messages in this flow that throw exceptions will be handled by this catch exception strategy.
+* *Expression defined*: When a choice exception strategy evaluates the defined expression against the message being processed and returns true, Mule executes the exception strategy.
+
+For example, if you enter the following expression, the exception strategy handles only those messages which throw and `org.mule.example.AlreadyProcessedException`.
+
+[source, code, linenums]
+----
+#[exception.causedBy(org.mule.example.AlreadyProcessedException)]
+----
+|enableNotifications |
+true or false
+
+When set to true, Mule sends an exception notification to a registered listener - say, the Mule Management Console - whenever the catch exception strategy accepts handles an exception.
+|===
++
+[source, xml, linenums]
+----
+<catch-exception-strategy name="Catch_Exception_Strategy"/>
+ 
+<flow name="Creation1Flow1" doc:name="Creation1Flow1">
+    <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+    <cxf:jaxws-service doc:name="SOAP"/>
+...
+</flow>
+----
++
+*Namespace*:
++
+[source, xml, linenums]
+----
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:cxf="http://www.mulesoft.org/schema/mule/cxf" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+----
++
+. Add message processors as child elements of the `catch-exception-strategy` to build a flow that processes messages that throw exceptions in the parent flow. A catch exception strategy can contain any number of message processors. Refer to sample code below in which a simple `logger` processes exceptions.
++
+[source, xml, linenums]
+----
+<catch-exception-strategy name="Catch_Exception_Strategy">
+   <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+</catch-exception-strategy>
+ 
+<flow name="Creation1Flow1" doc:name="Creation1Flow1">
+    <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+    <cxf:jaxws-service doc:name="SOAP"/>
+...
+</flow>
+----
+....
+------
+
+== 将全局捕获异常策略应用于流程
+
+使用[引用异常策略]指示流程采用由您的全局捕获异常策略定义的错误处理行为。换句话说，您必须要求您的流程参考全局捕获异常策略以获取有关如何处理错误的说明。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+. From the *Error Handling* palette group, drag and drop the *Reference Exception Strategy* icon into the footer bar of a flow.
++
+image:ref_ES.png[ref_ES]
++
+. Double-click to open the *Reference Exception Strategy*, use the drop-down to reference the global catch exception strategy (below), then click *OK* to save.
++
+image:ref_global.png[ref_global]
++
+[TIP]
+You can append a Reference Exception Strategy to any number of flows in your Mule application and instruct them to refer to any of the global catch, rollback or choice exception strategies you have created. You can direct any number of reference exception strategies to refer to the same global exception strategy.
++
+[NOTE]
+====
+You can create a global catch exception strategy (i.e. access the Choose Global Type panel) from the reference exception strategy's pattern properties panel. Click on the image:add.png[add] button next to the *Global Exception Strategy* drop-down combo box and follow the steps link:/mule-user-guide/v/3.3/catch-exception-strategy[above] to create a global catch exception strategy.
+
+image:create_global.png[create_global]
+====
+....
+[tab,title="Studio XML Editor or Standalone"]
+....
+. To your flow, below all the message processors, and an `*exception-strategy*` element.
+. To the `exception-strategy` element, add attributes according to the table below. Refer to code below.
++
+[%header,cols="25s,75"]
+|===
+|Attribute |Value
+|ref |Name of the global `catch-exception-strategy` in your project.
+|doc:name |Unique name for the exception strategy, if you wish. (Not required in Standalone.)
+|===
++
+[source, xml, linenums]
+----
+<catch-exception-strategy name="Catch_Exception_Strategy">
+    <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+</catch-exception-strategy>
+ 
+<flow name="Creation1Flow1" doc:name="Creation1Flow1">
+    <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" doc:name="HTTP"/>
+    <cxf:jaxws-service doc:name="SOAP"/>
+...
+    <exception-strategy ref="Catch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow> 
+----
++
+[TIP]
+You can append a Reference Exception Strategy to any number of flows in your Mule application and instruct them to refer to any of the global catch, rollback or choice exception strategies you have created. You can direct any number of reference exception strategies to refer to the same global exception strategy.
+....
+------
+
+== 另请参阅
+
+* 了解如何配置 link:/mule-user-guide/v/3.3/rollback-exception-strategy[回滚异常策略]。
+* 了解如何配置 link:/mule-user-guide/v/3.3/choice-exception-strategy[选择例外策略]。

@@ -1,0 +1,251 @@
+= 多级DataSense支持
+:keywords: devkit, datasense, multiple level, multi-level
+
+如前所述，Mule DataSense是一项功能，可让您以友好的方式显示服务中包含的实体的元数据。 DataSense以其原始形式使用单个关键字来标识要为其检索元数据的实体。这种单键方法可能是对复杂情况的限制，其中通过元数据描述的实体以嵌套方式标识，具有多个标识符并且大部分时间以密切相关的方式工作，创建选择树基于先前选择的键。
+
+例如，如果要描述世界中的一个状态，那么只有一个具有状态名称的密钥不足以唯一标识它。一个更好的国家ID可以是"region->country->state"的嵌套组合，用户首先选择区域，然后选择可用于该区域的国家，最后选择先前选择的国家/地区。
+
+DevKit 3.7及更高版本增加了对MultiLevel DataSense的支持，该功能允许开发人员轻松提供一组多级嵌套密钥，从而在为实体选择复杂密钥时极大地改善了用户体验。
+
+== 添加多级别DataSense支持
+
+作为连接器开发人员，您可以使用嵌套级别来描述元数据，为每个级别提供一个密钥。在开发连接器时，可以使用多个组合键来描述MetadataKeyRetriever，稍后在MetadataRetriever中将它们作为单个对象进行处理。在每个处理器中，您可以为每个级别声明一个带有标签的组合键。
+
+这允许在描述实体时具有更好的粒度，并且改善了在设计时使用连接器的人的体验。
+
+=== 连接器开发人员使用情况
+
+本节介绍实现元数据类别和元数据关键参数。
+
+====  @ MetaDataCategory实现
+
+实现使用多级密钥的MetaDataCategory意味着对原始方法进行以下修改：
+
+*  @ MetaDataKeyRetriever必须返回`List<ComposedMetaDataKey>`。使用ComposedKeys的类别只能返回这种类型的键。
+*  @ MetaDataRetriever必须收到一个ComposedMetaDataKey +
+
+对于默认的keySeparator "||"可以是要使用的keyId内部的有效组合的情况，可以使用定制的keySeparator配置@MetaDataKeyRetriever以在级别级联时使用
+
+[source,java, linenums]
+----
+@MetaDataCategory
+public class CustomSeparatorComposedKeyCategory {
+ 
+    // Common Category Setup
+    // ...
+    private static final int REGION = 0;
+    private static final int COUNTRY = 1;
+    private static final int STATE = 2;
+ 
+    @MetaDataKeyRetriever( keySeparator="@@" ) 
+    // keySeparator is Optional, with a default value of '||'
+    public List<ComposedMetaDataKey> getMetaDataKeys() throws Exception {
+         
+      return ComposedMetaDataKeyBuilder.getInstance()
+           .newKeyCombination()
+             .newLevel() // Region
+               .addId("south", "South America") // Added to Dropdown 1
+             .endLevel()
+             .newLevel() // Country
+               .addId("arg", "Argentina") // Added to Dropdown 2
+             .endLevel()
+             .newLevel() // State
+               .addId("bsas", "Buenos Aires") // Added to Dropdown 3
+               .addId("tucu", "Tucuman") // Added to Dropdown 3
+             .endLevel()
+           .endKeyCombination()
+           .newKeyCombination()
+             .newLevel() // Region
+               .addId("north", "North America") // Added to Dropdown 1
+             .endLevel()
+             .newLevel() // Country
+               .addId("usa", "United States") // Added to Dropdown 2
+             .endLevel()
+             .newLevel() // State
+               .addId("ny", "New York") // Added to Dropdown 3
+               .addId("ca", "California") // Added to Dropdown 3
+             .endLevel()
+           .endKeyCombination()
+         .build();
+    }
+ 
+ 
+    @MetaDataRetriever
+    public MetaData getMetaData(ComposedMetaDataKey composedKey) throws Exception {
+        DefaultMetaDataBuilder builder = new DefaultMetaDataBuilder();
+        MetaDataModel model;
+        
+        // A valid key would be: south@@arg@@tucu
+        if (composedKey.getSortedIds().get(REGION).equals("south")) {
+            model = builder.createDynamicObject("TravelData")
+                             .addList("mainCities").ofSimpleField(DataType.STRING)
+                             .endDynamicObject()
+                         .build();
+        } else {
+            model = builder.createDynamicObject("BusinessData")
+                             .addList("mainBanks").ofSimpleField(DataType.STRING)
+                             .endDynamicObject()
+                         .build();
+        }
+        return new DefaultMetaData(model);
+    }
+}
+----
+
+====  @ MetaDataKeyParam实现
+
+@MetaDataKeyParam必须声明一个*labels*属性，为Studio中的每个DataSense级别声明一个标签，作为下拉列表。标签是下拉菜单的"name"。
+
+[source,java, linenums]
+----
+@Processor
+@MetaDataScope( CustomSeparatorComposedKeyCategory.class )
+public Map<String,Object> addEntity(
+            @MetaDataKeyParam( labels={"Region", "Country", "State"} ) String key,
+            @Payload Map<String,Object> entity) 
+{
+    //...
+}
+----
+
+=== 限制
+
+*  keySeparator不能包含这些字符：`#[]`
+* 标签不能包含逗号（，）字符。
+* 标签数量必须与MetaDataKeyRetriever方法提供的关键级别数量相匹配。
+
+=== 构建器详细信息：如何创建多个组合键
+
+====  Fluent Builder
+
+当所有信息可用于单行创建时，使用Fluent Builder在场景中创建多个组合键。
+
+在以下示例中，预期的ID输出是：
+
+[source, code, linenums]
+----
+south||arg||bsas, south||arg||tucu, north||usa||nyc, north||usa||ca
+----
+
+在Anypoint Studio中有三种下拉式显示，如前面的截图所示：
+
+* 最上面显示"South America"和"North America"。
+* 根据第一个选择，第二个选项显示"Argentina"或"United States"作为选项。
+* 第三个下拉菜单显示在第二个下拉菜单中选择阿根廷时"Buenos Aires"和"Tucuman"，如果美国为"San Francisco"和"Los Angeles"在第二个下拉列表中选择。
+
+[source.java]
+----
+return ComposedMetaDataKeyBuilder.getInstance()
+.newKeyCombination()
+    .newLevel().addId("south", "South America").endLevel()
+    .newLevel().addId("arg", "Argentina").endLevel()
+    .newLevel().addId("bsas", "Buenos Aires").addId("tucu", "Tucuman")
+.endKeyCombination()
+.newKeyCombination()
+    .newLevel().addId("north", "North America").endLevel()
+    .newLevel().addId("usa", "United States").endLevel()
+    .newLevel().addId("nyc", "New York").addId("ca", "California").endLevel()
+.endKeyCombination()
+.build();
+----
+
+具有部分级别定义的=== 流利构建器
+
+与第一种流利方法类似，部分级别的定义将在构建密钥时启用代码重用。
+
+在这个例子中，预期的ID输出是：
+
+[source,java, linenums]
+----
+id1||common1, id1||common2, id1||sub1, 
+id2||common1, id2||common2, id1||sub1, 
+id3||common1, id3||common2, id3||sub2, id3||sub3
+----
+
+[source,java, linenums]
+----
+// Partial Level definition
+MetaDataKeyLevel commonIds = new DefaultMetaDataKeyLevel();
+commonIds.addId("common1", "Common 1")
+                   .addId("common2", "Common 2");
+ 
+return ComposedMetaDataKeyBuilder.getInstance()
+    .newKeyCombination()
+      .newLevel()
+        .addId("id1", "Commons With Subset_1").addId("id2", "Commons With Subset_2")
+      .endLevel()
+      .newLevel()
+        .addIds(commonIds) // Partial Level re-use
+        .addId("sub1", "SubLevel 1")
+      .endLevel()
+    .endKeyCombination()
+    .newKeyCombination()
+        .newLevel()
+ .addId("id3", "Commons With Subset_3")
+ .endLevel()
+        .newLevel()
+          .addIds(commonIds) // Partial Level re-use
+          .addId("sub2", "SubLevel 2")
+          .addId("sub3", "SubLevel 3")
+        .endLevel()
+    .endKeyCombination()
+    .build();
+----
+
+==== 独立生成器
+
+分别构建每个节点，并在最终构建中将它们合并在一起。所有正在构建的密钥都存储在构建器中，并在构建执行后连接在一起：
+
+[source,java, linenums]
+----
+ComposedMetaDataKeyBuilder metaDataKeyBuilder = ComposedMetaDataKeyBuilder.getInstance();
+ 
+ComposedMetaDataKeyBuilder.CombinationBuilder firstCombinationBuilder = metaDataKeyBuilder.newKeyCombination();
+firstCombinationBuilder.newLevel().addId("id1", "ID1").endLevel();
+ 
+ComposedMetaDataKeyBuilder.LevelBuilder levelBuilder = firstCombinationBuilder.newLevel();
+for (String id : Arrays.asList(new String[]{"sub1", "sub2", "sub3"})) {
+    levelBuilder.addId(id, id.toUpperCase());
+}
+levelBuilder.endLevel();
+firstCombinationBuilder.endKeyCombination();
+ 
+ComposedMetaDataKeyBuilder.CombinationBuilder secondCombinationBuilder = metaDataKeyBuilder.newKeyCombination();
+secondCombinationBuilder.newLevel().addId("id2", "ID2").endLevel();
+ 
+levelBuilder = secondCombinationBuilder.newLevel();
+for (String id : Arrays.asList(new String[]{"sub1", "sub4", "sub5"})) {
+    levelBuilder.addId(id, id.toUpperCase());
+}
+levelBuilder.endLevel();
+secondCombinationBuilder.endKeyCombination();
+ 
+ 
+// Expected IDs output is: id1||sub1, id1||sub2, id1||sub3, id2||sub1, id2||sub4, id2||sub5
+ 
+return metaDataKeyBuilder.build();
+----
+
+==  Mule App开发人员使用情况
+
+使用ComposeKey选择操作时，连接器用户将看到多个下拉菜单。每个下拉表示一个不同的元数据级别，并且关联了一组键。级别必须按顺序填充，因为较低级别与以前的选择直接相关。
+
+当使用上面实现的处理器时，Anypoint Studio会为用户呈现以下视图：
+
+image:MLAddEntry.png[MLAddEntry]
+
+当所有级别都被填充时，最后一个密钥被组合并且为该密钥提取元数据。
+
+image:full_dropdown_sample.png[full_dropdown_sample]
+
+在XML中，这个键被放置为一个单独的字符串，其中每个级别都与先前提到的keySeparator分开。
+
+[source,xml, linenums]
+----
+<sample-connector:operation config-ref="config" myKey="north@@usa@@ca"/>
+----
+
+=== 另请参阅
+
+*  link:/anypoint-studio/v/5/datasense[DataSense]
+*  link:/anypoint-connector-devkit/v/3.8/adding-datasense[添加DataSense]

@@ -1,0 +1,267 @@
+=  B2B交易处理框架
+
+link:/anypoint-b2b/glossary#sectb[_B2B交易处理解决方案_]作为内部系统与公司间电子交易中常用的各种格式（X12，EDIFACT，XML，CSV等）和传输协议（AS2，FTP / S等）之间的翻译层。由于公司通常不会规定其所有贸易伙伴都遵守单一配置，因此通常有必要为每个贸易伙伴开发定制解决方案。当每个贸易伙伴需要进行定制软件开发时，加入新的贸易伙伴所需的努力和时间将大大增加，从而限制了公司可以追求的业务关系。
+
+通过 link:/anypoint-b2b/glossary#sectb[_B2B交易处理框架_]，开发人员可以构建一组 link:/mule-user-guide[骡子运行时间]流程，通过动态应用存储在其中的规则和配置数据，可以处理来自许多不同合作伙伴的各种消息
+link:/anypoint-b2b/anypoint-partner-manager[Anypoint合作伙伴经理]（APM）。
+因此，诸如数据分析师之类的非程序员可以使用APM加入新的贸易伙伴关系并支持新的交易类型，而无需开发，测试或部署新的Mule Runtime流程。
+
+本节标识高级框架组件及其在端到端B2B事务处理中的角色。
+
+== 功能架构
+
+B2B交易处理通常通过xref：img-functional-architecture []中显示的阶段的某种组合进行。
+
+注意：处理阶段及其顺序可能因实现而异。
+
+[[img-functional-architecture]]
+image::functional-architecture.png[img-functional-architecture,title="功能架构"]
+=== ，接收
+
+每个来自合作伙伴或内部系统的传入交易都通过配置为接收消息的传输协议 link:/anypoint-b2b/endpoints[_endpoint_]提供。
+
+=== 解决
+使用可能位于文档内或传入元数据中的数据（例如HTTP标头或文件名），此阶段标识合作伙伴和交易类型，然后使用这些数据从APM中检索相应的处理详细信息。这些细节包括：
+
+*  link:/anypoint-b2b/endpoints[端点]转换后的消息将被传送到其中
+*  <<Schema>>用于验证
+*  <<Map>>将消息转换为所需的目标格式
+
+=== 变换
+
+每个传入的消息都被转换成适用于被调用的目标服务的消息格式。此翻译是使用从外部参照：tpmapi [贸易伙伴管理（TPM）API]检索到的<<Map>>动态执行的。
+
+=== 验证
+确保所需数据以所需格式提供。此验证是使用从外部参照：tpmapi [TPM API]检索到的<<Schema>>动态执行的。
+
+=== 交付
+使用从外部参照：tpmapi [TPM API]中检索到的端点配置数据，流会动态地将消息传递到业务服务端点地址。
+
+== 技术架构
+
+xref：img-b2b-message-processing-framework []显示框架的主要组件以及这些组件如何与处理B2B事务交互。
+组件定义遵循图。
+
+
+[[img-b2b-message-processing-framework]]
+image::b2b-message-processing-framework.png[img-b2b-message-processing-framework,title="B2B消息处理框架"]
+
+===  MuleSoft提供的组件
+
+====  Anypoint合作伙伴经理
+link:/anypoint-b2b/anypoint-partner-manager[Anypoint合作伙伴经理]（APM）
+是B2B交易处理框架用户界面，使您能够：
+
+*  link:/anypoint-b2b/partner-configuration[配置如何处理B2B交易]
+*  link:/anypoint-b2b/transaction-monitoring[监控和管理已处理的交易]
+
+[[tpmapi]]
+===== 贸易伙伴管理（TPM）API
+
+贸易伙伴管理（TPM）API管理合作伙伴配置数据的存储和检索，包括处理其交易的详细信息。
+
+===== 跟踪API
+Tracking API管理已处理事务的元数据存储和检索。 +
+例如：
+
+* 发件人
+* 接收机
+* 时间戳
+* 消息类型
+* 确认状态
+
+这包括但不限于将确认与原始消息匹配并识别重复消息的关联逻辑。
+
+合作伙伴经理连接器。==== 
+合作伙伴管理器连接器（PMC）在 link:/mule-user-guide[骡子运行时间]内运行，并协调与APM API（TPM和跟踪）的所有交互。
+
+==== 对象存储
+对象存储是 link:/mule-user-guide[骡子运行时间]中的分布式缓存，用于跨群集中的节点复制数据。 TPM配置数据一旦被检索，就被缓存在对象库中。缓存最大限度地减少了对TPM服务的呼叫，从而提高了性能和可靠性。 PMC管理这个缓存。
+
+=== 客户建立的流程
+注意：此时下面确定的流程必须由客户开发。 MuleSoft可能会在未来提供这些组件作为产品的一部分。但是，为了提供完整的可扩展性和定制性，该选项将留给客户提供自己的实现。
+
+==== 接收流量
+每个接收端点都对应于由适当的协议连接器和适当的端点配置组成的Mule流。在通过特定协议接收到消息后，每个接收流：
+
+* 使用合作伙伴管理器连接器（PMC）跟踪邮件，以保留从合作伙伴收到的邮件副本。
+* 在Resolve队列上放置一个队列消息，其中包含来自入站协议的任何重要元数据（例如传输标题和文件名）。
+
+接收流由接收端点侦听器流程动态激活，该流程轮询TPM系统以获得应该处于活动状态的端点列表。该流程基于所需传输协议的模板为每个流创建特定端点。然后它将动态实例化流入Mule Runtime的流并启动它，以便所需的连接器端点处于活动状态并侦听消息。
+
+==== 解决流程
+
+* 从消息和任何传输标头中提取所需的元数据字段以识别特定的文档类型。
+* 将元数据字段传递给TPM服务以查找文档类型和关联的配置设置（<<Map>>，<<Schema>>，目标<<endpoint>>），并将此信息添加到上下文与消息一起传播的头文件，以供后期使用。
+* 将消息传递到下一个处理阶段。
+
+==== 转换流程
+
+* 从上下文头动态应用配置的映射脚本，将消息转换为目标业务服务的规范格式。
+* 是否需要进行任何必要的数据翻译，例如使用 link:/anypoint-b2b/[查找表]函数解析合作伙伴对您公司价值的价值以及流量。
+* 使用PMC跟踪消息的映射的规范版本。
+* 将更新的消息主体传递到下一个处理阶段。
+
+==== 验证流程
+
+* 动态应用配置的模式脚本来验证消息是否为所需的格式。
+* 使用PMC跟踪消息的验证结果。
+* 将消息传递到下一个处理阶段。
+
+==== 交付流量
+
+* 通过将已转换的消息传递到已配置的传输端点来调用目标服务。
+* 使用PMC跟踪目标服务的结果。
+
+==== 消息有效载荷持久性流程
+这是一个可选的流程，可以实现在各个阶段存储消息有效载荷。它从PMC接收到MuleSoft消息，将该消息有效载荷持久存储到所需的数据存储中，并返回一个可用于稍后使用消息有效负载检索流来检索消息的URL。 URL存储在APM中的Tracking API中存储的相关跟踪数据中，并在交易的上下文中显示给用户。单击此链接将调用消息有效负载检索流程，并在弹出窗口中显示消息有效负载。
+
+==== 消息有效负载检索API流程
+消息有效负载检索API流用于使用URL（包含要检索的消息的特定transactionId）检索消息有效负载。
+
+==== 业务服务流程
+对于每个目标内部服务，通常都有一个Mule运行时流程，它公开基于REST的API并使用适当的一个或多个连接器与后端系统进行通信。这些业务服务流程在技术上并不是B2B系统的一部分，但通常是整体解决方案的一部分。
+
+==== 重播流程
+重放流程坐标重放交易。它会为Tracking服务轮询已标记为重播的事务。当它发现需要重播的交易时：
+
+. 从Tracking API和消息有效负载检索API中提取原始消息正文和标题。
+. 使用原始有效负载和标头构造一个新的Mule消息，并将其传递给Resolve流以重新处理该事务。
+. 跟踪事务已被重播的事实。
+. 更新TPM服务以表明重播已完成
+
+== 信息架构：APM可配置的实体和术语
+APM存储xref：img-b2b-transaction []中显示的配置数据，以支持不同交易伙伴对不同交易类型的动态处理。
+
+[[img-b2b-transaction]]
+image::b2b-transaction.png[img-b2b-transaction,title="B2B交易"]
+
+=== 合作伙伴
+代表贵公司开展业务的外部公司。您的公司本身也被视为合作伙伴。
+
+=== 伙伴
+贵公司与贵公司开展业务的外部公司之间的关系。您的公司本身也被视为合作伙伴，并且在APM中有一个名为“Home Org”的特殊合作伙伴关系。
+
+=== 合作伙伴标识符
+特定合作伙伴的预定义标识符。在B2B交易中使用的几种类型的合作伙伴标识符可以在APM中配置。例如，对于EDI X12文档，存在ISA标识符，这些标识符在EDI交换中用于标识发件人和收件人。 AS2是另一种类型的标识符，用于AS2传输。
+
+=== 端点
+
+一个_receive endpoint_是可以发送文档的URL。
+
+_send endpoint_是可以从中发送文档的URL。
+
+有关如何创建端点的信息，请参阅 link:/anypoint-b2b/resolution-processes#endpoint-resolution[端点分辨率]。
+
+=== 文档，消息，文件
+这些术语在B2B世界中可互换使用，以反映通过系统传递的结构化有效负载的实例，以传达有关交易的信息。为了保持一致性，我们使用术语_document_来表示这些实例。
+
+=== 文档类型
+APM中配置了 link:/anypoint-b2b/document-types[文档类型]。给定的文档类型
+由以下几条信息标识：
+
+* 标准
+** 示例：X12，EDIFACT，XML，CSV和JSON
+* 版本
+**  X12（例子：4010,5010）
+**  RosettaNet（例如：PIP3B3v11.12.00
+
+注意：对于没有版本（例如XML和CSV）的标准，*Version*不是文档类型配置的一部分。
+
+* 消息类型
+**  X12  -  850,855,856等
+**  RosettaNet  -  3B3
+**  XML  - 根节点名称，命名空间
+**  CSV，JSON  - 赋予事务的名称，不一定包含在消息中
+
+=== 文档属性
+文档属性是为了搜索，关联，TPM解析或重复检查而从接收文档中提取的数据字段。文档属性配置为文档类型。用户提供属性的名称和路径（用于XML的XPath，用于其他JSONPath）以从文档中检索属性。这些属性是通过Tracking API从文档中提取的，并存储为稍后用于上述目的。
+
+=== 架构
+模式与<<Document Type>>一起存储。根据消息类型，它是以下之一：
+
+[%header,cols="3s,7a"]
+|===
+|消息类型
+|架构类型
+
+| XML
+| XSD文件
+| CSV
+| NA
+| EDI
+| EDI模式语言（ESL）文件
+| JSON
+| JSON模式
+|===
+
+=== 地图
+
+用于将一个<<Document Type>>转换为另一个<<Document Type>>的脚本（XSLT或 link:/mule-user-guide/v/3.8/dataweave[DataWeave]）。
+
+源频道。=== 
+有关如何接收特定文档的详细信息。 _Receive_与B2B交易处理流程相关。例如：
+
+* 入站交易将具有从外部合作伙伴处接收文档的源通道。
+* 出站交易将具有从内部系统接收文档的源通道。
+
+=== 目标频道
+有关如何发送特定文档的详细信息。 _Sent_相对于B2B交易处理流程。例如：
+
+* 入站事务将具有将文档发送到内部系统的目标通道。
+* 出站交易将具有将文档发送给外部合作伙伴的目标渠道。
+
+=== 路线
+将源通道连接到目标通道。
+
+=== 事务
+表示从端点收据一直到所需目的地的单个文档实例的端到端处理。 TransactionId可用于在每个阶段为事务查找元数据和持久有效负载。
+
+=== 方向处理
+
+交易是_inbound_或_outbound_。
+
+入站事务::由外部合作伙伴发起的外部合作伙伴和归属组织之间的事务。
+
+出站事务::家庭组织与外部合作伙伴之间的交易，由家庭组织发起。
+
+////
+入站与出站一直用于表示合作伙伴之间交换文档的方向。从外部合作伙伴到家庭组织的文档被视为入站。从家庭组织发送给外部合作伙伴的文件被视为出站。
+////
+xref：img-inbound-outbound []描述了这些配置实体相对于处理入站或出站事务的关系：
+
+[[img-inbound-outbound]]
+image::inbound-outbound.png[img-inbound-outbound,title="B2B方向处理"]
+注意：为了说明一系列使用场景，xref：img-inbound-outbound []中显示的体系结构描述了可能未出现在特定场景中的配置详细信息。
+
+通常的做法是将每个传入文档映射为标准内部格式（通常称为_canonical_格式）。如果目标系统接受这种格式，则不需要应用第二张地图。也就是说，可以为源通道配置映射以转换为规范格式，并且目标通道不需要映射。但是，如果给定源频道有多个目标频道，则可能需要在其中一个目标频道中应用附加地图;在这种情况下，将应用两个不同的地图。
+
+对于出站交易，文档可能源自规范格式，因此源通道中可能不需要映射。但是，目标频道中会有一个映射到外部合作伙伴的所需格式。
+
+== 用户界面
+
+APM用户界面支持 link:/anypoint-b2b/partner-configuration[伙伴配置]， link:/anypoint-b2b/administration[行政]和详细的 link:/anypoint-b2b/transaction-monitoring[交易监控]。
+
+===  link:/anypoint-b2b/partner-configuration[伙伴配置]
+
+* 格式默认值
+**  link:/anypoint-b2b/x12-settings[X12设置]
+**  link:/anypoint-b2b/edifact-settings[EDIFACT设置]
+**  link:/anypoint-b2b/csv-settings[CSV设置]
+*  link:/anypoint-b2b/document-types[文档类型]
+*  link:/anypoint-b2b/endpoints[端点]
+*  link:/anypoint-b2b/maps[地图]
+*  link:/anypoint-b2b/channels[通道]
+*  link:/anypoint-b2b/routes[路线]
+*  link:/anypoint-b2b/partner-conversations[合作伙伴对话]
+
+===  link:/anypoint-b2b/administration[行政]
+*  link:/anypoint-b2b/environments[环境]
+*  link:/anypoint-b2b/error-codes[错误代码]
+*  link:/anypoint-b2b/security[安全]
+*  link:/anypoint-b2b/lookup-tables[查找表]
+
+===  link:/anypoint-b2b/transaction-monitoring[交易监控]
+* 搜索并查看已处理事务的结果。
+* 查看事务发生的端到端处理。
+* 手动导致失败事务的重播。

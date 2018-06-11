@@ -1,0 +1,524 @@
+= 将数据导出到外部分析工具（混合）
+关键字：分析，监控，splunk，elk，弹性分析，logstash，kibana，日志，mule事件，日志记录，api分析，指标，可追溯性，arm，anypoint运行时管理器
+
+本主题介绍如何配置Runtime Manager以将数据导出到外部分析工具。这使您可以将Mule应用程序的事件通知发送到第三方工具，如Splunk和ELK。
+
+此功能仅在混合部署方案中可用。它不适用于部署到CloudHub的应用程序。
+
+== 基础架构
+
+运行时管理器的存在方式如下：
+
+*  Anypoint平台的一个组件。
+* 您可以在本地安装的Anypoint Platform私有云版组件。
+
+Anypoint平台私有云版具有运行时管理器，仅处理部署在本地的应用程序。 Anypoint Platform的基于云的版本具有运行时管理器，可让您管理部署到 link:/runtime-manager/index[CloudHub]的应用程序，以及部署在本地和您自己的云服务器上的应用程序。当使用任何版本的Runtime Manager时，总是有一种方法来监视你的应用程序。
+
+部署到CloudHub的应用程序可以使用 link:/runtime-manager/insight[眼光]：MuleSoft的分析和监测功能。您在本地或自己的云服务器上部署的应用程序可以集成到第三方分析应用程序中，这是本文档描述的内容。
+
+////
+部署在Cloud上的应用程序可以使用Insights（MuleSoft的分析和监控功能）或集成到第三方分析应用程序中，以实现统一的监控和分析视图。部署在本地的应用程序必须集成到第三方分析应用程序中。
+////
+
+如果您将运行时管理器中的应用程序部署到客户管理的Mule服务器，则可以将Mule应用程序事件和分析数据发送给第*Elk*和*Splunk*等第三方分析软件。
+
+[NOTE]
+将数据发送给第三方软件目前不适用于 link:/runtime-manager/cloudhub[CloudHub]上的应用程序。有关更多详细信息，请参阅 link:/runtime-manager/deployment-strategies[部署策略]。
+
+Runtime Manager和第三方分析软件之间的集成如下所示：
+
+image:amc_onprem_diagram_detail.jpg[图片]
+
+link:/runtime-manager/runtime-manager-agent[运行时管理器代理]在Runtime Manager和第三方软件之间运行。该代理支持集成并将事件通知发送给第三方分析工具。
+
+== 先决条件
+
+请确保您安装了以下运行时间之一：
+
+*  Mule ESB  -  3.6或更高版本
+*  API网关单机版 - 版本2.1.0或更高版本（如果您想要处理使用API​​网关运行时构建的应用程序，则为可选）
+
+[NOTE]
+Runtime Manager Agent 1.2.0或更高版本是必需的，下面提供了安装和配置它的步骤。
+
+== 使用第三方分析工具安装和设置Runtime Manager
+
+为了让Runtime Manager将数据发送到外部分析工具，您必须遵循这些步骤，这些步骤将在下面详细解释。
+
+image:steps-for-external-logs.png[脚步]
+
+
+=== 更新运行时管理器代理
+
+
+首先，您必须安装运行管理器代理的最新版本，该代理负责从骡子发送消息。为了将事件信息发送到第三方软件，您需要拥有版本*1.2.0*或更新版本的Runtime Manager Agent。
+请参阅 link:/runtime-manager/installing-and-configuring-runtime-manager-agent[安装和配置Runtime Manager Agent]。
+
+[NOTE]
+====
+尽管运行时管理器代理程序默认情况下与从版本3.7开始捆绑的Mule运行时下载一起存在，但所有早于版本3.7.2的Mule Runtime版本都包含不支持此功能的旧版Runtime Manager代理程序。如果是这种情况，则必须单独下载最新版本的Runtime Manager代理。
+
+*Download it {{0}}*
+====
+
+=== 注册运行时管理器代理
+
+将代理文件放在您的`{MULE_HOME}/bin`文件夹中，然后您必须通过在终端中运行命令将其注册到运行时管理器。根据您是希望通过云平台使用Runtime Manager还是作为Anypoint Platform私有云版的一部分，您必须传递此命令一组不同的参数以注册它。要获取必须运行的基本命令（使用Runtime Manager实例ID完成），必须执行以下操作：
+
+要获得此代码，您必须执行以下操作：
+
+. 登录到您的Anypoint平台帐户
++
+[TIP]
+要打开Anypoint Platform私有云版，请确保您已经启动了运行时管理器。如果你还没有，那么你必须运行docker来启动它。启动后，您可以通过在浏览器中导航到+ https：// localhost +来访问它。
+
+. 转到`Runtime Manager - > Servers`
+. 点击`Add Server`。无需实际添加新服务器，示例命令将显示在包含特定组织代码的弹出窗口中。根据您希望部署的位置复制此命令，您可能需要为其添加额外的参数。
+
++
+image:org_code.png[图片]
+
+
+[tabs]
+------
+[tab,title="Anypoint Platform Cloud"]
+....
+
+When using Runtime Manager as part of the cloud-based Anypoint Platform, launch the agent with exactly the same command that you found on the Runtime Manager UI:
+
+[source, linenums]
+----
+amc_setup -H 1c3eded9-7917-4a5e-bbe0-f73f9d4f33c1---2 myServer
+----
+
+or on Windows:
+
+[source, linenums]
+----
+amc_setup.bat -H 1c3eded9-7917-4a5e-bbe0-f73f9d4f33c1---2 myServer
+----
+
+The argument `-H` is an id that references your organization in the Anypoint platform Private Cloud Edition installation.
+
+The final argument of this command is the name that you assign for your Runtime Manager Agent instance, in the above example, `myServer`. This name will then be visible when interacting with the agent from your Runtime Manager console.
+
+....
+[tab,title="Anypoint Platform Private Cloud Edition"]
+....
+
+When using Anypoint Platform as an application running on-premises, launch the agent with the following arguments:
+
+[source, linenums]
+----
+amc_setup -A http://localhost:8080/hybrid/api/v1 -W wss://localhost:8443/mule -C https://dev.anypoint.mulesoft.com/accounts -H 361755d7-c619-42ce-9187-19db7a6d94a0---2 myServer
+----
+
+or on Windows:
+
+[source, linenums]
+----
+amc_setup.bat -A http://localhost:8080/hybrid/api/v1 -W wss://localhost:8443/mule -C https://dev.anypoint.mulesoft.com/accounts -H 361755d7-c619-42ce-9187-19db7a6d94a0---2 myServer
+----
+
+The argument `-H` is an id that references your organization in Anypoint Platform installation.
+
+The final argument of this command is the name that you assign for your Runtime Manager Agent instance, in the above example, `myServer`. This name will then be visible when interacting with the agent from your Runtime Manager console.
+
+Note that three extra arguments must be added to what you copied from the Runtime Manager UI: -A, -W and -C.
+* *A* sets the Runtime Manager host address
+* *C* sets the Core Services host address
+* *W* sets the Mule Communications Manager (MCM) host address
+
+....
+------
+=== 更新运行时管理器代理
+
+如果更新代理版本，则不需要取消部署正在运行的应用程序。
+
+
+[TIP]
+有关如何安装或更新Runtime Manager代理的更多信息，请参阅 link:/runtime-manager/installing-and-configuring-runtime-manager-agent[安装和配置Runtime Manager Agent]
+
+
+image:agent_server.jpg[图片]
+
+[NOTE]
+不支持在单个服务器内创建多个代理。
+
+==== 验证代理注册
+
+运行上述命令后，打开Runtime Manager以验证代理是否已成功注册：
+
+. 使用您的凭据登录Anypoint平台
+. 转到`Runtime Manager - > Servers`。您现在应该看到其中一台服务器是您的Agent实例，并使用您在安装时提供的名称命名：
+
+image:verify_agent.jpg[图片]
+
+=== 配置Mule自定义事件
+
+您可以将运行时管理器配置为向外部软件发送Mule事件，包括流程执行，引发的异常等。这适用于部署到任何运行时的应用程序，以及云中的运行时管理器和捆绑的运行时管理器与 link:/anypoint-private-cloud/v/1.5/[Anypoint平台私有云版]。
+
+==== 与Splunk集成
+
+利用 link:http://www.splunk.com/[Splunk的]，您可以捕获Mule事件通知数据并将其编入索引数据库，然后您可以从中生成图表，报告，警报，仪表板和可视化文件。
+
+image:amc_onprem_diagram_detail_splunk.jpg[图片]
+
+===== 配置您的Splunk帐户
+
+为了实现这一点，您必须在Splunk实例上配置一个新的源类型，该源类型将具有正确的配置来解析从Mule API网关发送的HTTP事件。
+为此，必须将以下源类型追加到$ SPLUNK_HOME / opt / splunk / etc / system / local / props.conf
+文件。
+
+....
+[mule]
+TRUNCATE = 0
+LINE_BREAKER =（[\ r \ n] +）
+SHOULD_LINEMERGE = false
+INDEXED_EXTRACTIONS = JSON
+KV_MODE = JSON
+category = Mule Splunk集成
+description = Mule Agent事件信息
+....
+
+[NOTE]
+如果此文件尚不存在，则必须创建它。
+
+进行这些更改后，您必须重新启动Splunk实例以使其生效。
+
+
+*Configurable fields:*
+
+|===
+|字段|数据类型|描述|类型|默认值
+
+|用户
+|字符串
+|用户名以连接到Splunk。
+|必
+|
+
+|通
+|字符串
+| Splunk用户的密码。
+|必
+|
+
+|主机
+|字符串
+| Splunk正在运行的服务器的IP或主机名。
+|必
+|
+
+|端口
+| INT
+| Splunk管理端口。
+|可选
+| 8089
+
+|方案
+|字符串
+|连接到Splunk管理端口的方案。可能的值：http，https。
+|可选
+| HTTPS
+
+| sslSecurityProtocol
+|字符串
+用于https连接的| SSL安全协议。可能的值：TLSv1_2，TLSv1_1，TLSv1，SSLv3。
+|可选
+| TLSv1_2
+
+| splunkIndexName
+|字符串
+| Splunk索引名称，其中必须发送所有事件。如果用户有权利，
+并且索引不存在，那么内部处理程序将创建它。
+|可选
+|主
+
+| splunkSource
+|字符串
+|发送到Splunk的事件使用的源。
+|可选
+|骡
+
+| splunkSourceType
+|字符串
+|发送到Splunk的事件使用的源类型。
+|可选
+|骡
+
+| dateFormatPattern
+|字符串
+|用于格式化时间戳记的日期格式。
+|可选
+| YYYY-MM-dd'T'HH：MM：ssSZ
+
+|===
+
+*Configuration Example*
+
+[source,yaml]
+Splunk内部处理程序最小配置
+....
+---
+   mule.agent.gw.http.handler.splunk：
+    主机：192.168.61.131
+    用户：admin
+    传递：test
+....
+
+*Configuring your Runtime Manager Account* *
+
+有三种不同的方式可以将Runtime Manager代理配置为将信息导向Splunk帐户：
+
+[tabs]
+------
+[tab,title="Rest API"]
+....
+This feature requires the 1.2.0 agent version or newer.
+
+[NOTE]
+This feature requires Runtime Manager Agent version 1.2.0 or newer.
+
+. Select the server who's information you want to send out
+. In the menu on the right, click *Manage Server* to access the Server's settings
++
+image::sending-data-from-arm-to-external-monitoring-software-manage-server.png[]
+
+. Select the *Plugins* tab:
++
+image::sending-data-from-arm-to-external-monitoring-software-plugins.png[]
+
+. Select the kind of information that you want to send out in the *Level* dropdown menu
++
+image::sending-data-from-arm-to-external-monitoring-software-level.png[]
+
+. On the *Event Tracking* region, activate the *Splunk* switch, this will open a pop up menu where you can provide your Splunk user and password data, as well as the host and port for the connection.
++
+image::sending-data-from-arm-to-external-monitoring-software-splunk.png[]
+
+. Optionally, you can open the advanced menu and set up certain formatting properties of the data that will be sent out
++
+image:agent-to-splunk-restapi-advanced.png[splunk]
+
+....
+[tab,title="HTTP Event Collector"]
+....
+This feature require 1.3.1 agent version or newer.
+
+[NOTE]
+This feature requires Runtime Manager Agent version 1.3.1 or newer.
+
+. First you must obtain a token from Splunk. To do so:
+.. Sign in to your Splunk account
+.. Navigate to *Settings* -> *Data Inputs*
+.. Among the different options, you can find the *HTTP Event Collector*, click the *Add New* link next to it
++
+image:splunk-datainput-setup.png[splunk settings]
+.. Follow the steps of the wizard to set up a data input and obtain the token for it
+
+. Back in the Runtime Manager, select the server who's information you want to send out
+. In the menu on the right, click *Manage Server* to access the Server's settings
++
+image::sending-data-from-arm-to-external-monitoring-software-manage-server.png[]
+
+. Select the *Plugins* tab:
++
+image::sending-data-from-arm-to-external-monitoring-software-plugins.png[]
+
+. Select the kind of information that you want to send out in the *Level* dropdown menu
++
+image::sending-data-from-arm-to-external-monitoring-software-level.png[]
+
+. On the *Event Tracking* region, activate the *Splunk* switch. This will open a pop up menu where you can provide your Splunk user and password data, as well as the host and port for the connection.
++
+image::sending-data-from-arm-to-external-monitoring-software-splunk.png[]
+
++
+image:agent-to-splunk-httpevent.png[splunk]
+
+. Select the *HTTP Event Collector* option and then paste the token that Splunk gave you
+. Optionally, you can open the advanced menu and set up certain formatting properties of the data that will be sent out
++
+image:agent-to-splunk-httpevent-advanced.png[splunk]
+
+[NOTE]
+Although you can set values for the Splunk Index, Splunk Source and Splunk Source type when registering your Data Input in your Splunk account, these will be overwritten by the values you configure for these fields in the Advanced section of the Agent Plugins menu.
+
+....
+[tab,title="TCP"]
+....
+This feature require 1.3.1 agent version or newer.
+
+. First you must enable the input source in Splunk. To do so:
+.. Sign in to your Splunk account
+.. Navigate to *Settings* -> *Data Inputs*
+.. Among the different options, you can find the *TCP* option, next to it is an *Add New* link. Click the one you want.
++
+image:splunk-datainput-setup-tcp.png[splunk settings]
+.. Follow the steps of the wizard to set up a data input
+
+. Back in the Runtime Manager, select the server who's information you want to send out
+. In the menu on the right, click *Manage Server* to access the Server's settings
++
+image::sending-data-from-arm-to-external-monitoring-software-manage-server.png[]
+
+. Select the *Plugins* tab:
++
+image::sending-data-from-arm-to-external-monitoring-software-plugins.png[]
+
+. Select the kind of information that you want to send out in the *Level* dropdown menu
++
+image::sending-data-from-arm-to-external-monitoring-software-level.png[]
+
+. On the *Event Tracking* region, activate the *Splunk* switch. This will open a pop up menu where you can provide your Splunk user and password data, as well as the host and port for the connection.
++
+image::sending-data-from-arm-to-external-monitoring-software-splunk.png[]
+
+. Activate the *Splunk* switch, this will open a pop up menu. In the Dropdown pick *TCP*, then provide the host and port for the connection.
++
+image:agent-to-splunk-tcp.png[splunk]
+
+....
+------
+
+==== 与ELK堆栈集成
+
+ELK结合了三种开源工具（Elasticsearch，Logstash，Kibana），它们协同工作来帮助您存储，搜索和分析日志数据。您可以输出Mule事件通知作为通用系统日志，这可以由您的ELK堆栈处理。 Logstash将数据捕获并编入日志，然后您可以使用Elastisearch和Kibana生成图表，报告，警报，仪表板和可视化。
+该代理可帮助您将从Mule运行时流生成的所有事件通知存储到具有滚动文件策略的可配置日志文件中。
+
+image:amc_onprem_diagram_detail_elk.jpg[图片]
+
+要将信息定向到ELK堆栈读取的文件夹，您必须执行以下操作：
+
+. 选择要发送信息的服务器
+. 在右侧的菜单中，点击*Manage Server*访问服务器的设置
++
+image::sending-data-from-arm-to-external-monitoring-software-manage-server.png[]
+
+. 选择*Plugins*选项卡：
++
+image::sending-data-from-arm-to-external-monitoring-software-plugins.png[]
+
+. 选择您想要在*Level*下拉菜单中发送的信息种类
++
+image::sending-data-from-arm-to-external-monitoring-software-level.png[]
+
+. 在*Event Tracking*区域中，激活*ELK*开关。这将打开一个弹出菜单，您可以将该地址提供给您保存ELK堆栈读取的日志文件的文件夹。
++
+image::sending-data-from-arm-to-external-monitoring-software-elk.png[]
+
+. 或者，您可以打开高级菜单并设置您发送的数据的某些格式属性以及信息如何存档。
++
+image:elk_config_advanced.jpg[ELK先进]
+
+=== 配置API分析
+
+在通过运行时管理器UI设置与外部软件的连接之前，必须先对API网关进行一些更改，以便为此做好准备。
+
+. 在您的API网关独立目录中，查找`conf/wrapper.conf`文件
+. 在其中找到以下行并确保该属性设置为"true"
++
+[source,java,linenums]
+----
+wrapper.java.additional.<n>=-Danypoint.platform.analytics_enabled=true
+----
+
+. 查找另一行：
++
+[source,java,linenums]
+----
+wrapper.java.additional.<n>=-Danypoint.platform.analytics_base_uri=https://analytics-ingest.anypoint.mulesoft.com
+----
+. 删除其中的网址，使其看起来像这样：
++
+[source,java,linenums]
+----
+wrapper.java.additional.<n>=-Danypoint.platform.analytics_base_uri=
+----
+. 使用Anypoint平台私有云版时，还需要更改一个参数：
++
+[source,java,linenums]
+----
+wrapper.java.additional.<n>=-Danypoint.platform.on_prem=true
+----
++
+`anypoint.platform.on_prem`默认设置为`false`。要通过Anypoint Platform私有云版进行管理，您必须将其设置为`true`。要通过云中的运行时管理器进行管理，请将其保留为`false`。
+
+[TIP]
+请注意，在上面的代码片段中，当包含`.<n>`的行应被替换为包装器中唯一的整数时。
+
+一旦设置了独立API网关，连接到Splunk和ELK的步骤与处理Mule自定义事件时的步骤完全相同，只是您应该通过相应的开关进行设置。
+
+image::sending-data-from-arm-to-external-monitoring-software-api-analytics.png[]
+
+[WARNING]
+如果您如上所述修改您的`wrapper.conf`文件，但不为数据分配外部目标（就像您可以通过运行时管理器UI执行的操作一样），那么此分析数据将存储在服务器的队列中API网关正在运行，并可能导致系统崩溃。
+
+== 将API Analytics与Splunk和ELK集成
+
+配置完API Gateway后，您现在可以返回到Runtime Manager并查看您的服务器在其菜单中有一些其他选项。
+
+image::sending-data-from-arm-to-external-monitoring-software-api-analytics.png[]
+
+您现在可以设置向Splunk和ELK发送API分析，您的配置方式与将业务事件发送给它们时的方式完全相同。请参阅<<Integrating with an ELK Stack, Integrating with an ELK Stack>>和<<Integrating with Splunk, Integrating with Splunk>>。
+
+== 有效载荷格式
+
+如果您打算导出要记录的有效内容的内容，请记住并非所有格式都可以导出。请参阅 link:/runtime-manager/about-logging-of-payload-formats[关于负载格式的记录]以获取完整参考。
+
+== 加密密码
+
+建议您在启动这些密码时将主密码分配给您的Mule运行时实例或您的API网关独立实例。如果您不这样做，那么当通过运行时管理器UI为外部应用程序设置证书时，这些将作为纯文本存储在`conf/mule-agent.yml`文件中。出于安全原因，不建议这样做。
+
+相反，你应该做的是启动Mule运行时或API网关运行时带有一个额外的参数，然后在将这些密码存储在这个.yaml文件中时使用它们来加密这些密码。
+
+
+[tabs]
+------
+[tab,title="Mule runtime"]
+....
+
+[source]
+----
+{MULE_HOME}/bin/mule -M-Dmule.agent.configuration.password=myMasterPassword
+----
+
+or on Windows:
+
+[source]
+----
+{MULE_HOME}\bin\mule.bat -M-Dmule.agent.configuration.password=myMasterPassword
+----
+
+
+....
+[tab,title="API Gateway runtime - deprecated"]
+....
+
+[source]
+----
+{MULE_HOME}/bin/gateway -M-Dmule.agent.configuration.password=myMasterPassword
+----
+
+or on windows:
+
+[source]
+----
+{MULE_HOME}\bin\gateway.bat -M-Dmule.agent.configuration.password=myMasterPassword
+----
+
+....
+------
+
+请注意，为了在重新启动Mule运行时或API网关运行时访问这些加密密码，您必须分配您在生成时使用的相同主密码。
+如果您决定更改主密码，或者在启动运行时时忽略它，则必须通过运行时管理器UI重新分配密码以保持第三方集成的正常运行。
+
+== 另请参阅
+
+*  link:/runtime-manager/managing-servers[管理服务器]
+*  link:/runtime-manager/monitoring[监测应用]
+* 先了解如何 link:/runtime-manager/deploying-to-your-own-servers[将应用程序部署到您自己的服务器]
+*  link:/runtime-manager/managing-deployed-applications[管理已部署的应用程序]包含有关如何在部署后管理应用程序的更多信息
+*  link:/runtime-manager/managing-applications-on-your-own-servers[在您的服务器上管理应用程序]包含特定于内部部署的更多信息
+*  link:/runtime-manager/runtime-manager-api[REST API]也可用于部署到您的服务器。

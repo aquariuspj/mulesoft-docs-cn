@@ -1,0 +1,392 @@
+= 流程处理策略
+:keywords: flow processing, synchronous, asynchronous, sync, async, non-blocking, blocking, cluster
+
+流*processing strategy*确定Mule如何实现给定流的消息处理。
+
+* 消息是应该同步处理（在同一个线程上）还是异步处理（在不同的线程上）？
+* 信息是否应该是<<Non-Blocking Processing Strategy>>？ （可用Mule 3.7及更新版本）
+* 如果是异步的，用于处理消息的线程池的属性是什么？
+* 如果是异步的，消息如何等待轮到它在第二个线程中被处理？
+
+所有Mule流都有一个隐含的处理策略，Mule会自动应用：同步或排队异步。这些处理策略中的每一个对于某些流程都是最佳的本页介绍这些处理策略和Mule用于确定每个流程的最佳处理策略的标准。
+
+该页面还解释了您可能希望忽略Mule处理策略选择的情况，并介绍了您可以更改或微调用于给定流程的处理策略的参数。
+
+== 先决条件
+
+本页假定您熟悉 link:/mule-user-guide/v/3.9/mule-concepts[骡流]和基本 link:/mule-user-guide/v/3.9/mule-application-architecture[应用架构]。
+
+== 隐式处理策略
+
+即使您没有为您的流程配置处理策略，流程也会遵循由Mule自动应用的处理策略。处理策略可以是：
+
+*  *<<Synchronous Flow Processing Strategy>>*：Mule在一个线程中处理消息。
+*  *<<Queued-Asynchronous Flow Processing Strategy>>*：Mule使用一个队列将接收线程与流程的其余部分分开。
+
+对于大多数用例，Mule选择的隐式策略是最优的。有关为什么以及如何覆盖隐式处理策略的更多信息，请参阅<<Changing the Processing Strategy>>，如果您的用例需要它。
+
+=== 骡子如何选择流程处理策略
+
+与排队异步替代方案的高吞吐量相比，每个流程可以从同步处理的事务可靠性中获益的程度不同。
+
+Mule根据两个标准为流程选择一个处理策略：
+
+. 流程的交换模式
+. 流是否是事务性的
+
+流量采用两种交换模式中的一种，由流入端点的交换模式确定：
+
+* 当消息的发送者（例如流的入站端点）期望响应或某种结果返回给调用者时，将使用*request-response exchange pattern*。
+* 当预期没有响应时，或者当结果发送到某个其他流或系统而不返回给调用者时，将使用*one-way exchange pattern*。
+
+如果交换模式是请求 - 响应，则Mule应用同步处理策略。
+
+另外，无论交换模式如何，一些入站端点可以配置为操作 link:/mule-user-guide/v/3.9/transaction-management[事务]。如果一个流是事务性的，Mule会应用一个同步处理策略。
+
+下表总结了Mule如何选择流程处理策略：
+
+[%header,cols="34,33,33"]
+|===
+|交易模式 |交易？ |流程处理策略
+|请求响应 |是 |同步
+|请求响应 |否 |同步
+|单向 |是 |同步
+|单向 |否 |排队的异步
+|===
+
+== 更改处理策略
+
+Mule对加工策略的选择对于其应用的流程几乎总是最优的。但是，以下选项存在：
+
+*  *Change to Synchronous*  - 在Mule为流选择排队异步处理的情况下，您可以指定一个同步流。您可能需要指定一个同步流程来实现可靠性。请记住，同步策略非常适用于流程入站端点必须被通知在处理消息期间发生的所有错误的流程。 link:/mule-user-guide/v/3.9/reliability-patterns[可靠性模式]文件进一步讨论了这种情况。虽然这不适用于大多数用例，但如果Mule为流选择了排队异步处理，则可以指定另一种异步处理策略。 *Note*：您无法在同步流程上强制执行排队异步处理策略。
+
+*  *Fine Tune*：您可以接受Mule对排队异步流程处理策略的选择，但可以对处理策略进行微调。 *Note*：您无法微调同步流程。
+
+*  *Wrap a Flow:*您可以将同步流中的一个或多个消息处理器封装在 link:/mule-user-guide/v/3.9/async-scope-reference[异步范围]中，以定义Mule与主流异步处理的处理块。您也可以通过在异步范围中封装流引用来创建异步流。
+
+*  *Subflow*：无论处理策略应用于触发流程如何，您都可以调用子流程（始终同步处理）或来自任何流程的同步流程。触发流程等待，直到该同步处理块在继续处理之前返回消息。有关子流和同步流的更多信息，请参阅 link:/mule-user-guide/v/3.9/flows-and-subflows[流量和子流量]。
+
+*  *Non-Blocking*：您可以使用Mule 3.7和更新的新<<Non-Blocking Processing Strategy>>策略来利用NIO和 link:/mule-user-guide/v/3.9/http-connector[HTTP连接器]，并避免在等待HTTP响应时阻塞线程，这也需要较少的调整。 *Note*：并非所有组件都支持，不受支持的组件会导致流程回退到同步处理。
+
+*  *Custom*：您可以创建自定义流程处理策略以满足您的确切需求。例如，您可能更喜欢使用增加的线程数来处理高峰负载的排队异步流。
+
+[%header,cols="2*"]
+|===
+|附加处理策略元素和全局元素名称 |描述
+|非阻塞 |适用于在流程开始时使用HTTP侦听器，并且在流中使用更多HTTP请求者的流程，并且流程不包含当前不支持的任何组件。
+|每个处理器的线程处理策略 |不适用于大多数用例。范围中的每个处理器都按照不同的线程顺序运行。
+|排队的每线程处理器处理策略 |不适用于大多数用例。将消息写入队列，然后作用域中的每个处理器按顺序在不同的线程中运行。
+|异步处理策略 |不适用于大多数使用情况。与排队异步处理策略相同，只是它不使用队列。仅当您不希望将处理分布在各个节点上时才使用它。
+|===
+
+=== 摘要
+
+[%header,cols="5*"]
+|=====
+|流程处理策略链接：＃FlowProcessingStrategies-HowMuleSelectsaProcessingStrategy [implictly +
+由Mule应用]  |你可以指定一个不同的+
+处理策略？ |您可以微调+吗？
+处理策略？ |您是否可以创建一个处理模块，使用与主流不同的处理策略执行？ |您是否可以使用Spring来应用自定义处理策略？
+| *Synchronous*  | *No.*您不能强制请求 - 响应交换模式和/或事务性流程异步。 | *No* 。您无法微调同步处理策略。但是，您可以自定义入站端点连接器接收器 link:/mule-user-guide/v/3.9/tuning-performance[线程配置文件]。 |  *Yes.*您可以使用Async Scope或异步流程使Mule异步处理选定的消息处理器块。 <<Creating an Asynchronous Processing Block>>。 | *Yes.* <<Creating a Custom Processing Strategy>>。
+您可以通过显式声明同步处理策略来重写隐式选择的排队异步处理策略（或者，在极少数情况下，可以使用不同类型的异步处理策略）。 <<Specifying a Processing Strategy>>。 | *Yes.*您可以微调排队异步处理策略以满足您的需求。 <<Fine-Tuning a Queued-Asynchronous Processing Strategy>>。 | *Yes.*无论主流的处理策略如何，同步 link:/mule-user-guide/v/3.9/flows-and-subflows[流量或子流量]都会同步处理选定的消息处理器块。 | {{7 }} <<Creating a Custom Processing Strategy>>。
+|=====
+
+=== 指定处理策略
+
+改变个人流程处理策略的过程很简单。您只能为Mule隐式应用排队异步处理策略的流指定处理策略。因此，只有具有单向交换模式并且不具有事务性的流才可以具有指定的处理策略来覆盖Mule对排队异步处理策略的选择。
+
+指定处理策略的最常见用例是强制一个流程，否则这个流程会被排队 - 异步，而不是同步。要强制同步流，请将`processingStrategy`属性添加到要更改的流并将其设置为`synchronous`。这在下面的代码示例中进行了说明。
+
+[source, xml, linenums]
+----
+<flow name="asynchronousToSynchronous" processingStrategy="synchronous">
+  <vm:inbound-endpoint path="anyUniqueEndpointName" exchange-pattern="one-way"/>
+  <vm:outbound-endpoint path="output" exchange-pattern="one-way"/>
+</flow>
+----
+
+在极少数情况下，您可能希望在流中指定另一种异步处理策略，否则将遵循排队异步处理策略。您可以直接在流配置中声明它，就像在上面的示例中声明同步处理策略一样，也可以创建全局元素并进一步微调处理策略。下表列出了处理策略名称，每个处理策略名称可以被声明为`processingStrategy`属性的值，或者作为全局元素。
+
+[%header,cols="2*"]
+|===
+|其他异步处理策略元素/全局元素名称 |描述
+| *asynchronous-processing-strategy*  |不适用于大多数用例。与排队异步处理策略相同，只是它不使用队列。只有在出于某种原因不希望处理分布在节点上的情况下才可以使用它。
+| *queued-thread-per-processor-processing-strategy*  |不适用于大多数用例。将消息写入队列，然后作用域中的每个处理器按顺序在不同的线程中运行。
+| *thread-per-processor-processing-strategy*  |不适用于大多数用例。范围中的每个处理器都按照不同的线程顺序运行。
+|===
+
+=== 微调队列异步处理策略
+
+如果Mule应用了排队异步流处理策略，则可以对其进行微调以调整其行为。请注意，您只能微调排队异步策略;您无法对同步流程进行任何微调。
+
+您可以通过以下方式微调排队异步处理策略：
+
+* 更改可用于流的线程数。
+* 限制可以排队的邮件数量。
+* 指定队列存储以保存数据。
+
+您可以通过为全局处理策略指定参数，然后引用要调整的流或参数中的参数来实现此微调。如果您没有在全局或本地级别指定某个配置参数，Mule会为该参数设置一个默认值。下表列出了这些默认值。
+
+[NOTE]
+请注意，除了微调队列异步处理策略的属性之外，您还可以通过分析和配置线程配置文件来配置Mule应用程序的 link:/mule-user-guide/v/3.9/tuning-performance[调整性能]。
+
+以下示例定义了一个全局处理策略（`queued-asynchronous-processing-strategy`），它将最大线程数（`maxThreads`）设置为500.该示例还显示了流如何引用全局处理策略。这个流程：
+
+* 是异步的，因为它指的是排队异步处理策略
+* 由于为`maxThreads`设置了值，最多允许500个并发线程
+
+[source, xml, linenums]
+----
+<queued-asynchronous-processing-strategy name="allow500Threads" maxThreads="500"/>
+ 
+<flow name="manyThreads" processingStrategy="allow500Threads">
+  <vm:inbound-endpoint path="manyThreads" exchange-pattern="one-way"/>
+  <vm:outbound-endpoint path="output" exchange-pattern="one-way"/>
+</flow>
+----
+
+下表列出了可以针对异步处理策略进行微调的配置参数。 （无法配置同步处理策略。）所有这些属性都可以在全局元素上配置。
+
+[%header,cols="20,16,16,16,16,16"]
+|===
+|属性 |类型 |仅排队吗？ |默认值 |描述 |可选吗？
+| *maxBufferSize*  |整数 |否 | 1  |确定在池达到最大容量时排队的请求数和池耗尽操作等待。该缓冲区被用作溢出。 |是
+| *maxQueueSize*  |整数 |是 |不适用 |可以排队的最大消息数。 |是
+| *maxThreads*  |整数 |否 | 16  |可以使用的最大线程数。 |是
+| *minThreads*  |整数 |否 | n / a  |没有负载时保留在池中的空闲线程数。  |是
+| *poolExhaustedAction*  |枚举 |否 | WHEN_EXHAUSTED_RUN  |当最大池大小或队列大小有界时，此值确定如何处理传入的任务。 |是的
+| *queueTimeout*  |整数 |是 | n / a  |从队列中获取事件时使用的超时。 |是
+| *threadTTL*  |整数 |否 | 60000  |确定非活动线程在被丢弃之前保留在池中多久。{{ 6}}是
+| *threadWaitTimeout*  |整数 |否 | 30000  |当池耗尽操作等待时，以毫秒为单位等待多久。如果该值为负数，则等待时间无限。 |是
+| *doThreading*  |布尔 |否 |真 |是否应使用线程 |是
+|===
+
+另外，您可以使用以下嵌套元素之一定义队列存储：
+
+[%header%autowidth.spread]
+|===
+|队列存储嵌套元素 |描述
+|简单内存队列存储 |一个简单的内存队列存储。
+| default-in-memory-queue-store  |这是用于非持久队列的默认队列存储。
+| default-persistent-queue-store  |这是用于持久队列的默认队列存储。
+| file-queue-store  |一个简单的文件队列存储。
+| queue-store  |对其他地方定义的队列存储的引用。
+| custom-queue-store  |使用Spring属性定义的自定义队列存储。
+|===
+
+=== 创建一个异步处理块
+
+如果Mule已将同步处理策略应用于流程，则可以分离出一个与主流程同时执行的处理块，并且不会将消息返回给主流程。通过以下两种方式之一实现此目的：
+
+. 将一个或多个处理器包装在 link:/mule-user-guide/v/3.9/async-scope-reference[异步范围]中
+. 通过在异步范围中包装flow-ref元素来创建 link:/mule-user-guide/v/3.9/flows-and-subflows[异步流程]，以便流程内容将与触发流程异步处理
+
+这两种方法都可以阻止一组可能非常耗时执行的处理步骤。由于此异步处理块是单向的，因此主流不会等待响应，并且可以在主线程中继续处理。
+
+如果没有为异步作用域配置处理策略，则Mule应用排队异步处理策略。但是，您可以通过定义全局元素并从async元素引用它来指定或微调该范围的异步处理策略。
+
+以下全局元素可用于配置异步作用域的处理策略。
+
+[%header,cols="2*"]
+|===
+|全局元素 |描述
+| *asynchronous-processing-strategy*  |不适用于大多数用例。与排队异步处理策略相同（如果没有配置其他处理策略，Mule会应用这种策略），只是它不使用队列。只有在出于某种原因不希望处理分布在节点上的情况下才可以使用它。
+| *queued-asynchronous-processing-strategy* a |
+使用队列将流的接收器与流中其余的步骤分离。它在作用域中的工作方式与流程中的方式相同。除非另有说明，否则Mule会应用此策略。如果您想通过以下方式对此处理策略进行微调，请选择此项：
+
+* 更改可用于流的线程数。
+* 限制可以排队的邮件数量。
+* 指定队列存储以保存数据。
+
+| *queued-thread-per-processor-processing-strategy*  |不适用于大多数用例。将消息写入队列，然后作用域中的每个处理器按顺序在不同的线程中运行。
+| *thread-per-processor-processing-strategy*  |不适用于大多数用例。范围中的每个处理器都按照不同的线程顺序运行。
+|===
+
+有关配置异步作用域元素的更多信息，请参阅 link:/mule-user-guide/v/3.9/async-scope-reference[异步范围参考]。
+
+=== 创建自定义处理策略
+
+如果同步和排队异步处理策略都不符合您的需求，并且微调异步策略还不够，则可以创建自定义处理策略。您可以通过`custom-processing-strategy`元素创建自定义策略，并使用Spring bean属性进行配置。此自定义处理策略必须实现`org.mule.api.processor.ProcessingStrategy`接口。
+
+以下代码示例演示了一种自定义处理策略：
+
+[source, xml, linenums]
+----
+<custom-processing-strategy name="customStrategy" class="org.mule.CustomProcessingStrategy">
+  <spring:property name="threads" value="500"/>
+</custom-processing-strategy>
+----
+
+=== 重用处理策略
+
+您可以在应用程序中使用命名的处理策略，既可以是您创建的自定义处理策略，也可以是经过精细调整的处理策略。
+
+* 声明处理策略，如下所示：
++
+[source, xml, linenums]
+----
+<queued-asynchronous-processing-strategy name="allow500Threads" maxThreads="500"/>
+----
++
+* 以适当的流程引用它，例如：
++
+[source, xml, linenums]
+----
+<flow name="acceptOrders" processingStrategy="allow500Threads">
+  <vm:inbound-endpoint path="acceptOrders" exchange-pattern="one-way"/>
+  <vm:outbound-endpoint path="commonProcessing" exchange-pattern="one-way"/>
+</flow>
+ 
+<flow name="processNewEmployee" processingStrategy="allow500Threads">
+  <vm:inbound-endpoint path="processNewEmployee" exchange-pattern="one-way"/>
+  <vm:outbound-endpoint path="commonProcessing" exchange-pattern="one-way"/>
+</flow>
+ 
+<flow name="receiveInvoice" processingStrategy="allow500Threads">
+  <vm:inbound-endpoint path="receiveInvoice" exchange-pattern="one-way"/>
+  <vm:outbound-endpoint path="commonProcessing" exchange-pattern="one-way"/>
+</flow>
+----
+
+== 同步流程处理策略
+
+同步方法用于处理最初接收消息的同一线程中的消息。在流接收到消息后，包括响应处理在内的所有处理都将在同一个线程中完成（异步范围例外，如Async和For Each）。同步策略非常适合以下情况：
+
+* 邮件的发件人需要回复。这被称为"request-response"交换模式。
+* 流程需要满足事务处理的要求。换句话说，流程中的所有步骤都被视为一个单元，它必须完全成功或完全失败。此外，必须通知适当的各方（例如消息的发送者或由流封装的业务流程的管理员）的结果。这意味着事务流程不能将处理交给其他线程，在事务完成后可能发生错误。
+* 必须通知流程入站端点处理消息期间发生的所有错误。这种情况在 link:/mule-user-guide/v/3.9/reliability-patterns[可靠性模式]中进一步讨论。
+
+== 排队异步流处理策略
+
+排队异步方法使用队列将流的接收器与流中其余步骤分离。
+
+image:non-blocking-queued-async.png[非阻塞排队-异步]
+
+这意味着一旦接收者将消息放入队列中，它可以立即返回并接受新的传入消息。而且，队列中等待的每个消息都可以从一个线程池中分配一个不同的线程。称为工作管理器的组件将未决消息分配给可用线程，因此可以并行处理它们。这种并行处理非常适用于接收器可以在高峰时间接收消息的情况，其速度明显快于其余流程可以处理这些消息的情况。
+
+但是，异步方法所促成的吞吐量增加是以事务可靠性为代价的。
+
+[NOTE]
+为排队异步流处理策略实现的特定类型的队列被称为SEDA队列。
+
+[TIP]
+====
+*Behavior in a Cluster*
+
+具有排队异步处理策略的流可以在集群中的任何节点上执行。
+
+具有同步处理策略的流程在集群的同一节点上执行，直到流程中的处理完成。
+====
+
+== 非阻塞处理策略
+
+Mule传统上始终使用线程处理模型来处理来自使用请求 - 响应消息交换模式的消息源的传入请求。这意味着整个Mule Flow（请求和响应阶段）都是使用相同的线程执行的。同一个线程也用于将响应发送回客户端。无论何时使用<<Fine-Tuning a Queued-Asynchronous Processing Strategy>>，都可以使用此线程化请求 - 响应处理，无论是显式还是Mule在未指定时隐式选择此策略。这个处理模型可以更容易地用这张图表示出来：
+
+image:non-blocking-sync-proc-strategy.png[无阻塞同步进程内的策略]
+
+相比之下，非阻塞处理策略使用一个均衡的非阻塞处理模型来处理请求。在此模型中，单个线程仍处理每个传入请求，但非阻塞组件会将此线程返回给侦听器线程池。只有在获得并使用新线程后，才能继续处理。使用HTTP的下面示例可以更容易地进行解释，该示例也可以直接与上面的线程示例进行比较。
+
+image:non-blocking-processing-strategy.png[非阻塞处理策略]
+
+在这个例子中，HTTP组件支持非阻塞I / O（NIO）。
+
+这意味着：
+
+*  HTTP请求处理器内部不需要线程来等待响应，而是在响应可用时接收事件。
+* 当响应准备就绪时，HTTP Listener消息源可以使用任何线程发送客户端响应。虽然这些组件支持这种模式，但它只使用非阻塞处理策略，Mule可以利用这一点。
+
+线程使用情况可以解释如下。
+
+. 请求由侦听器线程处理，与同步处理策略一样。
+. 鉴于HTTP请求处理器支持非阻塞，所以一旦请求被发送，它就释放侦听器线程。
+. 发送HTTP请求和接收HTTP响应之间不使用线程。
+. 一旦有响应可用，HTTP请求进程就会获得一个新线程以继续从Flow线程池进行处理。
+. 然后处理继续使用流程线程，并且遇到非阻塞处理器时会发生同样的情况
+. 最后，使用当前正在处理流的线程发回HTTP侦听器响应，在这种情况下，它是流线程。
+
+*Note*：非阻塞流线程池默认最多有128个线程，这与其他处理策略中默认的最大线程数不同。 128值与HTTP侦听器使用的默认线程数相匹配，因此在上面的场景中，最多有128个线程可用于处理请求和发送响应。
+
+理解这两种处理策略在功能上达到相同的结果是很重要的。区别在于Mule线程在同步处理策略中使用时间较长，因为它们在等待来自HTTP请求处理器的响应时被阻塞，而非阻塞策略线程在需要时可用。
+
+=== 不阻碍的优势
+
+这种处理策略的主要优势在于，在使用此处理策略的流程中，只要流程不会阻止I / O或在任何地方使用`Thread.sleep()`，则无需调整即可实现最佳性能。使用同步处理策略，相比之下，需要根据流程的预期使用情况来调整侦听器线程池大小。
+
+让我们考虑一个使用上面示例流程的示例：
+
+* 当前并发客户端数量：1000
+* 来自HTTP请求调用的当前响应时间：每个250 ms
+* 每秒目标线程数（TPS）：1000
+
+如果我们的示例流有两个出站HTTP请求调用，则监听器线程处理传入请求的总时间为0.5秒。这意味着在默认侦听器线程池大小为128时，可以实现的最大TPS为256 TPS。计算如下：
+
+*  _ TPS_ _ = min（客户端线程，侦听器线程）/出站HTTP响应时间* 2._
+*  _ TPS_ _ = 128 / 0.5_
+*  _ TPS_ _ = 256_
+
+要达到1000 TPS的目标，您需要配置500个侦听器线程。它的效果并不理想，这种调整是需要开箱即用，但更糟糕的是，这种调整往往是短暂的，因为如果客户端并发的增加，不仅在TPS不会增加，但是响应时间相对增加的并发性增加。另一方面，如果处理时间增加到1秒，则无论有多少客户端，调谐流的最大TPS为500TPS。
+
+对此的一个解决方案是总是使用大量的线程来调整所有可能性，但这不是一个好主意，因为线程会消耗资源，每个线程都有一个直接的内存缓冲区，并且取决于操作系统使用时，可能会同时使用大量线程而产生开销。
+
+作为参考，具有非阻塞的TPS计算将是：
+
+*_TPS_* _ =客户端线程/出站HTTP响应时间* 2_
+
+请注意，非阻塞流的性能不依赖于流或Mule应用程序的任何调整，而仅取决于外部因素，例如客户端线程和响应时间。当然，任何CPU或网络都会设置界限。
+
+=== 何时使用非阻止
+
+尽管这种处理模型明显适用于Mule当前支持的多种场景，但它限制并专注于使用HTTP的请求响应流程，这是此处理策略最有价值的地方。
+
+因此，如果流实现主要使用HTTP，并且您希望不需要调整侦听器线程或最大限度地减少资源利用率，则应该考虑使用此处理策略，如上所述，
+
+在使用非阻塞策略之前，请确保您也熟悉：
+
+*  <<Supported Non-Blocking Components>>。
+*  <<Unsupported Components,Unsupported Non-Blocking Components>>。
+* 以下非阻止策略限制：
+** 支持非阻塞的唯一消息源是 link:/mule-user-guide/v/3.9/http-listener-connector[HTTP连接器监听器]。
+** 支持非阻塞的唯一消息处理器是 link:/mule-user-guide/v/3.9/http-request-connector[HTTP连接器请求]。
+** 目前支持的唯一消息交换模式是 link:https://www.mulesoft.com/exchange/#!/http-request-response-logger[请求 - 响应]。
+** 只有一小部分组件完全支持在非阻塞流中使用。
+
+虽然可以在非阻塞流中使用不受支持的组件，但它们会导致处理模型恢复为同步执行，以确保一致的行为。除高级方案外，在这些情况下，最好不要使用非阻塞处理策略。
+
+=== 支持的非阻塞组件
+
+流"Non-Blocking"策略中可以包含以下组件，但并非所有组件都可以支持非阻塞处理操作。
+
+*  *Connectors:*所有连接器在非阻塞流程中都受支持，但只有HTTP连接器（在Mule 3.6和更高版本中引入）执行非阻塞请求 - 响应操作，并可让您利用非阻塞阻挡处理模型。
+*  *Scopes:* +
+**  *Processor-Chain, Subflow and Enricher:*完全支持这些范围内的HTTP连接器请求组件，并利用非阻塞处理模型。
+**  *Async/Wire-Tap*：支持，但子处理器无法利用非阻塞处理。这是因为单向交换模式尚不支持。
+**  *Request-Reply*：支持，但目前没有利用非阻塞处理模型。
+*  *Components*：支持所有组件。
+*  *JMS Transport*：Mule 3.8和更新版本中的JMS请求响应支持。
+*  *Transformers*：包括DataWeave在内的所有转换器。
+*  *Filters*：支持所有过滤器。
+*  *Flow Control*：目前只支持APIkit路由器和选择。
+*  *Error Handling*：支持所有异常策略，但当前HTTP连接器请求元素在异常策略中时不能执行非阻塞。
+
+=== 不支持的组件
+
+*  *Scopes*：
+**  *Transactional*：该范围需要处理为单线程，因此隐式不受支持
+**  *Until-Successful*
+*  *Flow Control*：当前不支持除APIkit路由器和Choice之外的流控制元素。
+
+=== 同步回退
+
+如果在使用非阻塞处理策略的流中配置了不受支持的组件，则流将从流中的点恢复到同步处理。可能会有先进的情况，希望利用非阻塞部分流量的优势，但通常最好坚持采用同步处理策略。
+
+image:non-blocking-with-sync-fallback.png[非阻塞与 - 同步回退]
+
+在这个例子中，第一个HTTP请求处理器使用非阻塞，但是在它强制流程恢复到同步行为之后的聚合器，因此第二个HTTP请求处理器不使用非阻塞，流程线程在发送之前等待响应回应客户的回应。
+
+== 另请参阅
+
+* 有关如何在其他同步流程中嵌入异步处理块的信息，请参阅 link:/mule-user-guide/v/3.9/async-scope-reference[异步范围参考]。
+* 查看Mule中不同种类的 link:/mule-user-guide/v/3.9/flows-and-subflows[流量和子流量]。
+* 详细了解 link:/mule-user-guide/v/3.9/reliability-patterns[可靠性模式]。
+* 通过分析和配置线程配置文件了解如何配置 link:/mule-user-guide/v/3.9/tuning-performance[调整性能]。
+* 查看我们的 link:https://blogs.mulesoft.com/dev/mule-dev/cheat-sheet-asynchronous-message-processing/[MuleSoft博客]上的异步消息备忘单。

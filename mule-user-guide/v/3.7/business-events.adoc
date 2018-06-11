@@ -1,0 +1,388 @@
+= 商业活动
+:keywords: anypoint, studio, esb, business events
+
+*_Enterprise Edition / CloudHub_*
+
+Mule可以为处理业务事务的流程和消息处理器收集*business events*信息。业务事件信息可以包括事务执行时间，错误和结果（成功完成或失败）以及消息有效负载信息，您可以使用 link:/mule-user-guide/v/3.7/mule-expression-language-mel[骡子表达语言（MEL）]进行自定义。使用Insight或Mule管理控制台，您可以在运行时监控这些事件，以分析故障的根本原因，隔离性能瓶颈并测试是否符合公司程序。
+
+Mule可让您设置*custom events*捕获特定的有效负载信息，以便在运行时进行后续跟踪和分析。此外，一些*default events*由Mule服务器自动生成。对于MMC用户，要在运行时跟踪和分析默认事件，必须先在应用程序中启用事件跟踪。对于CloudHub用户，启用Insight后会自动跟踪某些默认事件，但在跟踪之前需要在您的应用程序中启用其他事件。
+
+本页说明如何在应用程序中设置业务事件：
+
+* 如何在流级别或消息处理器/连接器级别启用跟踪默认事件
+* 如何配置自定义事件
+* 为有效事件跟踪设计应用程序的最佳实践
+
+有关运行时业务事件跟踪和分析的信息，请参阅以下页面：
+
+* 如何过滤和分析 link:/runtime-manager/insight[眼光]中的商户活动
+* 如何使用 link:/mule-management-console/v/3.7/analyzing-business-events[Mule管理控制台的Business Events选项卡]分析业务事件
+* 如何在Mule管理控制台中 link:/mule-management-console/v/3.7/tracking-and-querying-business-events[查询和过滤交易和事件]
+* 针对Mule管理控制台的业务事件跟踪 link:/mule-management-console/v/3.7/business-events-use-cases[用例]
+
+[NOTE]
+====
+*Terminology*
+
+在继续之前，了解一些术语是很重要的。
+
+*  *Transactions*是相关事件的逻辑分组，通常对应于系统的业务视图。事务映射到流程。
+*  *Events*是事务的底层细节。事件映射到消息处理器和连接器。事件也可以是例外和自定义事件。除自定义事件外，所有事件都被视为默认事件。
+====
+
+
+
+[WARNING]
+====
+link:/mule-user-guide/v/3.7/batch-processing[批量处理]不支持使用商业活动。
+====
+
+
+*  <<Code Summaries>>
+
+== 配置商业活动
+
+有两种方法可以在Mule中配置业务事件跟踪：
+
+* 在流中的特定点处配置自定义业务事件。
+* 启用对流或流中特定消息处理器/连接器的默认事件跟踪。
+
+自定义事件跟踪由*custom business event*元素支持。自定义事件一旦被配置就会被跟踪。自定义事件允许您跟踪与您的业务相关的流程中的高级活动。
+
+所有连接器和选定的消息处理器都支持默认事件跟踪。为这些元素启用默认事件允许您在运行时执行高级调试。
+
+=== 自定义事件
+
+Mule使您能够使用自定义业务事件消息处理器在流中附加自定义元数据。您可以使用Studio或XML将自定义事件添加到流程中。每个自定义业务事件都可以配置为具有与其关联的多个元数据属性。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Within the *Palette*, click *Miscellaneous*, then drag *Custom Business Events* to the desired location in your flow. Click the icon to open the *Properties Editor*.
+. Enter string values for *Display Name* and *Event Name*.
+. Optionally, create a list of *Key Performance Indicators* (KPIs) to capture information from the message payload. For each KPI, enter a name (which can be used in the search interface of Mule Management Console or CloudHub at runtime), and a value, which may be any Mule expression.
+
+image:custom_business_events.png[custom_business_events]
+
+Note that key/value pairs can vary according to your business needs. Additional examples:
+
+[%header,cols="2*a"]
+|===
+|Name |Expression/Value
+|`price` |`700`
+|price-after-discount |#[groovy:payload.price]
+|price-after-discount |The price for the item is:#[groovy:payload.price]
+|===
+
+Using the XML editor, you can set up your flow so that metadata can be shared among events. See the XML tab for details on how to set up the `tracking:custom-event-template` global element in your flow.
+
+You can also trigger conditional custom events to help track how messages are processed through your flow. For example, you could set up a choice router in your flow.
+
+....
+[tab,title="Studio or Standalone XML"]
+....
+Configure a custom event using XML as in the following example:
+
+[source, xml, linenums]
+----
+<flow name="flow">
+...
+  <tracking:custom-event event-name="Retrieved Employee">
+  </tracking:custom-event>
+...
+</flow>
+----
+
+When you define a custom event, you can also add metadata. Use link:/mule-user-guide/v/3.7/mule-expression-language-mel[Mule expression language] in the value to capture information from the message payload.
+
+[source, xml, linenums]
+----
+<flow name="flow">
+        ...
+  <tracking:custom-event event-name="Retrieved Employee" doc:name="Retrieved Employee">
+    <tracking:meta-data key="Employee Id" value="#[payload['ID']]"/>
+    <tracking:meta-data key="Employee First Name" value="#[payload['FIRST_NAME']]"/>
+    <tracking:meta-data key="Employee Last Name" value="#[payload['LAST_NAME']]"/>
+    <tracking:meta-data key="Employee Email" value="#[payload['EMAIL']]"/>
+    <tracking:meta-data key="Employee Git ID" value="#[payload['GITHUB_ID']]"/>
+  </tracking:custom-event>
+        ...
+</flow>
+----
+
+You can even add text to the expression language, as shown in the following example:
+
+[source, xml, linenums]
+----
+<flow name="flow">
+        ...
+    <tracking:custom-event event-name="price_discount">
+      <tracking:meta-data key="price-after-discount"
+       value="The price for the item is:#[groovy:payload.price]" />
+    </tracking:custom-event>
+        ...
+</flow>
+----
+
+Also, metadata can be shared among events using the `tracking:custom-event-template` global element:
+
+[source, xml, linenums]
+----
+<tracking:custom-event-template name="template">
+  <tracking:meta-data key="tier-level" value="platinum" />
+  <tracking:meta-data key="price-after-discount" value="#[groovy:payload.price]" />
+</tracking:custom-event-template>
+
+<flow name="flow">
+  <tracking:custom-event event-name="event1" inherits="template" />
+  <tracking:custom-event event-name="event2" inherits="template" />
+</flow>
+----
+
+And you can define how conditional custom events are fired. The code below shows how to do this:
+
+[source, xml, linenums]
+----
+<choice>
+  <when expression="INVOCATION:debugflag = on" evaluator="header">
+    <tracking:custom-event event-name="success" />
+  </when>
+  <otherwise>
+    <tracking:custom-event event-name="failure" />
+  </otherwise>
+</choice>
+----
+
+In this last example, a custom event with the event name "success" is fired if the debug flag is on when the message processor is invoked. Otherwise, a custom event with the event name "failure" is fired.
+....
+------
+
+=== 默认事件
+
+事件跟踪需要一些处理和网络开销来聚合和存储Mule服务器生成的事件，因此默认情况下，不支持跟踪支持它的连接器或消息处理器。但是，启用默认事件跟踪非常简单。您只需要显式配置跟踪默认事件的范围。您可以配置范围：
+
+* 在流量级别
+* 在消息处理器或连接器级别
+
+[NOTE]
+====
+消息处理器或连接器级别配置优先于流量级别配置。
+
+* 如果您想为特定流启用所有默认事件：
+
+* 如果要为特定的消息处理器启用默认事件（在本例中为全部路由器）：
+
+* 如果要为特定流启用所有默认事件，但不为特定消息处理器启用（在本例中为全部路由器）：
+====
+
+
+要为您的流程中的所有相关元素启用默认事件跟踪，请按照以下说明操作：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Click the title bar of the flow in the canvas to open the flow's *Properties*   *Editor*.
+. Enable default Business Events by selecting *Enable default events tracking*:
++
+image:flow_events.png[flow_events]
++
+. Optionally, check *Use transaction ID* to set an identifier for all tracked events pertaining to this flow so that meaningful information, such as an order number, is displayed for a transaction.
+. Click anywhere in the canvas to save your settings.
+
+This enables default events tracking for all supported building blocks within the flow.
+
+If you wish, you can disable tracking for specific processors or connectors to override the flow-level enablement.
+
+....
+[tab,title="Studio or Standalone XML"]
+....
+
+Include the attribute `tracking:enable-default-events="true"` at the level of your flow in your XML, as in the following example:
+
+[source, xml, linenums]
+----
+<flow name="flow" tracking:enable-default-events="true">
+  ...
+</flow>
+----
+
+This enables event tracking for all supported elements in the flow. If you wish, you can disable tracking for specific processors or connectors to override the flow-level enablement. For example, the code below specifies that although the flow has tracking enabled for default events, tracking is disabled for the All router.
+
+[source, xml, linenums]
+----
+<flow name="flow" tracking:enable-default-events="true">
+  ...
+  <all tracking:enable-default-events="false" />
+  ...
+</flow>
+----
+
+Optionally, you can define a transaction ID so that meaningful information, such as an order number, is displayed for a transaction. If you do not customize the transaction ID, Mule assigns a numeric transaction ID by default. To make the ID more user-friendly for your business needs, you can customize it with link:/mule-user-guide/v/3.7/mule-expression-language-mel[Mule expression language]:
+
+[source, xml, linenums]
+----
+<flow name="flow">
+  ...
+  <tracking:transaction id="#[expression]" />
+  ...
+</flow>
+----
+
+....
+------
+
+要为您的流程中的各个元素启用默认事件跟踪，请按照以下说明操作：
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+. Open the Properties Editor of the desired building block within the flow. 
+. In the *Advanced* tab, select *Enable default events tracking* to enable default business events tracking for only the selected building block.
+
+Not all building blocks support default event tracking. If the checkbox is not present in a message processor or connector, default tracking is not supported.
+
+....
+[tab,title="Studio Standalone XML"]
+....
+
+To enable default events tracking for a specific element in a flow, add the attribute `tracking:enable-default-events="true"` to the element, as shown here for the All router:
+
+[source, xml, linenums]
+----
+<flow name="flow">
+  ...
+    <file:outbound-endpoint path="/tmp" tracking:enable-default-events="true"/>
+  ...
+</flow>
+----
+
+Not all elements support default event tracking. If Mule throws an exception specifying that the prefix "tracking" is invalid for that element, default tracking is not supported.
+
+....
+------
+
+=== 自定义交易ID
+
+您可以定义事务ID，以便在运行时分析跟踪事件时为事务显示有意义的信息（如订单号）。如果您没有自定义交易ID，Mule会默认分配一个数字交易ID。要使ID更符合用户的业务需求，您可以使用 link:/mule-user-guide/v/3.7/mule-expression-language-mel[骡子的表达语言]进行自定义。
+
+自定义ID是一种很好的做法，这样该ID对于应用程序中的每个事务都是唯一的。以下示例基于从有效内容中提取的唯一订单ID设置唯一ID。
+
+[tabs]
+------
+[tab,title="Studio Visual Editor"]
+....
+
+image:transactionID.png[transactionID]
+
+....
+[tab,title="Studio Standalone XML"]
+....
+
+[source, xml, linenums]
+----
+<flow name="flow">
+...
+  <tracking:transaction id="#[groovy:payload.orderId]" />
+...
+</flow>
+----
+
+....
+------
+
+== 最佳实践
+
+在您的应用程序中设置您的业务事件跟踪有许多推荐的做法。
+
+* 仅针对对您具有特殊价值的流程启用默认事件。确定要跟踪的业务事务中的哪些阶段，并在部署之前为这些阶段启用跟踪。跟踪所有可能的事件也是一种选择，但您必须花费更多时间在运行时过滤或查询以查找您真正需要分析的事件。
+* 使用自定义事件来跟踪关键流程指标，例如"Total Order Amount"或"Tracking Number"来展示您流程中的高级业务活动。
+* 自定义交易ID，以便为交易显示有意义的信息，例如订单号，员工标识号或货件跟踪号。无论您使用的是Mule管理控制台还是CloudHub，这都可以使运行时的分析和调试变得更加简单直观。
+
+== 代码摘要
+
+*Namespace*：
+
+[source, xml, linenums]
+----
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    ...
+    xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
+    xsi:schemaLocation="
+        ...
+        http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+   ...
+</mule>
+----
+
+*Example of custom event tracking*：
+
+[source, xml, linenums]
+----
+<flow name="flow">
+...
+  <tracking:custom-event event-name="Retrieved Employee" doc:name="Retrieved Employee">
+    <tracking:meta-data key="Employee Id" value="#[payload['ID']]"/>
+    <tracking:meta-data key="Employee First Name" value="#[payload['FIRST_NAME']]"/>
+    <tracking:meta-data key="Employee Last Name" value="#[payload['LAST_NAME']]"/>
+    <tracking:meta-data key="Employee Email" value="#[payload['EMAIL']]"/>
+    <tracking:meta-data key="Employee Git ID" value="#[payload['GITHUB_ID']]"/>
+  </tracking:custom-event>
+...
+</flow>
+----
+
+
+*Example of default event tracking at the flow level*：
+
+[source, xml, linenums]
+----
+<flow name="flow">
+...
+  <tracking:custom-event event-name="Retrieved Employee" doc:name="Retrieved Employee">
+    <tracking:meta-data key="Employee Id" value="#[payload['ID']]"/>
+    <tracking:meta-data key="Employee First Name" value="#[payload['FIRST_NAME']]"/>
+    <tracking:meta-data key="Employee Last Name" value="#[payload['LAST_NAME']]"/>
+    <tracking:meta-data key="Employee Email" value="#[payload['EMAIL']]"/>
+    <tracking:meta-data key="Employee Git ID" value="#[payload['GITHUB_ID']]"/>
+  </tracking:custom-event>
+...
+</flow>
+----
+
+*Example of default event tracking at the message processor level*：
+
+[source, xml, linenums]
+----
+<flow name="flow">
+  ...
+  <all tracking:enable-default-events="true" />
+  ...
+</flow>
+----
+
+*Example of customized transaction Id*：
+
+
+[source, xml, linenums]
+----
+<flow name="flow">
+...
+  <tracking:transaction id="#[groovy:payload.orderId]" />
+...
+</flow>
+----
+
+
+== 另请参阅
+
+* 在 link:/runtime-manager/insight[眼光]中过滤和分析业务事件。
+* 使用 link:/mule-management-console/v/3.7/analyzing-business-events[Mule管理控制台的Business Events选项卡]分析业务事件。
+Mule管理控制台中的*  link:/mule-management-console/v/3.7/tracking-and-querying-business-events[查询和过滤交易和事件]
+* 阅读Mule管理控制台的业务事件跟踪 link:/mule-management-console/v/3.7/business-events-use-cases[用例]。

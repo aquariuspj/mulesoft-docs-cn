@@ -1,0 +1,458 @@
+=  ActiveMQ集成
+:keywords: esb, mule, activemq
+
+link:http://activemq.apache.org[Apache ActiveMQ]是一个流行的开源消息传递提供商，很容易与Mule集成。 ActiveMQ支持JMS 1.1和J2EE 1.4规范，并在Apache 2.0许可下发布。
+
+== 用法
+
+要使用最常见的设置配置ActiveMQ连接器，请在您的Mule配置中使用`<jms:activemq-connector>`或`<jms:activemq-xa-connector>`（用于XA事务支持）元素，例如：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8" ?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+      xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+ 
+  <jms:activemq-connector name="jmsConnector"
+                          brokerURL="tcp://localhost:61616"/>
+  <jms:activemq-xa-connector name="jmsXAConnector"
+                             brokerURL="tcp://localhost:61616"/>
+ 
+...
+----
+
+同时将您需要的JAR文件复制到Mule lib目录（`$MULE_HOME/lib/user`）或您的应用程序li​​b目录中。
+
+[WARNING]
+====
+添加https://repository.apache.org/content/repositories/releases/org/apache/activemq/activemq-all/[ActiveMq-all.jar]会与其他依赖项产生冲突，因此请仅添加您需要的jar文件与您需要ActiveMQ的关系：
+
+*JARs for Embedded ActiveMQ*
+
+apache-activemq-5.8.0 / lib / activemq-kahadb-store-5.8.0.jar +
+apache-activemq-5.8.0 / lib / activemq-protobuf-1.1.jar +
+apache-activemq-5.8.0 / lib / activemq-openwire-legacy-5.8.0.jar +
+apache-activemq-5.8.0 / lib / hawtbuf-1.9.jar +
+apache-activemq-5.8.0 / lib / activemq-broker-5.8.0.jar +
+Apache的ActiveMQ的-5.8.0 / lib目录/ ActiveMQ的客户端 -  5.8.0.jar
+
+*JARs for External ActiveMQ*
+
+apache-activemq-5.8.0 / lib / activemq-client-5.8.0.jar +
+Apache的ActiveMQ的-5.8.0 / LIB / hawtbuf-1.9.jar
+
+*JARs for Failover ActiveMQ*
+
+apache-activemq-5.8.0 / lib / activemq-client-5.8.0.jar +
+Apache的ActiveMQ的-5.8.0 / LIB / hawtbuf-1.9.jar
+
+要在项目中包含这些.jar文件，只需右键单击您的项目并选择**build path > add external archives**。
+====
+
+Mule将使用ActiveMQ连接工厂的默认实例初始化ActiveMQ连接器，并与运行在本地主机上的远程独立代理建立TCP连接并侦听端口61616。
+
+使用failover：//协议连接到代理群集，并将其他ActiveMQ选项作为URI参数传递，例如：
+
+[source, xml, linenums]
+----
+<jms:activemq-xa-connector name="jmsFailoverConnector"
+     brokerURL="failover:(tcp://primary:61616,tcp://secondary:61616)?randomize=false"/>
+----
+
+要创建一个嵌入式ActiveMQ代理实例，即在与Mule相同的Java VM上运行的代理，请使用vm：//协议，例如：
+
+[source, xml, linenums]
+----
+<jms:activemq-connector name="jmsConnector" brokerURL="vm://localhost"/>
+----
+
+您也可以使用其他连接器属性（请参阅“配置参考”获取更多详细信息）
+
+有时可能需要明确配置ActiveMQ连接工厂的实例，例如设置重新传送策略或其他未通过Mule连接器参数公开的ActiveMQ特定功能。要创建自定义的ActiveMQ连接工厂实例，首先使用Spring进行配置，例如：
+
+[source, xml, linenums]
+----
+<bean name="connectionFactory"
+     class="org.apache.activemq.ActiveMQConnectionFactory">
+<!-- to support XA transactions, use org.apache.activemq.ActiveMQXAConnectionFactory instead -->
+    <property name="brokerURL" 
+              value="tcp://activemqserver:61616"/>
+ 
+    <property name="redeliveryPolicy">
+        <bean class="org.apache.activemq.RedeliveryPolicy">
+            <property name="initialRedeliveryDelay"
+                      value="20000"/>
+            <property name="redeliveryDelay"
+                      value="20000"/>
+            <property name="maximumRedeliveries"
+                      value="10"/>
+       </bean>
+    </property>
+</bean>
+----
+
+然后在`<jms:activemq-connector>`中引用此bean，例如：
+
+[source, xml]
+----
+<jms:activemq-connector name="jmsConnector" connectionFactory-ref="connectionFactory"/>
+----
+
+== 调试ActiveMQ
+
+使用以下log4j可以启用ActiveMQ的调试信息
+组态。这提供了关于发送的REST查询的调试信息
+连接器和ActiveMQ服务之间：
+
+[source,xml,linenums]
+----
+ <!-- Mule classes -->
+    <logger name="org.mule">
+        <level value="INFO"/> 
+    </logger>
+    <logger name="com.mulesoft">
+        <level value="INFO"/> 
+    </logger>
+----
+
+==  ActiveMQ连接器参考
+
+activemq-connector元素配置JMS连接器的ActiveMQ版本。
+
+。<activemq-connector...>的属性
+[%header,cols="25s,75a"]
+|===
+| {属性{1}}说明
+| connectionFactory-ref  |对连接工厂的可选引用。为供应商特定的JMS配置提供了默认连接工厂。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+| redeliveryHandlerFactory-ref  |引用重新传递处理函数。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+| acknowledgementMode  |要使用的确认模式：
+
+*  AUTO_ACKNOWLEDGE
+*  CLIENT_ACKNOWLEDGE
+*  DUPS_OK_ACKNOWLEDGE
+
+*Type*：枚举+
+*Required*：否+
+*Default*：`AUTO_ACKNOWLEDGE`
+
+| clientId  | JMS客户端的ID。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+|持久 |是否让所有主题订阅者持久。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+
+| noLocal  |如果设置为true，则订阅者不会收到由其自己的连接发布的消息。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+ 
+| persistentDelivery  |如果设置为true，则JMS提供程序会在发送消息时将其记录到稳定存储中，以便在传递失败时可以恢复。如果消息在传输过程中丢失，则应用程序可能会遇到问题，客户会将该消息标记为持久消息。如果偶尔丢失的消息是可容忍的，则客户端将消息标记为非永久消息。客户使用交付模式告诉JMS提供商如何平衡消息传输可靠性/吞吐量。传送模式仅涵盖将消息传送到目的地。持续传送模式不保证在目的地保留消息，直到收到确认为止。客户应该假定消息保留策略是以管理方式设置的。消息保留策略管理从目的地到消息使用者的消息传递的可靠性。例如，如果客户的消息存储空间耗尽，则可能会丢弃由特定于站点的消息保留策略定义的一些消息。如果消息的传递模式是永久性的，并且目标具有足够的消息保留策略，则消息一定会由JMS提供程序一次性传递一次。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+ 
+| honorQosHeaders  |如果设置为true，则会遵守消息的QoS标头。如果为false（默认），则连接器设置将覆盖邮件标题。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+ 
+| maxRedelivery  |尝试重新传送邮件的最大次数。使用-1接受具有任何重新传送计数的邮件。
+
+*Type*：整数+
+*Required*：否+
+*Default*：无
+
+| cacheJmsSessions  |是否缓存并重新使用JMS会话对象，而不是每次重新创建连接。 *Note:*此属性仅供非事务性使用。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+ 
+| eagerConsumer  |是否在创建连接时创建使用者权限，而不是在轮询循环中使用延迟实例化。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+
+|规范 |要使用的JMS规范：1.0.2b（默认值）或1.1。
+
+*Type*：枚举+
+*Required*：否+
+*Default*：1.0.2b
+
+|用户名 |连接的用户名。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+|密码 |连接的密码。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+ 
+| numberOfConsumers  |用于接收JMS消息的并发使用者数量。 （*Note:*如果使用此属性，则不应配置具有相同效果的`numberOfConcurrentTransactedReceivers`。）
+
+*Type*：整数+
+*Required*：否+
+*Default*：无
+
+| jndiInitialFactory  |连接到JNDI时使用的初始工厂类。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+ 
+| jndiProviderUrl  |连接到JNDI时使用的URL。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+| jndiProviderProperties-ref  |引用包含其他提供程序属性的Map。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+| connectionFactoryJndiName  |从JNDI查找连接工厂时使用的名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+| jndiDestinations  |如果您想从JNDI查找队列或主题，而不是从会话中创建它们，请将此属性设置为true。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+
+| forceJndiDestinations  |如果设置为true，则当无法从JNDI检索主题或队列时，Mule会失败。如果设置为false，则Mule会在JMS会话中创建主题或队列（如果JNDI查找失败）。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+
+| disableTemporaryReplyToDestinations  |如果设置为false（默认值），当Mule执行请求或响应调用时，会自动设置临时目标以接收来自远程JMS调用的响应。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+ 
+| embeddedMode  |一些应用程序服务器（如WebSphere AS）不允许在JMS对象上调用某些方法，从而有效限制可用功能。嵌入模式告诉骡子尽可能避免这些。默认值是`false`。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：`false`
+
+| brokerURL  |用于连接到JMS服务器的URL。如果未设置，则默认值为`vm://localhost?broker.persistent=false&broker.useJmx=false`。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|===
+ 
+
+。<activemq-connector...>的子元素
+[%headers,cols="30s,20a,50a"]
+|===
+| {名称{1}}基数 |说明
+|抽象JNDI-名称解析程序
+| 0..1
+| jndi-name-resolver策略元素的占位符。
+|===
+
+ 
+==  ActiveMQ XA连接器参考
+
+activemq-xa-connector元素用XA事务支持配置JMS连接器的ActiveMQ版本。
+
+。<activemq-connector...>的属性
+[%header,cols="25s,75a"]
+|===
+| {属性{1}}说明
+| connectionFactory-ref  |对连接工厂的可选引用。为供应商特定的JMS配置提供了默认连接工厂。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+| redeliveryHandlerFactory-ref  |引用重新传递处理函数。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+| acknowledgementMode  |要使用的确认模式：
+
+*  AUTO_ACKNOWLEDGE
+*  CLIENT_ACKNOWLEDGE
+*  DUPS_OK_ACKNOWLEDGE
+
+*Type*：枚举+
+*Required*：否+
+*Default*：`AUTO_ACKNOWLEDGE`
+
+| clientId  | JMS客户端的ID。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+|持久 |是否让所有主题订阅者持久。如果持久属性设置为true，则必须提供clientId。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+
+| noLocal  |如果设置为true，则订阅者不会收到由其自己的连接发布的消息。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+ 
+| persistentDelivery  |如果设置为true，则JMS提供程序会在发送消息时将其记录到稳定存储中，以便在传递失败时可以恢复。如果消息在传输过程中丢失，则应用程序可能会遇到问题，客户会将该消息标记为持久消息。如果偶尔丢失的消息是可容忍的，则客户端将消息标记为非永久消息。客户使用交付模式告诉JMS提供商如何平衡消息传输可靠性/吞吐量。传送模式仅涵盖将消息传送到目的地。持续传送模式不保证在目的地保留消息，直到收到确认为止。客户应该假定消息保留策略是以管理方式设置的。消息保留策略管理从目的地到消息使用者的消息传递的可靠性。例如，如果客户的消息存储空间耗尽，则可能会丢弃由特定于站点的消息保留策略定义的一些消息。如果消息的传递模式是永久性的，并且目标具有足够的消息保留策略，则消息一定会由JMS提供程序一次性传递一次。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+ 
+| honorQosHeaders  |如果设置为true，则会遵守消息的QoS标头。如果为false（默认），则连接器设置将覆盖邮件标题。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+ 
+| maxRedelivery  |尝试重新传送邮件的最大次数。使用-1接受具有任何重新传送计数的邮件。
+
+*Type*：整数+
+*Required*：否+
+*Default*：无
+
+| cacheJmsSessions  |是否缓存并重新使用JMS会话对象，而不是每次重新创建连接。 *Note:*此属性仅供非事务性使用。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+ 
+| eagerConsumer  |是否在创建连接时创建使用者权限，而不是在轮询循环中使用延迟实例化。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+
+|规范 |要使用的JMS规范：1.0.2b（默认值）或1.1。
+
+*Type*：枚举+
+*Required*：否+
+*Default*：1.0.2b
+
+|用户名 |连接的用户名。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+|密码 |连接的密码。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+ 
+| numberOfConsumers  |用于接收JMS消息的并发使用者数量。 （*Note:*如果使用此属性，则不应配置具有相同效果的`numberOfConcurrentTransactedReceivers`。）
+
+*Type*：整数+
+*Required*：否+
+*Default*：无
+
+| jndiInitialFactory  |连接到JNDI时使用的初始工厂类。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+ 
+| jndiProviderUrl  |连接到JNDI时使用的URL。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+| jndiProviderProperties-ref  |引用包含其他提供程序属性的Map。 DEPRECATED：使用jndiNameResolver-ref propertie来配置此值。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+| connectionFactoryJndiName  |从JNDI查找连接工厂时使用的名称。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+
+| jndiDestinations  |如果您想从JNDI查找队列或主题，而不是从会话中创建它们，请将此属性设置为true。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+
+| forceJndiDestinations  |如果设置为true，则当无法从JNDI检索主题或队列时，Mule会失败。如果设置为false，则Mule会在JMS会话中创建主题或队列（如果JNDI查找失败）。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+
+| disableTemporaryReplyToDestinations  |如果设置为false（默认值），当Mule执行请求或响应调用时，会自动设置临时目标以接收来自远程JMS调用的响应。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：无
+ 
+| embeddedMode  |一些应用程序服务器（如WebSphere AS）不允许在JMS对象上调用某些方法，从而有效限制可用功能。嵌入模式告诉骡子尽可能避免这些。默认值是`false`。
+
+*Type*：布尔+
+*Required*：否+
+*Default*：`false`
+
+| brokerURL  |用于连接到JMS服务器的URL。如果未设置，则默认值为`vm://localhost?broker.persistent=false&broker.useJmx=false`。
+
+*Type*：string +
+*Required*：否+
+*Default*：无
+|===
+ 
+
+。<activemq-connector...>的子元素
+[%headers,cols="30s,20a,50a"]
+|===
+| {名称{1}}基数 |说明
+|抽象JNDI-名称解析程序
+| 0..1
+| jndi-name-resolver策略元素的占位符。
+|===

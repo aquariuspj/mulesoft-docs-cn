@@ -1,0 +1,982 @@
+=  DataWeave值类型
+:keywords: studio, anypoint, esb, transform, transformer, format, aggregate, rename, split, filter convert, xml, json, csv, pojo, java object, metadata, dataweave, data weave, datamapper, dwl, dfl, dw, output structure, input structure, map, mapping
+
+
+link:/mule-user-guide/v/3.8/dataweave[DataWeave]语言实质上起着模板引擎的作用，它通过使用可能具有各种不同类型的元素来描述输出结构。
+
+本文档涵盖了可用于构建输出的不同类型的对象。
+
+
+
+
+
+== 阵列
+*Type* =>'：array'
+
+数组表示为*value*个表达式的序列。
+
+[source,DataWeave]
+--------------------------------------------------------------------
+[ 1, 2 + 2, 3 * 3, $x ]
+--------------------------------------------------------------------
+
+*Array Literal*
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+[ "My", "three", "words" ]
+----
+
+=== 条件元素
+
+数组可以根据条件定义条件*values*。
+将括号中的值表达式包裹起来，并在条件中使用*when*关键字。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+[(1) when true, (2) when false]
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+[1]
+----
+
+== 对象
+
+*Type* =>'：object'
+
+对象表示为*key*：*value*对的集合。
+
+. 对象：{'Key'：Value}
+. 键：'合格名称''属性'
+. 合格名称：'名称空间前缀＃名称'，其中'名称空间前缀＃'部分是可选的
+. 名称：表示名称的字符串。
+. 属性：@（'Qualified Name'= *value*，...）
+
+[TIP]
+字符串必须双引号才能被识别为字符串。
+
+=== 单值对象
+
+如果一个对象只有一个键：值对，则不需要包含大括号{}：
+
+。例
+
+[source,DataWeave,linenums]
+---------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+name: "Annie"
+---------------------------------------------------------
+
+=== 条件元素
+
+对象可以基于条件表达式定义条件*key*：*value*对。
+在圆括号中包装关键字：值表达式，并在条件中使用*when*关键字。
+
+[source,DataWeave,linenums]
+---------------------------------------------------------
+%dw 1.0
+%output application/xml
+---
+file: {
+  name: "transform",
+  (extension: "zip") when payload.fileSystem?
+}
+---------------------------------------------------------
+
+仅当fileSystem属性存在于有效内容中时（此字段可能包含任何值，而不仅仅是"true"），此示例才会输出名为"extension"的附加字段。
+
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<file>
+  <name>transform</name>
+  <extension>zip</extension>
+</file>
+--------------------------------------------------------
+
+如果缺席：
+
+[source,xml,linenums]
+--------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<file>
+  <name>transform</name>
+</file>
+--------------------------------------------------------
+
+=== 动态元素
+
+动态元素允许您将表达式的结果添加为对象的键：值对。
+
+。转变
+[source,DataWeave,linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  a: "a",
+  (["b","c","d"] map {'$': $})
+}
+--------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "a": "a",
+  "b": "b",
+  "c": "c",
+  "d": "d"
+}
+--------------------------------------------------------
+=== 动态密钥
+
+为了通过表达式指定一个键，表达式应该用圆括号包装。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/json
+---
+{name: 'Data Weave'} mapObject {(upper $$ as :string) : $}
+----
+
+.OUTPUT
+[source,json,linenums]
+----
+{
+  "NAME": "Data Weave"
+}
+----
+
+=== 条件属性
+
+属性可以基于给定条件进行有条件的处理。
+在圆括号中包含关键字：值表达式，并在条件中使用*when*关键字。
+
+。转变
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+name @((company: "Acme") when false, (transform: "Anything") when true): "DataWeave"
+----
+
+.OUTPUT
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<name transform="Anything">DataWeave</name>
+----
+
+=== 动态属性
+
+动态属性允许您将表达式的结果添加为属性集的键：值对。
+
+。输入
+[source,json,linenums]
+----
+{
+  "company": "Mule",
+  "product": "DataWeave"
+}
+----
+
+。转变
+[source,dataweave,linenums]
+----
+%dw 1.0
+%output application/xml
+---
+transformation @((payload)): "Transform from anything to anything"
+----
+
+.OUTPUT
+[source,xml,linenums]
+----
+<?xml version='1.0' encoding='US-ASCII'?>
+<transformation company="Mule" product="DataWeave">Transform from anything to anything</transformation>
+----
+
+
+== 字符串
+
+*Type* =>'：string'
+
+一个字符串可以通过使用双引号或单引号来定义。
+
+[source,DataWeave, linenums]
+--------------------------------------------------------
+{
+  doubleQuoted: "Hello",
+  singleQuoted: 'Hello',
+}
+--------------------------------------------------------
+
+=== 字符串插值
+
+字符串插值允许您直接在字符串中嵌入变量或表达式。
+
+。转变
+[source,DataWeave, linenums]
+--------------------------------------------------------
+%dw 1.0
+%output application/json
+%var name = "Shoki"
+---
+{
+    Greeting: "Hi, my name is $name",
+    Sum: "1 + 1 = $(1 + 1)"
+}
+--------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+--------------------------------------------------------
+{
+  "Greeting": "Hi, my name is Shoki",
+  "Sum": "1 + 1 = 2"
+}
+--------------------------------------------------------
+
+== 数
+
+*Type* =>'：number'
+
+只有一种数字类型支持浮点数和整数。
+在任何操作中都没有精度损失，引擎始终以最高性能的方式存储数据，不会影响精度。
+
+== 布尔
+
+*Type* =>'：boolean'
+
+布尔值由关键字'true'和'false'定义。
+
+
+== 日期
+
+DataWeave中的日期遵循 link:https://docs.oracle.com/javase/8/docs/api/java/time/format/DateTimeFormatter.html[ISO-8601标准]，并在'|'字符之间定义。
+
+日期系统支持：
+
+* 日期时间
+* 本地日期时间
+* 时间
+本地时间* 
+* 期
+*  TimeZone（仅限ISO-8601时区标准，而不是区域或日光时区）
+* 日期
+
+
+=== 日期
+
+*Type* =>'：date'
+
+代表“年” - “月” - “日期”
+
+*Date*类型根本没有时间组件（甚至不是午夜）。
+
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+c: |2003-10-01|
+-----------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "c": "2003-10-01"
+}
+-----------------------------------------------------------------
+
+
+=== 时间
+
+*Type* =>'：'
+
+代表'小时'：'分钟'：'秒'。'毫秒'
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+c: |23:59:56|
+-----------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "c": "23:59:56"
+}
+-----------------------------------------------------------------
+
+=== 时区
+
+*Type* =>'：timeZone'
+
+时区必须包括一个+或一个 - 来定义。 | 03:00 | 是一个时间， | + 03:00 | 是一个时区。
+
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+c: |-08:00|
+-----------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "c": "-08:00"
+}
+-----------------------------------------------------------------
+
+=== 日期时间
+
+*Type* =>'：datetime'
+
+日期时间是'日期'+'时间'+'时区'的连接点。
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+a: |2003-10-01T23:57:59-03:00|
+-----------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "a": "2003-10-01T23:57:59-03:00"
+}
+-----------------------------------------------------------------
+
+=== 本地日期时间
+
+*Type* =>'：localdatetime'
+
+本地日期时间是'日期'+'时间'的连接。
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+a: |2003-10-01T23:57:59|
+-----------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "a": "2003-10-01T23:57:59"
+}
+-----------------------------------------------------------------
+
+=== 期
+
+*Type* =>'：周期'
+
+指定一段时间。示例 | PT9M |  => 9分钟， | P1Y |  => 1年
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+a: |23:59:56| + |PT9M|
+----------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+----------------------------------------------------------------
+{
+  "a": "00:08:56"
+}
+----------------------------------------------------------------
+
+
+=== 日期分解
+
+为了访问日期的不同部分，必须使用特殊的选择器。
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+{
+  day: |2003-10-01T23:57:59Z|.day,
+  month: |2003-10-01T23:57:59Z|.month,
+  year: |2003-10-01T23:57:59Z|.year,
+  hour: |2003-10-01T23:57:59Z|.hour,
+  minutes: |2003-10-01T23:57:59Z|.minutes,
+  seconds: |2003-10-01T23:57:59Z|.seconds,
+  offsetSeconds: |2003-10-01T23:57:59-03:00|.offsetSeconds,
+  nanoseconds: |23:57:59.700|.nanoseconds,
+  milliseconds: |23:57:59.700|.milliseconds,
+  dayOfWeek: |2003-10-01T23:57:59Z|.dayOfWeek,
+  dayOfYear: |2003-10-01T23:57:59Z|.dayOfYear
+}
+-----------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "day": 1,
+  "month": 10,
+  "year": 2003,
+  "hour": 23,
+  "minutes": 57,
+  "seconds": 59,
+  "offsetSeconds": -10800,
+  "nanoseconds": 700000000,
+  "milliseconds": 700,
+  "dayOfWeek": 3,
+  "dayOfYear": 274
+}
+-----------------------------------------------------------------
+
+=== 更改日期的格式
+
+您可以通过以下方式使用*as*指定日期以您喜欢的任何格式：
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+formatedDate: |2003-10-01T23:57:59| as :string {format: "YYYY-MM-dd"}
+----------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "formatedDate": "2003-10-01"
+}
+-----------------------------------------------------------------
+
+如果您在变换中进行了多个类似的转换，您可能希望将自定义类型定义为标题中的指令，并将每个日期设置为该类型的日期。
+
+。转变
+[source,DataWeave, linenums]
+----------------------------------------------------------------
+%dw 1.0
+%output application/json
+%type mydate = :string { format: "YYYY/MM/dd" }
+---
+{
+  formatedDate1: |2003-10-01T23:57:59| as :mydate,
+  formatedDate2: |2015-07-06T08:53:15| as :mydate
+}
+----------------------------------------------------------------
+
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------------
+{
+  "formatedDate1": "2003/10/01",
+  "formatedDate2": "2015/07/06"
+}
+-----------------------------------------------------------------
+
+== 正则表达式
+
+*Type* =>'：regex'
+
+正则表达式定义在/之间。例如/（\ d +）/ for表示0-9的多位数字。
+这些可以用作对字符串起作用的特定操作中的参数，比如匹配或替换，或者作用于对象和数组（如过滤器）的操作。
+
+== 迭代
+
+*Type* =>'：iterator'
+
+此类型基于 link:https://docs.oracle.com/javase/8/docs/api/java/util/Iterator.html[迭代器Java类]。迭代器包含一个集合，并包含迭代和过滤的方法。
+
+[NOTE]
+就像Java类一样，迭代器被设计为只消耗一次。例如，如果您将此值传递给 link:/mule-user-guide/v/3.8/logger-component-reference[记录仪]，则会导致使用该值，并且对流中的其他元素不再可读。
+
+
+
+== 自定义类型
+
+您可以在变换的标题中定义自己的自定义类型，然后在主体中可以将元素定义为该类型的元素。
+
+为此，该指令的结构如下所示：`%type name = java definition`
+
+例如：
+
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%type currency = :number { format: "##"}
+%type user = :object { class: “my.company.User”}
+----
+
+[TIP]
+====
+通常，扩展现有类型是一个好主意，而不是从头开始创建一个类型。
+
+例如，上面的`:string`将`currency`定义为扩展字符串类型。
+====
+
+要将元素指定为您定义的自定义类型的元素，请在定义字段后使用操作`as :type`：
+
+[source,DataWeave,linenums]
+----
+%dw 1.0
+%type currency = :number { format: "##"}
+%type user = :object { class: “my.company.User”}
+---
+customer:payload.user as :user
+----
+
+
+=== 为类型强制定义类型
+
+
+==== 格式
+
+元数据'格式'键用于格式化数字和日期。
+
+。输入
+[source,xml,linenums]
+-----------------------------------------------------------------------
+<items>
+    <item>
+        <price>22.30</price>
+    </item>
+    <item>
+        <price>20.31</price>
+    </item>
+</items>
+-----------------------------------------------------------------------
+
+。转变
+[source,DataWeave, linenums]
+-----------------------------------------------------------------------
+%dw 1.0
+%output application/json
+%type currency = :number { format: "##"}
+---
+books: payload.items.*item map
+    book:
+        price: $.price as :currency
+-----------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+-----------------------------------------------------------------------
+{
+  "books": [
+    {
+      "book": {
+        "price": 22.30
+      }
+    },
+    {
+      "book": {
+        "price": 20.31
+      }
+    }
+  ]
+}
+-----------------------------------------------------------------------
+
+在Anypoint Studio中，您可以定义多个值，例如分隔符，引号字符和转义字符。请参阅 link:/anypoint-studio/v/6/input-output-structure-transformation-studio-task[定义变换的输入输出结构]。
+
+
+
+== 函数和Lambdas
+
+*type*  - >：函数
+
+在DataWeave中，函数和lambdas（匿名函数）是一等公民，它们可以在诸如map，mapObject等操作符内部使用，甚至可以分配给一个变量。
+在DataWeave文件正文中结合运算符（如 link:/mule-user-guide/v/3.8/dataweave-operators#map[地图运算符]）使用lambdas时，其属性可以显式命名或保留匿名，在这种情况下，它们可以被引用为$，$$等。
+
+
+
+=== 分配给var
+
+您可以通过'％var'将函数定义为带有 link:/mule-user-guide/v/3.8/dataweave-language-introduction#define-constant-directive[常量指令]的变量，
+
+。运输
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+%var toUser = (user) -> {firstName: user.givenName, lastName: user.sn}
+---
+{
+  "user" : toUser({ givenName : "Annie", sn : "Point" })
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "user": {
+    "firstName": "Annie",
+    "lastName": "Point"
+  }
+}
+----
+
+=== 使用运算符命名属性
+
+这个例子使用了一个带有明确命名为'name'的属性的lambda。
+
+。输入
+[source,DataWeave, linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+users: ["john", "peter", "matt"] map ((name) ->  upper name)
+---------------------------------------------------------------------
+
+。转变
+[source,json,linenums]
+---------------------------------------------------------------------
+{
+  "users": ["JOHN","PETER","MATT"]
+}
+---------------------------------------------------------------------
+
+运算符的=== 匿名属性
+
+这个例子使用了一个lambda，它的属性没有明确指定，所以默认为'$'。
+
+。转变
+[source,DataWeave, linenums]
+---------------------------------------------------------------------
+%dw 1.0
+%output application/json
+---
+users: ["john", "peter", "matt"] map  upper $
+---------------------------------------------------------------------
+
+.OUTPUT
+[source,json,linenums]
+---------------------------------------------------------------------
+{
+  "users": ["JOHN","PETER","MATT"]
+}
+---------------------------------------------------------------------
+
+
+=== 声明使用函数指令
+
+您可以在Header中声明函数，并可以在Body中的任何位置调用这些函数，还可以在正文的任何​​位置声明函数。您可以使用*function-name()*形式在每个必要参数的括号之间传递表达式来引用它们。评估括号中的每个表达式，并将结果作为执行函数体时使用的参数传递。
+
+。转变
+[source,DataWeave, linenums]
+----
+%dw 1.0
+%output application/json
+%function toUser(user){firstName: user.givenName, lastName: user.sn}
+---
+{
+  "user" : toUser({ givenName : "Annie", sn : "Point" })
+}
+----
+
+.OUTPUT
+[source, json,linenums]
+----
+{
+  "user": {
+    "firstName": "Annie",
+    "lastName": "Point"
+  }
+}
+----
+
+
+
+
+== 运算符按类型排序
+
+下面是一个包含DataWeave中所有不同运算符的索引，按其接受的参数类型排序。
+每个操作符都显示每个参数所接受的类型，并非所有参数都是必需的。
+
+[TIP]
+当您向操作员提供与预期类型不匹配的属性时，DataWeave自动将<<Type Coercion Table, attempts to coerce>>提供的属性设置为所需的类型。
+
+=== 在任何类型上执行的操作
+
+[%header,cols="2*"]
+|===
+| 运算符| 每个参数的接受类型
+|  link:/mule-user-guide/v/3.8/dataweave-operators#typ-Of[类型]  |（ '：任何'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#as-(type-coercion)[如]  |（'：any'，'：type'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#push[+]  |（'：any'，'：array'）
+|===
+
+
+=== 在'：number'上执行的操作
+
+[%header,cols="2*"]
+|===
+| 运算符| 每个参数的接受类型
+|  link:/mule-user-guide/v/3.8/dataweave-operators#sum[+]  |（'：number'，'：number'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#minus[-]  |（'：number'，'：number'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#multiply[*]  |（'：number'，'：number'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#division[/]  |（'：number'，'：number'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#round[回合]  |（ '：数'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#sqrt[开方]  |（ '：数'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#pow[POW]  |（'：number'，'：number'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#ceil[小区]  |（ '：数'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#floor[地板]  |（ '：数'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#abs[ABS]  |（ '：数'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#mod[MOD]  |（'：number'，'：number'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#ordinalize[ordinalize]  |（ '：数'）
+|===
+
+
+=== 在'：array'上执行的操作
+
+[%header,cols="2*"]
+|===
+| 运算符| 每个参数的接受类型
+|  link:/mule-user-guide/v/3.8/dataweave-operators#min[分]  |（ '：阵列'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#max[最大]  |（ '：阵列'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#size-of[整型尺寸]  |（ '：阵列'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#sum[和]  |（ '：阵列'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#flatten[弄平]  |（ '：阵列'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#order-by[排序依据]  |（'：array'，'：function'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#reduce[减少]  |（'：array'，'：function'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#array-push[+]  |（'：array'，'：any'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#array-remove[-]  |（'：array'，'：any'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#array-remove-all[--]  |（'：array'，'：array'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#map[地图]  |（'：array'，'：function'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#array-average[平均]  |（ '：阵列'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#filter[过滤]  |（'：array'，'：function'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#contains[包含]  |（'：array'，'：any'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#distinct-by[distinctBy]  |（'：array'，'：function'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#join-by[joinBy]  |（'：array'，'：string'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#using-oncat-on-an-array[++]  |（'：array'，'：array'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#group-by[通过...分组]  |（'：array'，'：function'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#zip-arrays[压缩]  |（'：array'，'：array'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#unzip-array[拉开拉链]  |（ '：阵列'）
+|===
+
+=== 在'：string'上执行的操作
+
+[%header,cols="2*"]
+|===
+| 运算符| 每个参数的接受类型
+|  link:/mule-user-guide/v/3.8/dataweave-operators#trim[修剪]  |（ '：字符串'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#using-concat-on-a-string[++]  |（'：string'，'：string'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#size-of[整型尺寸]  |（ '：字符串'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#capitalize[利用]  |（ '：字符串'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#lower[降低]  |（ '：字符串'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#upper[上]  |（ '：字符串'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#camelize[camelize]  |（ '：字符串'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#dasherize[dasherize]  |（ '：字符串'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#underscore[下划线]  |（ '：字符串'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#singularize[singularize]  |（ '：字符串'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#pluralize[变复数]  |（ '：字符串'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#split-by[splitBy]  |（'：string'，'：string'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#split-by[splitBy]  |（'：string'，'：regex'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#find[找]  |（'：string'，'：regex'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#find[找]  |（'：string'，'：string'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#replace[更换]  |（'：string'，'：regex'，'：function'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#starts-with[以。。开始]  |（'：string'，'：string'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#ends-with[以。。结束]  |（'：string'，'：string'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#match[比赛]  |（'：string'，'：regex'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#matches[火柴]  |（'：string'，'：regex'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#scan[扫描]  |（'：string'，'：regex'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#contains[包含]  |（'：string'，'：string'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#contains[包含]  |（'：string'，'：regex'）
+|===
+
+=== 在'：object'上执行的操作
+
+[%header,cols="2*"]
+|===
+| 运算符| 每个参数的接受类型
+|  link:/mule-user-guide/v/3.8/dataweave-operators#size-of[整型尺寸]  |（ '：对象'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#order-by[排序依据]  |（'：object'，'：function'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#using-map-on-an-object[地图]  |（'：object'，'：function'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#map-object[MapObject的]  |（'：object'，'：function'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#using-oncat-on-an-object[++]  |（'：object'，'：object'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#using-remove-on-an-object[-]  |（'：object'，'：name'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#remove-by-matching-key-and-value[--]  |（'：object'，'：object'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#pluck[采摘]  |（'：object'，'：function'）
+|===
+
+
+
+=== 在'：datetime'上执行的操作
+
+[%header,cols="2*"]
+|===
+| 运算符| 每个参数的接受类型
+|  link:/mule-user-guide/v/3.8/dataweave-operators#shift-time-zone[>>]  |（'：datetime'，'：timezone'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#adding-a-period-of-time[+]  |（'：datetime'，'：period'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#subtracting-a-period-of-time[-]  |（'：datetime'，'：period'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#subtracting-two-dates[-]  |（'：datetime'，'：datetime'）
+|===
+
+=== 在'：date'上执行的操作
+
+[%header,cols="2*"]
+|===
+| 运算符| 每个参数的接受类型
+|  link:/mule-user-guide/v/3.8/dataweave-operators#subtracting-two-dates[-]  |（'：date'，'：date'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#append-time[++]  |（'：date'，'：localtime'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#append-time[++]  |（'：date'，'：time'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#append-time-zone[++]  |（'：date'，'：timezone'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#adding-a-period-of-time[+]  |（'：date'，'：period'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#adding-a-period-of-time[-]  |（'：date'，'：period'）
+|===
+
+=== 在'：time'上执行的操作
+
+[%header,cols="2*"]
+|===
+| 运算符| 每个参数的接受类型
+|  link:/mule-user-guide/v/3.8/dataweave-operators#subtracting-two-dates[-]  | （'＃：time'，'：time'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#append-time[++]  | （'＃：time'，'：date'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#adding-a-period-of-time[+]  | （'：time'，'：period'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#adding-a-period-of-time[-]  | （'：time'，'：period'）
+|===
+
+
+=== 在'：localtime'上执行的操作
+
+[%header,cols="2*"]
+|===
+| 运算符| 每个参数的接受类型
+|  link:/mule-user-guide/v/3.8/dataweave-operators#subtracting-two-dates[-]  |（'：localtime'，'：localtime'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#append-time[++]  |（'：localtime'，'：date'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#append-time-zone[++]  |（'：localtime'，'：timezone'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#adding-a-period-of-time[+]  |（'：localtime'，'：period'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#adding-a-period-of-time[-]  |（'：localtime'，'：period'）
+|===
+
+=== 在'：localdatetime'上执行的操作
+
+[%header,cols="2*"]
+|===
+| 运算符| 每个参数的接受类型
+|  link:/mule-user-guide/v/3.8/dataweave-operators#subtracting-two-dates[-]  |（'：localdatetime'，'：localdatetime'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#append-time-zone[++]  |（'：localdatetime'，'：timezone'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#adding-a-period-of-time[+]  |（'：localdatetime'，'：period'）
+|  link:/mule-user-guide/v/3.8/dataweave-operators#adding-a-period-of-time[-]  |（'：localdatetime'，'：period'）
+|===
+
+
+== 类型强制表
+
+在DataWeave中，可以使用 link:/mule-user-guide/v/3.8/dataweave-operators#as[AS运营商]将类型从一种类型强制转换为另一种类型。
+此表格显示了转换中使用的模式的可能组合和属性。
+
+[TIP]
+当您<<DataWeave Operators Sorted by Type, provide an operator>>的属性与预期类型不匹配时，DataWeave将自动尝试将提供的属性强制为所需的类型。
+
+|====
+| {源{1}} {目标{2}}属性
+|：{对象{1}}：数组                  |    ...（1）
+|：{范围{1}}：数组                  |
+|：{数{1}}：二进制数                 |
+|：{串{1}}：二进制数                 |
+|：{串{1}}：布尔                |
+|：{数{1}}：日期时间               | 单元
+|：{localdatetime {1}}：日期时间               |
+|：字符串                         |：datetime                | 格式/区域设置^（3）^
+|：日期时间                       |：{LOCALDATE {2}}
+|：{localdatetime {1}}：{LOCALDATE {2}}
+|：string                          |：localdate               |  format / locale ^（3）^
+|：日期时间                       |：localdatetime           |
+|：字符串                         |：localdatetime           | 格式/区域设置^（3）^
+|：日期时间                       |：本地时间              |
+|：{localdatetime {1}}：本地时间              |
+|：{时间{1}}：本地时间              |
+|：string                          |：localtime               | 格式/区域设置^（3）^
+|：日期时间                       |：数                 | 单元
+|：字符串                         |：数字                 | 格式/区域设置^（3）^
+|：数组                          |：对象                 |
+|：{串{1}}：周期                 |
+|：{串{1}}：正则表达式                  |
+|：datetime                        |：字符串                 | 格式/区域设置^（3）^
+|：localdatetime                   |：字符串                 | 格式/区域设置^（3）^
+|：localtime                       |：string                  |  format / locale ^（3）^
+|：localdate                       |：string                  |  format / locale ^（3）^
+|：timetype                        |：string                  |  format / locale ^（3）^
+|：{期间{1}}：串                 |
+|：时区                       |：串                 |
+|：number                          |：string                  |  format / locale ^（3）^
+|：布尔                        |：串                 |
+|：{范围{1}}：串                 | （2）
+|：{式{1}}：串                 |
+|：{性状{1}}：串                 |
+|：日期时间                       |：时间                   |
+|：{localdatetime {1}}：时间                   |
+|：{本地时间{1}}：时间                   |
+|：{串{1}}：时间                   | 格式
+|：日期时间                       |：时区               |
+|：{时间{1}}：时区               |
+|：{串{1}}：时区               |
+|====
+
+
+（1）返回并排列对象的所有值。
+（2）以","为分隔符，返回范围内所有值的字符串
+（3）要使语言环境值明确，您可以使用语言，国家或两者，详情请参见 link:https://docs.oracle.com/javase/8/docs/api/java/util/Locale.html#forLanguageTag-java.lang.String-[Locale.forLanguageTag（字符串）]。
+
+== 下一步
+
+* 有关该语言的高级概述，请参阅 link:/mule-user-guide/v/3.8/dataweave-language-introduction[DataWeave语言介绍]
+* 有关可供使用的所有运营商的参考信息，请参阅 link:/mule-user-guide/v/3.8/dataweave-operators[DataWeave操作符]
+* 在https://www.anypoint.mulesoft.com/exchange/?search=dataweave[Anypoint Exchange]中查看使用DataWeave的完整示例项目。
+
+
+== 另请参阅
+
+*  link:/mule-user-guide/v/3.8/dataweave-quickstart[DataWeave快速入门指南]
+*  link:/anypoint-studio/v/6/transform-message-component-concept-studio[关于变换消息组件]
+*  link:/mule-user-guide/v/3.8/dataweave-language-introduction[DataWeave语言介绍]
+*  link:/mule-user-guide/v/3.8/dataweave-operators[DataWeave操作符]
+*  link:/mule-user-guide/v/3.8/dataweave-formats[DataWeave格式]
+*  link:/mule-user-guide/v/3.8/dataweave-memory-management[DataWeave内存管理]
+*  link:/mule-user-guide/v/3.8/dataweave-selectors[DataWeave选择器]
+*  link:/mule-user-guide/v/3.8/dataweave-examples[DataWeave示例]
+*  link:/mule-user-guide/v/3.8/mel-dataweave-functions[MEL DataWeave函数]

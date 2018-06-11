@@ -1,0 +1,209 @@
+= 错误处理
+
+Mule Runtime提供了多种错误处理选项。您可以配置*Exception Strategies*以覆盖流量，模型或单个服务。您可以使用*Exception Router*指定消息处理过程中发生错误时发送消息的位置。您也可以使用*Exception Type*过滤器进行细粒度控制。
+
+本页介绍了这些各种错误处理技术。有关设置重试策略的信息，请参阅 link:/mule-user-guide/v/3.2/configuring-reconnection-strategies[配置重新连接策略]，该策略控制连接器在连接失败时的行为方式。
+
+== 例外策略
+
+*Exception Strategies*处理在处理消息期间发生错误时出现的异常情况。您可以设置例外策略来涵盖以下范围：
+
+* 在*flow*上为该流程中的所有消息处理器设置通用的异常策略。
+* 在*model*上为该模型中的所有服务设置通用的异常策略。
+* 在*service*上为该服务中的任何异常设置异常策略。
+
+*Component Exception Strategies*处理*component exceptions*，这是在通过Mule处理消息时发生的。通常，您可以自定义异常处理程序来控制如何记录和路由组件异常。通常在连接初始化或断开连接期间发生的*system exceptions*不符合组件例外。
+
+*System Exception Strategies*可以作为后备工具来捕捉以下内容：
+
+* 启动时发生的异常
+* 连接尝试失败
+* 与流或服务无关的异常，因此无法使用组件异常策略
+
+通常情况下，除了日志记录系统异常外，还有很少的选项存在。因此，定制系统异常策略通常不是必需的。
+
+[TIP]
+有关配置异常策略的详细信息，请参阅： link:/mule-user-guide/v/3.2/exception-strategy-configuration-reference[例外策略配置参考]。 +
+ +
+有关最常见的例外策略配置的示例，请参阅 link:/mule-user-guide/v/3.2/exception-strategy-most-common-use-cases[异常策略最常见的用例]
+
+=== 指定例外策略
+
+默认的例外策略是 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/DefaultServiceExceptionStrategy.html[org.mule.exception.DefaultServiceExceptionStrategy]，您可以使用`<default-service-exception-strategy>`元素进行配置。
+
+[TIP]
+*[Mule 3.2]*由配置的流和服务方法共享的DefaultServiceExceptionStrategy现在命名为：+
+ +
+http://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/DefaultMessagingExceptionStrategy.html[org.mule.exception.DefaultMessagingExceptionStrategy]。
+
+要配置默认异常策略，使其适用于流中的所有消息处理器，请插入元素_after_所有消息处理器（即在流的末尾）：
+
+[source, xml, linenums]
+----
+<flow name="CreditCheck">
+  <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8080"/>
+  <logger message="#[payload]" level="INFO"/>
+...
+  <default-exception-strategy>
+    <vm:outbound-endpoint path="systemErrorHandler"/>
+  </default-exception-strategy>
+</flow>
+----
+
+要配置默认异常策略，使其适用于模型中的所有服务，请插入所有服务的元素_before_：
+
+[source, xml, linenums]
+----
+<model name="CreditCheck">
+  <default-exception-strategy>
+    <vm:outbound-endpoint path="systemErrorHandler"/>
+  </default-exception-strategy>
+  <service> ... </service>
+  <service> ... </service>
+</model>
+----
+
+要配置默认的异常策略，使其适用于服务中的所有组件，请将其插入到服务的end_端：
+
+[source, xml, linenums]
+----
+<model name="CreditCheck">
+  <service>
+    ...
+    <default-exception-strategy>
+      <vm:outbound-endpoint path="systemErrorHandler"/>
+    </default-exception-strategy>
+  </service>
+</model>
+----
+
+[TIP]
+在异常策略上设置端点以转发未通过错误队列（或其他目标）的消息。
+
+=== 隐式例外策略
+
+即使您没有在其中放置<default-exception-strategy>元素，每个流都有一个隐式的异常策略。换句话说，不配置异常策略与将空的<default-exception-strategy>元素插入到流中具有相同的实际效果。
+
+=== 例外策略行为
+
+[TIP]
+通常情况下，异常策略可以只包含一个消息处理器（或服务），它作为异常策略逻辑的一部分执行。要将多个消息处理器（或服务）合并到一个异常策略中，请使用<processor-chain>元素。
+
+一旦在流或服务中抛出异常，<default-exception-strategy>就会执行，并且适用以下操作：
+
+* 记录异常
+* 如果没有发生交易
+** 消息通过为异常策略配置的消息处理器进行路由
+* 如果事务在异常策略上下文中发生
+** 事务回滚，并且
+** 消息通过为异常策略配置的消息处理器进行路由
+* 如果事务发生在异常策略上下文中，那么_and_该事务必须被提交
+** 消息通过为异常策略配置的消息处理器进行路由
+** 交易已落实
+* 如果有效负载是一个流，它将被关闭
+
+在消息通过为异常策略配置的消息处理器进行路由之前，会对该消息进行转换，以便现在包含有关异常的信息。因此，将创建以下类型的新有效负载： http://www.mulesoft.org/docs/site/current/apidocs/org/mule/message/ExceptionMessage.html[org.mule.message.ExceptionMessage]。它包含有效负载属性中的当前有效内容和异常属性中的异常。
+
+如果流交换模式为_request-response_，则在执行<default-exception-strategy>之后，将向调用方返回不同的消息。该消息具有 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/transport/NullPayload.html[org.mule.transport.NullPayload]作为其有效内容，并且exceptionPayload属性设置为以下内容： http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/ExceptionPayload.html[org.mule.api.ExceptionPayload]。
+
+=== 实施自定义例外策略
+
+您可以实施您自己的策略，您的课程可以通过 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/AbstractExceptionListener.html[org.mule.exception.AbstractExceptionListener]进行扩展。但是，推荐的方法是扩展 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/DefaultServiceExceptionStrategy.html[org.mule.exception.DefaultServiceExceptionStrategy]，然后重载`defaultHandler()`方法。您可以像使用`<properties>`元素的其他Mule配置对象一样设置自定义异常策略的bean属性。
+
+`defaultHandler()`方法执行所有必要的处理以包含异常，因此异常策略需要管理致命错误，因此绝不能从异常策略中抛出异常。
+
+例如，当错误队列被使用并且调度失败时，错误处理策略应执行以下步骤：
+
+* 停止当前组件
+* 发送服务器通知以提醒系统监视器
+* 将事件写入文件
+
+要更改记录异常的方式，请覆盖 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/AbstractExceptionListener.html[org.mule.exception.AbstractExceptionListener]中的`logException()`方法。
+
+=== 实施自定义例外策略
+
+在实现自定义策略时，您的类可以扩展 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/AbstractMessagingExceptionStrategy.html[org.mule.exception.AbstractMessagingExceptionStrategy]，因为此类提供了管理事务和流所需的逻辑。重新定义`handleException(Exception ex, MuleEvent event, RollbackSourceCallback rollbackMethod)`和`handleException(Exception ex, MuleEvent event)`方法来应用您的自定义行为，但不要忘记调用`super.handleException(Exception ex, MuleEvent event, RollbackSourceCallback rollbackMethod)`和`super.handleException(Exception ex, MuleEvent event)`，以便正确处理事务，消息路由和流。
+
+如果您想更改记录异常的方式，请覆盖 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/exception/AbstractExceptionStrategy.html[org.mule.exception.AbstractExceptionStrategy]中的`logException()`方法。
+
+要转换正在路由的邮件，您必须在<custom-exception-strategy>元素内配置邮件处理器。
+
+== 使用基于例外的路由器
+
+发生异常时，基于异常的路由器 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/routing/outbound/ExceptionBasedRouter.html[org.mule.routing.outbound.ExceptionBasedRouter]将确定消息的发生位置。您可以在基于异常的路由器上指定多个端点，以便如果第一个端点失败且`FatalConnectionException`失败，则尝试下一个端点，然后尝试下一个端点。
+
+如果所有端点都失败，则会抛出 http://www.mulesoft.org/docs/site/current/apidocs/org/mule/api/routing/RoutingException.html[org.mule.api.routing.RoutingException]。请注意，基于异常的路由器将覆盖端点模式，将其设置为同步，同时寻找成功的发送，并将端点模式用于列表中的最后一项。
+
+以下示例配置基于异常的路由器：
+
+[source, xml, linenums]
+----
+<outbound>
+  <exception-based-router>
+    <tcp:endpoint host="10.192.111.10" port="10001" />
+    <tcp:endpoint host="10.192.111.11" port="10001" />
+    <tcp:endpoint host="10.192.111.12" port="10001" />
+  </exception-based-router>
+</outbound>
+----
+
+有关路由器的更多信息，请参阅 link:/mule-user-guide/v/3.2/using-message-routers[使用消息路由器]。
+
+== 使用例外类型过滤器
+
+您可以使用“异常类型”筛选器对生成错误的消息进行细化控制。例如，当同步流处理的消息发送到验证服务但未通过验证时，消息及其异常将转发到另一个服务，并且消息及其异常将返回给调用者。您可以使用链式路由器和`<exception-type-filter>`来实现此功能，如下所示：
+
+[source, xml, linenums]
+----
+<chaining-router>
+  <vm:outbound-endpoint path="ValidationService" synchronous="true"/>
+  <vm:outbound-endpoint path="ValidationError" synchronous="true">
+    <exception-type-filter expectedType="java.lang.Exception"/>
+  </vm:outbound-endpoint>
+</chaining-router>
+----
+
+有关过滤器的更多信息，请参阅 link:/mule-user-guide/v/3.2/using-filters[使用过滤器]。
+
+事务的== 错误处理
+
+如果您使用的是 link:/mule-user-guide/v/3.2/transaction-management[交易]，则可以使用`<commit-transaction>`和`<rollback-transaction>`元素根据捕获的异常的名称指定事务是提交还是回滚。
+
+您可以设置通配符模式的逗号分隔列表，该列表将与当前异常的完全限定类名匹配。
+
+您可以使用以下模式：
+
+*  `java.lang.Exception`  - 仅当异常正好是`java.lang.Exception`时才匹配
+*  `java.lang.Exception+`  - 匹配如果例外是`java.lang.Exception`或一个子类
+*  `org.mule.routing.*`  - 匹配任何名称以{{2}开头的异常
+*  `*`  - 匹配任何异常类型
+
+例如，仅当异常类名以`com.ibm.mq.`开头时，以下代码才会回滚事务，否则它会提交所有其他事务：
+
+[source, xml, linenums]
+----
+<default-exception-strategy>
+  <commit-transaction exception-pattern="*"/>
+  <rollback-transaction exception-pattern="com.ibm.mq.*"/>
+  <vm:outbound-endpoint path="handleError"/>
+</default-exception-strategy>
+----
+
+对于以下示例，如果抛出的异常是+的实例，则会发生回滚
+`java.lang.IllegalArgumentException`。
+
+[source, xml, linenums]
+----
+<default-service-exception-strategy>
+  <commit-transaction exception-pattern="*"/>
+  <rollback-transaction exception-pattern="java.lang.IllegalArgumentException"/>
+  <vm:outbound-endpoint path="handleError"/>
+</default-service-exception-strategy>
+----
+
+Mule使用以下标准来提交或回滚消息处理事件：
+
+*  *Default*：如果`<rollback-transaction>`和`<commit-transaction>`都返回与适用的异常策略中指定的`exception-pattern`值相匹配的`exception-pattern`，则交易为回滚。
+* 如果返回的异常模式匹配为与相关异常策略的回滚事务元素关联的异常模式属性指定的值，则事务将回滚。
+* 如果返回的异常模式_doesn't_匹配，并且<commit-transaction>异常模式的返回值_does_匹配，则事务将被提交。
+* 对于所有其他情况，事务回滚。

@@ -1,0 +1,108 @@
+=  Web服务代理模式
+
+代理Web服务是一种非常普遍的做法，用于安全性或审计等不同的原因。这种模式允许对这种代理进行简单而简单的配置。
+
+image:mcp_ws-proxy.png[mcp_ws代理]
+
+== 核心功能
+
+Web服务代理充当调用者应用程序和目标Web服务之间的中介。这使代理有机会透明地在调用序列中引入新行为。例如，它可以：
+
+* 添加或删除HTTP标头，
+* 转换SOAP信封（正文或标题）以添加或删除特定条目，
+* 重写远程WSDL，以便它们似乎绑定到公司防火墙内的服务，
+* 引入自定义错误处理。
+
+我们来看看运行中的Web服务代理：
+
+*Web Service Proxy*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+          inboundAddress="http://localhost:8090/weather-forecast"
+          outboundAddress="http://ws.acme.com:6090/weather-forecast" />
+----
+
+使用此配置后，所有对本地天气预报员代理的呼叫都将被重定向到远程。
+
+Web服务代理由ws模块提供，它必须存在于类路径中才能使用。它的命名空间是http://www.mulesoft.org/schema/mule/ws，它的模式位置是http://www.mulesoft.org/schema/mule/ws/3.2/mule-ws.xsd。
+
+真正的增值来自代理将执行的自动地址重写：调用http：// localhost：8090 / weather-forecast？wsdl将返回远程WSDL，其中端口地址将根据URL自动重写的请求到达代理。这样，如果您的Mule实例在负载平衡器或任何类型的网络间接访问后进行访问，那么生成的WSDL将指向调用者端口地址，这些端口地址将尊重您的特定网络拓扑。
+
+如上所述，代理可以通过使用变换器对SOAP调用执行更改。以下说明：
+
+*Proxy with Transformers*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy-transformers"
+          inboundAddress="http://localhost:8090/weather-forecast"
+          transformer-refs="zip-code-transformer add-credentials-transformer"
+          responseTransformer-refs="weather-code-transformer"
+          outboundEndpoint-ref="target-ws-endpoint" />
+----
+
+注意如何通过引用全局声明引入变形金刚。这种技术也适用于全局端点，正如您可以通过上述对target-ws-endpoint的参考所看到的那样。
+
+Web服务代理元素支持子元素。以下显示了一个配置变体，其中端点在内部进行了声明，并且已添加了一个异常策略：
+
+*Child Elements*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy">
+  <http:inbound-endpoint address="http://localhost:8090/weather-forecast" />
+  <http:outbound-endpoint address="http://ws.acme.com:6090/weather-forecast" />
+  <custom-exception-strategy class="com.acme.AcmeExceptionStrategy" />
+</pattern:web-service-proxy>
+----
+
+最后，Web服务代理还支持继承，它允许跨代理的几个具体实例共享通用配置属性。看看下面的内容来看看继承是如何工作的：
+
+*Inheritance*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="abstract-ws-proxy-zipcode-changer"
+          abstract="true"
+          transformer-refs="zip-code-transformer add-credentials-transformer"
+          responseTransformer-refs="weather-code-transformer" />
+
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+          parent="abstract-ws-proxy-zipcode-changer">
+  <http:inbound-endpoint address="http://localhost:8090/weather-forecast" />
+  <http:outbound-endpoint address="http://ws.acme.com/weather-forecast" />
+----
+
+就WSDL处理而言，代理提供了一些额外选项。让我们看看他们。
+
+==  WSDL重定向
+
+在某些情况下，远程Web服务不遵循通常的做法，即在末尾附加"?wsdl"的服务所在的地址上公开其WSDL。在这种情况下，需要将Web服务代理指向远程WSDL的确切位置，如图所示：
+
+*Remote WSDL Redirection*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+          inboundAddress="http://localhost:8090/weather-forecast"
+          outboundAddress="http://ws.acme.com:6090/weather-forecast"
+          wsdlLocation="http://ws.acme.com:6090/wsdl/weather-forecast" />
+----
+
+在这种情况下，如上所述，远程WSDL将重写其端口地址。
+
+对于没有远程WSDL可用的情况或者远程WSDL在被Web服务代理公开之前需要手动调整的情况，解决方案包括将正确的WSDL存​​储为本地文件并让代理服务它。这如下所示完成：
+
+*File WSDL Redirection*
+
+[source, xml, linenums]
+----
+<pattern:web-service-proxy name="weather-forecast-ws-proxy"
+          inboundAddress="http://localhost:8090/weather-forecast"
+          outboundAddress="http://ws.acme.com:6090/weather-forecast"
+          wsdlFile="path/to/correct/weather-forecaster.wsdl" />
+----
+
+在这种情况下，WSDL将按原样从文件中提供：不会发生重写。

@@ -1,0 +1,355 @@
+=  IMAP传输参考
+
+IMAP传输可用于使用`javax.mail API`从IMAP收件箱接收邮件。 IMAPS传输使用SSL / TLS进行安全连接。
+
+使用IMAP传输提供了一种与IMAP服务器交互的简单方法，无需编写自己的IMAP客户端。它允许您以指定的频率登录到IMAP服务器，从服务器提取消息，根据电子邮件主题选择过滤它们，并将它们转换为可在应用程序中使用的标准Java对象。
+
+TLS / SSL连接代表实体进行，实体可以是匿名的或由证书标识。密钥库提供识别建立连接的实体所需的证书和相关私钥。此外，连接到可信系统。受信任系统的公共证书存储在信任库中，该信任库用于验证与远程系统建立的连接是否与期望的身份匹配。
+
+== 传输信息
+
+[%header%autowidth.spread]
+|===
+|运输 |文档 |入站 | Outbout  |要求 |事务 |流 |重试{{ 8}} MEP  |默认MEP  | Maven工件
+| IMAP  | [JavaDoc Sechema文档]  | image:check.png[查]  | image:error.png[错误]  | image:error.png[错误] {{11} } image:error.png[错误]  | image:error.png[错误]  | image:error.png[错误]  |单向 |单向 | org.mule .transport：骡子运输-IMAP
+| IMAPS  | [JaveDoc SchemaDoc]  | image:check.png[查]  | image:error.png[错误]  | image:error.png[错误]  | image:error.png[错误]  | image:error.png[错误]  | image:error.png[错误]  |单向 |单向 | org.mule。交通：骡子运输IMAPS
+|===
+
+//折叠内容//
+传说
+
+*  *Transport*  - 运输的名称/协议
+*  *Docs*  - 指向传输的JavaDoc和SchemaDoc的链接
+*  *Inbound*  - 传输是否可以接收入站事件并可用于入站端点
+*  *Outbound*  - 传输是否可以生成出站事件并与出站端点一起使用
+*  *Request*  - 此端点是否可以通过请求调用直接查询（通过MuleClient或EventContext）
+*  *Transactions*  - 交易是否受交通工具支持。支持事务的传输可以在本地或分布式两阶段提交（XA）事务中进行配置。
+*  *Streaming*  - 此传输是否可以处理输入流中传入的消息。这可以非常有效地处理大数据。有关更多信息，请参阅流式传输。
+*  *Retry*  - 此传输是否支持重试策略。请注意，所有传输都可以配置Retry策略，但只有这里标记的传输才是MuleSoft官方支持的
+*  *MEPs*  - 此传输支持的消息交换模式
+*  *Default MEP*  - 使用此传输的端点的默认MEP不会明确配置MEP
+*  *Maven Artifact*  - 组名称是[Maven]中此传输的工件名称。
+
+== 命名空间和语法
+
+===  XML名称空间：
+
+[source, xml, linenums]
+----
+xmlns:imap "http://www.mulesoft.org/schema/mule/imap"
+xmlns:imaps "http://www.mulesoft.org/schema/mule/imaps"
+----
+
+===  XML模式位置
+
+[source, code, linenums]
+----
+http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.5/mule-imap.xsd
+http://www.mulesoft.org/schema/mule/imaps http://www.mulesoft.org/schema/mule/imaps/3.5/mule-imaps.xsd
+----
+
+=== 连接器语法
+
+[source, xml, linenums]
+----
+<imap:connector name="imapConnector" backupEnabled="true" backupFolder="backup" checkFrequency="90000"
+                deleteReadMessages="false" mailboxFolder="INBOX" moveToFolder="PROCESSED"/>
+<imaps:connector name="imapsConnector" backupEnabled="true" backupFolder="backup" checkFrequency="90000"
+                 deleteReadMessages="false" mailboxFolder="INBOX" moveToFolder="PROCESSED"/>
+  <imaps:tls-client path="clientKeystore" storePassword="mulepassword" />
+  <imaps:tls-trust-store path="greenmail-truststore" storePassword="password" />
+</imaps:connector>
+----
+
+=== 端点语法
+
+您可以用两种不同的方式来定义您的端点
+
+. 前缀端点
++
+[source, code, linenums]
+  ----
+  <imap:inbound-endpoint user="bob" password="password" host="localhost" port="65433"/>
+<imaps:inbound-endpoint user="bob" password="password" host="localhost" port="65433"/>
+  ----
+
+. 没有前缀的URI：
++
+[source, code, linenums]
+  ----
+  <inbound-endpoint address="imap://bob:password@localhost:65433"/>
+<inbound-endpoint address="imaps://bob:password@localhost:65433"/>
+  ----
+
+请参阅下面的选项以获取更多信息。
+
+== 特点
+
+* 简单配置入站端点的电子邮件访问：包括验证信息和检查频率
+* 自动处理电子邮件附件
+* 将邮件自动备份到指定的文件夹
+* 自动删除已读消息
+* 轻松配置安全性
+
+== 用法
+
+如果您想在您的配置中包含IMAP电子邮件传输，那么这些是您需要定义的命名空间：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:imap="http://www.mulesoft.org/schema/mule/imap"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.5/mule.xsd
+       http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.5/mule-imap.xsd">
+...
+----
+
+对于安全版本，您可以使用以下内容：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:imaps="http://www.mulesoft.org/schema/mule/imaps"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.5/mule.xsd
+       http://www.mulesoft.org/schema/mule/imaps http://www.mulesoft.org/schema/mule/imaps/3.5/mule-imaps.xsd">
+...
+----
+
+然后您需要按照以下所述配置连接器和端点。
+
+=== 配置示例
+
+假设你有一个企业，并想通过电子邮件附件接受订单。收到电子邮件后，您需要保存订单附件，以便在您的订单履行流程中收到附件。以下Mule配置会检查电子邮件的电子邮件框，并将附件保存到本地磁盘，以便从单独的执行过程中获取它们：
+
+内置变压器被声明为❶并获取电子邮件附件列表。然后将这个转换器应用到定义的pop3入站端点。然后我们定义一个列表列表 - 消息分离器 - 路由器❸，它将遍历所有的电子邮件附件。接下来我们定义一个文件出站端点，它会将附件写入'./received'目录，并使用datestamp作为文件名❹。一个简单的groovy表达式获取附件的inputStream来写入文件。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:imap="http://www.mulesoft.org/schema/mule/imap"
+       xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+       xmlns:email="http://www.mulesoft.org/schema/mule/email"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.5/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.5/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.5/mule-imap.xsd
+       http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/3.5/mule-email.xsd
+       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.5/mule-vm.xsd">
+
+    <imap:connector name="imapConnector"  />
+
+    <expression-transformer name="returnAttachments">
+        <return-argument evaluator="attachments-list" expression="*" optional="false"/> ❶
+    </expression-transformer>
+
+    <file:connector name="fileName">
+        <file:expression-filename-parser/>
+    </file:connector>
+
+        <flow name="incoming-orders">
+            <imap:inbound-endpoint user="bob" password="password" host="emailHost"
+                     port="143" transformer-refs="returnAttachments" disableTransportTransformer="true"/> ❷
+            <collection-splitter/>
+            <file:outbound-endpoint path="./received" outputPattern="#[function:datestamp].dat"> ❹
+                <expression-transformer>
+                    <return-argument expression="payload.inputStream" evaluator="groovy" /> ❺
+                </expression-transformer>
+            </file:outbound-endpoint>
+        </flow>
+</mule>
+----
+
+IMAPS连接器具有客户端和服务器密钥库信息❶。内置变压器被声明为❷并获取电子邮件附件列表。然后将该变压器应用于入站端点❸。然后我们定义一个列表列表 - 消息分离器 - 路由器❹，它遍历所有的电子邮件附件。接下来我们定义一个文件出站端点，它将附件写入'./received'目录，并将日期戳记作为文件名❺。一个简单的groovy表达式获取附件的inputStream来写入文件。
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:imap="http://www.mulesoft.org/schema/mule/imap"
+       xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+       xmlns:file="http://www.mulesoft.org/schema/mule/file"
+       xmlns:email="http://www.mulesoft.org/schema/mule/email"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/3.1/mule-file.xsd
+       http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.1/mule-imap.xsd
+       http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/3.1/mule-email.xsd
+       http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.1/mule-vm.xsd">
+
+    <imap:connector name="imapConnector"  />
+
+    <expression-transformer name="returnAttachments">
+        <return-argument evaluator="attachments-list" expression="*" optional="false"/> â¶
+    </expression-transformer>
+
+    <file:connector name="fileName">
+        <file:expression-filename-parser/>
+    </file:connector>
+
+    <imaps:connector name="imapsConnector"> â¶
+        <imaps:tls-client path="clientKeystore" storePassword="mulepassword" />
+        <imaps:tls-trust-store path="greenmail-truststore" storePassword="password" />
+    </imaps:connector>
+
+        <flow name="incoming-orders">
+            <imap:inbound-endpoint user="bob" password="password" host="emailHost"
+                     port="143" transformer-refs="returnAttachments" disableTransportTransformer="true"/> â·
+            <collection-splitter/>
+            <file:outbound-endpoint path="./received" outputPattern="#[function:datestamp].dat"> â¹
+                <expression-transformer>
+                    <return-argument expression="payload.inputStream" evaluator="groovy" /> âº
+                </expression-transformer>
+            </file:outbound-endpoint>
+        </flow>
+</mule>
+----
+
+== 配置参考
+
+=== 连接器
+
+IMAP连接器支持所有[通用连接器属性和属性]以及以下附加属性：
+
+[%header%autowidth.spread]
+|===
+| {属性{1}}说明 |缺省 |必
+| backupEnabled  |是否将副本保存到备份文件夹 | False  |否
+| backupFolder  |阅读后移动邮件的文件夹 |  |否
+| checkFrequency  |与服务器 |的轮询连接之间的周期（毫秒）60000  |是
+| mailboxFolder  |用于检查电子邮件的远程文件夹 | INBOX  |否
+| deleteReadMessages  |是否在服务器下载消息时从服务器中删除消息。如果设置为false，则将消息设置为defaultProcessMessageAction属性值。 | True  |否
+| moveToFolder a |远程文件夹在读取完毕后移动所有邮件。建议在使用此选项时将"deleteReadMessage"设置为false。
+
+在使用Gmail等公共电子邮件服务时，这非常有用，因为删除标记邮件不起作用。请改为`@moveToFolder=Gmail/Trash`。 |  |否
+| defaultProcessMessageAction  |如果deleteReadMessage属性未设置为false，则执行该操作。有效值包括：答案，删除，草稿，标记，最近，看到，用户和无。 | SEEN  |否
+|===
+
+对于安全版本，还需要以下元素：
+
+[%header%autowidth.spread]
+|===
+|元素 | Dscription
+| tis-client a |使用以下属性配置客户端密钥存储区：
+
+*  path：包含公钥和私钥用于标识的密钥库的相对于当前类路径和文件系统的解析位置
+*  storePassword：用于保护密钥库的密码
+* 类：使用的密钥库类型（Java类名称）
+| tis-trust-store a |配置信任存储。属性是：
+
+* 路径：包含可信服务器公用证书的信任存储的位置（将相对于当前类路径和文件系统进行解析，如果可能的话）
+*  storePassword：用于保护信任存储的密码
+|===
+
+例如：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:imap="http://www.mulesoft.org/schema/mule/imap"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.5/mule.xsd
+       http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/3.5/mule-imap.xsd">
+ 
+    <imap:connector name="imapConnector" backupEnabled="true" backupFolder="backup" checkFrequency="90000"
+                    deleteReadMessages="false" mailboxFolder="INBOX" moveToFolder="PROCESSED"/>
+...
+----
+
+安全版本：
+
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:spring="http://www.springframework.org/schema/beans"
+       xmlns:imaps="http://www.mulesoft.org/schema/mule/imaps"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.5/mule.xsd
+       http://www.mulesoft.org/schema/mule/imaps http://www.mulesoft.org/schema/mule/imaps/3.5/mule-imaps.xsd">
+ 
+    <imaps:connector name="imapsConnector" backupEnabled="true" backupFolder="backup" checkFrequency="90000"
+                     deleteReadMessages="false" mailboxFolder="INBOX" moveToFolder="PROCESSED"/>
+      <imaps:tls-client path="clientKeystore" storePassword="mulepassword" />
+      <imaps:tls-trust-store path="greenmail-truststore" storePassword="password" />
+    </imaps:connector>
+...
+----
+
+=== 端点
+
+IMAP和IMAPS端点包含有关连接到IMAP邮箱的详细信息。您[配置端点]与其他传输一样，具有以下附加属性：
+
+*  *user*：邮箱所有者的用户名。
+*  *password*：用户的密码。请注意，对于3.8.x之前的Mule Runtime版本，您需要使用％25（HTML代码为％）转义％字符。
+*  *host*：IMAP服务器的名称或IP地址，例如www.mulesoft.com，localhost或127.0.0.1。
+*  *port*：IMAP服务器的端口号。
+
+例如：
+
+[source, xml, linenums]
+----
+<imap:inbound-endpoint user="bob" password="password" host="localhost" port="65433"/>
+----
+
+安全版本：
+
+[source, xml, linenums]
+----
+<imaps:inbound-endpoint user="bob" password="password" host="localhost" port="65433"/>
+----
+
+您还可以使用URI语法定义端点：
+
+[source, xml, linenums]
+----
+<inbound-endpoint address="imap://bob:password@localhost:65433"/>
+<inbound-endpoint address="imaps://bob:password@localhost:65433"/>
+----
+
+这将使用密码`password`登录到端口65433上的`localhost`上的`bob`邮箱。您也可以使用URI指定端点设置，但上述语法更易于阅读。
+
+有关变压器的更多信息，请参阅电子邮件传输参考中的[变压器]部分。
+
+有关过滤器的更多信息，请参阅电子邮件传输参考中的[过滤器]部分。
+
+===  Maven模块
+
+电子邮件传输由mule-trasport-email模块执行。您可以在运输/电子邮件中找到电子邮件运输的来源。
+
+如果您使用Maven构建应用程序，请使用以下依赖片段将电子邮件传输包含在您的项目中：
+
+[source, xml, linenums]
+----
+<dependency>
+  <groupId>org.mule.transports</groupId>
+  <artifactId>mule-transport-email</artifactId>
+</dependency>
+----
+
+== 限制
+
+有关这些限制的更多信息，请参阅电子邮件传输参考中的[限制]部分。

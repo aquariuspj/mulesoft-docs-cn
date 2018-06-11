@@ -1,0 +1,169 @@
+使用XML模块进行=  XSLT转换
+:keywords: XML, xpath, xslt
+
+`<xml-module:xslt-transform>`元素可以获取输入XML文档并使用XSL样式表进行转换。
+
+请注意，虽然MuleSoft支持XSLT标准，但DataWeave能够实现相同的用例，并且是用于提取和转换XML文档的推荐工具。
+
+考虑以下输入文件：
+
+。输入示例
+[source, xml, linenums]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<cities>
+    <city name="milan"  country="italy"   pop="5"/>
+    <city name="paris"  country="france"  pop="7"/>
+    <city name="munich" country="germany" pop="4"/>
+    <city name="lyon"   country="france"  pop="2"/>
+    <city name="venice" country="italy"   pop="1"/>
+</cities>
+----
+
+你可以像这样转换它：
+
+.XSLT转换脚本
+[source, xml, linenums]
+----
+<xml-module:xslt-transform>
+    <xml-module:xslt><![CDATA[
+    <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="2.0">
+
+        <xsl:template match="/">
+            <table>
+            <tr>
+                <th>Country</th>
+                <th>City List</th>
+                <th>Population</th>
+            </tr>
+            <xsl:for-each-group select="cities/city" group-by="@country">
+                <tr>
+                    <td>
+                        <xsl:value-of select="@country"/>
+                    </td>
+                    <td>
+                        <xsl:value-of select="current-group()/@name" separator=", "/>
+                    </td>
+                    <td>
+                        <xsl:value-of select="sum(current-group()/@pop)"/>
+                    </td>
+                </tr>
+            </xsl:for-each-group>
+            </table>
+        </xsl:template>
+    </xsl:stylesheet>
+]]></xml-module:xslt>
+</xml-module:xslt-transform>
+----
+
+上面的脚本将输出以下文档：
+
+.OUTPUT
+[source, xml, linenums]
+----
+<table>
+    <tr>
+        <th>Country</th>
+        <th>City List</th>
+        <th>Population</th>
+    </tr>
+    <tr>
+        <td>italy</td>
+        <td>milan, venice</td>
+        <td>6</td>
+    </tr>
+    <tr>
+        <td>france</td>
+        <td>paris, lyon</td>
+        <td>9</td>
+    </tr>
+    <tr>
+        <td>germany</td>
+        <td>munich</td>
+        <td>4</td>
+    </tr>
+</table>
+----
+
+尽管默认情况下此操作在消息负载级别查找输入文档，但您可以提供自己的输入。例如，假设城市是有效载荷内的JSON数组。在运行XSL转换之前，您可以先将其转换为XML，例如：
+
+.XSLT转换脚本
+[source, xml, linenums]
+----
+<xml-module:xslt-transform>
+    <xml-module:content><![CDATA[
+                %dw 2.0
+                input payload application/json encoding='UTF-8'
+                output application/xml encoding='UTF-8'
+                ---
+                payload.cities
+    ]]></xml-module:content>
+    <xml-module:xslt><![CDATA[
+        // THE XSLT
+    ]]></xml-module:xslt>
+</xml-module:xslt-transform>
+----
+
+== 将XSL样式表外观化为单独的文件
+
+为了避免将XSLT脚本嵌入到Mule应用程序中，可以通过文件将它传递给模块，例如：
+
+[source, xml, linenums]
+----
+<xml-module:xslt-transform>
+    <xml-module:xslt>${file::xlst/cities.xslt}</xml-module:xslt>
+</xml-module:xslt-transform>
+----
+
+在更复杂的用例中，您使用的脚本可能取决于某些外部条件。例如，想象一个多租户集成，其中使用的转换取决于`userId`：
+
+[source, xml, linenums]
+----
+<flow name="multitenantExample">
+    <http:listener path="transform" allowedMethods="POST" config-ref="httpListener" /> // 1
+    <file:read path="#['xslt/$(attributes.queryParam.userId).xslt']" target="xslt" />
+    <xml-module:xslt-transform>
+        <xml-module:xslt>#[vars.xslt]</xml-module:xslt>
+    </xml-module:xslt-transform>
+</flow>
+----
+
+. 此流程通过HTTP请求触发。
+. 假设`userId`作为查询参数提供，该示例使用File连接器读取包含正确XSL的文件并将其存储在变量中。
+. 该示例使用表达式执行转换，以指向通过读取操作获取的XSL表单。
+
+请注意，HTTP和文件连接器仅作为示例使用。他们不需要执行类似的用例。
+
+== 使用上下文属性
+
+与XSL语言一样，XML模块提供可以将参数传递给变换的上下文属性。在此示例中，`<xml-module:context-properties/>`元素包含一个构造参数映射的DataWeave表达式。
+
+[source, xml, linenums]
+----
+<xml-module:xslt-transform>
+    <xml-module:xslt><![CDATA[
+    <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="3.0">
+        <xsl:output method="xml"/>
+
+        <xsl:param name="vtn" /> // <1>
+        <xsl:template match="/parameter">
+            <param><xsl:value-of select="$vtn"/></param> // <2>
+        </xsl:template>
+    </xsl:stylesheet>
+]]></xml-module:xslt>
+    <xml-module:context-properties>#[{'vtn' : 'some value'}] // <3> </xml-module:context-properties>
+</xml-module:xslt-transform>
+----
+
+.  XSL样式表声明了一个名为`vtn`的`param`。
+. 样式表使用`$`前缀引用`param`的赋值。
+. 该示例使用`context-properties`参数传入值。
+
+
+== 输出MIME类型
+
+XSLT最常见的用例是输出一个新的XML文档。但是，XSLT可以生成其他格式的文档，如JSON，CSV或简单的文本或数字值。因此，产生的值不会有任何特定的MIME类型分配。建议您使用`outputMimeType`参数指定一个。
+
+== 另请参阅
+
+link:xml-module[XML模块]
